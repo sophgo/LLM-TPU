@@ -50,14 +50,14 @@ if [ x$mode == x"int8" ] || [ x$mode == x"int4" ]; then
     if [ x$mode == x"int8" ]; then
         quantize_args="--quantize W8F16"
     else
-        quantize_args="--quantize W4BF16 --q_group_size 64"
+        quantize_args="--quantize W4F16 --q_group_size 64"
     fi
     out_model=$name'_'$mode'.bmodel'
 fi
 
 if [ x$name == x"llama2-7b" ] || [ x$name == x"llama2-13b" ]; then
     if [ x$name == x"llama2-7b" ]; then
-        num_layers=0
+        num_layers=31
     else
         num_layers=39
     fi
@@ -74,7 +74,6 @@ outdir=${folder}/embedding
 mkdir -p $outdir
 pushd $outdir
 
-seqlen=512
 model_transform.py \
     --model_name embedding \
     --model_def ../onnx/embedding.onnx \
@@ -92,7 +91,7 @@ model_deploy.py \
 model_transform.py \
     --model_name embedding_cache \
     --model_def ../onnx/embedding.onnx \
-    --input_shapes [[1]] \
+    --input_shapes [[1,1]] \
     --mlir embedding_cache.mlir
 
 model_deploy.py \
@@ -162,7 +161,7 @@ model_deploy.py \
 
 model_transform.py \
     --model_name block_cache_$i \
-    --model_def ../../block_cache_${i}.onnx \
+    --model_def ../../onnx/block_cache_${i}.onnx \
     --mlir block_cache_$i.mlir
 
 model_deploy.py \

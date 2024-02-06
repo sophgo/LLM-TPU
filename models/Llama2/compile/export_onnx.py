@@ -99,12 +99,10 @@ class LmHead(torch.nn.Module):
 
 def convert_block(layer_id):
     # input
-    # SEQ_LENGTH + 1 for model combine
     hidden_states = torch.randn((1, SEQ_LENGTH, HIDDEN_SIZE))
     position_ids = torch.tensor([range(SEQ_LENGTH)], dtype=torch.long)
-    attention_mask = -1000 * torch.ones((1, 1, SEQ_LENGTH, SEQ_LENGTH), dtype=torch.float32).triu(diagonal=1)
+    attention_mask = torch.randn((1, 1, SEQ_LENGTH, SEQ_LENGTH))
     model = Block(layer_id)
-    # hiddeng_states = model(input_ids, position_ids)
 
     torch.onnx.export(
         model, (hidden_states, position_ids, attention_mask),
@@ -120,11 +118,10 @@ def convert_block_cache(layer_id):
     # input
     hidden_states = torch.randn((1, 1, HIDDEN_SIZE))
     position_ids = torch.tensor([range(1)], dtype=torch.long)
-    attention_mask = -1000 * torch.ones((1, 1, 1, SEQ_LENGTH + 1), dtype=torch.float32).triu(diagonal=0)
+    attention_mask = torch.randn((1, 1, 1, SEQ_LENGTH + 1))
     past_k = torch.randn((1, SEQ_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM))
     past_v = torch.randn((1, SEQ_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM))
     model = BlockCache(layer_id)
-    # hiddeng_states = model(input_ids, position_ids)
 
     torch.onnx.export(
         model, (hidden_states, position_ids, attention_mask, past_k, past_v),
@@ -141,7 +138,8 @@ def convert_block_cache(layer_id):
 
 def convert_embedding():
     model = Embedding()
-    torch.onnx.export(model, (torch.tensor([0, 1, 2, 3])),
+    input = torch.tensor([range(SEQ_LENGTH)])
+    torch.onnx.export(model, (input),
                       f'{folder}/embedding.onnx',
                       verbose=False,
                       input_names=['input_ids'],
@@ -166,7 +164,7 @@ if not os.path.exists(folder):
     os.makedirs(folder)
 
 # export models
-for i in range(1):
+for i in range(NUM_LAYERS):
     print("convert_block_{}".format(i))
     convert_block_cache(i)
     convert_block(i)

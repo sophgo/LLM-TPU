@@ -18,9 +18,7 @@
 #include "bmruntime_interface.h"
 #include <getopt.h>
 
-static const int NUM_LAYERS = 32;
-static const int MAX_LEN = 512;
-static const float ATTENTION_MASK = -10000.;
+static const uint16_t ATTENTION_MASK = 0xF0E2;
 
 class LLama2 {
 public:
@@ -41,22 +39,24 @@ private:
   std::vector<bm_handle_t> handles;
   void *p_bmrt;
   sentencepiece::SentencePieceProcessor sentencepiece;
-  const bm_net_info_t *net_blocks[NUM_LAYERS];
-  const bm_net_info_t *net_blocks_cache[NUM_LAYERS];
   const bm_net_info_t *net_embed;
   const bm_net_info_t *net_embed_cache;
   const bm_net_info_t *net_lm;
+  std::vector<const bm_net_info_t *> net_blocks;
+  std::vector<const bm_net_info_t *> net_blocks_cache;
   std::vector<bm_tensor_t> inputs_embed_512, outputs_embed_512;
   std::vector<bm_tensor_t> inputs_pid, next_pid, inputs_attention, next_attention;
-  std::vector<bm_tensor_t> past_key[NUM_LAYERS], past_value[NUM_LAYERS];
+  std::vector<std::vector<bm_tensor_t>> past_key, past_value;
   std::vector<bm_tensor_t> present_key_cache, present_value_cache;
   std::vector<bm_tensor_t> inputs_lm, outputs_lm;
+  std::string history = "";
   std::string name_embed;
   std::string name_embed_cache;
   std::string name_lm;
-  std::string name_blocks[NUM_LAYERS];
-  std::string name_blocks_cache[NUM_LAYERS];
-  std::string history = "";
+  std::vector<std::string> name_blocks;
+  std::vector<std::string> name_blocks_cache;
+  int SEQLEN;     // read from bmodel
+  int NUM_LAYERS; // read from bmodel
   int round = 0;
   int token_length;
   int EOS;
@@ -74,7 +74,9 @@ void LLama2::load_sentencepiece(std::string tokenizer_path) {
 }
 
 void LLama2::init(const std::vector<int> &devices, std::string model, std::string tokenizer_path) {
+  // load tokenizer
   load_sentencepiece(tokenizer_path);
+
   // request bm_handle
   std::cout << "Device [ ";
   for (auto d : devices) {
@@ -89,6 +91,7 @@ void LLama2::init(const std::vector<int> &devices, std::string model, std::strin
     handles.push_back(h);
   }
   bm_handle = handles[0];
+
   // create bmruntime
   p_bmrt = bmrt_create_ex(handles.data(), device_num);
   assert(NULL != p_bmrt);
@@ -98,13 +101,18 @@ void LLama2::init(const std::vector<int> &devices, std::string model, std::strin
   bool ret = bmrt_load_bmodel(p_bmrt, model.c_str());
   assert(true == ret);
   printf("Done!\n");
+
+  // set NUM_LAYERS
+  auto num_nets = bmrt_get_network_number(p_bmrt);
+  NUM_LAYERS = (num_nets - 2) / 2;
+
   // net names
   name_embed = "embedding";
   name_embed_cache = "embedding_cache";
   name_lm = "lm_head";
   for (int i = 0; i < NUM_LAYERS; i++) {
-    name_blocks[i] = "block_" + std::to_string(i);
-    name_blocks_cache[i] = "block_cache_" + std::to_string(i);
+    name_blocks.emplace_back("block_" + std::to_string(i));
+    name_blocks_cache.emplace_back("block_cache_" + std::to_string(i));
   }
 
   // net infos
@@ -112,10 +120,14 @@ void LLama2::init(const std::vector<int> &devices, std::string model, std::strin
   net_embed_cache = bmrt_get_network_info(p_bmrt, name_embed_cache.c_str());
   net_lm = bmrt_get_network_info(p_bmrt, name_lm.c_str());
   for (int i = 0; i < NUM_LAYERS; i++) {
-    net_blocks[i] = bmrt_get_network_info(p_bmrt, name_blocks[i].c_str());
-    net_blocks_cache[i] =
-        bmrt_get_network_info(p_bmrt, name_blocks_cache[i].c_str());
+    net_blocks.emplace_back(
+        bmrt_get_network_info(p_bmrt, name_blocks[i].c_str()));
+    net_blocks_cache.emplace_back(
+        bmrt_get_network_info(p_bmrt, name_blocks_cache[i].c_str()));
   }
+
+  // set SEQLEN
+  SEQLEN = net_embed->stages[0].input_shapes[0].dims[1];
 
   // net device mem
   inputs_embed_512.resize(net_embed->input_num);
@@ -171,6 +183,8 @@ void LLama2::init(const std::vector<int> &devices, std::string model, std::strin
     assert(true == ret);
   }
 
+  past_key.resize(NUM_LAYERS);
+  past_value.resize(NUM_LAYERS);
   int out_num = net_blocks[0]->output_num / device_num;
   for (int i = 0; i < NUM_LAYERS; i++) {
     past_key[i].resize(device_num);
@@ -232,28 +246,29 @@ void LLama2::deinit() {
 }
 
 int LLama2::forward_first(std::vector<int> &tokens) {
-  int input_ids[MAX_LEN] = {0}; // start token
-  int position_id[MAX_LEN] = {0};
-  float attention_mask[MAX_LEN * MAX_LEN] = {0};
+  // make inputs
+  std::vector<int> input_ids(SEQLEN, 0);
+  std::vector<int> position_id(SEQLEN, 0);  
+  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
+  std::copy(tokens.begin(), tokens.end(), input_ids.data());
   token_length = tokens.size();
   
-  std::copy(tokens.begin(), tokens.end(), input_ids);
+  std::copy(tokens.begin(), tokens.end(), input_ids.data());
   for (int i = 0; i < token_length; i++) {
     position_id[i] = i;
   }
 
-  for (int i = 0; i < MAX_LEN; i++) {
-    for (int j = 0; j < MAX_LEN; j++) {
-      if (j <= i && i < token_length) {
-      } else {
-        attention_mask[i * MAX_LEN + j] = ATTENTION_MASK;
+  for (int i = 0; i < token_length; i++) {
+    for (int j = 0; j < SEQLEN; j++) {
+      if (j <= i) {
+        attention_mask[i * SEQLEN + j] = 0;
       }
     }
   }
 
   // forward embeding
   std::vector<int> input_nums(device_num, 1);
-  std::vector<void*> datas(device_num, (void*)input_ids);
+  std::vector<void*> datas(device_num, input_ids.data());
   bmrt_memcpy_s2d_parallel(p_bmrt, inputs_embed_512.data(), datas.data(),
                           input_nums.data(), device_num);
   auto ret =
@@ -265,8 +280,8 @@ int LLama2::forward_first(std::vector<int> &tokens) {
   bm_thread_sync(bm_handle);
 
   // forward blocks
-  std::vector<void*> pos_id_datas(device_num, (void*)position_id);
-  std::vector<void*> in_attn_datas(device_num, (void*)attention_mask);
+  std::vector<void*> pos_id_datas(device_num, position_id.data());
+  std::vector<void*> in_attn_datas(device_num, attention_mask.data());
   bmrt_memcpy_s2d_parallel(p_bmrt, inputs_pid.data(), pos_id_datas.data(),
                           input_nums.data(), device_num);
   bmrt_memcpy_s2d_parallel(p_bmrt, inputs_attention.data(),in_attn_datas.data(),
@@ -298,7 +313,7 @@ int LLama2::forward_first(std::vector<int> &tokens) {
     bm_thread_sync(bm_handle);
   }
 
-  int bytes = embed_512[0].device_mem.size / MAX_LEN;
+  int bytes = embed_512[0].device_mem.size / SEQLEN;
   bm_memcpy_d2d_byte(bm_handle, inputs_lm[0].device_mem, 0,
                      embed_512[0].device_mem, (token_length - 1) * bytes,
                      bytes);
@@ -314,8 +329,8 @@ int LLama2::forward_first(std::vector<int> &tokens) {
 }
 
 int LLama2::forward_next(int cur_token) {
-  float attention_mask[MAX_LEN + 1] = {0};
-  for (int i = token_length - 1; i < MAX_LEN; i++) {
+  std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
+  for (int i = token_length - 1; i < SEQLEN; i++) {
     attention_mask[i] = ATTENTION_MASK;
   }
   int32_t position_id = token_length - 1;
@@ -339,7 +354,7 @@ int LLama2::forward_next(int cur_token) {
 
   // blocks
   std::vector<void*> pid_datas(device_num, &position_id);
-  std::vector<void*> attn_datas(device_num, attention_mask);
+  std::vector<void*> attn_datas(device_num, attention_mask.data());
   bmrt_memcpy_s2d_parallel(p_bmrt, next_pid.data(), pid_datas.data(),
                           input_nums.data(), device_num);
   bmrt_memcpy_s2d_parallel(p_bmrt, next_attention.data(), attn_datas.data(),
@@ -348,7 +363,7 @@ int LLama2::forward_next(int cur_token) {
   for (int i = 0; i < device_num; ++i) {
     embed_1[i].shape = net_blocks_cache[0]->stages[0].input_shapes[0];
   }
-  int bytes = bm_mem_get_device_size(past_key[0][0].device_mem) / MAX_LEN;
+  int bytes = bm_mem_get_device_size(past_key[0][0].device_mem) / SEQLEN;
   int token_offset = (token_length - 1) * bytes;
   std::vector<bm_tensor_t> inputs_block;
   std::vector<bm_tensor_t> outputs_block;
@@ -416,8 +431,6 @@ void LLama2::chat() {
 }
 
 void LLama2::answer(const std::string &input_str) {
-  // history += ("[Round " + std::to_string(round + 1) + "]\n\n问：" + input_str +
-  //             "\n\n答：");
   history = input_str;
   int tok_num = 1;
   std::vector<int> tokens;
@@ -430,7 +443,8 @@ void LLama2::answer(const std::string &input_str) {
     return;
   }
   // make sure token not too large
-  if (tokens.size() > MAX_LEN - 10) {
+  token_length = tokens.size();
+  if (token_length > SEQLEN - 10) {
     // reset
     if (round == 0) {
       printf("Error: your question is too large!\n");
@@ -445,7 +459,7 @@ void LLama2::answer(const std::string &input_str) {
   auto t0 = std::chrono::system_clock::now();
   int token = forward_first(tokens);
   auto t1 = std::chrono::system_clock::now();
-  while (token != EOS && token_length < MAX_LEN) {
+  while (token != EOS && token_length < SEQLEN) {
     std::string pre_word;
     std::string word;
     std::vector<int> pre_ids = {pre_token};
@@ -455,7 +469,7 @@ void LLama2::answer(const std::string &input_str) {
     std::string diff = word.substr(pre_word.size());
     history += diff;
     std::cout << diff << std::flush;
-    if (token_length < MAX_LEN) {
+    if (token_length < SEQLEN) {
       token_length++;
     }
     tok_num++;
@@ -466,7 +480,7 @@ void LLama2::answer(const std::string &input_str) {
   auto use1 = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1);
   printf("\n\nfirst token latency: %f s", (use0.count() * 1e-6));
   printf("\nspeed: %f token/s\n", tok_num / (use1.count() * 1e-6));
-  if (token_length >= MAX_LEN) {
+  if (token_length >= SEQLEN) {
     round = 0;
     history = history.substr(history.size() / 2);
   } else {
@@ -499,17 +513,27 @@ static std::vector<int> parseCascadeDevices(const std::string &str) {
   return devices;
 }
 
+void Usage() {
+  printf("Usage:\n"
+         "  --help         : Show help info.\n"
+         "  --model        : Set model path \n"
+         "  --tokenizer    : Set tokenizer path \n"
+         "  --devid        : Set devices to run for model, e.g. 1,2. if not "
+         "set, use 0\n");
+}
+
 void processArguments(int argc, char *argv[], std::string &model_path, std::string &tokenizer_path,
                       std::vector<int> &devices) {
   struct option longOptions[] = {{"model", required_argument, nullptr, 'm'},
-                                 {"dev_id", required_argument, nullptr, 'd'},
-				 {"tokenizer", required_argument, nullptr, 't'},
+                                 {"tokenizer", required_argument, nullptr, 't'},
+                                 {"devid", required_argument, nullptr, 'd'},
+                                 {"help", no_argument, nullptr, 'h'},
                                  {nullptr, 0, nullptr, 0}};
 
   int optionIndex = 0;
   int option;
 
-  while ((option = getopt_long(argc, argv, "m:d:", longOptions,
+  while ((option = getopt_long(argc, argv, "m:d:h:", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -521,7 +545,11 @@ void processArguments(int argc, char *argv[], std::string &model_path, std::stri
     case 'd':
       devices = parseCascadeDevices(optarg);
       break;
+    case 'h':
+      Usage();
+      exit(EXIT_FAILURE);
     case '?':
+      Usage();
       exit(EXIT_FAILURE);
     default:
       exit(EXIT_FAILURE);
