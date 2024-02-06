@@ -6,14 +6,6 @@
 
 下文中默认是PCIE环境；如果是SoC环境，按提示操作即可。
 
-# 下载
-
-|文件名称                                         |文件类型          |下载命令                                                               |
-|:-                                              |:-                |:-                                                                    |
-|llama-7b_int4_8k.bmodel                          |bmodel           |python3 -m dfss --url=open@sophgo.com:/LLM/-7b_int4_8k.bmodel     |
-|libsophon-0.5.0_soc.tar.gz                      |libsophon         |python3 -m dfss --url=open@sophgo.com:/LLM/-7b_int4_8k.bmodel     |
-|tpu-mlir_v1.6.213-g21b14a0c1-20240204.tar.gz    |tpu-mlir.tar.gz   |python3 -m dfss --url=open@sophgo.com:/LLM/-7b_int4_8k.bmodel     |
-
 # 目录说明
 ```
 .
