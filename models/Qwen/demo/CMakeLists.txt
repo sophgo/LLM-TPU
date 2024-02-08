@@ -8,8 +8,6 @@ if (NOT DEFINED TARGET_ARCH)
 endif()
 
 include_directories(${PROJECT_SOURCE_DIR}/../support/include)
-# include_directories(${PROJECT_SOURCE_DIR}/../support/third_party/abseil-cpp) 
-# include_directories(${PROJECT_SOURCE_DIR}/../support/third_party/re2)
 
 if (${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "aarch64")
 	add_definitions(-DSOC_TARGET)
@@ -33,14 +31,8 @@ set(CMAKE_BUILD_TYPE "Debug")
 
 set(ABSL_ENABLE_INSTALL ON)
 set(ABSL_PROPAGATE_CXX_STD ON)
-# find_package(re2 REQUIRED)
 add_subdirectory(third_party/abseil-cpp)
 add_subdirectory(third_party/re2)
-# link_directories(${PROJECT_SOURCE_DIR}/../support/third_party/abseil-cpp)
-# link_directories(${PROJECT_SOURCE_DIR}/../support/third_party/re2)
-
-# add_executable(tokenizer tokenizer.cpp)
-# target_link_libraries(tokenizer re2)
 
 add_executable(qwen demo.cpp tokenizer.cpp)
 target_link_libraries(qwen bmrt bmlib re2)
