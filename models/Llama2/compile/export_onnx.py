@@ -10,9 +10,8 @@
 
 import os
 import torch
-from transformers import LlamaTokenizer
-from transformers import LlamaForCausalLM
 import argparse
+from transformers import LlamaTokenizer, LlamaForCausalLM
 
 parser = argparse.ArgumentParser(description='export onnx.')
 parser.add_argument('--model_path', type=str, help='path to the torch model.')
@@ -23,8 +22,7 @@ args = parser.parse_args()
 model_path = args.model_path
 folder = f"./tmp/onnx"
 
-origin_model = LlamaForCausalLM.from_pretrained(model_path)
-origin_model.eval()
+origin_model = LlamaForCausalLM.from_pretrained(model_path).eval()
 config = origin_model.config
 transformer = origin_model.model
 layers = transformer.layers
@@ -62,8 +60,8 @@ class Block(torch.nn.Module):
                                             attention_mask,
                                             position_ids,
                                             use_cache=True)
-        past_k, past_v = past_kv
-        return hidden_states, past_k, past_v
+        present_k, present_v = past_kv
+        return hidden_states, present_k, present_v
 
 
 class BlockCache(torch.nn.Module):
@@ -81,8 +79,8 @@ class BlockCache(torch.nn.Module):
                                             position_ids=position_ids,
                                             past_key_value=(past_k, past_v),
                                             use_cache=True)
-        past_k, past_v = past_kv
-        return hidden_states, past_k, past_v
+        present_k, present_v = past_kv
+        return hidden_states, present_k, present_v
 
 
 class LmHead(torch.nn.Module):
@@ -168,5 +166,10 @@ for i in range(NUM_LAYERS):
     print("convert_block_{}".format(i))
     convert_block_cache(i)
     convert_block(i)
+
+print("convert_embedding")
 convert_embedding()
+
+print("convert_lm_head")
 convert_lm_head()
+

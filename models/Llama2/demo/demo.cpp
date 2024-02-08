@@ -533,7 +533,7 @@ void processArguments(int argc, char *argv[], std::string &model_path, std::stri
   int optionIndex = 0;
   int option;
 
-  while ((option = getopt_long(argc, argv, "m:d:h:", longOptions,
+  while ((option = getopt_long(argc, argv, "m:t:d:h:", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -564,6 +564,10 @@ int main(int argc, char **argv) {
   std::string tokenizer_path;
   std::vector<int> devices = {0};
   processArguments(argc, argv, model_path, tokenizer_path, devices);
+  if (model_path.empty()) {
+    Usage();
+    exit(EXIT_FAILURE);
+  }
 
   LLama2 llama;
   printf("Init Environment ...\n");
@@ -573,3 +577,4 @@ int main(int argc, char **argv) {
   llama.deinit();
   return 0;
 }
+

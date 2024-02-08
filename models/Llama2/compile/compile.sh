@@ -11,14 +11,6 @@ name=""
 num_layers=
 out_model=$name.bmodel
 
-if [ -z "$name" ]; then
-    name="llama2-7b"
-    echo "Compile Llama2-7B"
-else
-    name="llama2-13b"
-    echo "Compile Llama2-13B"
-fi
-
 while [[ $# -gt 0 ]]; do
     key="$1"
 
@@ -46,21 +38,26 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ x$mode == x"int8" ] || [ x$mode == x"int4" ]; then
-    if [ x$mode == x"int8" ]; then
-        quantize_args="--quantize W8F16"
-    else
-        quantize_args="--quantize W4F16 --q_group_size 64"
-    fi
-    out_model=$name'_'$mode'.bmodel'
+if [ "$name" = "llama2-7b" ]; then
+  num_layers=31
+  echo "Compile Llama2-7B"
+elif [ "$name" = "llama2-13b" ]; then 
+  num_layers=39
+  echo "Compile Llama2-13B"
+else
+  >&2 echo -e "Error: Invalid name $name, the input name must be \033[31mllama2-7b|llama2-13b\033[0m"
+  exit 1
 fi
 
-if [ x$name == x"llama2-7b" ] || [ x$name == x"llama2-13b" ]; then
-    if [ x$name == x"llama2-7b" ]; then
-        num_layers=31
-    else
-        num_layers=39
-    fi
+if [ x$mode == x"int8" ]; then
+    quantize_args="--quantize W8F16"
+elif [ x$mode == x"f16" ]; then
+    quantize_args="--quantize F16"
+elif [ x$mode == x"int4" ]; then
+    quantize_args="--quantize W4F16 --q_group_size 64"
+else
+    echo "Error, unknown quantize mode"
+    exit 1
 fi
 
 if [ x$num_device != x1 ]; then
@@ -127,6 +124,7 @@ model_deploy.py \
     --quant_input \
     --quant_output \
     --chip bm1684x \
+    $device_args \
     --model lm_head.bmodel
 
 rm *.npz
@@ -142,43 +140,43 @@ mkdir -p $outdir
 pushd $outdir
 mkdir -p $outdir
 
-for ((i=0; i<=$num_layers; i++))
-do
+for ((i=0; i<=$num_layers; i++)); do
 
-model_transform.py \
-    --model_name block_$i \
-    --model_def ../../onnx/block_$i.onnx \
-    --mlir block_$i.mlir
+    model_transform.py \
+        --model_name block_$i \
+        --model_def ../../onnx/block_$i.onnx \
+        --mlir block_$i.mlir
 
-model_deploy.py \
-    --mlir block_$i.mlir \
-    $quantize_args \
-    --chip bm1684x \
-    --quant_input \
-    --quant_output \
-    $device_args \
-    --model block_$i.bmodel
+    model_deploy.py \
+        --mlir block_$i.mlir \
+        $quantize_args \
+        --quant_input \
+        --quant_output \
+        --chip bm1684x \
+        $device_args \
+        --model block_$i.bmodel
 
-model_transform.py \
-    --model_name block_cache_$i \
-    --model_def ../../onnx/block_cache_${i}.onnx \
-    --mlir block_cache_$i.mlir
+    model_transform.py \
+        --model_name block_cache_$i \
+        --model_def ../../onnx/block_cache_${i}.onnx \
+        --mlir block_cache_$i.mlir
 
-model_deploy.py \
-    --mlir block_cache_$i.mlir \
-    $quantize_args \
-    --chip bm1684x \
-    --quant_input \
-    --quant_output \
-    $device_args \
-    --model block_cache_$i.bmodel
+    model_deploy.py \
+        --mlir block_cache_$i.mlir \
+        $quantize_args \
+        --quant_input \
+        --quant_output \
+        --chip bm1684x \
+        $device_args \
+        --model block_cache_$i.bmodel
 
-rm *.npz
+    rm *.npz
 
-models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
+    models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
 
 done
 popd
 echo $models
 
 model_tool --combine $models -o $out_model
+
