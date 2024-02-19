@@ -73,7 +73,7 @@ void LLama2::load_sentencepiece(std::string tokenizer_path) {
   printf("Done!\n");
 }
 
-void LLama2::init(const std::vector<int> &devices, std::string model, std::string tokenizer_path) {
+void LLama2::init(const std::vector<int> &devices, std::string model_path, std::string tokenizer_path) {
   // load tokenizer
   load_sentencepiece(tokenizer_path);
 
@@ -97,8 +97,8 @@ void LLama2::init(const std::vector<int> &devices, std::string model, std::strin
   assert(NULL != p_bmrt);
 
   // load bmodel by file
-  printf("Model[%s] loading ....\n", model.c_str());
-  bool ret = bmrt_load_bmodel(p_bmrt, model.c_str());
+  printf("Model[%s] loading ....\n", model_path.c_str());
+  bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
 

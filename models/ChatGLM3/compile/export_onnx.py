@@ -141,7 +141,8 @@ def convert_block_cache(layer_id):
 
 def convert_embedding():
     model = Embedding()
-    torch.onnx.export(model, (torch.tensor([0, 1, 2, 3])),
+    input = torch.tensor([range(SEQ_LENGTH)])
+    torch.onnx.export(model, (input),
                       f'{folder}/embedding.onnx',
                       verbose=False,
                       input_names=['input_ids'],

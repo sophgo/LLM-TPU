@@ -278,7 +278,7 @@ class CoreAttention(torch.nn.Module):
                 attention_mask.tril_()
                 attention_mask = ~attention_mask
             if attention_mask is not None:
-                attention_scores = attention_scores + (attention_mask * -10000.0)
+                attention_scores = attention_scores + attention_mask
                 #attention_scores = attention_scores.masked_fill(attention_mask, float("-inf"))
             attention_probs = F.softmax(attention_scores, dim=-1)
             attention_probs = attention_probs.type_as(value_layer)

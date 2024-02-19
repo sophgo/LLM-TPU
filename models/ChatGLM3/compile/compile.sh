@@ -96,6 +96,7 @@ model_deploy.py \
     --quant_input \
     --quant_output \
     --chip bm1684x \
+    $device_args \
     --model embedding_cache.bmodel
 
 rm *.npz
@@ -112,7 +113,7 @@ pushd $outdir
 
 model_transform.py \
     --model_name lm_head \
-    --model_def ../../lm_head.onnx \
+    --model_def ../../onnx/lm_head.onnx \
     --mlir lm_head.mlir
 
 model_deploy.py \
@@ -141,24 +142,28 @@ for ((i=0; i<=$num_layers; i++)); do
 
     model_transform.py \
         --model_name block_$i \
-        --model_def ../../block_$i.onnx \
+        --model_def ../../onnx/block_$i.onnx \
         --mlir block_$i.mlir
 
     model_deploy.py \
         --mlir block_$i.mlir \
         $quantize_args \
+        --quant_input \
+        --quant_output \
         --chip bm1684x \
         $device_args \
         --model block_$i.bmodel
 
     model_transform.py \
         --model_name block_cache_$i \
-        --model_def ../../block_cache_$i.onnx \
+        --model_def ../../onnx/block_cache_$i.onnx \
         --mlir block_cache_$i.mlir
 
     model_deploy.py \
         --mlir block_cache_$i.mlir \
         $quantize_args \
+        --quant_input \
+        --quant_output \
         --chip bm1684x \
         $device_args \
         --model block_cache_$i.bmodel
