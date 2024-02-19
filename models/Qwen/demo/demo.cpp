@@ -41,6 +41,7 @@ private:
   std::vector<const bm_net_info_t *> net_blocks;
   std::vector<const bm_net_info_t *> net_blocks_cache;
   const bm_net_info_t *net_embed;
+  const bm_net_info_t *net_embed_cache;
   const bm_net_info_t *net_lm;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
@@ -113,21 +114,24 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path, std::st
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
+
   // net embed and lm_head
   net_embed = bmrt_get_network_info(p_bmrt, "embedding");
+  net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
   net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
-  assert(net_embed->stage_num == 2);
-  SEQLEN = net_embed->stages[1].input_shapes[0].dims[1]; // real seqlen
+  SEQLEN = net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
   auto num_nets = bmrt_get_network_number(p_bmrt);
   NUM_LAYERS = (num_nets - 2) / 2;
+
   // net blocks
   for (int i = 0; i < NUM_LAYERS; i++) {
-    auto block_name = "qwen_block_" + std::to_string(i);
-    auto cache_name = "qwen_block_cache_" + std::to_string(i);
+    auto block_name = "block_" + std::to_string(i);
+    auto cache_name = "block_cache_" + std::to_string(i);
     net_blocks.emplace_back(bmrt_get_network_info(p_bmrt, block_name.c_str()));
     net_blocks_cache.emplace_back(
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
   }
+
   // kv cache
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
@@ -179,10 +183,10 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   }
 
   // forward embeding
-  auto &in_mem = net_embed->stages[1].input_mems[0];
-  auto &out_mem = net_embed->stages[1].output_mems[0];
+  auto &in_mem = net_embed->stages[0].input_mems[0];
+  auto &out_mem = net_embed->stages[0].output_mems[0];
   bm_memcpy_s2d(bm_handle, in_mem, (void *)input_ids.data());
-  net_launch(net_embed, 1); // prefil embedding
+  net_launch(net_embed); // prefil embedding
 
   // forward blocks
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
@@ -221,10 +225,10 @@ int Qwen::forward_next() {
   // embedding
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
   auto &lm_out_mem = net_lm->stages[0].output_mems[0];
-  auto &in_mem = net_embed->stages[0].input_mems[0];
-  auto &out_mem = net_embed->stages[0].output_mems[0];
+  auto &in_mem = net_embed_cache->stages[0].input_mems[0];
+  auto &out_mem = net_embed_cache->stages[0].output_mems[0];
   d2d(in_mem, lm_out_mem);
-  net_launch(net_embed);
+  net_launch(net_embed_cache);
   // blocks
   int bytes =
       bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
