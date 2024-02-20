@@ -135,9 +135,10 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path, std::st
   // kv cache
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
-  io_alone = net_blocks_cache[0]->io_alone;
+  auto addr_mode = net_blocks_cache[0]->addr_mode;
+  io_alone = addr_mode == 1;
   for (int i = 0; i < NUM_LAYERS; i++) {
-    assert(io_alone == net_blocks_cache[i]->io_alone);
+    assert(addr_mode == net_blocks_cache[i]->addr_mode);
     if (io_alone) {
       past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
       past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];

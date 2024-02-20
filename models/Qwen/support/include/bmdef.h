@@ -102,7 +102,7 @@ typedef struct bm_net_info_s {
   int *input_loc_devices;        /* input_loc_device[0] / [1] / .../ [input_num-1] */
   int *output_loc_devices;       /* output_loc_device[0] / [1] / .../ [output_num-1] */
   int core_num;                  /* core number */
-  bool io_alone;                 /* whether io is alone from neuron space */
+  int32_t addr_mode;             /* address assign mode */
 } bm_net_info_t;
 
 typedef struct api_info_s {
