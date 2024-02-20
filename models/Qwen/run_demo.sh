@@ -39,7 +39,8 @@ done
 # install docker
 if [ $docker == "true" ]; then
   docker pull sophgo/tpuc_dev:latest
-  docker run --privileged --name mlir -v /dev:/dev -v $PWD:/workspace -it sophgo/tpuc_dev:latest
+  docker run --privileged --name mlir -v /dev:/dev -v $PWD:/workspace -it sophgo/tpuc_dev:latest bash
+  docker exec -it mlir bash
 fi
 
 # download bmodel
