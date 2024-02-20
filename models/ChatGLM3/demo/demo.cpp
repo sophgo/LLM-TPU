@@ -17,30 +17,14 @@
 #include "sentencepiece/sentencepiece_processor.h"
 #include "bmruntime_interface.h"
 #include <getopt.h>
+#include <stdio.h>
+#include <inttypes.h>
 
-static const std::string TOKENIZER_MODEL = "../src/tokenizer.model";
-
-// #define EXPORT_RESULTS
-#ifdef EXPORT_RESULTS
-#include "cnpy.h"
-static cnpy::npz_t map;
-
-template <typename T>
-static void add_array(std::string name, bm_handle_t bm_handle,
-                      const bm_device_mem_t &dst) {
-  std::vector<T> data(dst.size / sizeof(T));
-  bm_memcpy_d2s(bm_handle, data.data(), dst);
-  cnpy::npz_add_array(map, name, data);
-}
-
-static void save_array(std::string filename) {
-  cnpy::npz_save_all(filename, map);
-}
-#endif
+static const uint16_t ATTENTION_MASK = 0xF0E2;
 
 class ChatGLM {
 public:
-  void init(const std::vector<int> &devid, std::string model);
+  void init(const std::vector<int> &devid, std::string model_path, std::string tokenizer_path);
   void chat();
   void deinit();
 
@@ -48,9 +32,9 @@ private:
   void answer(const std::string &input_str);
   void tokenizer_encode(const std::string &input_str, std::vector<int> &tokens);
   int forward_first(std::vector<int> &tokens);
-  int forward_next();
+  int forward_next(int cur_token);
   void move2end(const bm_tensor_t &kv);
-  void load_sentencepiece();
+  void load_sentencepiece(std::string tokenizer_path);
   void build_system_prompt();
 
 private:
@@ -58,16 +42,17 @@ private:
   bm_handle_t bm_handle;
   void *p_bmrt;
   sentencepiece::SentencePieceProcessor sentencepiece;
+  const bm_net_info_t *net_embed;
+  const bm_net_info_t *net_embed_cache;
+  const bm_net_info_t *net_lm;
   std::vector<const bm_net_info_t *> net_blocks;
   std::vector<const bm_net_info_t *> net_blocks_cache;
-  const bm_net_info_t *net_embed;
-  const bm_net_info_t *net_lm;
-  bm_tensor_t inputs_embed_512, outputs_embed_512;
-  bm_tensor_t inputs_lm, outputs_lm;
-  bm_tensor_t inputs_pid, next_pid, inputs_attention, next_attention;
-  std::vector<bm_tensor_t> past_key;
-  std::vector<bm_tensor_t> past_value;
+  std::vector<bm_tensor_t> inputs_embed_512, outputs_embed_512;
+  std::vector<bm_tensor_t> inputs_pid, next_pid, inputs_attention, next_attention;
+  std::vector<std::vector<bm_tensor_t>> past_key, past_value;
+  std::vector<bm_tensor_t> inputs_lm, outputs_lm;
   std::string name_embed;
+  std::string name_embed_cache;
   std::string name_lm;
   std::vector<std::string> name_blocks;
   std::vector<std::string> name_blocks_cache;
@@ -78,6 +63,8 @@ private:
   std::vector<int> head_prompt{64790, 64792, 64794, 30910,
                                13}; // head + system id + \n
   std::vector<int> system_prompt;
+
+  int device_num;
   int round = 0;
   int token_length;
   int EOS;
@@ -85,9 +72,9 @@ private:
   int NUM_LAYERS;
 };
 
-void ChatGLM::load_sentencepiece() {
-  printf("Load %s ... ", TOKENIZER_MODEL.c_str());
-  auto status = sentencepiece.Load(TOKENIZER_MODEL);
+void ChatGLM::load_sentencepiece(std::string tokenizer_path) {
+  printf("Load %s ... ", tokenizer_path.c_str());
+  auto status = sentencepiece.Load(tokenizer_path);
   if (!status.ok()) {
     std::cout << status.ToString() << std::endl;
     exit(-1);
@@ -96,8 +83,9 @@ void ChatGLM::load_sentencepiece() {
   printf("Done!\n");
 }
 
-void ChatGLM::init(const std::vector<int> &devices, std::string model) {
-  load_sentencepiece();
+void ChatGLM::init(const std::vector<int> &devices, std::string model_path, std::string tokenizer_path) {
+  device_num = devices.size();
+  load_sentencepiece(tokenizer_path);
   // request bm_handle
   std::cout << "Device [ ";
   for (auto d : devices) {
@@ -124,85 +112,144 @@ void ChatGLM::init(const std::vector<int> &devices, std::string model) {
   assert(NULL != p_bmrt);
 
   // load bmodel by file
-  printf("Model[%s] loading ....\n", model.c_str());
-  bool ret = bmrt_load_bmodel(p_bmrt, model.c_str());
+  printf("Model[%s] loading ....\n", model_path.c_str());
+  bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
-  // net names
-  name_embed = "embedding";
-  name_lm = "lm_head";
-  net_embed = bmrt_get_network_info(p_bmrt, name_embed.c_str());
-  net_lm = bmrt_get_network_info(p_bmrt, name_lm.c_str());
-  SEQLEN = net_embed->stages[1].input_shapes[0].dims[0]; // real seqlen
+
+  // set NUM_LAYERS
   auto num_nets = bmrt_get_network_number(p_bmrt);
   NUM_LAYERS = (num_nets - 2) / 2;
+
+  // net names
+  name_embed = "embedding";
+  name_embed_cache = "embedding_cache";
+  name_lm = "lm_head";
   for (int i = 0; i < NUM_LAYERS; i++) {
-    auto block_name = "block_" + std::to_string(i);
-    auto cache_name = "block_cache_" + std::to_string(i);
-    name_blocks.emplace_back(block_name);
-    name_blocks_cache.emplace_back(cache_name);
-    auto block_info = bmrt_get_network_info(p_bmrt, block_name.c_str());
-    auto cache_info = bmrt_get_network_info(p_bmrt, cache_name.c_str());
-    net_blocks.emplace_back(block_info);
-    net_blocks_cache.emplace_back(cache_info);
+    name_blocks.emplace_back("block_" + std::to_string(i));
+    name_blocks_cache.emplace_back("block_cache_" + std::to_string(i));
   }
 
-  // net device mem
-  ret = bmrt_tensor(&inputs_embed_512, p_bmrt, net_embed->input_dtypes[0],
-                    net_embed->stages[1].input_shapes[0]);
-  assert(true == ret);
+  // net infos
+  net_embed = bmrt_get_network_info(p_bmrt, name_embed.c_str());
+  net_embed_cache = bmrt_get_network_info(p_bmrt, name_embed_cache.c_str());
+  net_lm = bmrt_get_network_info(p_bmrt, name_lm.c_str());
+  for (int i = 0; i < NUM_LAYERS; i++) {
+    net_blocks.emplace_back(
+        bmrt_get_network_info(p_bmrt, name_blocks[i].c_str()));
+    net_blocks_cache.emplace_back(
+        bmrt_get_network_info(p_bmrt, name_blocks_cache[i].c_str()));
+  }
 
-  ret = bmrt_tensor(&outputs_embed_512, p_bmrt, net_embed->output_dtypes[0],
-                    net_embed->stages[1].output_shapes[0]);
-  assert(true == ret);
+  // set SEQLEN
+  SEQLEN = net_embed->stages[0].input_shapes[0].dims[1];
 
-  ret = bmrt_tensor(&inputs_pid, p_bmrt, net_blocks[0]->input_dtypes[1],
-                    net_blocks[0]->stages[0].input_shapes[1]);
-  assert(true == ret);
-
-  ret = bmrt_tensor(&inputs_attention, p_bmrt, net_blocks[0]->input_dtypes[2],
-                    net_blocks[0]->stages[0].input_shapes[2]);
-  assert(true == ret);
-
-  ret = bmrt_tensor(&next_pid, p_bmrt, net_blocks_cache[0]->input_dtypes[1],
-                    net_blocks_cache[0]->stages[0].input_shapes[1]);
-  assert(true == ret);
-
-  ret =
-      bmrt_tensor(&next_attention, p_bmrt, net_blocks_cache[0]->input_dtypes[2],
-                  net_blocks_cache[0]->stages[0].input_shapes[2]);
-  assert(true == ret);
-
+  // resize
+  net_blocks.resize(NUM_LAYERS);
+  net_blocks_cache.resize(NUM_LAYERS);
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
-  for (int i = 0; i < NUM_LAYERS; i++) {
-    ret = bmrt_tensor(&past_key[i], p_bmrt, net_blocks[0]->output_dtypes[1],
-                      net_blocks[0]->stages[0].output_shapes[1]);
-    assert(true == ret);
-    ret = bmrt_tensor(&past_value[i], p_bmrt, net_blocks[0]->output_dtypes[2],
-                      net_blocks[0]->stages[0].output_shapes[2]);
+
+  // net device mem
+  inputs_embed_512.resize(net_embed->input_num);
+  for (int i = 0; i < device_num; ++i) {
+    ret = bmrt_tensor_ex(&inputs_embed_512[i], p_bmrt,
+                        net_embed->input_loc_devices[i],
+                        net_embed->input_dtypes[i],
+                        net_embed->stages[0].input_shapes[i]);
     assert(true == ret);
   }
-  ret = bmrt_tensor(&inputs_lm, p_bmrt, net_lm->input_dtypes[0],
-                    net_lm->stages[0].input_shapes[0]);
-  assert(true == ret);
-  ret = bmrt_tensor(&outputs_lm, p_bmrt, net_lm->output_dtypes[0],
-                    net_lm->stages[0].output_shapes[0]);
-  assert(true == ret);
+
+  outputs_embed_512.resize(net_embed->output_num);
+  for (int i = 0; i < device_num; ++i) {
+    ret = bmrt_tensor_ex(&outputs_embed_512[i], p_bmrt,
+                        net_embed->output_loc_devices[i],
+                        net_embed->output_dtypes[i],
+                        net_embed->stages[0].output_shapes[i]);
+    assert(true == ret);
+  }
+
+  inputs_pid.resize(device_num);
+  inputs_attention.resize(device_num);
+  int in_num = net_blocks[0]->input_num / device_num;
+  for (int i = 0; i < device_num; ++i) {
+    ret = bmrt_tensor_ex(&inputs_pid[i], p_bmrt,
+                        net_blocks[0]->input_loc_devices[1 + i * in_num],
+                        net_blocks[0]->input_dtypes[1 + i * in_num],
+                        net_blocks[0]->stages[0].input_shapes[1 + i * in_num]);
+    assert(true == ret);
+
+    ret = bmrt_tensor_ex(&inputs_attention[i], p_bmrt,
+                        net_blocks[0]->input_loc_devices[2 + i * in_num],
+                        net_blocks[0]->input_dtypes[2 + i * in_num],
+                        net_blocks[0]->stages[0].input_shapes[2 + i * in_num]);
+    assert(true == ret);
+  }
+
+
+  next_pid.resize(device_num);
+  next_attention.resize(device_num);
+  int in_num_cache = net_blocks_cache[0]->input_num / device_num;
+  for (int i = 0; i < device_num; ++i) {
+    ret = bmrt_tensor_ex(&next_pid[i], p_bmrt,
+                        net_blocks_cache[0]->input_loc_devices[1 + i * in_num_cache],
+                        net_blocks_cache[0]->input_dtypes[1 + i * in_num_cache],
+                        net_blocks_cache[0]->stages[0].input_shapes[1 + i * in_num_cache]);
+    assert(true == ret);
+
+    ret = bmrt_tensor_ex(&next_attention[i], p_bmrt,
+                        net_blocks_cache[0]->input_loc_devices[2 + i * in_num_cache],
+                        net_blocks_cache[0]->input_dtypes[2 + i * in_num_cache],
+                        net_blocks_cache[0]->stages[0].input_shapes[2 + i * in_num_cache]);
+    assert(true == ret);
+  }
+
+  int out_num = net_blocks[0]->output_num / device_num;
+  for (int i = 0; i < NUM_LAYERS; i++) {
+    past_key[i].resize(device_num);
+    past_value[i].resize(device_num);
+    for (int j = 0; j < device_num; j++) {
+      ret = bmrt_tensor_ex(&past_key[i][j], p_bmrt,
+                          net_blocks[0]->output_loc_devices[1 + j * out_num],
+                          net_blocks[0]->output_dtypes[1 + j * out_num],
+                          net_blocks[0]->stages[0].output_shapes[1 + j * out_num]);
+      assert(true == ret);
+      ret = bmrt_tensor_ex(&past_value[i][j], p_bmrt,
+                          net_blocks[0]->output_loc_devices[2 + j * out_num],
+                          net_blocks[0]->output_dtypes[2 + j * out_num],
+                          net_blocks[0]->stages[0].output_shapes[2 + j * out_num]);
+      assert(true == ret);
+    }
+  }
+
+  inputs_lm.resize(device_num);
+  outputs_lm.resize(device_num);
+  for (int i = 0; i < device_num; ++i) {
+    ret = bmrt_tensor_ex(&inputs_lm[i], p_bmrt, i, net_lm->input_dtypes[0],
+                        net_lm->stages[0].input_shapes[0]);
+    assert(true == ret);
+    ret = bmrt_tensor_ex(&outputs_lm[i], p_bmrt, i, net_lm->output_dtypes[0],
+                        net_lm->stages[0].output_shapes[0]);
+    assert(true == ret);
+  }
 }
 
 void ChatGLM::deinit() {
-  bm_free_device(bm_handle, inputs_embed_512.device_mem);
-  bm_free_device(bm_handle, outputs_embed_512.device_mem);
-  bm_free_device(bm_handle, inputs_lm.device_mem);
-  bm_free_device(bm_handle, outputs_lm.device_mem);
-  bm_free_device(bm_handle, inputs_pid.device_mem);
-  bm_free_device(bm_handle, next_pid.device_mem);
-  bm_free_device(bm_handle, inputs_attention.device_mem);
-  bm_free_device(bm_handle, next_attention.device_mem);
+  for (int i = 0; i < device_num; ++i) {
+    bm_free_device(handles[i], inputs_embed_512[i].device_mem);
+    bm_free_device(handles[i], outputs_embed_512[i].device_mem);
+    bm_free_device(handles[i], inputs_pid[i].device_mem);
+    bm_free_device(handles[i], next_pid[i].device_mem);
+    bm_free_device(handles[i], inputs_attention[i].device_mem);
+    bm_free_device(handles[i], next_attention[i].device_mem);
+    bm_free_device(handles[i], inputs_lm[i].device_mem);
+    bm_free_device(handles[i], outputs_lm[i].device_mem);
+  }
   for (int i = 0; i < NUM_LAYERS; i++) {
-    bm_free_device(bm_handle, past_key[i].device_mem);
-    bm_free_device(bm_handle, past_value[i].device_mem);
+    for (int j = 0; j < device_num; j++) {
+      bm_free_device(handles[j], past_key[i][j].device_mem);
+      bm_free_device(handles[j], past_value[i][j].device_mem);
+    }
   }
   bmrt_destroy(p_bmrt);
   for (auto h : handles) {
@@ -233,7 +280,7 @@ void ChatGLM::move2end(const bm_tensor_t &kv) {
 int ChatGLM::forward_first(std::vector<int> &tokens) {
   std::vector<int> input_ids(SEQLEN, 0);
   std::vector<int> position_id(SEQLEN, 0);
-  std::vector<float> attention_mask(SEQLEN * SEQLEN, 0);
+  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, 0);
 
   input_ids[0] = 64790;
   input_ids[1] = 64792;
@@ -247,81 +294,148 @@ int ChatGLM::forward_first(std::vector<int> &tokens) {
     for (int j = 0; j < SEQLEN; j++) {
       if (j <= i && i < token_length) {
       } else {
-        attention_mask[i * SEQLEN + j] = 1.0;
+        attention_mask[i * SEQLEN + j] = ATTENTION_MASK;
       }
     }
   }
 
   // forward embeding
-  bm_memcpy_s2d(bm_handle, inputs_embed_512.device_mem,
-                (void *)input_ids.data());
+  std::vector<int> input_nums(device_num, 1);
+  std::vector<void*> datas(device_num, (void*)input_ids.data());
+  bmrt_memcpy_s2d_parallel(p_bmrt, inputs_embed_512.data(), datas.data(),
+                          input_nums.data(), device_num);
   auto ret =
-      bmrt_launch_tensor_ex(p_bmrt, name_embed.c_str(), &inputs_embed_512, 1,
-                            &outputs_embed_512, 1, true, false);
+      bmrt_launch_tensor_ex(p_bmrt, name_embed.c_str(),
+                            inputs_embed_512.data(), inputs_embed_512.size(),
+                            outputs_embed_512.data(), outputs_embed_512.size(),
+                            true, false);
   assert(ret);
   bm_thread_sync(bm_handle);
 
   // forward blocks
-  bm_memcpy_s2d(bm_handle, inputs_pid.device_mem, (void *)position_id.data());
-  bm_memcpy_s2d(bm_handle, inputs_attention.device_mem,
-                (void *)attention_mask.data());
-  auto inputs_embed = outputs_embed_512;
-  inputs_embed.shape = net_blocks[0]->stages[0].input_shapes[0];
-  bm_tensor_t inputs_block[3] = {inputs_embed, inputs_pid, inputs_attention};
+  std::vector<void*> pos_id_datas(device_num, position_id.data());
+  std::vector<void*> in_attn_datas(device_num, attention_mask.data());
+  bmrt_memcpy_s2d_parallel(p_bmrt, inputs_pid.data(), pos_id_datas.data(),
+                          input_nums.data(), device_num);
+  bmrt_memcpy_s2d_parallel(p_bmrt, inputs_attention.data(),in_attn_datas.data(),
+                          input_nums.data(), device_num);
+  auto embed_512 = outputs_embed_512;
+  std::vector<bm_tensor_t> inputs_block;
+  std::vector<bm_tensor_t> outputs_block;
+  for (int i = 0; i < device_num; ++i) {
+    embed_512[i].shape = net_blocks[0]->stages[0].input_shapes[0];
+    inputs_block.push_back(embed_512[i]);
+    inputs_block.push_back(inputs_pid[i]);
+    inputs_block.push_back(inputs_attention[i]);
+    outputs_block.push_back(embed_512[i]);
+    outputs_block.push_back(past_key[0][i]);
+    outputs_block.push_back(past_value[0][i]);
+  }
+
   for (int i = 0; i < NUM_LAYERS; i++) {
-    bm_tensor_t outputs_block[3] = {inputs_embed, past_key[i], past_value[i]};
-    ret = bmrt_launch_tensor_ex(p_bmrt, name_blocks[i].c_str(), inputs_block, 3,
-                                outputs_block, 3, true, false);
+    for (int j = 0; j < device_num; ++j) {
+      outputs_block[1 + j * 3] = past_key[i][j];
+      outputs_block[2 + j * 3] = past_value[i][j];
+    }
+    ret = bmrt_launch_tensor_ex(p_bmrt, name_blocks[i].c_str(),
+                                inputs_block.data(), inputs_block.size(),
+                                outputs_block.data(), outputs_block.size(),
+                                true, false);
     assert(ret);
     bm_thread_sync(bm_handle);
-    move2end(past_key[i]);
-    move2end(past_value[i]);
+    for (int j = 0; j < device_num; ++j) {
+      move2end(past_key[i][j]);
+      move2end(past_value[i][j]);
+    }
   }
-  int bytes = inputs_embed.device_mem.size / SEQLEN;
-  bm_memcpy_d2d_byte(bm_handle, inputs_lm.device_mem, 0,
-                     inputs_embed.device_mem, (token_length - 1) * bytes,
+
+  // forward lmhead
+  int bytes = embed_512[0].device_mem.size / SEQLEN;
+  bm_memcpy_d2d_byte(bm_handle, inputs_lm[0].device_mem, 0,
+                     embed_512[0].device_mem, (token_length - 1) * bytes,
                      bytes);
-  ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &inputs_lm, 1,
-                              &outputs_lm, 1, true, false);
+  ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &inputs_lm[0], 1,
+                              &outputs_lm[0], 1, true, false);
   bm_thread_sync(bm_handle);
+
   int token = 0;
-  bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm.device_mem);
+  bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);
   return token;
 }
 
-int ChatGLM::forward_next() {
-  std::vector<float> attention_mask(SEQLEN + 1, 0);
+int ChatGLM::forward_next(int cur_token) {
+  std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = 0; i <= SEQLEN - token_length; i++) {
-    attention_mask[i] = 1.0;
+    attention_mask[i] = ATTENTION_MASK;
   }
   int32_t position_id = token_length - 1;
-  // embedding
-  outputs_lm.shape = net_embed->stages[0].input_shapes[0];
-  auto ret = bmrt_launch_tensor_ex(p_bmrt, name_embed.c_str(), &outputs_lm, 1,
-                                   &inputs_lm, 1, true, false);
+
+  // forward embedding
+  std::vector<bm_tensor_t> inputs_embed;
+  std::vector<void*> input_datas;
+  std::vector<int> input_nums(device_num, 1);
+  for (int i = 0; i < device_num; ++i) {
+    inputs_embed.push_back(outputs_lm[i]); // token_id
+    inputs_embed[i].shape = net_embed_cache->stages[0].input_shapes[0];
+    input_datas.push_back((void*)(&cur_token));
+  }
+  bmrt_memcpy_s2d_parallel(p_bmrt, inputs_embed.data(), input_datas.data(),
+                          input_nums.data(), device_num);
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, name_embed_cache.c_str(),
+                                  inputs_embed.data(), inputs_embed.size(),
+                                  inputs_lm.data(), inputs_lm.size(), true, false);
   assert(ret);
   bm_thread_sync(bm_handle);
-  // blocks
-  bm_memcpy_s2d(bm_handle, next_attention.device_mem,
-                (void *)attention_mask.data());
-  bm_memcpy_s2d(bm_handle, next_pid.device_mem, (void *)&position_id);
-  auto inputs_embed = inputs_lm;
-  inputs_embed.shape = net_blocks_cache[0]->stages[0].input_shapes[0];
+
+  // forward blocks
+  std::vector<void*> attn_datas(device_num, attention_mask.data());
+  std::vector<void*> pid_datas(device_num, &position_id);
+  bmrt_memcpy_s2d_parallel(p_bmrt, next_attention.data(), attn_datas.data(),
+                          input_nums.data(), device_num);
+  bmrt_memcpy_s2d_parallel(p_bmrt, next_pid.data(), pid_datas.data(),
+                          input_nums.data(), device_num);
+                          
+  // WARNING: make inputs_lm device_num                   
+  std::vector<bm_tensor_t> embed_1 = inputs_lm;
+  for (int i = 0; i < device_num; ++i) {
+    embed_1[i].shape = net_blocks_cache[0]->stages[0].input_shapes[0];
+  }
+  std::vector<bm_tensor_t> inputs_block;
+  std::vector<bm_tensor_t> outputs_block;
+  for (int i = 0; i < device_num; ++i) {
+    inputs_block.push_back(embed_1[i]);
+    inputs_block.push_back(next_pid[i]);
+    inputs_block.push_back(next_attention[i]);
+    inputs_block.push_back(past_key[0][i]);
+    inputs_block.push_back(past_value[0][i]);
+    outputs_block.push_back(embed_1[i]);
+    outputs_block.push_back(past_key[0][i]);
+    outputs_block.push_back(past_value[0][i]);
+  }
+
   for (int i = 0; i < NUM_LAYERS; i++) {
-    bm_tensor_t inputs_block[5] = {inputs_embed, next_pid, next_attention,
-                                   past_key[i], past_value[i]};
-    bm_tensor_t outputs_block[3] = {inputs_embed, past_key[i], past_value[i]};
+    for (int j = 0; j < device_num; ++j) {
+      inputs_block[3 + j * 5] = past_key[i][j];
+      inputs_block[4 + j * 5] = past_value[i][j];
+      outputs_block[1 + j * 3] = past_key[i][j];
+      outputs_block[2 + j * 3] = past_value[i][j];
+    }
     ret = bmrt_launch_tensor_ex(p_bmrt, name_blocks_cache[i].c_str(),
-                                inputs_block, 5, outputs_block, 3, true, false);
+                                inputs_block.data(), inputs_block.size(),
+                                outputs_block.data(), outputs_block.size(),
+                                true, false);
     assert(ret);
     bm_thread_sync(bm_handle);
   }
-  outputs_lm.shape = net_lm->stages[0].output_shapes[0];
-  ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &inputs_lm, 1,
-                              &outputs_lm, 1, true, false);
+
+  // forward lmhead
+  ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &inputs_lm[0], 1,
+                              &outputs_lm[0], 1, true, false);
+  assert(ret);
   bm_thread_sync(bm_handle);
+
   int token = 0;
-  bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm.device_mem);
+  bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);
   return token;
 }
 
@@ -378,10 +492,10 @@ void ChatGLM::answer(const std::string &input_str) {
     answer(input_str);
     return;
   }
-  auto time_1 = std::chrono::system_clock::now();
   int pre_token = 0;
+  auto t0 = std::chrono::system_clock::now();
   int token = forward_first(history_tokens);
-  auto time_2 = std::chrono::system_clock::now();
+  auto t1 = std::chrono::system_clock::now();
   while (token != EOS && token_length < SEQLEN) {
     std::string pre_word;
     std::string word;
@@ -396,18 +510,13 @@ void ChatGLM::answer(const std::string &input_str) {
       token_length++;
     }
     tok_num++;
-    token = forward_next();
+    token = forward_next(token);
   }
-  auto time_3 = std::chrono::system_clock::now();
-  // auto tht_dur =
-  //     std::chrono::duration_cast<std::chrono::microseconds>(time_3 - time_0);
-  auto ftl_dur =
-      std::chrono::duration_cast<std::chrono::microseconds>(time_2 - time_1);
-  auto tps_dur =
-      std::chrono::duration_cast<std::chrono::microseconds>(time_3 - time_2);
-  double tps = tok_num / (tps_dur.count() * 1e-6);
-  // double tht = tokens.size() / (tht_dur.count() * 1e-6);
-  printf("\nFTL:%f s, TPS: %f tokens/s\n", ftl_dur.count() * 1e-6, tps);
+  auto t2 = std::chrono::system_clock::now();
+  auto use0 = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0);
+  auto use1 = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1);
+  printf("\n\nfirst token latency: %f s", (use0.count() * 1e-6));
+  printf("\nspeed: %f token/s\n", tok_num / (use1.count() * 1e-6));
   if (token_length >= SEQLEN) {
     history_tokens.clear();
     round = 0;
@@ -444,13 +553,15 @@ void Usage() {
   printf("Usage:\n"
          "  --help         : Show help info.\n"
          "  --model        : Set model path \n"
+         "  --tokenizer    : Set tokenizer path \n"
          "  --devid        : Set devices to run for model, e.g. 1,2. if not "
          "set, use 0\n");
 }
 
-void processArguments(int argc, char *argv[], std::string &chatglm_model,
+void processArguments(int argc, char *argv[], std::string &model_path, std::string &tokenizer_path,
                       std::vector<int> &devices) {
   struct option longOptions[] = {{"model", required_argument, nullptr, 'm'},
+                                 {"tokenizer", required_argument, nullptr, 't'},
                                  {"devid", required_argument, nullptr, 'd'},
                                  {"help", no_argument, nullptr, 'h'},
                                  {nullptr, 0, nullptr, 0}};
@@ -458,18 +569,21 @@ void processArguments(int argc, char *argv[], std::string &chatglm_model,
   int optionIndex = 0;
   int option;
 
-  while ((option = getopt_long(argc, argv, "m:d:h:", longOptions,
+  while ((option = getopt_long(argc, argv, "m:t:d:h:", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
-      chatglm_model = optarg;
+      model_path = optarg;
+      break;
+    case 't':
+      tokenizer_path = optarg;
       break;
     case 'd':
       devices = parseCascadeDevices(optarg);
       break;
     case 'h':
       Usage();
-      exit(EXIT_SUCCESS);
+      exit(EXIT_FAILURE);
     case '?':
       Usage();
       exit(EXIT_FAILURE);
@@ -482,17 +596,18 @@ void processArguments(int argc, char *argv[], std::string &chatglm_model,
 int main(int argc, char **argv) {
   // set your bmodel path here
   printf("Demo for ChatGLM in BM1684X, support ChatGLM1/2/3\n");
-  std::string chatglm_model;
+  std::string model_path;
+  std::string tokenizer_path;
   std::vector<int> devices = {0};
-  processArguments(argc, argv, chatglm_model, devices);
-  if (chatglm_model.empty()) {
+  processArguments(argc, argv, model_path, tokenizer_path, devices);
+  if (model_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);
   }
 
   ChatGLM glm;
   printf("Init Environment ...\n");
-  glm.init(devices, chatglm_model);
+  glm.init(devices, model_path, tokenizer_path);
   printf("==========================\n");
   glm.chat();
   glm.deinit();
