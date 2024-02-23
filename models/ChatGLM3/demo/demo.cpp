@@ -282,11 +282,9 @@ int ChatGLM::forward_first(std::vector<int> &tokens) {
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, 0);
 
-  input_ids[0] = 64790;
-  input_ids[1] = 64792;
-  std::copy(tokens.begin(), tokens.end(), input_ids.data() + 2);
+  std::copy(tokens.begin(), tokens.end(), input_ids.data());
 
-  token_length = tokens.size() + 2;
+  token_length = tokens.size();
   for (int i = 0; i < token_length; i++) {
     position_id[i] = i;
   }
@@ -473,7 +471,7 @@ void ChatGLM::answer(const std::string &input_str) {
     build_system_prompt();
   }
   history_tokens.insert(history_tokens.end(), tokens.begin(), tokens.end());
-
+  
   if (history_tokens.empty()) {
     printf("Sorry: your question is too wierd!!\n");
     round = 0;

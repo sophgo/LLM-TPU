@@ -4,53 +4,29 @@ docker=
 download=
 compile=
 
-while [[ $# -gt 0 ]]; do
-    key="$1"
-
-    case $key in
-        --docker)
-            docker="true"
-            shift
-            ;;
-        --download)
-            download="true"
-            shift
-            ;;
-        --compile)
-            compile="true"
-            shift
-            ;;
-        *)
-            echo "Invalid option: $key" >&2
-            exit 1
-            ;;
-        :)
-            echo "Option -$OPTARG requires an argument." >&2
-            exit 1
-            ;;
-    esac
-done
-
-# install docker
-if [ $docker == "true" ]; then
-  docker pull sophgo/tpuc_dev:latest
-  docker run --privileged --name mlir -v /dev:/dev -v $PWD:/workspace -it sophgo/tpuc_dev:latest bash
-  docker exec -it mlir bash
+#!/bin/bash
+# download bmodel
+if [ ! -d "models" ]; then
+  mkdir models
 fi
 
-# download bmodel
-if [ $download == "true" ]; then
+if [ ! -f "./models/chatglm3-6b_int4_1dev.bmodel" ]; then
+  echo $PWD
   pip install dfss
   python3 -m dfss --url=open@sophgo.com:/LLM/LLM-TPU/chatglm3-6b_int4_1dev.bmodel
+  mv chatglm3-6b_int4_1dev.bmodel ./models
+else
+  echo "Model Exists!"
 fi
 
-# compile demo
-if [ $compile == "true" ]; then
+if [ ! -f "./demo/chatglm" ]; then
   cd demo && rm -rf build && mkdir build && cd build
   cmake .. && make -j
   cp chatglm .. && cd ..
+else
+  echo "chatglm file Exists!"
 fi
 
 # run demo
 source /etc/profile.d/libsophon-bin-path.sh
-./chatglm --model ../chatglm3-6b_int4_1dev.bmodel --tokenizer ../support/tokenizer.model --devid 0
+./demo/chatglm --model ./models/chatglm3-6b_int4_1dev.bmodel --tokenizer ./support/tokenizer.model --devid 0

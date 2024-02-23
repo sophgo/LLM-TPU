@@ -25,6 +25,7 @@ public:
   void init(const std::vector<int> &devid, std::string model_path, std::string tokenizer_path);
   void chat();
   void deinit();
+  int round = 0;
 
 private:
   void answer(const std::string &input_str);
@@ -57,7 +58,6 @@ private:
   std::vector<std::string> name_blocks_cache;
   int SEQLEN;     // read from bmodel
   int NUM_LAYERS; // read from bmodel
-  int round = 0;
   int token_length;
   int EOS;
 };
@@ -409,32 +409,33 @@ void LLama2::chat() {
     std::cout << "\nQuestion: ";
     std::string input_str;
     std::getline(std::cin, input_str);
-    std::string sys_config = R"(
-            [INST] <<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe.  Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.
-
-            If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information.\n<</SYS>>\n\n)";
+    std::string sys_config = R"(<s>[INST] <<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe.  Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\n
+If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information.\n<</SYS>> )";
     if (input_str == "exit") {
       break;
     }
 
-    input_str = sys_config + input_str + " [/INST] ";
     if(history == "") {
-      input_str = sys_config + "\nQuestion:\n" + input_str + "\nAnswer\n:";
+      // input_str = sys_config + "\nQuestion:\n" + input_str + "\nAnswer\n:";
+      history = sys_config + input_str + " [/INST] ";
     }
     else {
-      input_str = "\nQuestion:\n" + input_str + "\nAnswer:\n";
+      history += "[INST]" + input_str + " [/INST] ";
     }
+    std::cout << "Test History is\n" << history << std::endl;
     std::cout << "\nAnswer: " << std::flush;
-    answer(input_str);
+    answer(history);
     std::cout << std::endl;
   }
 }
 
 void LLama2::answer(const std::string &input_str) {
-  history = input_str;
   int tok_num = 1;
   std::vector<int> tokens;
+  std::vector<int> try_token;
   sentencepiece.Encode(history, &tokens);
+  std::string test_input = "<s>";
+  sentencepiece.Encode(test_input, &try_token);
   tokens.insert(tokens.begin(), 1);
   if (tokens.empty()) {
     printf("Sorry: your question is too wierd!!\n");
@@ -484,7 +485,7 @@ void LLama2::answer(const std::string &input_str) {
     round = 0;
     history = history.substr(history.size() / 2);
   } else {
-    history += "\n\n";
+    history += " </s><s>";
     round++;
   }
 }
@@ -560,9 +561,9 @@ void processArguments(int argc, char *argv[], std::string &model_path, std::stri
 int main(int argc, char **argv) {
   // set your bmodel path here
   printf("Demo for LLama2 in BM1684X\n");
-  std::string model_path;
-  std::string tokenizer_path;
-  std::vector<int> devices = {0};
+  std::string model_path = "../models/llama2-7b_int4_1dev.bmodel";
+  std::string tokenizer_path = "../support/tokenizer.model";
+  std::vector<int> devices = {11};
   processArguments(argc, argv, model_path, tokenizer_path, devices);
   if (model_path.empty()) {
     Usage();
