@@ -64,7 +64,7 @@ auto QwenTokenizer::build_prompt(const std::vector<std::string> &history) const
   oss_prompt << "<|im_start|>system\nYou are a helpful assistant.<|im_end|>";
   for (size_t i = 0; i < history.size() - 1; i += 2) {
     oss_prompt << "\n<|im_start|>user\n"
-               << history[i] << "<|im_end|>\n<|im_start|>" << history[i + 1]
+               << history[i] << "<|im_end|>\n<|im_start|>assistant\n" << history[i + 1]
                << "<|im_end|>";
   }
   oss_prompt << "\n<|im_start|>user\n"

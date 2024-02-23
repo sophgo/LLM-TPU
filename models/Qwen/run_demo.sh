@@ -5,68 +5,39 @@ download=
 compile=
 arch=
 
-while [[ $# -gt 0 ]]; do
-    key="$1"
-
-    case $key in
-        --docker)
-            docker="true"
-            shift
-            ;;
-        --download)
-            download="true"
-            shift
-            ;;
-        --compile)
-            compile="true"
-            shift
-            ;;
-        --arch)
-            compile="$2"
-            shift 2
-            ;;
-        *)
-            echo "Invalid option: $key" >&2
-            exit 1
-            ;;
-        :)
-            echo "Option -$OPTARG requires an argument." >&2
-            exit 1
-            ;;
-    esac
-done
-
-# install docker
-if [ $docker == "true" ]; then
-  docker pull sophgo/tpuc_dev:latest
-  docker run --privileged --name mlir -v /dev:/dev -v $PWD:/workspace -it sophgo/tpuc_dev:latest bash
-  docker exec -it mlir bash
+if [ ! -d "models" ]; then
+  mkdir models
 fi
 
-# download bmodel
-if [ $download == "true" ]; then
+if [ ! -f "./models/qwen-7b_int4_1dev.bmodel" ]; then
   pip install dfss
   python3 -m dfss --url=open@sophgo.com:/LLM/LLM-TPU/qwen-7b_int4_1dev.bmodel
+  mv qwen-7b_int4_1dev.bmodel ./models
+else
+  echo "Model Exists!"
 fi
 
 # download libsophon
-if [ $arch == "pcie" ]; then
-  python3 -m dfss --url=open@sophgo.com:/LLM/libsophon-0.5.0_pcie.tar.gz
-  tar xvf libsophon-0.5.0_pcie.tar.gz
-elif [ $arch = "soc" ]; then 
-  python3 -m dfss --url=open@sophgo.com:/LLM/libsophon-0.5.0_soc.tar.gz
-  tar xvf libsophon-0.5.0_soc.tar.gz
-fi
+# if [ $arch == "pcie" ]; then
+#   python3 -m dfss --url=open@sophgo.com:/LLM/libsophon-0.5.0_pcie.tar.gz
+#   tar xvf libsophon-0.5.0_pcie.tar.gz
+# elif [ $arch = "soc" ]; then 
+#   python3 -m dfss --url=open@sophgo.com:/LLM/libsophon-0.5.0_soc.tar.gz
+#   tar xvf libsophon-0.5.0_soc.tar.gz
+# fi
 
-# compile demo
-if [ $compile == "true" ]; then
+if [ ! -f "./demo/qwen" ]; then
   git submodule update --init
   cd demo && rm -rf build && mkdir build && cd build
   cmake .. && make -j
   cp qwen .. && cd ..
+else
+  git submodule update --init
+  cd ./demo
+  echo "qwen file Exists!"
 fi
 
 # run demo
-source /etc/profile.d/libsophon-bin-path.sh
-export LD_LIBRARY_PATH=$PWD/../libsophon-0.5.0/lib
-./qwen --model ../qwen-7b_int4_1dev.bmodel --tokenizer ../support/qwen.tiktoken --devid 0
+# source /etc/profile.d/libsophon-bin-path.sh
+# export LD_LIBRARY_PATH=$PWD/../libsophon-0.5.0/lib
+./qwen --model ../models/qwen-7b_int4_1dev.bmodel --tokenizer ../support/qwen.tiktoken --devid 0

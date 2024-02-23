@@ -107,7 +107,9 @@ typedef struct bm_net_info_s {
 
 typedef struct api_info_s {
   /// @brief api_id to be sent to driver
-  int32_t api_id;
+  uint32_t *api_id;
+  /// @brief size of api_id to be sent to driver
+  size_t api_id_size;
   /// @brief api data to be sent to driver
   uint8_t **api_data;
   /// @brief size of the api data to be sent to driver

@@ -170,7 +170,7 @@ for ((i=0; i<=$num_layers; i++)); do
         --quant_output \
         --chip bm1684x \
         $device_args \
-        --io_alone \
+        --addr_mode io_alone \
         --model block_cache_$i.bmodel
 
     rm *.npz
@@ -182,4 +182,10 @@ popd
 echo $models
 
 model_tool --combine $models -o $out_model
+
+if [ ! -d "../models" ]; then
+    mkdir ../models
+fi
+
+mv $out_model ../models
 
