@@ -81,13 +81,16 @@ else
   echo "$demo file Exists!"
 fi
 
+# env
+chmod -R +777 .
+export LD_LIBRARY_PATH=$PWD/libsophon-0.5.0/lib
+
 # run demo
 if [ $model == "chatglm3-6b" ]; then
   ./$demo --model ./$model\_int4_1dev.bmodel --tokenizer ../models/ChatGLM3/support/tokenizer.model --devid 0
 elif [ $model = "llama2-7b" ]; then 
   ./$demo --model ./$model\_int4_1dev.bmodel --tokenizer ../models/Llama2/support/tokenizer.model --devid 0
 elif [ $model = "qwen-7b" ]; then 
-  export LD_LIBRARY_PATH=$PWD/libsophon-0.5.0/lib
   ./$demo --model ./$model\_int4_1dev.bmodel --tokenizer ../models/Qwen/support/qwen.tiktoken --devid 0
 fi
 
