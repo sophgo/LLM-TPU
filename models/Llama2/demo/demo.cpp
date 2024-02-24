@@ -422,7 +422,6 @@ If a question does not make any sense, or is not factually coherent, explain why
     else {
       history += "[INST]" + input_str + " [/INST] ";
     }
-    std::cout << "Test History is\n" << history << std::endl;
     std::cout << "\nAnswer: " << std::flush;
     answer(history);
     std::cout << std::endl;
