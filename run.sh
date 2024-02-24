@@ -59,7 +59,7 @@ pushd deploy
 
 # download bmodel
 if [ ! -f $model'_int4_1dev.bmodel' ]; then
-  pip install dfss
+  pip3 install dfss
   python3 -m dfss --url=open@sophgo.com:/LLM/LLM-TPU/$model\_int4_1dev.bmodel
 else
   echo "Model Exists!"
