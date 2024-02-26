@@ -365,6 +365,7 @@ void Usage() {
   printf("Usage:\n"
          "  --help         : Show help info.\n"
          "  --model        : Set model path \n"
+         "  --tokenizer    : Set tokenizer path \n"
          "  --devid        : Set devices to run for model, e.g. 1,2. if not "
          "set, use 0\n");
 }

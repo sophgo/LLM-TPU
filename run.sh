@@ -43,7 +43,7 @@ fi
 if [ $arch == "pcie" ]; then
   demo=$demo"_pcie"
 elif [ $arch = "soc" ]; then 
-  demo=demo"_soc"
+  demo=$demo"_soc"
 else
   >&2 echo -e "Error: Invalid name $arch, the input name must be \033[31mpcie|soc\033[0m"
   exit 1
