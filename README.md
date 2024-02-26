@@ -4,6 +4,21 @@
 
 本项目将语言大模型部署到算能BM1684X芯片，在PCIE环境或者SoC环境上都可以顺利运行。
 
+我们所实现的所有模型如下所示：
+
+|Model                |INT4                |INT8                |FP16/BF16           |
+|:-                   |:-                  |:-                  |:-                  |
+|ChatGLM3-6B          |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|
+|Qwen-7B              |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|
+|Qwen-14B             |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|
+|Llama2-7B            |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|
+|Llama2-13B           |                    |:white\_check\_mark:|:white\_check\_mark:|
+|Falcon-40B           |                    |:white\_check\_mark:|:white\_check\_mark:|
+|Baichuan2-7B         |                    |:white\_check\_mark:|                    |
+|WizardCoder-15B      |:white\_check\_mark:|                    |                    |
+|Stable Diffusion     |                    |                    |:white\_check\_mark:|
+|Stable Diffusion XL  |                    |                    |:white\_check\_mark:|
+
 如果您感兴趣，也可以联系我们[SOPHGO](https://www.sophgo.com/)。
 
 # Quick Start
@@ -42,30 +57,13 @@ git clone https://github.com/sophgo/LLM-TPU.git
 
 ### Command Table
 
-全部命令如下表所示
+目前有三个用于演示的模型，全部命令如下表所示
 
 |Model                |INT4                        |INT8                                        |
 |:-                   |:-                          |:-                                          |
 |ChatGLM3-6B          |./run.sh --model chatglm3-6b |./run.sh --model chatglm3-6b --arch pcie    |
 |Llama2-7B            |./run.sh --model llama2-7b --arch soc      |./run.sh --model llama2-7b --arch pcie      |
 |Qwen-7B              |./run.sh --model qwen-7b --arch soc        |./run.sh --model qwen-7b --arch pcie        |
-
-### Model Table
-
-上面只是用于演示的模型，我们所实现的所有模型如下所示：
-
-|Model                |INT4                |INT8                |FP16/BF16           |
-|:-                   |:-                  |:-                  |:-                  |
-|ChatGLM3-6B          |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|
-|Qwen-7B              |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|
-|Qwen-14B             |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|
-|Llama2-7B            |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|
-|Llama2-13B           |                    |:white\_check\_mark:|:white\_check\_mark:|
-|Falcon-40B           |                    |:white\_check\_mark:|:white\_check\_mark:|
-|Baichuan2-7B         |                    |:white\_check\_mark:|                    |
-|WizardCoder-15B      |:white\_check\_mark:|                    |                    |
-|Stable Diffusion     |                    |                    |:white\_check\_mark:|
-|Stable Diffusion XL  |                    |                    |:white\_check\_mark:|
 
 
 # 常见问题
