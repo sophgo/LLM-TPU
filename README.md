@@ -4,7 +4,7 @@
 
 本项目将语言大模型部署到算能BM1684X芯片，在PCIE环境或者SoC环境上都可以顺利运行。
 
-另外本项目还给出了三个模型用于演示，如果您手上有SOC板卡 / Airbox（SOC） / PCIE板卡，也可以参考以下表格完成演示。
+另外本项目还给出了三个模型用于演示，如下表所示，如果您手上有SOC板卡 / Airbox（SOC） / PCIE板卡，也可以参考 Quick Start 这一章节跑通大语言模型。
 
 |Model                |SOC                                        |PCIE                                        |
 |:-                   |:-                                         |:-                                          |
@@ -51,8 +51,13 @@ git clone https://github.com/sophgo/LLM-TPU.git
 
 # 常见问题
 
-Q：如果我的Airbox盒子没有联网，那么怎么跑通大语言模型？
-A：你可以先在联网的大机器上git clone本项目，之后运行 ./run.sh --model llama2-7b --arch soc ，然后把LLM-TPU的全部文件拷贝到Airbox上，必须要是全部文件，包括LLM-TPU/models和LLM-TPU/deploy，最后再在Airbox上运行 ./run.sh --model llama2-7b --arch soc
+### Q：如果我的Airbox盒子没有联网，那么怎么跑通大语言模型？
+
+A：你可以先在联网的大机器上git clone本项目，之后运行 ./run.sh --model llama2-7b --arch soc 
+
+然后把LLM-TPU的全部文件拷贝到Airbox上，必须要是全部文件，包括LLM-TPU/models和LLM-TPU/deploy
+
+最后再在Airbox上运行 ./run.sh --model llama2-7b --arch soc
 
 
 
