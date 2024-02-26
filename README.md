@@ -25,7 +25,7 @@
 #### 1. 克隆LLM-TPU项目，并执行run.sh脚本
 ```
 git clone https://github.com/sophgo/LLM-TPU.git
-./run.sh --model llama2-7b --arch pcie
+./run.sh --model llama2-7b --arch soc
 ```
 
 ### PCIE
@@ -53,7 +53,7 @@ git clone https://github.com/sophgo/LLM-TPU.git
 
 ### Q：如果我的Airbox盒子没有联网，那么怎么跑通大语言模型？
 
-A：你可以先在联网的大机器上git clone本项目，之后运行 ./run.sh --model llama2-7b --arch soc 
+A：您可以先在联网的大机器上git clone本项目，之后运行 ./run.sh --model llama2-7b --arch soc 
 
 然后把LLM-TPU的全部文件拷贝到Airbox上，必须要是全部文件，包括LLM-TPU/models和LLM-TPU/deploy
 
