@@ -81,7 +81,7 @@ struct WizardCoder {
 
     std::string build_prompt(std::string_view) const;
 
-    void init(std::string_view, const std::vector<int>&);
+    void init(std::string_view, std::string_view, const std::vector<int>&);
 
     void answer(std::string_view, int max_new_length = 500);
 
@@ -90,8 +90,9 @@ struct WizardCoder {
 
 void WizardCoder::init(
         std::string_view        model_path,
+        std::string_view        vocab_path,
         const std::vector<int>& devids) {
-    auto tokenizer = GPT2Tokenizer::from_pretrained(VOCAB_DIR);
+    auto tokenizer = GPT2Tokenizer::from_pretrained(vocab_path);
     if (!tokenizer) {
         std::cerr << "No tokenizer\n";
     }
@@ -591,24 +592,29 @@ static std::vector<int> parseCascadeDevices(const std::string& str) {
 void processArguments(
         int               argc,
         char*             argv[],
-        std::string&      llama_model,
+        std::string&      model_path,
+        std::string&      vocab_path,
         std::vector<int>& devices) {
     struct option longOptions[] = {
             {"model", required_argument, nullptr, 'm'},
-            {"dev_id", required_argument, nullptr, 'd'},
+            {"devid", required_argument, nullptr, 'd'},
+            {"vocab", required_argument, nullptr, 'v'},
             {nullptr, 0, nullptr, 0}};
 
     int optionIndex = 0;
     int option;
 
     while ((option = getopt_long(
-                    argc, argv, "m:d:", longOptions, &optionIndex)) != -1) {
+                    argc, argv, "m:d:v:", longOptions, &optionIndex)) != -1) {
         switch (option) {
             case 'm':
-                llama_model = optarg;
+                model_path = optarg;
                 break;
             case 'd':
                 devices = parseCascadeDevices(optarg);
+                break;
+            case 'v':
+                vocab_path = optarg;
                 break;
             case '?':
                 exit(EXIT_FAILURE);
@@ -620,16 +626,16 @@ void processArguments(
 
 int main(int argc, char** argv) {
     printf("Demo for Wizardcoder-15B in BM1684X\n");
-    printf("The location of vocab.json is: %s\n", VOCAB_DIR);
 
-    std::string      wizardcoder_model = "wizardcoder-15b_int4_1dev.bmodel";
+    std::string      model_path = "wizardcoder-15b_int4_1dev.bmodel";
+    std::string      vocab_path = "../vocab/vocab.json";
     std::vector<int> devices = {0};
 
-    processArguments(argc, argv, wizardcoder_model, devices);
+    processArguments(argc, argv, model_path, vocab_path, devices);
 
     printf("Init Environment ...\n");
     WizardCoder model;
-    model.init(wizardcoder_model, devices);
+    model.init(model_path, vocab_path, devices);
 
     model.chat();
 

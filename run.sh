@@ -34,8 +34,10 @@ elif [ $model = "llama2-7b" ]; then
   demo="llama2"
 elif [ $model = "qwen-7b" ]; then 
   demo="qwen"
+elif [ $model = "wizardcoder-15b" ]; then
+  demo="wizardcoder"
 else
-  >&2 echo -e "Error: Invalid name $model, the input name must be \033[31mchatglm3-6b|llama2-7b|qwen-7b\033[0m"
+  >&2 echo -e "Error: Invalid name $model, the input name must be \033[31mchatglm3-6b|llama2-7b|qwen-7b|wizardcoder-15b\033[0m"
   exit 1
 fi
 
@@ -88,10 +90,13 @@ export LD_LIBRARY_PATH=$PWD/libsophon-0.5.0/lib
 # run demo
 if [ $model == "chatglm3-6b" ]; then
   ./$demo --model ./$model\_int4_1dev.bmodel --tokenizer ../models/ChatGLM3/support/tokenizer.model --devid 0
-elif [ $model = "llama2-7b" ]; then 
+elif [ $model = "llama2-7b" ]; then
   ./$demo --model ./$model\_int4_1dev.bmodel --tokenizer ../models/Llama2/support/tokenizer.model --devid 0
-elif [ $model = "qwen-7b" ]; then 
+elif [ $model = "qwen-7b" ]; then
   ./$demo --model ./$model\_int4_1dev.bmodel --tokenizer ../models/Qwen/support/qwen.tiktoken --devid 0
+elif [ $model = "wizardcoder-15b" ]; then
+  ./$demo --model ./$model\_int4_1dev.bmodel --vocab ../models/WizardCoder/vocab/vocab.json --devid 0
 fi
 
 popd
+
