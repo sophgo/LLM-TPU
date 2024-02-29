@@ -16,6 +16,7 @@
 |Falcon-40B           |                    |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/tiiuae/falcon-40b)                          |
 |Baichuan2-7B         |                    |:white\_check\_mark:|                    |[LINK](https://huggingface.co/baichuan-inc/Baichuan2-7B-Chat)             |
 |WizardCoder-15B      |:white\_check\_mark:|                    |                    |[LINK](https://huggingface.co/WizardLM/WizardCoder-15B-V1.0)              |
+|LWM-Text-Chat        |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/LargeWorldModel/LWM-Text-Chat-1M)           |
 |Stable Diffusion     |                    |                    |:white\_check\_mark:|[LINK](https://huggingface.co/runwayml/stable-diffusion-v1-5)             |
 |Stable Diffusion XL  |                    |                    |:white\_check\_mark:|[LINK](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)   |
 
@@ -57,13 +58,15 @@ git clone https://github.com/sophgo/LLM-TPU.git
 
 ### Command Table
 
-目前有三个用于演示的模型，全部命令如下表所示
+目前用于演示的模型，全部命令如下表所示
 
-|Model                |INT4                        |INT8                                        |
-|:-                   |:-                          |:-                                          |
-|ChatGLM3-6B          |./run.sh --model chatglm3-6b |./run.sh --model chatglm3-6b --arch pcie    |
-|Llama2-7B            |./run.sh --model llama2-7b --arch soc      |./run.sh --model llama2-7b --arch pcie      |
-|Qwen-7B              |./run.sh --model qwen-7b --arch soc        |./run.sh --model qwen-7b --arch pcie        |
+|Model                |INT4                                               |INT8                                                |
+|:-                   |:-                                                 |:-                                                  |
+|ChatGLM3-6B          |./run.sh --model chatglm3-6b                       |./run.sh --model chatglm3-6b --arch pcie            |
+|Llama2-7B            |./run.sh --model llama2-7b --arch soc              |./run.sh --model llama2-7b --arch pcie              |
+|Qwen-7B              |./run.sh --model qwen-7b --arch soc                |./run.sh --model qwen-7b --arch pcie                |
+|LWM-Text-Chat        |./run.sh --model lwm-text-chat --arch soc          |./run.sh --model lwm-text-chat --arch pcie          |
+|WizardCoder-15B      |./run.sh --model wizardcoder-15b --arch soc        |./run.sh --model wizardcoder=15b --arch pcie        |
 
 
 # 常见问题
