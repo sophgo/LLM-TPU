@@ -182,10 +182,3 @@ popd
 echo $models
 
 model_tool --combine $models -o $out_model
-
-if [ ! -d "../models" ]; then
-    mkdir ../models
-fi
-
-mv $out_model ../models
-

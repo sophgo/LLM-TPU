@@ -11,7 +11,9 @@
 import os
 import torch
 import argparse
+from tqdm import tqdm
 from transformers import LlamaTokenizer, LlamaForCausalLM
+torch.set_grad_enabled(False)
 
 parser = argparse.ArgumentParser(description='export onnx.')
 parser.add_argument('--model_path', type=str, help='path to the torch model.')
@@ -22,7 +24,12 @@ args = parser.parse_args()
 model_path = args.model_path
 folder = f"./tmp/onnx"
 
-origin_model = LlamaForCausalLM.from_pretrained(model_path).eval()
+origin_model = LlamaForCausalLM.from_pretrained(
+    model_path, trust_remote_code=True).eval()
+
+for param in origin_model.parameters():
+    param.requires_grad = False
+
 config = origin_model.config
 transformer = origin_model.model
 layers = transformer.layers
@@ -33,10 +40,9 @@ HIDDEN_SIZE = config.hidden_size
 NUM_ATTENTION_HEADS = config.num_attention_heads
 HEAD_DIM = HIDDEN_SIZE // NUM_ATTENTION_HEADS
 
-for param in origin_model.parameters():
-    param.requires_grad = False
+print(f'Layers: {NUM_LAYERS}\nHidden size: {HIDDEN_SIZE}\n')
 
-tokenizer = LlamaTokenizer.from_pretrained(model_path)
+tokenizer = LlamaTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
 class Embedding(torch.nn.Module):
 
@@ -51,7 +57,6 @@ class Block(torch.nn.Module):
 
     def __init__(self, layer_id):
         super().__init__()
-        # params
         self.layer_id = layer_id
         self.layer = layers[layer_id]
 
@@ -68,7 +73,6 @@ class BlockCache(torch.nn.Module):
 
     def __init__(self, layer_id):
         super().__init__()
-        # params
         self.layer_id = layer_id
         self.layer = layers[layer_id]
 
@@ -94,13 +98,11 @@ class LmHead(torch.nn.Module):
         _, token = torch.topk(m_logits, 1)
         return token
 
-
 def convert_block(layer_id):
-    # input
+    model = Block(layer_id)
     hidden_states = torch.randn((1, SEQ_LENGTH, HIDDEN_SIZE))
     position_ids = torch.tensor([range(SEQ_LENGTH)], dtype=torch.long)
-    attention_mask = torch.randn((1, 1, SEQ_LENGTH, SEQ_LENGTH))
-    model = Block(layer_id)
+    attention_mask = -1000 * torch.ones((1, 1, SEQ_LENGTH, SEQ_LENGTH), dtype=torch.float32).triu(diagonal=1)
 
     torch.onnx.export(
         model, (hidden_states, position_ids, attention_mask),
@@ -113,13 +115,12 @@ def convert_block(layer_id):
 
 
 def convert_block_cache(layer_id):
-    # input
+    model = BlockCache(layer_id)
     hidden_states = torch.randn((1, 1, HIDDEN_SIZE))
     position_ids = torch.tensor([range(1)], dtype=torch.long)
-    attention_mask = torch.randn((1, 1, 1, SEQ_LENGTH + 1))
+    attention_mask = -1000 * torch.ones((1, 1, 1, SEQ_LENGTH + 1), dtype=torch.float32).triu(diagonal=1)
     past_k = torch.randn((1, SEQ_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM))
     past_v = torch.randn((1, SEQ_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM))
-    model = BlockCache(layer_id)
 
     torch.onnx.export(
         model, (hidden_states, position_ids, attention_mask, past_k, past_v),
@@ -136,8 +137,9 @@ def convert_block_cache(layer_id):
 
 def convert_embedding():
     model = Embedding()
-    input = torch.tensor([range(SEQ_LENGTH)])
-    torch.onnx.export(model, (input),
+    input_ids = torch.tensor([range(SEQ_LENGTH)])
+
+    torch.onnx.export(model, (input_ids),
                       f'{folder}/embedding.onnx',
                       verbose=False,
                       input_names=['input_ids'],
@@ -149,6 +151,7 @@ def convert_embedding():
 def convert_lm_head():
     model = LmHead()
     input = torch.randn(1, HIDDEN_SIZE)
+
     torch.onnx.export(model, (input),
                       f'{folder}/lm_head.onnx',
                       verbose=False,
@@ -157,19 +160,20 @@ def convert_lm_head():
                       do_constant_folding=True,
                       opset_version=15)
 
+
 # create folder to store onnx
 if not os.path.exists(folder):
     os.makedirs(folder)
 
 # export models
-for i in range(NUM_LAYERS):
-    print("convert_block_{}".format(i))
+print(f'Convert block & block_cache')
+for i in tqdm(range(NUM_LAYERS)):
     convert_block_cache(i)
     convert_block(i)
 
-print("convert_embedding")
+print(f'Convert embedding')
 convert_embedding()
 
-print("convert_lm_head")
+print(f'Convert lm_head')
 convert_lm_head()
 

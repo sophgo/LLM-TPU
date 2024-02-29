@@ -11,6 +11,7 @@
 import os
 import torch
 import argparse
+from tqdm import tqdm
 from transformers import AutoModel, AutoTokenizer
 
 parser = argparse.ArgumentParser(description='export onnx.')
@@ -19,10 +20,14 @@ parser.add_argument('--model_path', type=str, help='path to the torch model.')
 args = parser.parse_args()
 
 model_path = args.model_path
-folder = f"tmp/onnx"
+folder = f"./tmp/onnx"
 
-origin_model = AutoModel.from_pretrained(model_path,
-                                         trust_remote_code=True).float().eval()
+origin_model = AutoModel.from_pretrained(
+    model_path, trust_remote_code=True).eval()
+
+for param in origin_model.parameters():
+    param.requires_grad = False
+
 config = origin_model.config
 transformer = origin_model.transformer
 layers = transformer.encoder.layers
@@ -33,8 +38,7 @@ HIDDEN_SIZE = config.hidden_size
 NUM_ATTENTION_HEADS = config.num_attention_heads
 HEAD_DIM = HIDDEN_SIZE // NUM_ATTENTION_HEADS
 
-for param in origin_model.parameters():
-    param.requires_grad = False
+print(f'Layers: {NUM_LAYERS}\nHidden size: {HIDDEN_SIZE}\n')
 
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
@@ -47,11 +51,10 @@ class Embedding(torch.nn.Module):
         return transformer.embedding.word_embeddings(input_ids)
 
 
-class GlmBlock(torch.nn.Module):
+class Block(torch.nn.Module):
 
     def __init__(self, layer_id):
         super().__init__()
-        # params
         self.layer_id = layer_id
         self.layer = layers[layer_id]
 
@@ -64,11 +67,10 @@ class GlmBlock(torch.nn.Module):
         return hidden_states, past_kv
 
 
-class GlmBlockCache(torch.nn.Module):
+class BlockCache(torch.nn.Module):
 
     def __init__(self, layer_id):
         super().__init__()
-        # params
         self.layer_id = layer_id
         self.layer = layers[layer_id]
 
@@ -97,13 +99,10 @@ class LmHead(torch.nn.Module):
 
 
 def convert_block(layer_id):
-    # input
+    model = Block(layer_id)
     hidden_states = torch.randn((SEQ_LENGTH, 1, HIDDEN_SIZE))
     position_ids = torch.tensor([range(SEQ_LENGTH)], dtype=torch.long)
-    attention_mask = torch.ones((1, 1, SEQ_LENGTH, SEQ_LENGTH),
-                                dtype=torch.bool).tril(diagonal=0)
-    model = GlmBlock(layer_id)
-    # hiddeng_states = model(input_ids, position_ids)
+    attention_mask = -1000 * torch.ones((1, 1, SEQ_LENGTH, SEQ_LENGTH), dtype=torch.float32).triu(diagonal=1)
 
     torch.onnx.export(
         model, (hidden_states, position_ids, attention_mask),
@@ -116,15 +115,12 @@ def convert_block(layer_id):
 
 
 def convert_block_cache(layer_id):
-    # input
+    model = BlockCache(layer_id)
     hidden_states = torch.randn((1, 1, HIDDEN_SIZE))
     position_ids = torch.tensor([range(1)], dtype=torch.long)
-    attention_mask = torch.ones((1, 1, 1, SEQ_LENGTH + 1),
-                                dtype=torch.bool).tril(diagonal=0)
+    attention_mask = -1000 * torch.ones((1, 1, 1, SEQ_LENGTH + 1), dtype=torch.float32).triu(diagonal=1)
     past_k = torch.randn((SEQ_LENGTH, 1, 2, HEAD_DIM))
     past_v = torch.randn((SEQ_LENGTH, 1, 2, HEAD_DIM))
-    model = GlmBlockCache(layer_id)
-    # hiddeng_states = model(input_ids, position_ids)
 
     torch.onnx.export(
         model, (hidden_states, position_ids, attention_mask, past_k, past_v),
@@ -141,8 +137,9 @@ def convert_block_cache(layer_id):
 
 def convert_embedding():
     model = Embedding()
-    input = torch.tensor([range(SEQ_LENGTH)])
-    torch.onnx.export(model, (input),
+    input_ids = torch.tensor([range(SEQ_LENGTH)])
+
+    torch.onnx.export(model, (input_ids),
                       f'{folder}/embedding.onnx',
                       verbose=False,
                       input_names=['input_ids'],
@@ -154,6 +151,7 @@ def convert_embedding():
 def convert_lm_head():
     model = LmHead()
     input = torch.randn(1, HIDDEN_SIZE)
+    
     torch.onnx.export(model, (input),
                       f'{folder}/lm_head.onnx',
                       verbose=False,
@@ -167,13 +165,13 @@ if not os.path.exists(folder):
     os.makedirs(folder)
 
 # export models
-for i in range(NUM_LAYERS):
-    print("convert_block_{}".format(i))
-    convert_block_cache(i)
+print(f'Convert block & block_cache')
+for i in tqdm(range(NUM_LAYERS)):
     convert_block(i)
+    convert_block_cache(i)
 
-print("convert_embedding")
+print(f'Convert embedding')
 convert_embedding()
 
-print("convert_lm_head")
+print(f'Convert lm_head')
 convert_lm_head()
