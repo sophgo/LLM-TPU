@@ -6,18 +6,18 @@
 
 我们所实现的所有模型如下所示：
 
-|Model                |INT4                |INT8                |FP16/BF16           |
-|:-                   |:-                  |:-                  |:-                  |
-|ChatGLM3-6B          |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|
-|Qwen-7B              |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|
-|Qwen-14B             |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|
-|Llama2-7B            |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|
-|Llama2-13B           |                    |:white\_check\_mark:|:white\_check\_mark:|
-|Falcon-40B           |                    |:white\_check\_mark:|:white\_check\_mark:|
-|Baichuan2-7B         |                    |:white\_check\_mark:|                    |
-|WizardCoder-15B      |:white\_check\_mark:|                    |                    |
-|Stable Diffusion     |                    |                    |:white\_check\_mark:|
-|Stable Diffusion XL  |                    |                    |:white\_check\_mark:|
+|Model                |INT4                |INT8                |FP16/BF16           |Huggingface Link                                                          |
+|:-                   |:-                  |:-                  |:-                  ||:-                                                                       |
+|ChatGLM3-6B          |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/THUDM/chatglm3-6b)                          |
+|Qwen-7B              |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen-7B-Chat)                          |
+|Qwen-14B             |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen-14B-Chat)                         |
+|Llama2-7B            |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf)              |
+|Llama2-13B           |                    |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/meta-llama/Llama-2-13b-chat-hf)             |
+|Falcon-40B           |                    |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/tiiuae/falcon-40b)                          |
+|Baichuan2-7B         |                    |:white\_check\_mark:|                    |[LINK](https://huggingface.co/baichuan-inc/Baichuan2-7B-Chat)             |
+|WizardCoder-15B      |:white\_check\_mark:|                    |                    |[LINK](https://huggingface.co/WizardLM/WizardCoder-15B-V1.0)              |
+|Stable Diffusion     |                    |                    |:white\_check\_mark:|[LINK](https://huggingface.co/runwayml/stable-diffusion-v1-5)             |
+|Stable Diffusion XL  |                    |                    |:white\_check\_mark:|[LINK](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)   |
 
 如果您感兴趣，也可以联系我们[SOPHGO](https://www.sophgo.com/)。
 
