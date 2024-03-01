@@ -11,7 +11,7 @@ fi
 
 if [ ! -f "./models/qwen-7b_int4_1dev.bmodel" ]; then
   pip install dfss
-  python3 -m dfss --url=open@sophgo.com:/LLM/LLM-TPU/qwen-7b_int4_1dev.bmodel
+  python3 -m dfss --url=open@sophgo.com:/LLM/LLM-TPU/qwen-7b_int4_1dev_none_addr.bmodel
   mv qwen-7b_int4_1dev.bmodel ./models
 else
   echo "Model Exists!"
@@ -40,4 +40,4 @@ fi
 # run demo
 # source /etc/profile.d/libsophon-bin-path.sh
 # export LD_LIBRARY_PATH=$PWD/../libsophon-0.5.0/lib
-./qwen --model ../models/qwen-7b_int4_1dev.bmodel --tokenizer ../support/qwen.tiktoken --devid 0
+./qwen --model ../models/qwen-7b_int4_1dev_none_addr.bmodel --tokenizer ../support/qwen.tiktoken --devid 0
