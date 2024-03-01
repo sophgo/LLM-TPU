@@ -7,7 +7,7 @@ if [ ! -d "../../bmodels" ]; then
 fi
 
 if [ ! -f "../../bmodels/qwen-7b_int4_1dev_none_addr.bmodel" ]; then
-  pip install dfss
+  pip3 install dfss
   python3 -m dfss --url=open@sophgo.com:/LLM/LLM-TPU/qwen-7b_int4_1dev_none_addr.bmodel
   mv qwen-7b_int4_1dev_none_addr.bmodel ../../bmodels
 else
@@ -26,7 +26,7 @@ fi
 if [ ! -f "./demo/qwen" ]; then
   git submodule update --init
   cd demo && rm -rf build && mkdir build && cd build
-  cmake .. && make -j
+  cmake .. && make -j4
   cp qwen .. && cd ../..
 else
   git submodule update --init

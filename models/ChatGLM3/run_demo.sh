@@ -8,7 +8,7 @@ if [ ! -d "../../bmodels" ]; then
 fi
 
 if [ ! -f "../../bmodels/chatglm3-6b_int4_1dev.bmodel" ]; then
-  pip install dfss
+  pip3 install dfss
   python3 -m dfss --url=open@sophgo.com:/LLM/LLM-TPU/chatglm3-6b_int4_1dev.bmodel
   mv chatglm3-6b_int4_1dev.bmodel ../../bmodels
 else
