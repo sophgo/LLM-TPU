@@ -2,9 +2,9 @@
 
 # 介绍
 
-本项目将语言大模型部署到算能BM1684X芯片，在PCIE环境或者SoC环境上都可以顺利运行。
+本项目实现算能BM1684X芯片部署各类开源`生成式AI模型`，其中以LLM为主。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到PCIE环境或者SoC环境。在知乎上写了一篇解读，以`ChatGLM2-6B`为例，方便大家理解源码：[ChatGLM2流程解析与TPU-MLIR部署](https://zhuanlan.zhihu.com/p/641975976)
 
-我们所实现的所有模型如下所示：
+我们已经部署过的开源模型如下：
 
 |Model                |INT4                |INT8                |FP16/BF16           |Huggingface Link                                                          |
 |:-                   |:-                  |:-                  |:-                  |:-                                                                       |
@@ -20,15 +20,19 @@
 |Stable Diffusion     |                    |                    |:white\_check\_mark:|[LINK](https://huggingface.co/runwayml/stable-diffusion-v1-5)             |
 |Stable Diffusion XL  |                    |                    |:white\_check\_mark:|[LINK](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)   |
 
-如果您感兴趣，也可以联系我们[SOPHGO](https://www.sophgo.com/)。
+如果您想要知道转换细节和源码，可以到本项目[models](./models)子目录查看各类模型部署细节。
+
+如果您想看看演示效果，可以根据`Quick Start`内容操作即可。
+
+如果您对我们的芯片感兴趣，也可以通过官网[SOPHGO](https://www.sophgo.com/)联系我们。
 
 # Quick Start
 
-如果您手上有1684X芯片的SOC板卡或者PCIE板卡，例如Airbox（SOC），那么可以参考以下步骤跑通大语言模型，这里以Llama2-7B为例。
+如果您手上有1684X芯片的SoC板卡或者PCIE板卡，例如Airbox（SoC），那么可以参考以下步骤跑通大语言模型，这里以Llama2-7B为例。
 
-另外SOC的执行步骤和PCIE的有些区别，PCIE必须要安装docker后才能运行，这里将其分开说明。
+另外SoC的执行步骤和PCIE的有些区别，PCIE必须要安装docker后才能运行，这里将其分开说明。
 
-### SOC
+### SoC
 
 #### 1. 克隆LLM-TPU项目，并执行run.sh脚本
 ```
@@ -60,18 +64,18 @@ git clone https://github.com/sophgo/LLM-TPU.git
 
 目前用于演示的模型，全部命令如下表所示
 
-|Model                |INT4                                               |INT8                                                |
-|:-                   |:-                                                 |:-                                                  |
-|ChatGLM3-6B          |./run.sh --model chatglm3-6b                       |./run.sh --model chatglm3-6b --arch pcie            |
-|Llama2-7B            |./run.sh --model llama2-7b --arch soc              |./run.sh --model llama2-7b --arch pcie              |
-|Qwen-7B              |./run.sh --model qwen-7b --arch soc                |./run.sh --model qwen-7b --arch pcie                |
-|LWM-Text-Chat        |./run.sh --model lwm-text-chat --arch soc          |./run.sh --model lwm-text-chat --arch pcie          |
-|WizardCoder-15B      |./run.sh --model wizardcoder-15b --arch soc        |./run.sh --model wizardcoder=15b --arch pcie        |
+| Model           | SoC                                         | PCIE                                         |
+| :-------------- | :------------------------------------------ | :------------------------------------------- |
+| ChatGLM3-6B     | ./run.sh --model chatglm3-6b --arch soc     | ./run.sh --model chatglm3-6b --arch pcie     |
+| Llama2-7B       | ./run.sh --model llama2-7b --arch soc       | ./run.sh --model llama2-7b --arch pcie       |
+| Qwen-7B         | ./run.sh --model qwen-7b --arch soc         | ./run.sh --model qwen-7b --arch pcie         |
+| LWM-Text-Chat   | ./run.sh --model lwm-text-chat --arch soc   | ./run.sh --model lwm-text-chat --arch pcie   |
+| WizardCoder-15B | ./run.sh --model wizardcoder-15b --arch soc | ./run.sh --model wizardcoder=15b --arch pcie |
 
 
 # 常见问题
 
-### Q：如果我的Airbox盒子没有联网，那么怎么跑通大语言模型？
+### Q1：如果我的BM1684X环境没有联网，那么怎么跑通大语言模型？
 
 A：您可以先在联网的大机器上git clone本项目，之后运行 ./run.sh --model llama2-7b --arch soc 
 
