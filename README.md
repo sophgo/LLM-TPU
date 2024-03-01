@@ -37,7 +37,7 @@
 #### 1. 克隆LLM-TPU项目，并执行run.sh脚本
 ```
 git clone https://github.com/sophgo/LLM-TPU.git
-./run.sh --model llama2-7b --arch soc
+./run.sh --model llama2-7b
 ```
 
 ### PCIE
