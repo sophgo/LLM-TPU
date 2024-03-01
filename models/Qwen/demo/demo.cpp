@@ -146,7 +146,7 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path, std::st
       auto ret = bm_malloc_device_byte(bm_handle, &past_key[i],
                                        net_blocks_cache[i]->max_input_bytes[3]);
       assert(BM_SUCCESS == ret);
-      auto ret = bm_malloc_device_byte(bm_handle, &past_value[i],
+      ret = bm_malloc_device_byte(bm_handle, &past_value[i],
                                   net_blocks_cache[i]->max_input_bytes[4]);
       assert(BM_SUCCESS == ret);
     }
