@@ -13,7 +13,7 @@
 
 下载本项目，并导出所有的ONNX（其中需要将本项目`files`路径下的`config.json`和`modeling_qwen.py`文件替换到原模型的文件夹下，如下：
 ``` shell
-git clone git@github.com:sophgo/Qwen-TPU.git
+git clone git@github.com:sophgo/LLM-TPU.git
 
 pushd Qwen-TPU
 git submodule update --init
