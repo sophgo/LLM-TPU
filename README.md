@@ -52,7 +52,7 @@ docker exec -it mlir bash
 #### 2. 克隆LLM-TPU项目，并执行run.sh脚本
 ```
 git clone https://github.com/sophgo/LLM-TPU.git
-./run.sh --model llama2-7b --arch pcie
+./run.sh --model llama2-7b
 ```
 
 ### 效果图
@@ -66,22 +66,22 @@ git clone https://github.com/sophgo/LLM-TPU.git
 
 | Model           | SoC                                         | PCIE                                         |
 | :-------------- | :------------------------------------------ | :------------------------------------------- |
-| ChatGLM3-6B     | ./run.sh --model chatglm3-6b --arch soc     | ./run.sh --model chatglm3-6b --arch pcie     |
-| Llama2-7B       | ./run.sh --model llama2-7b --arch soc       | ./run.sh --model llama2-7b --arch pcie       |
-| Qwen-7B         | ./run.sh --model qwen-7b --arch soc         | ./run.sh --model qwen-7b --arch pcie         |
-| LWM-Text-Chat   | ./run.sh --model lwm-text-chat --arch soc   | ./run.sh --model lwm-text-chat --arch pcie   |
-| WizardCoder-15B | ./run.sh --model wizardcoder-15b --arch soc | ./run.sh --model wizardcoder=15b --arch pcie |
+| ChatGLM3-6B     | ./run.sh --model chatglm3-6b      | ./run.sh --model chatglm3-6b      |
+| Llama2-7B       | ./run.sh --model llama2-7b       | ./run.sh --model llama2-7b       |
+| Qwen-7B         | ./run.sh --model qwen-7b        | ./run.sh --model qwen-7b        |
+| LWM-Text-Chat   | ./run.sh --model lwm-text-chat   | ./run.sh --model lwm-text-chat   |
+| WizardCoder-15B | ./run.sh --model wizardcoder-15b  | ./run.sh --model wizardcoder=15b |
 
 
 # 常见问题
 
 ### Q1：如果我的BM1684X环境没有联网，那么怎么跑通大语言模型？
 
-A：您可以先在联网的大机器上git clone本项目，之后运行 ./run.sh --model llama2-7b --arch soc 
+A：您可以先在联网的大机器上git clone本项目，之后运行 ./run.sh --model llama2-7b
 
 然后把LLM-TPU的全部文件拷贝到Airbox上，必须要是全部文件，包括LLM-TPU/models和LLM-TPU/deploy
 
-最后再在Airbox上运行 ./run.sh --model llama2-7b --arch soc
+最后再在Airbox上运行 ./run.sh --model llama2-7b
 
 
 
