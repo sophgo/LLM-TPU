@@ -9,33 +9,39 @@
 
 ## 开发环境准备
 
-### 1. 下载模型(以`Qwen-7B-Chat`为例)
-
-``` shell
-git lfs install
-git clone git@hf.co:Qwen/Qwen-7B-Chat
-```
-
-该工程比较大，会花较长时间。
-并将本项目下的`files/Qwen-7B-Chat`中的文件替换至`Qwen-7B-Chat`下的对应文件。
-
-### 2. 下载本项目`Qwen-TPU`
+### 1. 下载本项目`Qwen-TPU`
 
 下载本项目，并导出所有的ONNX（其中需要将本项目`files`路径下的`config.json`和`modeling_qwen.py`文件替换到原模型的文件夹下，如下：
 ``` shell
 git clone git@github.com:sophgo/Qwen-TPU.git
 
-cd Qwen-TPU
+pushd Qwen-TPU
 git submodule update --init
-cp files/Qwen-7B-Chat/* ../Qwen-7B-Chat
-export PYTHONPATH=$PWD/../Qwen-7B-Chat:$PYTHONPATH
-
-cd compile
-pip install transformers_stream_generator einops tiktoken
-python3 export_onnx.py
+popd
 ```
 
 因为我们采用BF16格式导出ONNX，需要您的环境上带有CUDA。默认x86不支持BF16。14B或1_8B模型需要将`export`指定到对应路径,同时export_onnx.py中的模型路径也许做对应的修改
+
+### 2. 下载pytorch.bin模型(以`Qwen-7B-Chat`为例)(可跳过)
+
+如果你没有nvidia的环境，可以跳过这一步，但必须要执行第四步，下载onnx文件
+
+``` shell
+git lfs install
+git clone git@hf.co:Qwen/Qwen-7B-Chat
+
+pushd Qwen-TPU/compile
+cp files/Qwen-7B-Chat/* ../../Qwen-7B-Chat
+export PYTHONPATH=$PWD/../Qwen-7B-Chat:$PYTHONPATH
+
+pip install transformers_stream_generator einops tiktoken
+python3 export_onnx.py --model_path ../Qwen-7B-Chat
+
+popd
+```
+
+该工程比较大，会花较长时间。
+并将本项目下的`files/Qwen-7B-Chat`中的文件替换至`Qwen-7B-Chat`下的对应文件。
 
 ### 3. 下载docker，启动容器
 
@@ -47,7 +53,18 @@ docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev
 ```
 后文假定环境都在docker的`/workspace`目录。
 
-### 4. 下载`TPU-MLIR`代码并编译
+### 4. 下载onnx模型
+
+由于pytorch.bin转onnx这一步需要nvidia的环境，你也可以直接下载我们转好的模型
+
+``` shell
+cd Qwen-TPU/compile
+pip3 install dfss
+python3 -m dfss --url=open@sophgo.com:/LLM/qwen_8k.zip
+unzip qwen_8k.zip
+```
+
+### 5. 下载`TPU-MLIR`代码并编译
 
 (也可以直接下载编译好的release包解压)
 
@@ -65,19 +82,19 @@ source ./envsetup.sh
 目前TPU-MLIR支持对`Qwen-7B`进行BF16、INT8和INT4量化，且支持多芯分布式推理，默认情况下会进行INT8量化和单芯推理，最终生成`qwen-7b_int8.bmodel`文件。
 
 ```shell
-./compile.sh
+./compile.sh --name qwen-7b
 ```
 
 若要编译int4，或者bf16版本，则加入`--model`参数。如下转int4，最终生成`qwen-7b_int4.bmodel`：
 
 ```shell
-./compile.sh --mode int4
+./compile.sh --mode int4 --name qwen-7b
 ```
 
 若想进行2芯推理，则执行以下命令，最终生成`qwen-7b_int8_2dev.bmodel`文件，4芯8芯同理：
 
 ```shell
-./compile.sh --num_device 2
+./compile.sh --num_device 2 --name qwen-7b
 ```
 
 ## 编译程序(C++版本)
