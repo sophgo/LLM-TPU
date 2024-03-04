@@ -7,86 +7,102 @@
 * 本工程也支持[Qwen-14-Chat](https://huggingface.co/Qwen/Qwen-14B-Chat)，操作方法与`Qwen-7B-Chat`一致。
 * 本工程也支持[Qwen-1_8-Chat](https://huggingface.co/Qwen/Qwen-1_8B-Chat)，操作方法与`Qwen-7B-Chat`一致。
 
+# 目录说明
+```
+.
+├── LLM-TPU                            #LLM-TPU工程
+│    └── models                        #使用说明
+│        └── Qwen                      #Qwen
+│            ├── support               #编译所需的三方文件
+│            ├── Qwen-7B-Chat          #原始pytorch.bin模型
+│            ├── README.md             #使用说明
+│            ├── demo                  #c++代码文件
+│            └── compile               #编译目录
+│                └── tmp               #存放onnx文件
+└── tpu-mlir                           #tpu-mlir工程
+```
+----------------------------
+
 ## 开发环境准备
 
-### 1. 下载本项目`LLM-TPU`
-
-下载本项目，并导出所有的ONNX（其中需要将本项目`files`路径下的`config.json`和`modeling_qwen.py`文件替换到原模型的文件夹下，如下：
-``` shell
-git clone git@github.com:sophgo/LLM-TPU.git
-
-pushd Qwen
-git submodule update --init
-popd
-```
-
-因为我们采用BF16格式导出ONNX，需要您的环境上带有CUDA。默认x86不支持BF16。14B或1_8B模型需要将`export`指定到对应路径,同时export_onnx.py中的模型路径也许做对应的修改
-
-### 2. 下载pytorch.bin模型(以`Qwen-7B-Chat`为例)(可跳过)
-
-如果你没有nvidia的环境，可以跳过这一步，但必须要执行第四步，下载onnx文件
-
-``` shell
-git lfs install
-git clone git@hf.co:Qwen/Qwen-7B-Chat
-
-pushd Qwen/compile
-cp files/Qwen-7B-Chat/* ../../Qwen-7B-Chat
-export PYTHONPATH=$PWD/../Qwen-7B-Chat:$PYTHONPATH
-
-pip install transformers_stream_generator einops tiktoken
-python3 export_onnx.py --model_path ../Qwen-7B-Chat
-
-popd
-```
-
-该工程比较大，会花较长时间。
-并将本项目下的`files/Qwen-7B-Chat`中的文件替换至`Qwen-7B-Chat`下的对应文件。
-
-### 3. 下载docker，启动容器
+### 1. 下载docker，启动容器
 
 ``` shell
 docker pull sophgo/tpuc_dev:latest
 
 # myname1234 is just an example, you can set your own name
-docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev:latest
+docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev:latest bash
+
+docker exec -it myname1234 bash
 ```
 后文假定环境都在docker的`/workspace`目录。
 
-### 4. 下载onnx模型
-
-由于pytorch.bin转onnx这一步需要nvidia的环境，你也可以直接下载我们转好的模型
-
-``` shell
-pushd Qwen/compile
-pip3 install dfss
-python3 -m dfss --url=open@sophgo.com:/LLM/qwen_8k.zip
-unzip qwen_8k.zip
-popd
-```
-
-### 5. 下载`TPU-MLIR`代码并编译
+### 2. 下载`TPU-MLIR`代码并编译
 
 (也可以直接下载编译好的release包解压)
 
 ``` shell
+cd /workspace
 git clone git@github.com:sophgo/tpu-mlir.git
 cd tpu-mlir
 source ./envsetup.sh
 ./build.sh
 ```
 
-## 编译模型
+### 3. 下载本项目`LLM-TPU`
+
+下载本项目，并导出所有的ONNX（其中需要将本项目`files`路径下的`config.json`和`modeling_qwen.py`文件替换到原模型的文件夹下，如下：
+``` shell
+cd /workspace
+git clone git@github.com:sophgo/LLM-TPU.git
+cd LLM-TPU
+git submodule update --init
+```
+
+因为我们采用BF16格式导出ONNX，需要您的环境上带有CUDA。默认x86不支持BF16。14B或1_8B模型需要将`export`指定到对应路径,同时export_onnx.py中的模型路径也许做对应的修改
+
+### 4. 下载pytorch.bin模型(以`Qwen-7B-Chat`为例)(可跳过)
+
+如果你没有nvidia的环境，可以跳过这一步，但必须要执行第四步，下载onnx文件
+
+``` shell
+cd /workspace/LLM-TPU/models/Qwen/
+git lfs install
+git clone git@hf.co:Qwen/Qwen-7B-Chat
+cp compile/files/Qwen-7B-Chat/* Qwen-7B-Chat/
+export PYTHONPATH=$PWD/Qwen-7B-Chat:$PYTHONPATH
+
+pip install transformers_stream_generator einops tiktoken
+cd compile
+python3 export_onnx.py --model_path ../Qwen-7B-Chat
+```
+
+该工程比较大，会花较长时间。
+并将本项目下的`files/Qwen-7B-Chat`中的文件替换至`Qwen-7B-Chat`下的对应文件。
+
+### 4'. 下载onnx模型
+
+由于pytorch.bin转onnx这一步需要nvidia的环境，你也可以直接下载我们转好的模型
+
+``` shell
+cd /workspace/LLM-TPU/models/Qwen/compile
+pip3 install dfss
+python3 -m dfss --url=open@sophgo.com:/LLM/qwen_8k.zip
+unzip qwen_8k.zip
+```
+
+## 5. 编译模型
 
 注意此时在Docker环境workspace目录。
 
-目前TPU-MLIR支持对`Qwen-7B`进行BF16、INT8和INT4量化，且支持多芯分布式推理，默认情况下会进行INT8量化和单芯推理，最终生成`qwen-7b_int8.bmodel`文件。
+目前TPU-MLIR支持对`Qwen-7B`进行BF16、INT8和INT4量化，且支持多芯分布式推理，默认情况下会进行INT8量化和单芯推理，最终生成`qwen-7b_int8_1dev.bmodel`文件。
 
 ```shell
+cd /workspace/LLM-TPU/models/Qwen/compile
 ./compile.sh --name qwen-7b
 ```
 
-若要编译int4，或者bf16版本，则加入`--model`参数。如下转int4，最终生成`qwen-7b_int4.bmodel`：
+若要编译int4版本，则加入`--mode`参数。如下转int4，最终生成`qwen-7b_int4_1dev.bmodel`：
 
 ```shell
 ./compile.sh --mode int4 --name qwen-7b
@@ -98,12 +114,12 @@ source ./envsetup.sh
 ./compile.sh --num_device 2 --name qwen-7b
 ```
 
-## 编译程序(C++版本)
+## 6. 编译程序(C++版本)
 
 执行如下编译 (注意如果是SoC版本，需要把demo目录拷贝到SoC环境编译)：
 
 ```shell
-cd Qwen/demo
+cd /workspace/LLM-TPU/models/Qwen/demo
 mkdir build
 cd build
 cmake ..
