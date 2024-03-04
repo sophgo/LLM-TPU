@@ -1,6 +1,6 @@
 ![](./assets/tpumlir.png)
 
-# Qwen-TPU
+# Qwen
 
 本工程实现BM1684X部署语言大模型[Qwen-7B-Chat](https://huggingface.co/Qwen/Qwen-7B-Chat)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X的PCIE环境，或者SoC环境。
 
@@ -9,13 +9,13 @@
 
 ## 开发环境准备
 
-### 1. 下载本项目`Qwen-TPU`
+### 1. 下载本项目`LLM-TPU`
 
 下载本项目，并导出所有的ONNX（其中需要将本项目`files`路径下的`config.json`和`modeling_qwen.py`文件替换到原模型的文件夹下，如下：
 ``` shell
 git clone git@github.com:sophgo/LLM-TPU.git
 
-pushd Qwen-TPU
+pushd Qwen
 git submodule update --init
 popd
 ```
@@ -30,7 +30,7 @@ popd
 git lfs install
 git clone git@hf.co:Qwen/Qwen-7B-Chat
 
-pushd Qwen-TPU/compile
+pushd Qwen/compile
 cp files/Qwen-7B-Chat/* ../../Qwen-7B-Chat
 export PYTHONPATH=$PWD/../Qwen-7B-Chat:$PYTHONPATH
 
@@ -58,7 +58,7 @@ docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev
 由于pytorch.bin转onnx这一步需要nvidia的环境，你也可以直接下载我们转好的模型
 
 ``` shell
-pushd Qwen-TPU/compile
+pushd Qwen/compile
 pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/LLM/qwen_8k.zip
 unzip qwen_8k.zip
@@ -103,7 +103,7 @@ source ./envsetup.sh
 执行如下编译 (注意如果是SoC版本，需要把demo目录拷贝到SoC环境编译)：
 
 ```shell
-cd Qwen-TPU/demo
+cd Qwen/demo
 mkdir build
 cd build
 cmake ..
