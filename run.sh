@@ -44,22 +44,6 @@ if [[ ! ${model_to_demo[$model]} ]]; then
     exit 1
 fi
 
-# Check Version
-compare_date="20231222"
-if [ $arch == "pcie" ]; then
-    extracted_date=$(cat /proc/bmsophon/driver_version | grep -o 'release date: [0-9]\{8\}' | grep -o '[0-9]\{8\}')
-
-elif [ $arch = "soc" ]; then 
-    extracted_date_str=$(uname -a | grep -oP 'SMP \K[A-Za-z]+\s[A-Za-z]+\s\d+\s\d+:\d+:\d+\s[A-Za-z]+\s\d+' | sed 's/HKT //')
-    extracted_date=$(date -d "$extracted_date_str" '+%Y%m%d')
-fi
-if [ "$extracted_date" -lt "$compare_date" ]; then
-    >&2 echo -e "Your driver is \033[31moutdated\033[0m. Please update your driver."
-    exit 1
-else
-    echo "Driver date is $extracted_date, which is up to date. Continuing..."
-fi
-
 # Compile
 pushd "./models/${model_to_demo[$model]}"
 ./run_demo.sh
