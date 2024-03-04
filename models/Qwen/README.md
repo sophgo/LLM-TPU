@@ -58,10 +58,11 @@ docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev
 由于pytorch.bin转onnx这一步需要nvidia的环境，你也可以直接下载我们转好的模型
 
 ``` shell
-cd Qwen-TPU/compile
+pushd Qwen-TPU/compile
 pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/LLM/qwen_8k.zip
 unzip qwen_8k.zip
+popd
 ```
 
 ### 5. 下载`TPU-MLIR`代码并编译

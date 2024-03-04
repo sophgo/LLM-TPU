@@ -7,7 +7,7 @@
 我们已经部署过的开源模型如下：
 
 |Model                |INT4                |INT8                |FP16/BF16           |Huggingface Link                                                          |
-|:-                   |:-                  |:-                  |:-                  |:-                                                                       |
+|:-                   |:-                  |:-                  |:-                  |:-                                                                        |
 |ChatGLM3-6B          |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/THUDM/chatglm3-6b)                          |
 |Qwen-7B              |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen-7B-Chat)                          |
 |Qwen-14B             |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen-14B-Chat)                         |
@@ -70,7 +70,7 @@ git clone https://github.com/sophgo/LLM-TPU.git
 | Llama2-7B       | ./run.sh --model llama2-7b       | ./run.sh --model llama2-7b       |
 | Qwen-7B         | ./run.sh --model qwen-7b        | ./run.sh --model qwen-7b        |
 | LWM-Text-Chat   | ./run.sh --model lwm-text-chat   | ./run.sh --model lwm-text-chat   |
-| WizardCoder-15B | ./run.sh --model wizardcoder-15b  | ./run.sh --model wizardcoder=15b |
+| WizardCoder-15B | ./run.sh --model wizardcoder-15b  | ./run.sh --model wizardcoder-15b |
 
 
 # 常见问题
