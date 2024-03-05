@@ -108,6 +108,12 @@ cd /workspace/LLM-TPU/models/Qwen/compile
 ./compile.sh --mode int4 --name qwen-7b
 ```
 
+若要编译超长序列版本，则加入`--addr_mode`参数。如下转int4，最终生成`qwen-7b_int4_1dev.bmodel`：
+
+```shell
+./compile.sh --mode int4 --name qwen-7b --addr_mode io_alone
+```
+
 若想进行2芯推理，则执行以下命令，最终生成`qwen-7b_int8_2dev.bmodel`文件，4芯8芯同理：
 
 ```shell
