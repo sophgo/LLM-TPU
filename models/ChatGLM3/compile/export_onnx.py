@@ -23,7 +23,7 @@ model_path = args.model_path
 folder = f"./tmp/onnx"
 
 origin_model = AutoModel.from_pretrained(
-    model_path, trust_remote_code=True).eval()
+    model_path, trust_remote_code=True).float().eval()
 
 for param in origin_model.parameters():
     param.requires_grad = False
