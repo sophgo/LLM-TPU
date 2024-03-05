@@ -11,12 +11,14 @@
 .
 ├── README.md                           #使用说明
 ├── requirements.txt                    #需要使用的python wheel包
-├── assets
 ├── compile
 │   ├── compile.sh                      #用来编译TPU模型的脚本
-│   ├── export_onnx_fast.py             #用来导出onnx的脚本
-│   ├── modeling_baichuan.py            #替换Baichuan2-7B-chat的对应文件的备份
-│   └── torch_inference.py              #torch推理脚本
+│   ├── export_onnx.py                  #用来导出onnx的脚本
+│   ├── torch_inference.py              #torch推理脚本
+│   └── files
+│       └── Baichuan2-7B                #替换Baichuan2-7B-chat的对应文件的备份
+│           ├── config.json
+│           └── modeling_baichuan.py
 ├── demo                                #Baichuan2 c++代码文件
 │   ├── CMakeLists.txt
 │   └── demo.cpp                        #主程序
@@ -102,7 +104,7 @@ python export_onnx_fast.py --model_path your_model_path
 ./compile.sh --mode int8
 ```
 
-* PS1：编译完成后最终会在Llama2-TPU/compile路径下生成名为baichuan2-{X}b_{Y}_{Z}dev.bmodel,其中X为7或13，Y为`compile.sh`时选择的`mode`的数据类型,Z为推理的芯片数量(如果不指定num_device, 会省略{Z}dev的部分)
+* PS1：编译完成后最终会在Baichuan2-TPU/compile路径下生成名为baichuan2-{X}b_{Y}_{Z}dev.bmodel,其中X为7或13，Y为`compile.sh`时选择的`mode`的数据类型,Z为推理的芯片数量(如果不指定num_device, 会省略{Z}dev的部分)
 * PS2：生成bmodel耗时大概3小时以上，建议64G内存以及200G以上硬盘空间，不然很可能OOM或者no space left
 * PS3：目前给定的lib_pcie和lib_soc部分仅包含单芯的动态库，多芯部分会在后续更新
 
@@ -149,7 +151,7 @@ cmake .. -DTARGET_ARCH=soc # soc 只有一颗芯片，因此不支持多芯编�
 make -j
 ```
 
-编译生成llama2可执行程序。
+编译生成Baichuan2可执行程序。
 
 运行`baichuan2`:
 ```shell
