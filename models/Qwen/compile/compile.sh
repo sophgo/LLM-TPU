@@ -7,6 +7,7 @@ num_device=1
 mode_args=""
 device_args=""
 quantize_args="--quantize W8BF16"
+addr_args=""
 name=""
 num_layers=
 out_model=$name.bmodel
@@ -28,9 +29,9 @@ while [[ $# -gt 0 ]]; do
         name="$2"
         shift 2
         ;;
-    --addr_flag)
-        addr_flag=true
-        shift
+    --addr_mode)
+        addr_mode="$2"
+        shift 2
         ;;
     *)
         echo "Invalid option: $key" >&2
@@ -75,9 +76,8 @@ else
     out_model=$name'_'$mode'_1dev.bmodel'
 fi
 
-addr_mode_flag=""
-if [[ "$addr_flag" = true ]]; then
-    addr_mode_flag="--addr_mode io_alone"
+if [ x$addr_mode == x"io_alone" ]; then
+    addr_args="--addr_mode io_alone"
 fi
 
 outdir=${folder}/embedding
@@ -180,7 +180,7 @@ for ((i=0; i<=$num_layers; i++)); do
         --quant_output \
         --chip bm1684x \
         $device_args \
-        $addr_mode_flag \
+        $addr_args \
         --model block_cache_$i.bmodel
 
     rm *.npz
