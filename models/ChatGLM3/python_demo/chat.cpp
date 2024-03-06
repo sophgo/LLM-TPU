@@ -24,16 +24,45 @@
 
 static const uint16_t ATTENTION_MASK = 0xF0E2;
 
+typedef union {
+  float    fval;
+  uint32_t bits;
+  struct {
+    uint32_t frac : 23; // mantissa
+    uint32_t exp  : 8;  // exponent
+    uint32_t sign : 1;  // sign
+  } format;
+} fp32;
+
+static inline uint32_t fp16_ieee_to_fp32_bits(uint16_t h) {
+	const uint32_t w = (uint32_t) h << 16;
+	const uint32_t sign = w & UINT32_C(0x80000000);
+	const uint32_t nonsign = w & UINT32_C(0x7FFFFFFF);
+#ifdef _MSC_VER
+	unsigned long nonsign_bsr;
+	_BitScanReverse(&nonsign_bsr, (unsigned long) nonsign);
+	uint32_t renorm_shift = (uint32_t) nonsign_bsr ^ 31;
+#else
+	uint32_t renorm_shift = __builtin_clz(nonsign);
+#endif
+	renorm_shift = renorm_shift > 5 ? renorm_shift - 5 : 0;
+	const int32_t inf_nan_mask = ((int32_t) (nonsign + 0x04000000) >> 8) & INT32_C(0x7F800000);
+	const int32_t zero_mask = (int32_t) (nonsign - 1) >> 31;
+	return sign | ((((nonsign << renorm_shift >> 3) + ((0x70 - renorm_shift) << 23)) | inf_nan_mask) & ~zero_mask);
+}
+
 class ChatGLM {
 public:
   void init(const std::vector<int> &devid, std::string model_path, std::string tokenizer_path);
   void chat();
   void deinit();
   void answer(const std::string &input_str);
+  std::string predict_option(const std::string &input_str);
 
 private:
   void tokenizer_encode(const std::string &input_str, std::vector<int> &tokens);
   int forward_first(std::vector<int> &tokens);
+  std::vector<uint16_t> forward_first_without_topk(std::vector<int> &tokens); 
   int forward_next(int cur_token);
   void move2end(const bm_tensor_t &kv);
   void load_sentencepiece(std::string tokenizer_path);
@@ -65,6 +94,14 @@ private:
   std::vector<int> head_prompt{64790, 64792, 64794, 30910,
                                13}; // head + system id + \n
   std::vector<int> system_prompt;
+  std::vector<int> option_prompt{316, 347, 319, 367}; // A B C D
+
+  std::map<int, std::string> option_map {
+      {0, "A"},
+      {1, "B"},
+      {2, "C"},
+      {3, "D"}
+  };
 
   int device_num;
   int round = 0;
@@ -525,11 +562,142 @@ void ChatGLM::answer(const std::string &input_str) {
   }
 }
 
+// for c-eval
+std::vector<uint16_t> ChatGLM::forward_first_without_topk(std::vector<int> &tokens) {
+  std::vector<int> input_ids(SEQLEN, 0);
+  std::vector<int> position_id(SEQLEN, 0);
+  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, 0);
+
+  std::copy(tokens.begin(), tokens.end(), input_ids.data());
+
+  token_length = tokens.size();
+  for (int i = 0; i < token_length; i++) {
+    position_id[i] = i;
+  }
+  for (int i = 0; i < SEQLEN; i++) {
+    for (int j = 0; j < SEQLEN; j++) {
+      if (j <= i && i < token_length) {
+      } else {
+        attention_mask[i * SEQLEN + j] = ATTENTION_MASK;
+      }
+    }
+  }
+
+  // forward embeding
+  std::vector<int> input_nums(device_num, 1);
+  std::vector<void*> datas(device_num, (void*)input_ids.data());
+  bmrt_memcpy_s2d_parallel(p_bmrt, inputs_embed_512.data(), datas.data(),
+                          input_nums.data(), device_num);
+  auto ret =
+      bmrt_launch_tensor_ex(p_bmrt, name_embed.c_str(),
+                            inputs_embed_512.data(), inputs_embed_512.size(),
+                            outputs_embed_512.data(), outputs_embed_512.size(),
+                            true, false);
+  assert(ret);
+  bm_thread_sync(bm_handle);
+
+  // forward blocks
+  std::vector<void*> pos_id_datas(device_num, position_id.data());
+  std::vector<void*> in_attn_datas(device_num, attention_mask.data());
+  bmrt_memcpy_s2d_parallel(p_bmrt, inputs_pid.data(), pos_id_datas.data(),
+                          input_nums.data(), device_num);
+  bmrt_memcpy_s2d_parallel(p_bmrt, inputs_attention.data(),in_attn_datas.data(),
+                          input_nums.data(), device_num);
+  auto embed_512 = outputs_embed_512;
+  std::vector<bm_tensor_t> inputs_block;
+  std::vector<bm_tensor_t> outputs_block;
+  for (int i = 0; i < device_num; ++i) {
+    embed_512[i].shape = net_blocks[0]->stages[0].input_shapes[0];
+    inputs_block.push_back(embed_512[i]);
+    inputs_block.push_back(inputs_pid[i]);
+    inputs_block.push_back(inputs_attention[i]);
+    outputs_block.push_back(embed_512[i]);
+    outputs_block.push_back(past_key[0][i]);
+    outputs_block.push_back(past_value[0][i]);
+  }
+
+  for (int i = 0; i < NUM_LAYERS; i++) {
+    for (int j = 0; j < device_num; ++j) {
+      outputs_block[1 + j * 3] = past_key[i][j];
+      outputs_block[2 + j * 3] = past_value[i][j];
+    }
+    ret = bmrt_launch_tensor_ex(p_bmrt, name_blocks[i].c_str(),
+                                inputs_block.data(), inputs_block.size(),
+                                outputs_block.data(), outputs_block.size(),
+                                true, false);
+    assert(ret);
+    bm_thread_sync(bm_handle);
+    for (int j = 0; j < device_num; ++j) {
+      move2end(past_key[i][j]);
+      move2end(past_value[i][j]);
+    }
+  }
+
+  // forward lmhead
+  int bytes = embed_512[0].device_mem.size / SEQLEN;
+  bm_memcpy_d2d_byte(bm_handle, inputs_lm[0].device_mem, 0,
+                     embed_512[0].device_mem, (token_length - 1) * bytes,
+                     bytes);
+  ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &inputs_lm[0], 1,
+                              &outputs_lm[0], 1, true, false);
+  bm_thread_sync(bm_handle);
+
+  int vocab_size = net_lm->stages[0].output_shapes[0].dims[1];
+  std::vector<uint16_t> logits(vocab_size);
+  bm_memcpy_d2s(bm_handle, logits.data(), outputs_lm[0].device_mem);
+  return logits;
+}
+
+std::string ChatGLM::predict_option(const std::string &input_str) {
+  int tok_num = 0;
+  std::vector<int> tokens;
+  std::vector<int> prompt{64795, 30910, 13};
+  sentencepiece.Encode(input_str, &tokens);
+
+  tokens.insert(tokens.begin(), prompt.begin(), prompt.end());
+  tokens.push_back(64796);
+
+  build_system_prompt();
+  history_tokens.insert(history_tokens.end(), tokens.begin(), tokens.end());
+  
+  if (history_tokens.empty()) {
+    history_tokens.clear();
+    printf("Sorry: your question is too wierd!!\n");
+    return {};
+  }
+  // make sure token not too large
+  if ((int)history_tokens.size() > SEQLEN - 10) {
+    // reset
+    history_tokens.clear();
+    printf("Error: your question is too large!\n");
+    return {};
+  }
+
+  std::vector<uint16_t> logits = forward_first_without_topk(history_tokens);
+  if (token_length >= SEQLEN) {
+    history_tokens.clear();
+  }
+
+  // convert fp16 to fp32
+  std::vector<float> fp32_logits;
+  for(int i = 0; i < option_prompt.size(); i++){
+    fp32 t;
+    t.bits = fp16_ieee_to_fp32_bits(logits[option_prompt[i]]);
+    fp32_logits.push_back(t.fval);
+  }
+
+  // get the index of maximum and map the index to option_map
+  auto max_it = std::max_element(fp32_logits.begin(), fp32_logits.end());
+  int max_index = std::distance(fp32_logits.begin(), max_it);
+
+  return option_map[max_index];
+}
+
 PYBIND11_MODULE(chat, m) {
     pybind11::class_<ChatGLM>(m, "ChatGLM")
         .def(pybind11::init<>())
         .def("init", &ChatGLM::init)
         .def("answer", &ChatGLM::answer)
+        .def("predict_option", &ChatGLM::predict_option)
         .def("deinit", &ChatGLM::deinit);
 }
-
