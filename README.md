@@ -97,11 +97,11 @@ git clone https://github.com/sophgo/LLM-TPU.git
 
 | Model           | SoC                                         | PCIE                                         |
 | :-------------- | :------------------------------------------ | :------------------------------------------- |
-| ChatGLM3-6B     | ./run.sh --model chatglm3-6b                | ./run.sh --model chatglm3-6b                 |
-| Llama2-7B       | ./run.sh --model llama2-7b                  | ./run.sh --model llama2-7b                   |
-| Qwen-7B         | ./run.sh --model qwen-7b                    | ./run.sh --model qwen-7b                     |
-| LWM-Text-Chat   | ./run.sh --model lwm-text-chat              | ./run.sh --model lwm-text-chat               |
-| WizardCoder-15B | ./run.sh --model wizardcoder-15b            | ./run.sh --model wizardcoder-15b             |
+| ChatGLM3-6B     | ./run.sh --model chatglm3-6b --arch soc     | ./run.sh --model chatglm3-6b --arch pcie     |
+| Llama2-7B       | ./run.sh --model llama2-7b --arch soc       | ./run.sh --model llama2-7b   --arch pcie     |
+| Qwen-7B         | ./run.sh --model qwen-7b --arch soc         | ./run.sh --model qwen-7b     --arch pcie     |
+| LWM-Text-Chat   | ./run.sh --model lwm-text-chat --arch soc   | ./run.sh --model lwm-text-chat  --arch pcie  |
+| WizardCoder-15B | ./run.sh --model wizardcoder-15b --arch soc | ./run.sh --model wizardcoder-15b --arch pcie |
 
 
 # 常见问题
@@ -116,7 +116,9 @@ A：您可以先在联网的大机器上git clone本项目，之后运行 ./run.
 
 ### Q2：为什么在PCIE模式下，我在docker里运行以后第一次输出会出现如下的warning？
 Warning 部分：
+
 [a53lite_runtime][error] open file /opt/sophon/libsophon-current/lib/tpu_module/libbm1684x_kernel_module.so error!!
+
 [a53lite_runtime][error] /workspace/libsophon/bmlib/src/a53lite_api.cpp 488: load file failed!
 bm_module is null!
 
@@ -131,6 +133,15 @@ sudo dpkg -i sophon-*.deb
 source /etc/profile
 ```
 完成上述步骤后，下次推理时此类warning将不会出现。
+
+### Q3：推理出来精度异常，输出全是“！”
+
+A：可能是由于板子的tpu电压太低了，tpu降频就好了，降频命令如下
+```
+echo "setr tpll_clock 750000000" > /sys/kernel/debug/top/clock
+echo "setr mpll_clock 1800000000" > /sys/kernel/debug/top/clock
+echo "setr vpll_clock 100000000"> /sys/kernel/debug/top/clock
+```
 
 
 

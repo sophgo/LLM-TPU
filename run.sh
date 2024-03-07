@@ -39,6 +39,22 @@ declare -A model_to_demo=(
 # Process Args
 parse_args "$@"
 
+# Check Version
+compare_date="20231222"
+if [ $arch == "pcie" ]; then
+    extracted_date=$(cat /proc/bmsophon/driver_version | grep -o 'release date: [0-9]\{8\}' | grep -o '[0-9]\{8\}')
+
+elif [ $arch = "soc" ]; then 
+    extracted_date_str=$(uname -a | grep -oP 'SMP \K[A-Za-z]+\s[A-Za-z]+\s\d+\s\d+:\d+:\d+\s[A-Za-z]+\s\d+' | sed 's/HKT //')
+    extracted_date=$(date -d "$extracted_date_str" '+%Y%m%d')
+fi
+if [ "$extracted_date" -lt "$compare_date" ]; then
+    >&2 echo -e "Your driver is \033[31moutdated\033[0m. Please update your driver."
+    exit 1
+else
+    echo "Driver date is $extracted_date, which is up to date. Continuing..."
+fi
+
 # Check Model Name
 if [[ ! ${model_to_demo[$model]} ]]; then
     >&2 echo -e "Error: Invalid name $model, the input name must be \033[31mchatglm3-6b|chatglm2-6b|llama2-7b|qwen-7b|wizardcoder-15b\033[0m"
