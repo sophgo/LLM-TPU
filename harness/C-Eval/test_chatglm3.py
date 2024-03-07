@@ -18,12 +18,12 @@ def dump_json(dic, json_path):
 
 def construct_content(subject, dev_row, test_row, example_num):
     sys_pattern = "以下是中国关于{}考试的单项选择题，请选出其中的正确答案。\n\n"
-    question_pattern = "[题目 {}]\nA. {}\nB. {}\nC. {}\nD. \n答案：{}\n"
-    test_pattern = "[测试题目]\nA. {}\nB. {}\nC. {}\nD. \n答案："
+    question_pattern = "{}\nA. {}\nB. {}\nC. {}\nD. {}\n答案：{}\n"
+    test_pattern = "{}\nA. {}\nB. {}\nC. {}\nD. {}\n答案："
 
     res = sys_pattern.format(subject)
     for i in range(example_num):
-        res = res + question_pattern.format(i+1, dev_row[i].question, dev_row[i].A, dev_row[i].B, dev_row[i].C, dev_row[i].D, dev_row[i].anwser)
+        res = res + question_pattern.format(dev_row[i].question, dev_row[i].A, dev_row[i].B, dev_row[i].C, dev_row[i].D, dev_row[i].anwser)
     res = res + test_pattern.format(test_row.question, test_row.A, test_row.B, test_row.C, test_row.D)
     return res
 
