@@ -7,22 +7,6 @@
 * 本工程也支持[Qwen-14-Chat](https://huggingface.co/Qwen/Qwen-14B-Chat)，操作方法与`Qwen-7B-Chat`一致。
 * 本工程也支持[Qwen-1_8-Chat](https://huggingface.co/Qwen/Qwen-1_8B-Chat)，操作方法与`Qwen-7B-Chat`一致。
 
-# 目录说明
-```
-.
-├── LLM-TPU                            #LLM-TPU工程
-│    └── models                        #使用说明
-│        └── Qwen                      #Qwen
-│            ├── support               #编译所需的三方文件
-│            ├── Qwen-7B-Chat          #原始pytorch.bin模型
-│            ├── README.md             #使用说明
-│            ├── demo                  #c++代码文件
-│            └── compile               #编译目录
-│                └── tmp               #存放onnx文件
-└── tpu-mlir                           #tpu-mlir工程
-```
-----------------------------
-
 ## 开发环境准备
 
 ### 1. 下载docker，启动容器
@@ -45,61 +29,67 @@ docker exec -it myname1234 bash
 cd /workspace
 git clone git@github.com:sophgo/tpu-mlir.git
 cd tpu-mlir
-source ./envsetup.sh
-./build.sh
+source ./envsetup.sh  #激活环境变量
+./build.sh #编译mlir
 ```
 
-### 3. 下载本项目`LLM-TPU`
+### 3. 更新第三方库
 
-下载本项目，并导出所有的ONNX（其中需要将本项目`files`路径下的`config.json`和`modeling_qwen.py`文件替换到原模型的文件夹下，如下：
+下载本项目后（可通过下载：
 ``` shell
-cd /workspace
 git clone git@github.com:sophgo/LLM-TPU.git
+```
+更新第三方库:
+``` shell
 cd LLM-TPU
 git submodule update --init
 ```
 
-因为我们采用BF16格式导出ONNX，需要您的环境上带有CUDA。默认x86不支持BF16。14B或1_8B模型需要将`export`指定到对应路径,同时export_onnx.py中的模型路径也许做对应的修改
+### 4. 下载pytorch.bin模型(以`Qwen-7B-Chat`为例)
 
-### 4. 下载pytorch.bin模型(以`Qwen-7B-Chat`为例)(可跳过)
-
-如果你没有nvidia的环境，可以跳过这一步，但必须要执行第四步，下载onnx文件
-
+对于`Qwen-7B` 需要准备显存16G以上的显卡进行模型导出
 ``` shell
-cd /workspace/LLM-TPU/models/Qwen/
+cd LLM-TPU/models/Qwen/
 git lfs install
 git clone git@hf.co:Qwen/Qwen-7B-Chat
 cp compile/files/Qwen-7B-Chat/* Qwen-7B-Chat/
 export PYTHONPATH=$PWD/Qwen-7B-Chat:$PYTHONPATH
 
-pip install transformers_stream_generator einops tiktoken
+pip3 install transformers_stream_generator einops tiktoken
 cd compile
 python3 export_onnx.py --model_path ../Qwen-7B-Chat
 ```
 
 该工程比较大，会花较长时间。
-并将本项目下的`files/Qwen-7B-Chat`中的文件替换至`Qwen-7B-Chat`下的对应文件。
+在导出onnx前，请确保`files/Qwen-7B-Chat`中的文件已经替换了`Qwen-7B-Chat`下的对应文件。（默认sequence length为512）
 
-### 4'. 下载onnx模型
+### 5. 下载onnx模型
 
-由于pytorch.bin转onnx这一步需要nvidia的环境，你也可以直接下载我们转好的模型
+由于pytorch.bin转onnx这一步需要nvidia的环境，你也可以直接下载我们转好的模型（
 
 ``` shell
 cd /workspace/LLM-TPU/models/Qwen/compile
 pip3 install dfss
-python3 -m dfss --url=open@sophgo.com:/LLM/qwen_8k.zip
-unzip qwen_8k.zip
+python3 -m dfss --url=open@sophgo.com:/LLM/qwen_512.zip
+unzip qwen_512.zip
 ```
 
-## 5. 编译模型
+自己导出onnx可以使用
+``` shell
+cd compile
+python3 export_onnx.py --model_path your_qwen_path
+```
+(由于导出过程使用了GPU，请确保本地有足够的GPU 显存)
+
+## 6. 编译模型
 
 注意此时在Docker环境workspace目录。
 
-目前TPU-MLIR支持对`Qwen-7B`进行BF16、INT8和INT4量化，且支持多芯分布式推理，默认情况下会进行INT8量化和单芯推理，最终生成`qwen-7b_int8_1dev.bmodel`文件。
+目前TPU-MLIR支持对`Qwen-7B`进行BF16、INT8和INT4量化，且支持多芯分布式推理，默认情况下会进行INT8量化和单芯推理，最终生成`qwen-7b_int8_1dev.bmodel`文件。（请先确保之前执行了[mlir的编译与环境的激活](#2-下载tpu-mlir代码并编译)).
 
 ```shell
-cd /workspace/LLM-TPU/models/Qwen/compile
-./compile.sh --name qwen-7b
+cd LLM-TPU/models/Qwen/compile
+./compile.sh --name qwen-7b # int8 (defaulted)
 ```
 
 若要编译int4版本，则加入`--mode`参数。如下转int4，最终生成`qwen-7b_int4_1dev.bmodel`：
@@ -131,21 +121,19 @@ cd build
 cmake ..
 make
 ```
-
-编译生成qwen可执行程序，将`qwen`、`qwen-7b_int8.bmodel`和`qwen.tiktoken`拷贝到同一个目录下就可以执行了。
-(`qwen.tiktoken`来自[Qwen-7B-Chat](https://huggingface.co/Qwen/Qwen-7B-Chat))。
+完成后将可执行文件`qwen`移动到`demo`目录下
 
 ## 运行`qwen`
 
 ### a. 命令行交互
 - 单芯推理：使用如下命令。
 ```shell
-./qwen --model qwen-7b_int8.bmodel
+./qwen --model qwen-7b_int8_1dev.bmodel --tokenizer ../support/qwen.tiktoken --devid # devid 默认使用 0 号进行推理
 ```
 
 - 多芯分布式推理：如果是2芯分布式推理，使用如下命令(比如指定在2号和3号芯片上运行, 用`bm-smi`查询芯片id号)：
 ```shell
-./qwen --model qwen-7b_int8_2dev.bmodel --devid 2,3
+./qwen --model qwen-7b_int8_2dev.bmodel --tokenizer ../support/qwen.tiktoken --devid 2,3
 ```
 
 #### 运行效果
@@ -177,7 +165,7 @@ make
 ### demo程序无法正常运行
 
 如果demo程序拷贝到运行环境提示无法运行，比如接口找不到等等错误。
-原因是运行环境的库有所不同，将demo中的`lib_pcie`（PCIE）或者 `lib_soc`(SoC)里面的so文件拷贝到运行环境，链接到里面的so即可。
+原因是运行环境的库有所不同，将demo中的`/support/lib_pcie`（PCIE）或者 `support/lib_soc`(SoC)里面的so文件拷贝到运行环境，链接到里面的so即可。
 
 ### tiktoken是如何用C++支持的
 
