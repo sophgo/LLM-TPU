@@ -58,7 +58,7 @@ python3 -m dfss --url=open@sophgo.com:/LLM/LLM-TPU/sophon-libsophon-dev_0.5.0_am
 python3 -m dfss --url=open@sophgo.com:/LLM/LLM-TPU/sophon-libsophon_0.5.0_amd64.deb
 
 sudo apt remove sophon-driver sophon-libsophon
-sudo apt install ./sophon-driver_0.5.0_amd64.deb ./sophon-libsophon_0.5.0_amd64.deb ./sophon-libsophon-dev_0.5.0_amd64.deb
+sudo dpkg -i sophon-*.deb
 ```
 
 ## 跑通Demo
@@ -114,6 +114,23 @@ A：您可以先在联网的大机器上git clone本项目，之后运行 ./run.
 
 最后再在Airbox上运行 ./run.sh --model llama2-7b
 
+### Q2：为什么在PCIE模式下，我在docker里运行以后第一次输出会出现如下的warning？
+Warning 部分：
+[a53lite_runtime][error] open file /opt/sophon/libsophon-current/lib/tpu_module/libbm1684x_kernel_module.so error!!
+[a53lite_runtime][error] /workspace/libsophon/bmlib/src/a53lite_api.cpp 488: load file failed!
+bm_module is null!
+
+A：这是由于docker内部本身不具有libsophon导致的，解决方法为
+```
+pip3 install dfss
+python3 -m dfss --url=open@sophgo.com:/LLM/LLM-TPU/sophon-driver_0.5.0_amd64.deb
+python3 -m dfss --url=open@sophgo.com:/LLM/LLM-TPU/sophon-libsophon-dev_0.5.0_amd64.deb
+python3 -m dfss --url=open@sophgo.com:/LLM/LLM-TPU/sophon-libsophon_0.5.0_amd64.deb
+
+sudo dpkg -i sophon-*.deb
+source /etc/profile
+```
+完成上述步骤后，下次推理时此类warning将不会出现。
 
 
 
