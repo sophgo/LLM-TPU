@@ -16,7 +16,7 @@ def dump_json(dic, json_path):
         json.dump(dic, json_file)
     return
 
-def construct_content(subject, dev_row, test_row, example_num):
+def construct_prompt(subject, dev_row, test_row, example_num):
     sys_pattern = "以下是中国关于{}考试的单项选择题，请选出其中的正确答案。\n\n"
     question_pattern = "{}\nA. {}\nB. {}\nC. {}\nD. {}\n答案：{}\n"
     test_pattern = "{}\nA. {}\nB. {}\nC. {}\nD. {}\n答案："
@@ -27,7 +27,7 @@ def construct_content(subject, dev_row, test_row, example_num):
     res = res + test_pattern.format(test_row.question, test_row.A, test_row.B, test_row.C, test_row.D)
     return res
 
-def main():
+def main(args):
     # 1. define params
     example_num = 0
     dev_path = "ceval-exam/dev"
@@ -36,19 +36,12 @@ def main():
     subject_path = "subject_mapping.json"
     subject_map = load_json(subject_path)
 
-    # 2. read args
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--devid', type=str, help='Device ID to use.')
-    parser.add_argument('--model_path', type=str, help='Path to the bmodel file.')
-    parser.add_argument('--tokenizer_path', type=str, help='Path to the tokenizer file.')
-    args = parser.parse_args()
-
-    # 3. create engine
+    # 2. create engine
     devices = [int(d) for d in args.devid.split(",")]
     engine = chat.ChatGLM()
     engine.init(devices, args.model_path, args.tokenizer_path)
 
-    # 4. inference
+    # 3. inference
     res = {}
     subject_num = len(os.listdir(test_path))
     print(f"Subject numbers: {subject_num}")
@@ -65,14 +58,19 @@ def main():
 
         subject_dict = {}
         for i in tqdm(range(len(test_df))):
-            content = construct_content(subject_zh, dev_row, test_df.loc[i], example_num)
-            option = engine.predict_option(content)
-            subject_dict[str(i)] = option
+            prompt = construct_prompt(subject_zh, dev_row, test_df.loc[i], example_num)
+            pred = engine.predict_option(prompt)
+            subject_dict[str(i)] = pred
         res[subject] = subject_dict
 
-    # 5. deinit & save
+    # 4. deinit & save
     engine.deinit()
     dump_json(res, submit_path)
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--devid', type=str, help='Device ID to use.')
+    parser.add_argument('--model_path', type=str, help='Path to the bmodel file.')
+    parser.add_argument('--tokenizer_path', type=str, help='Path to the tokenizer file.')
+    args = parser.parse_args()
+    main(args)

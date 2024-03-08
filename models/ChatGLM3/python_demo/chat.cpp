@@ -397,7 +397,6 @@ int ChatGLM::forward_first(std::vector<int> &tokens) {
 
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);
-  std::cout << token << std::endl;
   return token;
 }
 
@@ -474,7 +473,6 @@ int ChatGLM::forward_next(int cur_token) {
 
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);
-  std::cout << token << std::endl;
   return token;
 }
 
@@ -672,7 +670,7 @@ std::string ChatGLM::predict_option(const std::string &input_str) {
   // make sure token not too large
   if ((int)history_tokens.size() > SEQLEN - 10) {
     // reset
-    std::cout << history_tokens.size() << std::endl;
+    std::cout << "Token Size : " << history_tokens.size() << std::endl;
     history_tokens.clear();
     printf("Error: your question is too large!\n");
     return {};
