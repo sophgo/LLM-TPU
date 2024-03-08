@@ -110,7 +110,7 @@ cd LLM-TPU/models/Qwen/compile
 ./compile.sh --num_device 2 --name qwen-7b
 ```
 
-## 6. 编译程序(C++版本)
+## 7. 编译程序(C++版本)
 
 执行如下编译 (注意如果是SoC版本，需要把demo目录拷贝到SoC环境编译)：
 
@@ -254,3 +254,25 @@ tiktoken官方没有C++版本，只有python版本。
     ```
 
     这是因为kv cache只用输出1个单位就可以了，不用全部输出。提升效率。
+
+
+### 如何跑通jacobi编码方案
+
+在第五步下载onnx时，不要下载qwen_8k.zip，而是下载qwen_8k_jacobi.zip
+```shell
+python3 -m dfss --url=open@sophgo.com:/LLM/qwen_8k_jacobi.zip
+```
+
+第六步编译模型时，使用我们所给的compile_jacobi.sh放到LLM-TPU/models/Qwen/compile，并使用如下命令
+```shell
+./compile_jacobi.sh --mode int4 --name qwen-7b --addr_mode io_alone
+```
+
+第七步编译可执行文件时，使用我们所给的demo.cpp 替换 LLM-TPU/models/Qwen/demo/demo.cpp，之后再使用以下方法编译
+```shell
+cd /workspace/LLM-TPU/models/Qwen/demo
+mkdir build
+cd build
+cmake ..
+make
+```
