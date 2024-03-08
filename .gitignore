@@ -4,3 +4,8 @@ deploy/
 *.bmodel
 .vscode
 *.npz
+.cache
+.env
+*.pyc
+*.txt
+*.csv
