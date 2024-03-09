@@ -27,5 +27,5 @@ endif()
 find_package(pybind11 REQUIRED CONFIG)
 pybind11_add_module(chat chat.cpp)
 
-target_link_libraries(chat bmrt bmlib sentencepiece)
+target_link_libraries(chat PUBLIC bmrt bmlib sentencepiece)
 install(TARGETS chat DESTINATION python)
