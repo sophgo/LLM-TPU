@@ -6,7 +6,7 @@ import chat
 
 class Engine:
     def __init__(self, args):
-        # prompt parameters
+        # preprocess parameters, such as prompt & tokenizer
         self.input_str = ""
         self.system_prompt = "You are a helpful assistant."
         self.history = []
@@ -15,6 +15,9 @@ class Engine:
         # model parameters
         self.token_length = 0
         self.SEQLEN = 512
+
+        # postprocess parameters
+        self.mode = "greedy"
 
         # load tokenizer
         print("Load " + args.tokenizer_path + " ...")
@@ -66,7 +69,7 @@ class Engine:
         
         # First token
         first_start = time.time()
-        token = self.model.forward_first(tokens)
+        token = self.forward_first(tokens)
         first_end = time.time()
 
         # Following tokens
@@ -77,7 +80,7 @@ class Engine:
             if self.token_length < self.SEQLEN:
                 self.token_length += 1
             tok_num += 1
-            token = self.model.forward_next(token)
+            token = self.forward_next(token)
         
         # counting time
         next_end = time.time()
@@ -97,6 +100,20 @@ class Engine:
         print()
         print(f"FTL: {first_duration:.3f} s")
         print(f"TPS: {tps:.3f} token/s")
+
+    def forward_first(self, tokens):
+        if self.mode == "greedy":
+            token = self.model.forward_first(tokens)
+        elif self.mode == "sample":
+            token = self.model.forward_first_with_topk(tokens, self.mode)
+        return token
+    
+    def forward_next(self, token):
+        if self.mode == "greedy":
+            token = self.model.forward_next(token)
+        elif self.mode == "sample":
+            token = self.model.forward_next_with_topk(token, self.mode)
+        return token
 
 def main(args):
     engine = Engine(args)

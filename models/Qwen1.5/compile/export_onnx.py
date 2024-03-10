@@ -102,7 +102,30 @@ class LmHead(torch.nn.Module):
         m_logits = origin_model.lm_head(hidden_states)
         _, token = torch.topk(m_logits.float(), 1)
         return token
+    
+# refs:https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py
+class LmHeadTopk(torch.nn.Module):
 
+    def __init__(self, top_k = 50, top_p = 0.8, min_tokens_to_keep = 5):
+        super().__init__()
+        self.top_k = top_k
+        self.top_p = top_p
+        self.min_tokens_to_keep = min_tokens_to_keep
+        self.keep_matrix = torch.zeros((1, self.top_k), dtype=torch.bool)
+        self.keep_matrix[0, :self.min_tokens_to_keep] = True
+
+    def forward(self, hidden_states):
+        hidden_states = transformer.norm(hidden_states)
+        m_logits = origin_model.lm_head(hidden_states)
+        logits, token = torch.topk(m_logits.float(), self.top_k)
+
+        # top_p
+        cumulative_probs = logits.softmax(dim=1).cumsum(dim=1)
+        mask = cumulative_probs < self.top_p
+        mask = mask + self.keep_matrix
+        filtered_logits = torch.where(mask, logits, torch.FloatTensor([-1000.]))
+        probs = filtered_logits.softmax(dim=1)
+        return probs, token
 
 def convert_block(layer_id):
     model = QwenBlock(layer_id)
@@ -187,3 +210,7 @@ convert_embedding()
 
 print(f'Convert lm_head')
 convert_lm_head()
+
+# if you want to generate outputs with topk
+# print(f'Convert lm_head_topk')
+# convert_lm_head()
