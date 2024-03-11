@@ -159,4 +159,22 @@ python web_demo.py --dev 0 --bmodel_path your_bmodel_path
 * PS：尽量下载gradio==3.39.0版本，不然会出现各种问题！！
 
 # 常见问题
-* 请根据实际block数目调整`demo/chat`中或者`web_demo/chat.cpp`中的NUM_LAYERS，默认是使用Llama2-7B(NUM_LAYERS=32)
+
+### 如何跑通Llama2-13B 6芯模型
+
+```shell
+cd /workspace/LLM-TPU/models/Llama2/demo
+mkdir build && cd build
+cmake .. && make && cp llama2 .. && cd ..
+
+python3 -m dfss --url=open@sophgo.com:open/LLM/LLM-TPU/llama2-13b_int4_6dev.bmodel
+
+./llama2 --model llama2-13b_int4_6dev.bmodel --tokenizer ../support/tokenizer.model  --devid 16,17,18,19,20,21
+
+
+python3 -m dfss --url=open@sophgo.com:open/LLM/LLM-TPU/llama2-13b_int8_6dev.bmodel
+
+./llama2 --model llama2-13b_int8_6dev.bmodel --tokenizer ../support/tokenizer.model  --devid 16,17,18,19,20,21
+```
+
+
