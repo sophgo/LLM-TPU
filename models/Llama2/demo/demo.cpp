@@ -130,7 +130,7 @@ void LLama2::init(const std::vector<int> &devices, std::string model_path, std::
   }
 
   // set SEQLEN
-  SEQLEN = net_embed->stages[0].input_shapes[0].dims[1];
+  SEQLEN = net_embed->stages[0].input_shapes[0].dims[0];
 
   // net device mem
   inputs_embed_512.resize(net_embed->input_num);
@@ -366,8 +366,6 @@ int LLama2::forward_next(int cur_token) {
   for (int i = 0; i < device_num; ++i) {
     embed_1[i].shape = net_blocks_cache[0]->stages[0].input_shapes[0];
   }
-  int bytes = bm_mem_get_device_size(past_key[0][0].device_mem) / SEQLEN;
-  int token_offset = (token_length - 1) * bytes;
   std::vector<bm_tensor_t> inputs_block;
   std::vector<bm_tensor_t> outputs_block;
   for (int i = 0; i < device_num; ++i) {
@@ -384,6 +382,8 @@ int LLama2::forward_next(int cur_token) {
     for (int j = 0; j < device_num; ++j) {
       inputs_block[3 + j * 5] = past_key[i][j];
       inputs_block[4 + j * 5] = past_value[i][j];
+      int bytes = bm_mem_get_device_size(past_key[0][j].device_mem) / SEQLEN; // must in loop when devices size = 6
+      int token_offset = (token_length - 1) * bytes;
       bm_set_device_mem(&outputs_block[1 + j * 3].device_mem, bytes,
           bm_mem_get_device_addr(past_key[i][j].device_mem) + token_offset);
       bm_set_device_mem(&outputs_block[2 + j * 3].device_mem, bytes,
