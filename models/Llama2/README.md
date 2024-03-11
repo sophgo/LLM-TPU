@@ -162,6 +162,8 @@ python web_demo.py --dev 0 --bmodel_path your_bmodel_path
 
 ### 如何跑通Llama2-13B 6芯模型
 
+首先按照[这个链接](https://github.com/sophgo/LLM-TPU/tree/main)中的版本检查，检查sophon-driver版本是否是0.5.0，如果是0.4.9的话会挂死
+
 ```shell
 cd /workspace/LLM-TPU/models/Llama2/demo
 mkdir build && cd build
