@@ -194,6 +194,17 @@ def convert_lm_head():
                       do_constant_folding=True,
                       opset_version=15)
 
+def convert_lm_head_topk():
+    model = LmHeadTopk()
+    input = torch.randn(1, HIDDEN_SIZE).bfloat16().to(device)
+
+    torch.onnx.export(model, (input),
+                      f'{folder}/lm_head.onnx',
+                      verbose=False,
+                      input_names=['hidden_states'],
+                      output_names=['token'],
+                      do_constant_folding=True,
+                      opset_version=15)
 
 # create folder to store onnx
 if not os.path.exists(folder):
@@ -213,4 +224,4 @@ convert_lm_head()
 
 # if you want to generate outputs with topk
 # print(f'Convert lm_head_topk')
-# convert_lm_head()
+# convert_lm_head_topk()
