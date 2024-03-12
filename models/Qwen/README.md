@@ -74,7 +74,7 @@ python3 -m dfss --url=open@sophgo.com:/LLM/qwen_512.zip
 unzip qwen_512.zip
 ```
 
-自己导出onnx可以使用
+自己导出onnx可以使用(在此之前请先将`compile/files`中对应模型的`config.json`和`modeling_qwen.py`替换到从Huggingface下载的模型路径中,详细内容[请参考](#常见问题))
 ``` shell
 cd compile
 python3 export_onnx.py --model_path your_qwen_path
@@ -174,7 +174,7 @@ tiktoken官方没有C++版本，只有python版本。
 
 ### 如果编译其他seq_length的模型
 
-将Qwen模型中的config.json中`seq_length`改成对应想要的长度即可
+将Qwen模型中的`config.json`中`seq_length`改成对应想要的长度即可
 
 ### Qwen-7B-Chat做了哪些修改
 
