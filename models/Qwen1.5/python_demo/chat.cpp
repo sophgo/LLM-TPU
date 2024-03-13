@@ -627,7 +627,6 @@ int Qwen::forward_next_with_topk(int cur_token, std::string mode) {
 }
 
 std::vector<int> Qwen::answer(std::vector<int> history_tokens) {
-  int tok_num = 0;
   if (history_tokens.empty()) {
     printf("Sorry: your question is too wierd!!\n");
     history_tokens.clear();
@@ -645,7 +644,6 @@ std::vector<int> Qwen::answer(std::vector<int> history_tokens) {
   int token = forward_first(history_tokens);
   while (token != EOS && token_length < SEQLEN) {
     result_tokens.emplace_back(token);
-    tok_num++;
     token = forward_next(token);
   }
 

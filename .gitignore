@@ -4,3 +4,4 @@ deploy/
 *.bmodel
 .vscode
 *.npz
+__pycache__

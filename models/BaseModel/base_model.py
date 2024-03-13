@@ -1,41 +1,43 @@
 import time
 from transformers import AutoTokenizer
-import chat
 
 class BaseModel:
-    def __init__(self, bmodel_path, tokenizer_path, devid, mode="greedy"):
+    def __init__(self, model_path, tokenizer_path, devid, generation_mode="greedy"):
         # preprocess parameters, such as prompt & tokenizer
         self.input_str = ""
         self.system_prompt = ""
-        self.messages = [{"role": "system", "content": self.system_prompt}]
 
         # model parameters
         self.token_length = 0
         self.SEQLEN = None
-        self.bmodel_path = bmodel_path
+        self.model_path = model_path
         self.tokenizer_path = tokenizer_path
         self.devid = devid
 
         # postprocess parameters
-        if mode not in ["greedy","sample"]:
-            raise ValueError("mode should be in {}, but we get {}".format(["greedy","sample"],mode))
-        self.mode = mode
+        if generation_mode not in ["greedy","sample"]:
+            raise ValueError("generation_mode should be in {}, but we get {}".format(["greedy","sample"], generation_mode))
+        self.generation_mode = generation_mode
 
         # load tokenizer
         print("Load " + self.tokenizer_path + " ...")
         self.sp = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
         self.EOS = self.sp.eos_token_id
 
-        # load model
-        devices = [int(d) for d in self.devid.split(",")]
-        self.model = chat.Qwen()
-        self.model.init(devices, self.sp.eos_token_id, self.bmodel_path)
-
         # warm up
         self.sp.decode([0]) 
         print("Done!")
 
     def generate_tokens(self):
+        pass
+
+    def load_model(self):
+        pass
+
+    def clear(self):
+        pass
+
+    def history_update(self):
         pass
 
     def chat(self):
@@ -53,16 +55,40 @@ f"""\n===========================================================
                 break
             # New Chat
             elif self.input_str in ["clear", "new"]:
-                self.messages = [{"role": "system", "content": self.system_prompt}]
-                continue
+                self.clear()
             # Chat
             else:
-                # tokens_with_template = self.generate_tokens(self.input_str)
-                self.messages.append({"role":"user","content":self.input_str})
                 tokens = self.generate_tokens()
 
                 print("\nAnswer: ")
-                self.stream_answer(tokens)
+                self.answer(tokens)
+                import pdb;pdb.set_trace()
+
+    def answer(self, tokens):
+        self.answer_cur = ""
+
+        if not tokens:
+            print("Sorry: your question is too wierd!!")
+            return
+        if self.token_length > self.SEQLEN:
+            print("The maximum question length should be shorter than {} but we get {} instead.".format(self.SEQLEN, self.token_length))
+            return
+        
+        # Inference
+        start = time.time()
+        result_tokens = self.model.answer(tokens)
+        self.answer_cur = self.sp.decode(result_tokens)
+        print(self.answer_cur, end='')
+        end = time.time()
+        import pdb;pdb.set_trace()
+
+        duration = end - start
+        tps = len(result_tokens) / duration
+
+        self.update_history()
+
+        print()
+        print(f"TPS: {tps:.3f} token/s")
 
     def stream_answer(self, tokens):
         tok_num = 0
@@ -96,29 +122,23 @@ f"""\n===========================================================
         next_duration = next_end - first_end
         tps = tok_num / next_duration
 
-        if self.token_length >= self.SEQLEN - 128:
-            print("... (reach the maximal length)", flush=True, end='')
-            self.messages = self.messages[0]
-            self.messages.append({"role": "user", "content": self.input_str})
-            self.messages.append({"role": "assistant", "content": self.answer_cur})
-        else:
-            self.messages.append({"role": "assistant", "content": self.answer_cur})
+        self.update_history()
 
         print()
         print(f"FTL: {first_duration:.3f} s")
         print(f"TPS: {tps:.3f} token/s")
 
     def forward_first(self, tokens):
-        if self.mode == "greedy":
+        if self.generation_mode == "greedy":
             token = self.model.forward_first(tokens)
-        elif self.mode == "sample":
-            token = self.model.forward_first_with_topk(tokens, self.mode)
+        elif self.generation_mode == "sample":
+            token = self.model.forward_first_with_topk(tokens, self.generation_mode)
         return token
     
     def forward_next(self, token):
-        if self.mode == "greedy":
+        if self.generation_mode == "greedy":
             token = self.model.forward_next(token)
-        elif self.mode == "sample":
-            token = self.model.forward_next_with_topk(token, self.mode)
+        elif self.generation_mode == "sample":
+            token = self.model.forward_next_with_topk(token, self.generation_mode)
         return token
 
