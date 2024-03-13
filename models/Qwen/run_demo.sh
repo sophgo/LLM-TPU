@@ -8,7 +8,7 @@ fi
 
 if [ ! -f "../../bmodels/qwen-7b_int4_1dev_none_addr.bmodel" ]; then
   pip3 install dfss
-  python3 -m dfss --url=open@sophgo.com:/LLM/LLM-TPU/qwen-7b_int4_1dev_none_addr.bmodel
+  python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen-7b_int4_1dev_none_addr.bmodel
   mv qwen-7b_int4_1dev_none_addr.bmodel ../../bmodels
 else
   echo "Bmodel Exists!"
@@ -16,10 +16,10 @@ fi
 
 # download libsophon
 # if [ $arch == "pcie" ]; then
-#   python3 -m dfss --url=open@sophgo.com:/LLM/libsophon-0.5.0_pcie.tar.gz
+#   python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/libsophon-0.5.0_pcie.tar.gz
 #   tar xvf libsophon-0.5.0_pcie.tar.gz
 # elif [ $arch = "soc" ]; then 
-#   python3 -m dfss --url=open@sophgo.com:/LLM/libsophon-0.5.0_soc.tar.gz
+#   python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/libsophon-0.5.0_soc.tar.gz
 #   tar xvf libsophon-0.5.0_soc.tar.gz
 # fi
 

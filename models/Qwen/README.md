@@ -70,7 +70,7 @@ python3 export_onnx.py --model_path ../Qwen-7B-Chat
 ``` shell
 cd /workspace/LLM-TPU/models/Qwen/compile
 pip3 install dfss
-python3 -m dfss --url=open@sophgo.com:/LLM/qwen_512.zip
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/qwen_512.zip
 unzip qwen_512.zip
 ```
 
@@ -260,7 +260,7 @@ tiktoken官方没有C++版本，只有python版本。
 
 在第五步下载onnx时，不要下载qwen_8k.zip，而是下载qwen_8k_jacobi.zip
 ```shell
-python3 -m dfss --url=open@sophgo.com:/LLM/qwen_8k_jacobi.zip
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/qwen_8k_jacobi.zip
 ```
 
 第六步编译模型时，使用我们所给的compile_jacobi.sh放到LLM-TPU/models/Qwen/compile，并使用如下命令

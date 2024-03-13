@@ -6,7 +6,7 @@ fi
 
 if [ ! -f "../../bmodels/llama2-7b_int4_1dev.bmodel" ]; then
   pip3 install dfss
-  python3 -m dfss --url=open@sophgo.com:/LLM/LLM-TPU/llama2-7b_int4_1dev.bmodel
+  python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/llama2-7b_int4_1dev.bmodel
   mv llama2-7b_int4_1dev.bmodel ../../bmodels
 else
   echo "Bmodel Exists!"
