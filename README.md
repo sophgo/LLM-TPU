@@ -44,7 +44,7 @@ uname -v
 之后，会显示类似这样的一个时间`#2 SMP Sat Nov 18 10:07:36 HKT 2023`，如果你的日期>=20231222，也就是比较新，那么跳过这一步，如果日期<20231222，也就是版本比较老，那么参考[这个链接](https://doc.sophgo.com/sdk-docs/v23.09.01-lts/docs_latest_release/docs/SophonSDK_doc/zh/html/sdk_intro/5_update.html#soc)重新安装sdk，刷机包则用以下命令获取
 ```
 pip3 install dfss
-python3 -m dfss --url=open@sophgo.com:/LLM/LLM-TPU/sdcard.tgz
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/sdcard.tgz
 ```
 
 ### PCIE如何执行版本检查
