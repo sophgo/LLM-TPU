@@ -1,60 +1,68 @@
 import time
-import argparse
 from transformers import AutoTokenizer
-
 import chat
 
-class Engine:
-    def __init__(self, args):
+class BaseModel:
+    def __init__(self, bmodel_path, tokenizer_path, devid, mode="greedy"):
         # preprocess parameters, such as prompt & tokenizer
         self.input_str = ""
-        self.system_prompt = "You are a helpful assistant."
-        self.history = []
+        self.system_prompt = ""
         self.messages = [{"role": "system", "content": self.system_prompt}]
 
         # model parameters
         self.token_length = 0
-        self.SEQLEN = 512
+        self.SEQLEN = None
+        self.bmodel_path = bmodel_path
+        self.tokenizer_path = tokenizer_path
+        self.devid = devid
 
         # postprocess parameters
-        self.mode = "greedy"
+        if mode not in ["greedy","sample"]:
+            raise ValueError("mode should be in {}, but we get {}".format(["greedy","sample"],mode))
+        self.mode = mode
 
         # load tokenizer
-        print("Load " + args.tokenizer_path + " ...")
-        self.sp = AutoTokenizer.from_pretrained(args.tokenizer_path, trust_remote_code=True)
+        print("Load " + self.tokenizer_path + " ...")
+        self.sp = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
         self.EOS = self.sp.eos_token_id
 
         # load model
-        devices = [int(d) for d in args.devid.split(",")]
+        devices = [int(d) for d in self.devid.split(",")]
         self.model = chat.Qwen()
-        self.model.init(devices, self.sp.eos_token_id, args.model_path)
+        self.model.init(devices, self.sp.eos_token_id, self.bmodel_path)
 
         # warm up
         self.sp.decode([0]) 
         print("Done!")
 
+    def generate_tokens(self):
+        pass
+
     def chat(self):
+        # Instruct:
+        print(
+f"""\n===========================================================
+1. If you want to quit, please entry one of [q, quit, exit]
+2. To create new chat-session, please entry one of [clear, new]
+===========================================================""")
         # Stop Chatting with "exit" input
         while True:
             self.input_str = input("\nQuestion: ")
-            if self.input_str == "exit":
+            # Quit
+            if self.input_str in ["exit", "q", "quit"]:
                 break
+            # New Chat
+            elif self.input_str in ["clear", "new"]:
+                self.messages = [{"role": "system", "content": self.system_prompt}]
+                continue
+            # Chat
+            else:
+                # tokens_with_template = self.generate_tokens(self.input_str)
+                self.messages.append({"role":"user","content":self.input_str})
+                tokens = self.generate_tokens()
 
-            # tokens_with_template = self.generate_tokens(self.input_str)
-            self.messages.append({"role":"user","content":self.input_str})
-            text = self.sp.apply_chat_template(
-                self.messages,
-                tokenize=False,
-                add_generation_prompt=True
-            )
-            tokens = self.sp(text).input_ids
-
-            print("\nAnswer: ")
-            self.stream_answer(tokens)
-
-            # if you want to use non-stream answer
-            # res = self.model.answer(tokens)
-            # print(self.sp.decode(res))
+                print("\nAnswer: ")
+                self.stream_answer(tokens)
 
     def stream_answer(self, tokens):
         tok_num = 0
@@ -90,7 +98,6 @@ class Engine:
 
         if self.token_length >= self.SEQLEN - 128:
             print("... (reach the maximal length)", flush=True, end='')
-            self.history.clear()
             self.messages = self.messages[0]
             self.messages.append({"role": "user", "content": self.input_str})
             self.messages.append({"role": "assistant", "content": self.answer_cur})
@@ -115,14 +122,3 @@ class Engine:
             token = self.model.forward_next_with_topk(token, self.mode)
         return token
 
-def main(args):
-    engine = Engine(args)
-    engine.chat()
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--devid', type=str, help='Device ID to use.')
-    parser.add_argument('--model_path', type=str, help='Path to the bmodel file.')
-    parser.add_argument('--tokenizer_path', type=str, help='Path to the tokenizer file.')
-    args = parser.parse_args()
-    main(args)
