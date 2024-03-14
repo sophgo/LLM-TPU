@@ -75,7 +75,7 @@ f"""\n===========================================================
         # Inference
         start = time.time()
         result_tokens = self.model.answer(tokens)
-        self.answer_cur = self.sp.decode(result_tokens)
+        self.answer_cur = self.sp.decode(result_tokens, skip_special_tokens=True)
         print(self.answer_cur, end='')
         end = time.time()
 
@@ -105,7 +105,7 @@ f"""\n===========================================================
 
         # Following tokens
         while token != self.sp.eos_token_id and self.token_length < self.SEQLEN:
-            diff = self.sp.decode([token])
+            diff = self.sp.decode([token], skip_special_tokens=True)
             self.answer_cur += diff
             print(diff, flush=True, end='')
             if self.token_length < self.SEQLEN:
