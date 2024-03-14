@@ -12,7 +12,7 @@ class BaseModel:
         self.SEQLEN = None
         self.model_path = model_path
         self.tokenizer_path = tokenizer_path
-        self.devid = devid
+        self.devices = [int(d) for d in devid.split(",")]
 
         # postprocess parameters
         if generation_mode not in ["greedy","sample"]:
@@ -59,7 +59,7 @@ f"""\n===========================================================
             else:
                 tokens = self.generate_tokens()
 
-                print("\nAnswer: ")
+                print("\nAnswer: ", end='')
                 self.stream_answer(tokens)
 
     def answer(self, tokens):
