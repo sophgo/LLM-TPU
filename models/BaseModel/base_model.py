@@ -22,7 +22,6 @@ class BaseModel:
         # load tokenizer
         print("Load " + self.tokenizer_path + " ...")
         self.sp = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
-        self.EOS = self.sp.eos_token_id
 
         # warm up
         self.sp.decode([0]) 
@@ -61,8 +60,7 @@ f"""\n===========================================================
                 tokens = self.generate_tokens()
 
                 print("\nAnswer: ")
-                self.answer(tokens)
-                import pdb;pdb.set_trace()
+                self.stream_answer(tokens)
 
     def answer(self, tokens):
         self.answer_cur = ""
@@ -80,7 +78,6 @@ f"""\n===========================================================
         self.answer_cur = self.sp.decode(result_tokens)
         print(self.answer_cur, end='')
         end = time.time()
-        import pdb;pdb.set_trace()
 
         duration = end - start
         tps = len(result_tokens) / duration
@@ -107,7 +104,7 @@ f"""\n===========================================================
         first_end = time.time()
 
         # Following tokens
-        while token != self.EOS and self.token_length < self.SEQLEN:
+        while token != self.sp.eos_token_id and self.token_length < self.SEQLEN:
             diff = self.sp.decode([token])
             self.answer_cur += diff
             print(diff, flush=True, end='')
