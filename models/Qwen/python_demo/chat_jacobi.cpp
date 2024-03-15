@@ -26,7 +26,6 @@
 static const int WINDOW_SIZE = 3;
 static const int N_GRAM = 3;
 static const int G_CANDI = 3;
-static const int GUESS_LEN = 8;
 static const uint16_t ATTENTION_MASK = 0xC61C; // -9984 by bfloat16
 
 class Qwen {
@@ -34,17 +33,21 @@ public:
   void init(const std::vector<int> &devid, int eos_token_id, std::string model_path);
   void chat();
   void deinit();
-  int forward_first(std::vector<int> &tokens);
-  int forward_next(int cur_token);
+  int forward_first_with_topk(std::vector<int> &tokens, std::string generation_mode = "sample");
+  int forward_next_with_topk(int cur_token, std::string generation_mode = "sample");
   std::vector<int> answer(std::vector<int> history_tokens);
+
+  std::mt19937 sgen;
+  Qwen() : sgen(std::random_device()()) {};
+  int sample(const std::vector<float>& probs, const std::vector<int>& tokens);
+  std::vector<int> jacobi_sample(const std::vector<float>& probs, const std::vector<int>& tokens);
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
   std::vector<uint16_t> make_next_mask();
   std::vector<int> make_next_pid();
-  int lookahead_first(bm_device_mem_t &lm_out_mem);
-  void lookahead_next(bm_device_mem_t &lm_out_mem);
+  void lookahead_next(std::vector<int> &sampled_tokens);
 
 
 private:
@@ -71,6 +74,7 @@ private:
   int verify_num;
   int window_offset;
   int candi_offset;
+  int GUESS_LEN;
   std::vector<int> my_guess;
   std::map<int, std::vector<int>> token_map;
   int past_tokens[N_GRAM][WINDOW_SIZE];
@@ -107,10 +111,6 @@ void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
 void Qwen::init(const std::vector<int> &devices, int eos_token_id, std::string model_path) {
   // params
   EOS = eos_token_id;
-  
-  // jacobi
-  window_offset = G_CANDI * (N_GRAM - 1) + 1;
-  candi_offset = 1; // GUESS_LEN - G_CANDI * (N_GRAM - 1);
 
   // request bm_handle
   std::cout << "Device [ ";
@@ -147,6 +147,11 @@ void Qwen::init(const std::vector<int> &devices, int eos_token_id, std::string m
   SEQLEN = net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
   auto num_nets = bmrt_get_network_number(p_bmrt);
   NUM_LAYERS = (num_nets - 2) / 2;
+
+  // jacobi
+  GUESS_LEN = net_embed_cache->stages[0].input_shapes[0].dims[1];
+  window_offset = G_CANDI * (N_GRAM - 1) + 1;
+  candi_offset = 1; // GUESS_LEN - G_CANDI * (N_GRAM - 1);
 
   // net blocks
   for (int i = 0; i < NUM_LAYERS; i++) {
@@ -191,7 +196,16 @@ void Qwen::deinit() {
   }
 }
 
-int Qwen::forward_first(std::vector<int> &tokens) {
+std::vector<int> Qwen::jacobi_sample(const std::vector<float>& probs, const std::vector<int>& tokens) {
+  std::vector<int> sampled_tokens(GUESS_LEN);
+  for (int i = 0; i < GUESS_LEN; i++) {
+    std::discrete_distribution<> dist(probs.begin()+i*GUESS_LEN, probs.begin()+(i+1)*GUESS_LEN);
+    sampled_tokens[i] = tokens[dist(sgen)+i*GUESS_LEN];
+  }
+  return sampled_tokens;
+}
+
+int Qwen::forward_first_with_topk(std::vector<int> &tokens, std::string generation_mode) {
   std::vector<int> input_ids(SEQLEN, 0);
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
@@ -243,21 +257,25 @@ int Qwen::forward_first(std::vector<int> &tokens) {
 
   int bytes = out_mem.size / SEQLEN;
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
-  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
+  auto &lm_out_logits_mem = net_lm->stages[0].output_mems[0];
+  auto &lm_out_tokens_mem = net_lm->stages[0].output_mems[1];
   bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
                      (token_count - 1) * bytes, (WINDOW_SIZE + 1) * bytes);
   net_launch(net_lm);
 
-  // process the lookahead tokens
-  int token = lookahead_first(lm_out_mem);
-  return token;
-}
+  // get logit & token
+  int candidate_num = net_lm->stages[0].output_shapes[0].dims[1];
+  std::vector<float> lm_logits(GUESS_LEN * candidate_num);
+  bm_memcpy_d2s(bm_handle, lm_logits.data(), lm_out_logits_mem);
+  std::vector<int> lm_tokens(GUESS_LEN * candidate_num);
+  bm_memcpy_d2s(bm_handle, lm_tokens.data(), lm_out_tokens_mem);
 
-int Qwen::lookahead_first(bm_device_mem_t &lm_out_mem) {
-  int out_tokens[GUESS_LEN] = {0};
-  bm_memcpy_d2s(bm_handle, (void *)out_tokens, lm_out_mem);
-  memcpy(past_tokens[0], out_tokens + 1, WINDOW_SIZE * sizeof(int));
-  return out_tokens[0];
+  // select final token from candidate tokens
+  auto sampled_tokens = jacobi_sample(lm_logits, lm_tokens);
+
+  // process the lookahead tokens
+  memcpy(past_tokens[0], sampled_tokens.data() + 1, WINDOW_SIZE * sizeof(int));
+  return sampled_tokens[0];
 }
 
 // make attention mask for jacobi
@@ -303,7 +321,7 @@ std::vector<int> Qwen::make_next_pid() {
   return position_id;
 }
 
-int Qwen::forward_next(int cur_token) {
+int Qwen::forward_next_with_topk(int cur_token, std::string generation_mode) {
   token_count += 1;
 
   if (candidate_tokens.empty()) {
@@ -311,11 +329,9 @@ int Qwen::forward_next(int cur_token) {
     auto position_id = make_next_pid();
 
     // embedding
-    auto &lm_in_mem = net_lm->stages[0].input_mems[0];
-    auto &lm_out_mem = net_lm->stages[0].output_mems[0];
     auto &in_mem = net_embed_cache->stages[0].input_mems[0];
     auto &out_mem = net_embed_cache->stages[0].output_mems[0];
-    d2d(in_mem, lm_out_mem);
+    bm_memcpy_s2d(bm_handle, in_mem, (void *)&cur_token);
     net_launch(net_embed_cache);
 
     // blocks
@@ -355,11 +371,23 @@ int Qwen::forward_next(int cur_token) {
       bm_memcpy_d2d_byte(bm_handle, past_value[idx], token_offset, out2_mem, 0,
                         bytes);
     }
+    auto &lm_in_mem = net_lm->stages[0].input_mems[0];
+    auto &lm_out_logits_mem = net_lm->stages[0].output_mems[0];
+    auto &lm_out_tokens_mem = net_lm->stages[0].output_mems[1];
     d2d(lm_in_mem, out_mem);
     net_launch(net_lm);
 
+    int candidate_num = net_lm->stages[0].output_shapes[0].dims[1];
+    std::vector<float> lm_logits(GUESS_LEN * candidate_num);
+    bm_memcpy_d2s(bm_handle, lm_logits.data(), lm_out_logits_mem);
+    std::vector<int> lm_tokens(GUESS_LEN * candidate_num);
+    bm_memcpy_d2s(bm_handle, lm_tokens.data(), lm_out_tokens_mem);
+
+    // select final token from candidate tokens
+    auto sampled_tokens = jacobi_sample(lm_logits, lm_tokens);
+
     // process the lookahead tokens
-    lookahead_next(lm_out_mem);
+    lookahead_next(sampled_tokens);
     candidate_tokens.assign(verified_tokens.begin(), verified_tokens.end());
   }
 
@@ -368,13 +396,13 @@ int Qwen::forward_next(int cur_token) {
   return token;
 }
 
-void Qwen::lookahead_next(bm_device_mem_t &lm_out_mem) {
+void Qwen::lookahead_next(std::vector<int> &sampled_tokens) {
   int bytes =
       bm_mem_get_device_size(past_key[0]) / SEQLEN;
 
   // process the lookahead tokens
   int out_tokens[GUESS_LEN] = {0};
-  bm_memcpy_d2s(bm_handle, (void *)out_tokens, lm_out_mem);
+  std::copy(sampled_tokens.begin(), sampled_tokens.end(), out_tokens);
   if (step < N_GRAM) {
     memcpy(past_tokens[step], out_tokens + window_offset, WINDOW_SIZE * sizeof(int));
     step++;
@@ -466,11 +494,11 @@ void Qwen::lookahead_next(bm_device_mem_t &lm_out_mem) {
   if (it != token_map.end()) {
     verify_num = it->second.size() / (N_GRAM - 1);
     memcpy(out_tokens+1, it->second.data(), it->second.size() * sizeof(int));
-    bm_memcpy_s2d(bm_handle, lm_out_mem, (void*)out_tokens);
+    sampled_tokens.assign(out_tokens, out_tokens + GUESS_LEN);
     my_guess = it->second;
   } else {
     if (max_hit > 0) {
-      bm_memcpy_s2d(bm_handle, lm_out_mem, (void*)out_tokens);
+      sampled_tokens.assign(out_tokens, out_tokens + GUESS_LEN);
     }
     verify_num = 0;
     my_guess.clear();
@@ -485,10 +513,10 @@ std::vector<int> Qwen::answer(std::vector<int> history_tokens) {
   candidate_tokens.clear();
   result_tokens.clear();
 
-  int token = forward_first(history_tokens);
+  int token = forward_first_with_topk(history_tokens);
   while (token != EOS && token_count < SEQLEN) {
     result_tokens.push_back(token);
-    token = forward_next(token);
+    token = forward_next_with_topk(token);
   }
   return result_tokens;
 }
@@ -497,8 +525,8 @@ PYBIND11_MODULE(chat_jacobi, m) {
     pybind11::class_<Qwen>(m, "Qwen")
         .def(pybind11::init<>())
         .def("init", &Qwen::init)
-        .def("forward_first", &Qwen::forward_first)
-        .def("forward_next", &Qwen::forward_next)
+        .def("forward_first_with_topk", &Qwen::forward_first_with_topk)
+        .def("forward_next_with_topk", &Qwen::forward_next_with_topk)
         .def("answer", &Qwen::answer)
         .def("deinit", &Qwen::deinit);
 }

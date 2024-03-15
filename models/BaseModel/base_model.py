@@ -2,7 +2,7 @@ import time
 from transformers import AutoTokenizer
 
 class BaseModel:
-    def __init__(self, model_path, tokenizer_path, devid, generation_mode="greedy"):
+    def __init__(self, model_path, tokenizer_path, devid, generation_mode="greedy", decode_mode="basic"):
         # preprocess parameters, such as prompt & tokenizer
         self.input_str = ""
         self.system_prompt = ""
@@ -18,6 +18,9 @@ class BaseModel:
         if generation_mode not in ["greedy","sample"]:
             raise ValueError("generation_mode should be in {}, but we get {}".format(["greedy","sample"], generation_mode))
         self.generation_mode = generation_mode
+        if decode_mode not in ["basic","jacobi"]:
+            raise ValueError("decode_mode should be in {}, but we get {}".format(["basic","jacobi"], decode_mode))
+        self.decode_mode = decode_mode
 
         # load tokenizer
         print("Load " + self.tokenizer_path + " ...")

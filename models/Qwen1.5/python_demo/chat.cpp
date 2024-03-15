@@ -31,12 +31,12 @@ public:
   void deinit();
   int forward_first(std::vector<int> &tokens);
   int forward_next(int cur_token);
-  int forward_first_with_topk(std::vector<int> &tokens, std::string mode = "sample");
-  int forward_next_with_topk(int cur_token, std::string mode = "sample");
+  int forward_first_with_topk(std::vector<int> &tokens, std::string generation_mode = "sample");
+  int forward_next_with_topk(int cur_token, std::string generation_mode = "sample");
   std::vector<int> answer(std::vector<int> history_tokens);
 
-  std::mt19937 gen;
-  Qwen() : gen(std::random_device()()) {};
+  std::mt19937 sgen;
+  Qwen() : sgen(std::random_device()()) {};
   int sample(const std::vector<float>& probs, const std::vector<int>& tokens);
 
 private:
@@ -269,7 +269,7 @@ void Qwen::deinit() {
 
 int Qwen::sample(const std::vector<float>& probs, const std::vector<int>& tokens) {
   std::discrete_distribution<> dist(probs.begin(), probs.end());
-  return tokens[dist(gen)];
+  return tokens[dist(sgen)];
 }
 
 int Qwen::forward_first(std::vector<int> &tokens) {
@@ -433,7 +433,7 @@ int Qwen::forward_next(int cur_token) {
   return token;
 }
 
-int Qwen::forward_first_with_topk(std::vector<int> &tokens, std::string mode) {
+int Qwen::forward_first_with_topk(std::vector<int> &tokens, std::string generation_mode) {
   std::vector<int> input_ids(SEQLEN, 0);
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
@@ -518,16 +518,16 @@ int Qwen::forward_first_with_topk(std::vector<int> &tokens, std::string mode) {
   bm_memcpy_d2s(bm_handle, candidate_tokens.data(), outputs_lm[1].device_mem);
 
   // select final token from candidate tokens
-  if (mode == "greedy") {
+  if (generation_mode == "greedy") {
     token = candidate_tokens[0];
-  } else if (mode == "sample") {
+  } else if (generation_mode == "sample") {
     token = sample(logits, candidate_tokens);
   }
   
   return token;
 }
 
-int Qwen::forward_next_with_topk(int cur_token, std::string mode) {
+int Qwen::forward_next_with_topk(int cur_token, std::string generation_mode) {
   token_length += 1;
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
@@ -617,9 +617,9 @@ int Qwen::forward_next_with_topk(int cur_token, std::string mode) {
   bm_memcpy_d2s(bm_handle, candidate_tokens.data(), outputs_lm[1].device_mem);
 
   // select final token from candidate tokens
-  if (mode == "greedy") {
+  if (generation_mode == "greedy") {
     token = candidate_tokens[0];
-  } else if (mode == "sample") {
+  } else if (generation_mode == "sample") {
     token = sample(logits, candidate_tokens);
   }
 

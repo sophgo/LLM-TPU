@@ -3,8 +3,8 @@ import argparse
 from BaseModel.base_model import BaseModel
 
 class Qwen(BaseModel):
-    def __init__(self, model_path, tokenizer_path, devid, generation_mode="greedy", inference_mode="jacobi"):
-        super().__init__(model_path, tokenizer_path, devid, generation_mode)
+    def __init__(self, model_path, tokenizer_path, devid, generation_mode="greedy", decode_mode="jacobi"):
+        super().__init__(model_path, tokenizer_path, devid, generation_mode, decode_mode)
         # preprocess parameters, such as prompt & tokenizer
         self.system_prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
         self.prompt = (
@@ -15,13 +15,11 @@ class Qwen(BaseModel):
         self.sp.eos_token_id = 151645 # tokenizer.encode("<|im_end|>")
         self.messages = [self.system_prompt]
 
-        self.inference_mode = inference_mode
-
         # load model
         self.load_model()
 
     def load_model(self):
-        if self.inference_mode == "jacobi":
+        if self.decode_mode == "jacobi":
             import chat_jacobi
             self.model = chat_jacobi.Qwen()
         self.model.init(self.devices, self.sp.eos_token_id, self.model_path)
@@ -44,7 +42,7 @@ class Qwen(BaseModel):
         return tokens
 
 def main(args):
-    model = Qwen(args.model_path, args.tokenizer_path, args.devid, args.generation_mode, args.inference_mode)
+    model = Qwen(args.model_path, args.tokenizer_path, args.devid, args.generation_mode, args.decode_mode)
     model.chat()
 
 if __name__ == "__main__":
@@ -52,7 +50,7 @@ if __name__ == "__main__":
     parser.add_argument('--devid', type=str, default=0, help='device ID to use.')
     parser.add_argument('--model_path', type=str, required=True, help='path to the bmodel file.')
     parser.add_argument('--tokenizer_path', type=str, required=True, help='path to the tokenizer file.')
-    parser.add_argument('--generation_mode', type=str, default="greedy", help='mode for generating next token.')
-    parser.add_argument('--inference_mode', type=str, default="basic", help='mode for inference.')
+    parser.add_argument('--generation_mode', type=str, default="greedy", choices=["greedy", "sample"], help='mode for generating next token.')
+    parser.add_argument('--decode_mode', type=str, default="basic", choices=["basic", "jacobi"], help='mode for decoding.')
     args = parser.parse_args()
     main(args)
