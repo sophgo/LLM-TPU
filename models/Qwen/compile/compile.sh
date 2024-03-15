@@ -11,7 +11,9 @@ addr_args=""
 name=""
 num_layers=
 out_model=$name.bmodel
-addr_flag=false
+seq_length=
+guess_len=1
+hidden_size=
 
 while [[ $# -gt 0 ]]; do
     key="$1"
@@ -33,6 +35,14 @@ while [[ $# -gt 0 ]]; do
         addr_mode="$2"
         shift 2
         ;;
+    --seq_length)
+        seq_length="$2"
+        shift 2
+        ;;
+    --guess_len)
+        guess_len="$2"
+        shift 2
+        ;;
     *)
         echo "Invalid option: $key" >&2
         exit 1
@@ -46,12 +56,15 @@ done
 
 if [ "$name" = "qwen-1_8b" ]; then
   num_layers=23
+  hidden_size=2048
   echo "Compile Qwen-1_8B"
 elif [ "$name" = "qwen-7b" ]; then 
   num_layers=31
+  hidden_size=4096
   echo "Compile Qwen-7B"
 elif [ "$name" = "qwen-14b" ]; then
   num_layers=39
+  hidden_size=5120
   echo "Compile Qwen-14B"
 else
   >&2 echo -e "Error: Invalid name $name, the input name must be \033[31mqwen-1_8b|qwen-7b|qwen-14b\033[0m"
@@ -86,7 +99,9 @@ pushd $outdir
 
 model_transform.py \
     --model_name embedding \
-    --model_def ../onnx/embedding.onnx \
+    --model_def ../onnx/embedding.pt \
+    --input_shapes [[1,$seq_length]] \
+    --input_types "int32" \
     --mlir embedding.mlir
 
 model_deploy.py \
@@ -100,8 +115,9 @@ model_deploy.py \
 
 model_transform.py \
     --model_name embedding_cache \
-    --model_def ../onnx/embedding.onnx \
-    --input_shapes [[1,1]] \
+    --model_def ../onnx/embedding.pt \
+    --input_shapes [[1,$guess_len]] \
+    --input_types "int32" \
     --mlir embedding_cache.mlir
 
 model_deploy.py \
@@ -127,7 +143,8 @@ pushd $outdir
 
 model_transform.py \
     --model_name lm_head \
-    --model_def ../../onnx/lm_head.onnx \
+    --model_def ../../onnx/lm_head.pt \
+    --input_shapes [[$guess_len,$hidden_size]] \
     --mlir lm_head.mlir
 
 model_deploy.py \
