@@ -48,14 +48,15 @@ popd
 ./compile.sh --mode int4 --name qwen-7b --addr_mode io_alone --seq_length 8192
 ```
 
-### compile basic bmodel
+### compile jacobi bmodel
 ```shell
-./compile.sh --mode int4 --name qwen-7b --addr_mode io_alone --guess_len 8 --seq_length 8192
+./compile.sh --mode int4 --name qwen-7b --addr_mode io_alone --generation_mode sample --decode_mode jacobi --seq_length 8192
 ```
 
 PS：
 1. mode：量化方式，目前支持fp16/bf16/int8/int4
 2. name：模型名称，目前Qwen系列支持 Qwen-1.8B/Qwen-7B/Qwen-14B
 3. addr_mode：地址分配方式，可以使用io_alone方式来加速
-4. guess_len：一次推理多少个可供猜测的token，只有前面使用export_onnx_jacobi.py时，用这个才有意义
-5. seq_length：模型支持的最大token长度
+4. generation_mode：token采样模式，为空时，使用greedy search，为sample，使用topk+topp
+5. decode_mode：编码模式，为空时，使用正常编码，为jacobi时，使用jacobi编码，只有前面使用export_onnx_jacobi.py时，用jacobi才有意义
+6. seq_length：模型支持的最大token长度
