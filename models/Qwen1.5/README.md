@@ -81,6 +81,7 @@ cp compile/Qwen1.5-1.8B-Chat/modeling_qwen2.py /usr/local/lib/python3.10/dist-pa
 
 ### 4.1.3 导出onnx
 - 导出所有onnx模型，如果过程中提示缺少某些组件，直接**pip install**组件即可
+- (<strong>其中torch请勿使用2.1.1及以上版本，否则会出现SPDA相关报错，建议torch==2.0.1,transformers==4.38.2</strong>)
 
 ```bash
 # 将/workspace/Qwen-7B-Chat换成docker环境中您的Qwen-7B-Chat仓库的路径
