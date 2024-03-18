@@ -60,3 +60,44 @@ PS：
 4. generation_mode：token采样模式，为空时，使用greedy search，为sample，使用topk+topp
 5. decode_mode：编码模式，为空时，使用正常编码，为jacobi时，使用jacobi编码，只有前面使用export_onnx_jacobi.py时，用jacobi才有意义
 6. seq_length：模型支持的最大token长度
+
+## Run Demo
+
+如果是pcie，建议新建一个docker，与编译bmodel的docker分离，以清除一下环境，不然可能会报错
+```
+docker run --privileged --name your_docker_name -v $PWD:/workspace -it sophgo/tpuc_dev:latest bash
+docker exec -it your_docker_name bash
+```
+
+### python demo
+
+对于python demo，一定要在LLM-TPU里面source envsetup.sh（与tpu-mlir里面的envsetup.sh有区别）
+```shell
+cd /workspace/LLM-TPU
+source envsetup.sh
+```
+
+```
+cd /workspace/LLM-TPU/models/Qwen/python_demo
+mkdir build && cd build
+cmake .. && make
+cp chat_jacobi.cpython-310-x86_64-linux-gnu.so ..
+cd ..
+
+
+python chat.py --devid 0 --model_path ../compile/qwen-7b_int4_1dev.bmodel --tokenizer_path ../support/token_config/ --generation_mode sample --decode_mode jacobi
+```
+
+### cpp demo
+```shell
+cd /workspace/LLM-TPU/models/Qwen/demo
+mkdir build && cd build
+cmake .. && make
+cp qwen_jacobi ..
+cd ..
+
+./qwen_jacobi --model ../compile/qwen-7b_int4_1dev.bmodel --tokenizer ../support/qwen.tiktoken --devid 3
+```
+
+PS：
+1. 目前测试下来，python demo和cpp demo在速度上基本一致
