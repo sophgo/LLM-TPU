@@ -10,7 +10,7 @@
 ## 1. 简介
 Qwen1.5 是Qwen的第二代版本，它是开源中英双语对话模型，关于它的特性，请前往源repo查看：https://huggingface.co/Qwen。本例程对Qwen进行移植，使之能在SOPHON BM1684X上进行推理测试。
 
-该例程支持在V23.07.01(libsophon_0.4.9)及以上的SDK上运行，支持在插有1684X加速卡(SC7系列)的x86主机上运行，也可以在1684X SoC设备（如SE7、SM7、Airbox等）上运行。在SoC上运行需要额外进行环境配置，请参照[运行环境准备](#3-运行环境准备)完成环境部署。
+该例程支持在V23.07.01(libsophon_0.4.9)及以上的SDK上运行，支持在插有1684X加速卡(SC7系列)的x86主机上运行，也可以在1684X SoC设备（如SE7、SM7、Airbox等）上运行。在SoC上运行需要额外进行环境配置，请参照[运行环境准备](#3-运行环境准备)完成环境部署。建议后续所有流程都在[提供的Docker](#32-docker-版本)中完成。
 
 ## 2. 特性
 * 支持BM1684X(x86 PCIe、SoC)
@@ -57,7 +57,7 @@ sudo reboot
   cd /workspace/tpu-mlir_vx.y.z-<hash>-<date>
   source ./envsetup.sh
   ```
-此镜像仅onnx模型导出和编译量化模型，程序编译和运行请在开发和运行环境中进行。更多TPU-MLIR的教程请参考[算能官网](https://developer.sophgo.com/site/index/material/31/all.html)的《TPU-MLIR快速入门手册》和《TPU-MLIR开发参考手册》。
+其中`tpu-mlir_vx.y.z-<hash>-<date>`的路径请使用[下载得到的mlir路径](#31-mlir版本)，更多TPU-MLIR的教程请参考[算能官网](https://developer.sophgo.com/site/index/material/31/all.html)的《TPU-MLIR快速入门手册》和《TPU-MLIR开发参考手册》。
 
 ## 4. 模型编译
 ## 4.1 获取onnx
@@ -107,7 +107,27 @@ source envsetup.sh
 tokenizer已经放在了`support`文件夹下
 
 ## 5. 模型推理
+您可以使用我们已经编译好的模型进行自动化编译，也可以使用自己编译的模型进行推理
+### 5.1 自动化测试
+在Qwen1.5路径下执行（默认测试模型为Qwen1.5-1.8B）
+```bash
+./run_demo.sh
+```
+### 5.2 测试自己的模型
+在python_demo中编译模型推理动态库
 ```bash
 cd python_demo
-python chat.py --devid 0 --model_path your_bmodel_path --tokenizer_path ../support/token_config/
+mkdir build && cd build
+cmake ..
+make -j4
+cp chat.cpython-310-x86_64-linux-gnu.so ..
+cd ..
 ```
+
+此时可以进行模型推理
+```bash
+source ../../../envsetup.sh # 模型推理前请确保在LLM-TPU的路径下激活环境变量`source envsetup.sh`.
+python chat.py --devid '0' --model_path your_bmodel_path --tokenizer_path ../support/token_config/
+```
+其中`your_bmodel_path`请以实际路径为准
+
