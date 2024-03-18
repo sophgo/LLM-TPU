@@ -33,11 +33,17 @@ public:
   void chat();
   void deinit();
 
+  std::mt19937 sgen;
+  Qwen() : sgen(std::random_device()()) {};
+  int sample(const std::vector<float>& probs, const std::vector<int>& tokens);
+  std::vector<int> jacobi_sample(const std::vector<float>& probs, const std::vector<int>& tokens);
 
 private:
   void answer(const std::string &input_str);
   int forward_first(std::vector<int> &tokens);
   void forward_next();
+  int forward_first_with_topk(std::vector<int> &tokens, std::string generation_mode = "sample");
+  void forward_next_with_topk(int cur_token, std::string generation_mode = "sample");
   void load_tiktoken(std::string tokenizer_path);
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
@@ -249,6 +255,84 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   return out_tokens[0];
 }
 
+std::vector<int> Qwen::jacobi_sample(const std::vector<float>& probs, const std::vector<int>& tokens) {
+  std::vector<int> sampled_tokens(GUESS_LEN);
+  for (int i = 0; i < GUESS_LEN; i++) {
+    std::discrete_distribution<> dist(probs.begin()+i*GUESS_LEN, probs.begin()+(i+1)*GUESS_LEN);
+    sampled_tokens[i] = tokens[dist(sgen)+i*GUESS_LEN];
+  }
+  return sampled_tokens;
+}
+
+int Qwen::forward_first_with_topk(std::vector<int> &tokens, std::string generation_mode) {
+  std::vector<int> input_ids(SEQLEN, 0);
+  std::vector<int> position_id(SEQLEN, 0);
+  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
+  std::copy(tokens.begin(), tokens.end(), input_ids.data());
+
+  // Sample the tokens to generate the n-gram in the first N steps
+  std::uniform_int_distribution<> distrib(0, token_count);
+  int a[3] = {29973, 1, 29973};
+  for (int i = 0; i < WINDOW_SIZE; ++i) {
+    input_ids[token_count + i] = a[i];
+  }
+
+  int token_count_ex = token_count + WINDOW_SIZE;
+  for (int i = 0; i < token_count_ex; i++) {
+    position_id[i] = i;
+  }
+  for (int i = 0; i < token_count_ex; i++) {
+    for (int j = 0; j < SEQLEN; j++) {
+      if (j <= i) {
+        attention_mask[i * SEQLEN + j] = 0;
+      }
+    }
+  }
+
+  // forward embeding
+  auto &in_mem = net_embed->stages[0].input_mems[0];
+  auto &out_mem = net_embed->stages[0].output_mems[0];
+  bm_memcpy_s2d(bm_handle, in_mem, (void *)input_ids.data());
+  net_launch(net_embed); // prefil embedding
+
+  // forward blocks
+  for (int idx = 0; idx < NUM_LAYERS; idx++) {
+    auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
+    auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
+    auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
+    d2d(in0_mem, out_mem);
+    if (idx == 0) {
+      // only first time need copy
+      bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
+      bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+    }
+    net_launch(net_blocks[idx]);
+    out_mem = net_blocks[idx]->stages[0].output_mems[0];
+    d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1]);
+    d2d(past_value[idx], net_blocks[idx]->stages[0].output_mems[2]);
+  }
+
+  int bytes = out_mem.size / SEQLEN;
+  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
+  auto &lm_out_logits_mem = net_lm->stages[0].output_mems[0];
+  auto &lm_out_tokens_mem = net_lm->stages[0].output_mems[1];
+  bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
+                     (token_count - 1) * bytes, (WINDOW_SIZE + 1) * bytes);
+  net_launch(net_lm);
+
+  // get logit & token
+  int candidate_num = net_lm->stages[0].output_shapes[0].dims[1];
+  std::vector<float> lm_logits(GUESS_LEN * candidate_num);
+  bm_memcpy_d2s(bm_handle, lm_logits.data(), lm_out_logits_mem);
+  std::vector<int> lm_tokens(GUESS_LEN * candidate_num);
+  bm_memcpy_d2s(bm_handle, lm_tokens.data(), lm_out_tokens_mem);
+
+  // process the lookahead tokens
+  auto sampled_tokens = jacobi_sample(lm_logits, lm_tokens);
+  memcpy(past_tokens[0], sampled_tokens.data() + 1, WINDOW_SIZE * sizeof(int));
+  return sampled_tokens[0];
+}
+
 void Qwen::forward_next() {
   // make mask
   int max_len_ex = SEQLEN + GUESS_LEN;
@@ -445,6 +529,211 @@ void Qwen::forward_next() {
   return;
 }
 
+void Qwen::forward_next_with_topk(int cur_token, std::string generation_mode) {
+  // make mask
+  int max_len_ex = SEQLEN + GUESS_LEN;
+  std::vector<uint16_t> attention_mask(GUESS_LEN * max_len_ex, 0);
+  for (int i = 0; i < GUESS_LEN; i++) {
+    for (int j = token_count - 1; j < SEQLEN; j++) {
+      attention_mask[i * max_len_ex + j] = ATTENTION_MASK;
+    }
+  }
+  int window_offset = G_CANDI * (N_GRAM - 1) + 1;
+  int candi_offset = 1; // GUESS_LEN - G_CANDI * (N_GRAM - 1);
+  for (int i = 0; i < GUESS_LEN; i++) {
+    for (int j = 1; j < GUESS_LEN; j++) {
+      if (j < i) {
+        // assert(candi_offset >= 1 + WINDOW_SIZE);
+        if (i < window_offset) {
+          int inner_offset = (i - candi_offset) % (N_GRAM - 1);
+          if (j > 0 && j < i - inner_offset) {
+            attention_mask[i * max_len_ex + j + SEQLEN] = ATTENTION_MASK;
+          }
+        } else if (j < window_offset) {
+          attention_mask[i * max_len_ex + j + SEQLEN] = ATTENTION_MASK;
+        }
+      } else if (j > i) {
+        attention_mask[i * max_len_ex + j + SEQLEN] = ATTENTION_MASK;
+      }
+    }
+  }
+
+  // make position
+  std::vector<int> position_id(GUESS_LEN, 0);
+  position_id[0] = token_count - 1;
+  for (int i = 1; i < GUESS_LEN; i++) {
+    if (i <= window_offset) {
+      position_id[i] = token_count + (i - 1) % (N_GRAM - 1);
+    } else {
+      position_id[i] = token_count + i - window_offset;
+    }
+  }
+
+  // embedding
+  auto &in_mem = net_embed_cache->stages[0].input_mems[0];
+  auto &out_mem = net_embed_cache->stages[0].output_mems[0];
+  bm_memcpy_s2d(bm_handle, in_mem, (void *)&cur_token);
+  net_launch(net_embed_cache);
+
+  // blocks
+  int bytes =
+      bm_mem_get_device_size(past_key[0]) / SEQLEN;
+  int token_offset = (token_count - 1) * bytes;
+  for (int idx = 0; idx < NUM_LAYERS; idx++) {
+    auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
+    auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
+    auto &in2_mem = net_blocks_cache[idx]->stages[0].input_mems[2];
+    auto &in3_mem = net_blocks_cache[idx]->stages[0].input_mems[3];
+    auto &in4_mem = net_blocks_cache[idx]->stages[0].input_mems[4];
+    auto &out0_mem = net_blocks_cache[idx]->stages[0].output_mems[0];
+    auto &out1_mem = net_blocks_cache[idx]->stages[0].output_mems[1];
+    auto &out2_mem = net_blocks_cache[idx]->stages[0].output_mems[2];
+    d2d(in0_mem, out_mem);
+    if (io_alone) {
+      if (idx == 0) {
+        bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
+        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+      } else {
+        d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
+        d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
+      }
+    } else {
+      if (idx == 0) {
+        bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
+        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+      }
+      d2d(in3_mem, past_key[idx]);
+      d2d(in4_mem, past_value[idx]);
+    }
+    net_launch(net_blocks_cache[idx]);
+    out_mem = out0_mem;
+    bm_memcpy_d2d_byte(bm_handle, past_key[idx], token_offset, out1_mem, 0,
+                       bytes);
+    bm_memcpy_d2d_byte(bm_handle, past_value[idx], token_offset, out2_mem, 0,
+                       bytes);
+  }
+  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
+  auto &lm_out_logits_mem = net_lm->stages[0].output_mems[0];
+  auto &lm_out_tokens_mem = net_lm->stages[0].output_mems[1];
+  d2d(lm_in_mem, out_mem);
+  net_launch(net_lm);
+
+  int candidate_num = net_lm->stages[0].output_shapes[0].dims[1];
+  std::vector<float> lm_logits(GUESS_LEN * candidate_num);
+  bm_memcpy_d2s(bm_handle, lm_logits.data(), lm_out_logits_mem);
+  std::vector<int> lm_tokens(GUESS_LEN * candidate_num);
+  bm_memcpy_d2s(bm_handle, lm_tokens.data(), lm_out_tokens_mem);
+
+  // select final token from candidate tokens
+  auto sampled_tokens = jacobi_sample(lm_logits, lm_tokens);
+
+  // process the lookahead tokens
+  int out_tokens[GUESS_LEN] = {0};
+  std::copy(sampled_tokens.begin(), sampled_tokens.end(), out_tokens);
+  if (step < N_GRAM) {
+    memcpy(past_tokens[step], out_tokens + window_offset, WINDOW_SIZE * sizeof(int));
+    step++;
+  } else {
+    for (int i = 0; i < N_GRAM - 1; i++) {
+      memcpy(past_tokens[i], past_tokens[i+1], WINDOW_SIZE * sizeof(int));
+    }
+    memcpy(past_tokens[N_GRAM-1], out_tokens + window_offset, WINDOW_SIZE * sizeof(int));
+  }
+  if (step == N_GRAM) {
+    for (int i = 0; i < WINDOW_SIZE; i++) {
+      bool exist = false;
+      if (token_map[past_tokens[0][i]].size() > 0) {
+        for (int g = 0; g < G_CANDI; g++) {
+          int same_num = 0;
+          for (int j = 1; j <N_GRAM; j++) {
+            same_num += token_map[past_tokens[0][i]][g * (N_GRAM-1) + j] == past_tokens[j][i];
+          }
+          if (same_num == N_GRAM - 1) {
+            exist = true;
+            break;
+          }
+        }
+      }
+      if (exist) {
+        continue;
+      }
+      for (int j = 1; j < N_GRAM; j++) {
+        if (token_map[past_tokens[0][i]].size() >= G_CANDI * (N_GRAM - 1)) {
+          memcpy(token_map[past_tokens[0][i]].data(),
+                token_map[past_tokens[0][i]].data() + N_GRAM - 1,
+                (N_GRAM - 1) * (G_CANDI - 1) * sizeof(int));
+          token_map[past_tokens[0][i]].resize((G_CANDI - 1) * (N_GRAM - 1));
+        }
+        token_map[past_tokens[0][i]].push_back(past_tokens[j][i]);
+      }
+    }
+  }
+
+  // verify tokens
+  int max_hit = 0;
+  int hit_point = 0;
+  int max_hits[N_GRAM] = {0};
+  if (verify_num > 0) {
+    std::vector<int> correct(N_GRAM, out_tokens[0]);
+    for (int i = 0; i < verify_num; i++) {
+      memcpy(correct.data() + 1,
+            out_tokens + 1 + i * (N_GRAM - 1),
+            sizeof(int) * (N_GRAM - 1));
+      int j = 0;
+      for (j = 0; j < (N_GRAM - 1); j++) {
+        if (correct[j] != my_guess[i * (N_GRAM - 1) + j]) {
+          break;
+        }
+      }
+      if (j > max_hit) {
+        hit_point = i;
+        max_hit = j;
+        memcpy(max_hits, correct.data(), (max_hit+1) * sizeof(int));
+      }
+    }
+  }
+
+  verified_tokens.clear();
+  verified_tokens.push_back(out_tokens[0]);
+  if (max_hit > 0) {
+    for (int i = 1; i < max_hit+1; i++) {
+      verified_tokens.push_back(max_hits[i]);
+    }
+    // process past_keys/past_values
+    int guess_offset = (1 + hit_point * (N_GRAM - 1)) * bytes;
+    int token_offset = token_count * bytes;
+    for (int i = 0; i < NUM_LAYERS; ++i) {
+      auto &out1_mem = net_blocks_cache[i]->stages[0].output_mems[1];
+      auto &out2_mem = net_blocks_cache[i]->stages[0].output_mems[2];
+      bm_memcpy_d2d_byte(bm_handle, past_key[i], token_offset,
+                         out1_mem, guess_offset,
+                         max_hit * bytes);
+      bm_memcpy_d2d_byte(bm_handle, past_value[i], token_offset,
+                         out2_mem, guess_offset,
+                         max_hit * bytes);
+    }
+  }
+
+  // guess tokens
+  // verified_tokens.resize(1);
+  out_tokens[0] = verified_tokens[verified_tokens.size() - 1];
+  auto it = token_map.find(out_tokens[0]);
+  if (it != token_map.end()) {
+    verify_num = it->second.size() / (N_GRAM - 1);
+    memcpy(out_tokens+1, it->second.data(), it->second.size() * sizeof(int));
+    sampled_tokens.assign(out_tokens, out_tokens + GUESS_LEN);
+    my_guess = it->second;
+  } else {
+    if (max_hit > 0) {
+      sampled_tokens.assign(out_tokens, out_tokens + GUESS_LEN);
+    }
+    verify_num = 0;
+    my_guess.clear();
+  }
+
+  return;
+}
+
 void Qwen::chat() {
   while (true) {
     std::cout << "\nQuestion: ";
@@ -479,7 +768,7 @@ void Qwen::answer(const std::string &input_str) {
 
   auto first_st = std::chrono::system_clock::now();
   int pre_token = 0;
-  int token = forward_first(inp_ids);
+  int token = forward_first_with_topk(inp_ids);
   auto first_et = std::chrono::system_clock::now();
   std::string pre_word;
   std::string word;
@@ -502,7 +791,7 @@ void Qwen::answer(const std::string &input_str) {
 
   auto st = std::chrono::system_clock::now();
   while (!end_text && tokens[tokens.size() - 1] != tk->im_end_id && token_count < SEQLEN) {
-    forward_next();
+    forward_next_with_topk(tokens[tokens.size() - 1]);
     tokens = verified_tokens;
     tok_num += tokens.size();
     if (token_count < SEQLEN) {
