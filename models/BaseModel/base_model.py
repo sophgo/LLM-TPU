@@ -12,7 +12,14 @@ class BaseModel:
         self.SEQLEN = None
         self.model_path = model_path
         self.tokenizer_path = tokenizer_path
-        self.devices = [int(d) for d in devid.split(",")]
+
+        # devid
+        if isinstance(devid, str):
+            self.devices = [int(d) for d in devid.split(",")]
+        elif isinstance(devid, int):
+            raise ValueError("The input device should be in string format, like --devid '0' or --devid '0,1', but we received --devid {}".format(str(devid)))
+        else:
+            raise ValueError("The type of devis is wrong!")
 
         # postprocess parameters
         if generation_mode not in ["greedy","sample"]:

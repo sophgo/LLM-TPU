@@ -46,7 +46,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--devid', type=str, default=0, help='device ID to use.')
+    parser.add_argument('--devid', type=str, default='0', help='device ID to use.')
     parser.add_argument('--model_path', type=str, required=True, help='path to the bmodel file.')
     parser.add_argument('--tokenizer_path', type=str, required=True, help='path to the tokenizer file.')
     parser.add_argument('--generation_mode', type=str, default="greedy", help='mode for generating next token.')
