@@ -21,12 +21,12 @@ pip install transformers_stream_generator einops tiktoken accelerate transformer
 
 ### export basic onnx
 ```shell
-python export_onnx.py --model_path your_torch_path --generation_mode topk --device cuda
+python export_onnx.py --model_path your_torch_path --generation_mode sample --device cuda
 ```
 
 ### export jacobi onnx
 ```shell
-python export_onnx_jacobi.py --model_path your_torch_path --guess_len 8 --generation_mode topk --device cuda
+python export_onnx_jacobi.py --model_path your_torch_path --guess_len 8 --generation_mode sample --device cuda
 ```
 
 PS：

@@ -18,7 +18,7 @@ torch.set_grad_enabled(False)
 parser = argparse.ArgumentParser(description='export onnx.')
 parser.add_argument('--model_path', type=str, help='path to the torch model.')
 parser.add_argument('--device', required=False, type=str, choices=["cpu", "cuda"], default="cuda")
-parser.add_argument('--generation_mode', type=str, choices=["greedy", "sample"], help='mode to the generate token.')
+parser.add_argument('--generation_mode', type=str, choices=["greedy", "sample", "all"], help='mode to generate token.')
 
 args = parser.parse_args()
 
@@ -141,6 +141,35 @@ class LmHeadTopk(torch.nn.Module):
         probs = filtered_logits.softmax(dim=1)
         return probs, token
 
+    
+# refs:https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py
+class LmHeadAll(torch.nn.Module):
+
+    def __init__(self, top_k = 50, min_tokens_to_keep = 5):
+        super().__init__()
+        self.top_k = top_k
+        self.min_tokens_to_keep = min_tokens_to_keep
+        self.keep_matrix = torch.zeros((1, self.top_k), dtype=torch.bool)
+        self.keep_matrix[0, :self.min_tokens_to_keep] = True
+
+    def forward(self, hidden_states, top_p = 0.8, temperature = 0.98):
+        hidden_states = transformer.ln_f(hidden_states)
+        m_logits = origin_model.lm_head(hidden_states)
+
+        # top_k
+        logits, token = torch.topk(m_logits.float(), self.top_k)
+
+        # temperature
+        logits = logits / temperature
+
+        # top_p
+        cumulative_probs = logits.softmax(dim=1).cumsum(dim=1)
+        mask = cumulative_probs < top_p
+        mask = mask + self.keep_matrix
+        filtered_logits = torch.where(mask, logits, torch.FloatTensor([-1000.]))
+        probs = filtered_logits.softmax(dim=1)
+        return probs, token
+    
 
 def convert_block(layer_id):
     model = QwenBlock(layer_id)
@@ -190,13 +219,27 @@ def convert_embedding():
     torch.jit.save(module, f'{folder}/embedding.pt')
 
 
-def convert_lm_head():
+def convert_lm_head():   
     if generation_mode == "greedy":
         model = LmHead()
     elif generation_mode == "sample":
         model = LmHeadTopk()
+    elif generation_mode == "all":
+        convert_lm_head_all()
+        return
+    else:
+        raise ValueError("generation_mode should be in {}, but we get {}".format(["greedy","sample","all"], generation_mode))
     input = torch.randn(1, HIDDEN_SIZE).bfloat16().to(device)
     module = torch.jit.trace(model.forward, input)
+    torch.jit.save(module, f'{folder}/lm_head.pt')
+
+
+def convert_lm_head_all():   
+    model = LmHeadAll()
+    hidden_states = torch.randn(1, HIDDEN_SIZE).bfloat16().to(device)
+    top_p = torch.tensor([0.8]).bfloat16().to(device)
+    temperature = torch.tensor([0.98]).bfloat16().to(device)
+    module = torch.jit.trace(model.forward, (hidden_states, top_p, temperature))
     torch.jit.save(module, f'{folder}/lm_head.pt')
 
 

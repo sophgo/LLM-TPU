@@ -14,7 +14,8 @@ out_model=$name.bmodel
 seq_length=
 guess_len=1
 hidden_size=
-lm_quant_args="--quant_output"
+lm_quant_args=""
+generation_mode="greedy"
 
 while [[ $# -gt 0 ]]; do
     key="$1"
@@ -91,15 +92,21 @@ if [ x$num_device != x1 ]; then
     device_args="--num_device $num_device"
     out_model=$name'_'$mode'_'$num_device'dev.bmodel'
 else
-    out_model=$name'_'$mode'_1dev_'$decode_mode'.bmodel'
+    out_model=$name'_'$mode'_1dev.bmodel'
 fi
 
 if [ x$addr_mode == x"io_alone" ]; then
     addr_args="--addr_mode io_alone"
 fi
 
-if [ x$generation_mode == x"sample" ]; then
-    lm_quant_args=""
+
+if [ x$generation_mode == x"greedy" ]; then
+    lm_quant_args="--quant_output"
+    lm_input_shape_args="--input_shapes [[1,${hidden_size}]]"
+elif [ x$generation_mode == x"sample" ]; then
+    lm_input_shape_args="--input_shapes [[${guess_len},${hidden_size}]]"
+elif [ x$generation_mode == x"all" ]; then
+    lm_input_shape_args="--input_shapes [[${guess_len},${hidden_size}],[1],[1]]"
 fi
 
 if [ x$decode_mode == x"jacobi" ]; then
@@ -157,7 +164,7 @@ pushd $outdir
 model_transform.py \
     --model_name lm_head \
     --model_def ../../onnx/lm_head.pt \
-    --input_shapes [[$guess_len,$hidden_size]] \
+    $lm_input_shape_args \
     --mlir lm_head.mlir
 
 model_deploy.py \
