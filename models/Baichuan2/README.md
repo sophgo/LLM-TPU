@@ -1,4 +1,4 @@
-![image](../assets/sophgo_chip.png)
+![image](../../assets/sophgo_chip.png)
 
 # Baichuan2-TPU
 
