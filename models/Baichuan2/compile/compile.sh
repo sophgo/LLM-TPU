@@ -78,7 +78,7 @@ seqlen=512
 model_transform.py \
     --model_name embedding \
     --model_def ../embedding.onnx \
-    --input_shapes [[$seqlen]] \
+    --input_shapes [[1,$seqlen]] \
     --mlir embedding_${seqlen}.mlir
 
 
@@ -92,7 +92,7 @@ model_deploy.py \
 model_transform.py \
     --model_name embedding_cache \
     --model_def ../embedding.onnx \
-    --input_shapes [[1]] \
+    --input_shapes [[1,1]] \
     --mlir embedding_1.mlir
 
 

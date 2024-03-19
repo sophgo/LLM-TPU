@@ -1,4 +1,4 @@
-![image](./assets/sophgo_chip.png)
+![image](../assets/sophgo_chip.png)
 
 # Baichuan2-TPU
 
@@ -81,7 +81,7 @@ source ./envsetup.sh
 ``` shell
 git clone https://github.com/sophgo/Baichuan2-TPU.git
 cd Baichuan2
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 ```
 
 ### 步骤五：替换modeling_baichuan.py, 修改config.json, 生成onnx文件
@@ -89,8 +89,9 @@ pip install -r requirements.txt
 
 ``` shell
 cd compile
-cp modeling_baichuan.py $BAICHUAN2_PATH
-python export_onnx_fast.py --model_path your_model_path
+cp files/Baichuan2-7B/modeling_baichuan.py $BAICHUAN2_PATH
+cp files/Baichuan2-7B/config.json $BAICHUAN2_PATH
+python3 export_onnx.py --model_path $BAICHUAN2_PATH
 ```
 
 * PS1：your_model_path 指的是原模型下载后的地址, 如:"../../torch2onnx/Baichuan2-7B-Chat", 可以根据需要选择使用7b模型还是13b模型。
@@ -102,6 +103,7 @@ python export_onnx_fast.py --model_path your_model_path
 
 ``` shell
 ./compile.sh --mode int8
+mv baichuan2-7b_int8_1dev.bmodel ../model
 ```
 
 * PS1：编译完成后最终会在Baichuan2-TPU/compile路径下生成名为baichuan2-{X}b_{Y}_{Z}dev.bmodel,其中X为7或13，Y为`compile.sh`时选择的`mode`的数据类型,Z为推理的芯片数量(如果不指定num_device, 会省略{Z}dev的部分)
@@ -161,7 +163,7 @@ make -j
 ## 编译程序(Python Web版本)【单芯】
 
 ```shell
-pip install gradio==3.39.0
+pip3 install gradio==3.39.0
 cd Baichuan2-TPU/web_demo
 mkdir build
 cd build
@@ -171,7 +173,7 @@ make -j
 
 编译成功会在`build`文件夹下生成`libtpuchat.so*`, 此时可以在web_demo.py中指定bmodel\_path token\_path device\_id, lib_path(编译生产的`libtpuchat.so*`文件, 默认路径是`./build`下), 以及dev_id。
 ```python
-python web_demo.py
+python3 web_demo.py
 ```
 即可成功运行web的demo。
 * PS：在用户不修改上述token\_path的lib\_path的存放路径前提下只需指定bmodel\_path即可运行程序。
