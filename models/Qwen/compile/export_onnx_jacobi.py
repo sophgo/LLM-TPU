@@ -20,7 +20,7 @@ parser = argparse.ArgumentParser(description='export onnx.')
 parser.add_argument('--model_path', type=str, help='path to the torch model.')
 parser.add_argument('--guess_len', type=int, default=8, help='guess length')
 parser.add_argument('--device', required=False, type=str, choices=["cpu", "cuda"], default="cuda")
-parser.add_argument('--generation_mode', type=str, choices=["greedy", "sample"], help='mode to the generate token.')
+parser.add_argument('--generation_mode', type=str, choices=["basic", "sample"], help='mode to the generate token.')
 
 args = parser.parse_args()
 
@@ -194,7 +194,7 @@ def convert_embedding():
 
 
 def convert_lm_head():
-    if generation_mode == "greedy":
+    if generation_mode == "basic":
         model = LmHead()
     elif generation_mode == "sample":
         model = LmHeadTopk()

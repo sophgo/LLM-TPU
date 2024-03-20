@@ -18,7 +18,7 @@ torch.set_grad_enabled(False)
 parser = argparse.ArgumentParser(description='export onnx.')
 parser.add_argument('--model_path', type=str, help='path to the torch model.')
 parser.add_argument('--device', required=False, type=str, choices=["cpu", "cuda"], default="cuda")
-parser.add_argument('--generation_mode', type=str, choices=["greedy", "sample", "all"], help='mode to generate token.')
+parser.add_argument('--generation_mode', type=str, choices=["basic", "sample", "all"], default="basic", help='mode to generate token.')
 
 args = parser.parse_args()
 
@@ -220,7 +220,7 @@ def convert_embedding():
 
 
 def convert_lm_head():   
-    if generation_mode == "greedy":
+    if generation_mode == "basic":
         model = LmHead()
     elif generation_mode == "sample":
         model = LmHeadTopk()
@@ -228,7 +228,7 @@ def convert_lm_head():
         convert_lm_head_all()
         return
     else:
-        raise ValueError("generation_mode should be in {}, but we get {}".format(["greedy","sample","all"], generation_mode))
+        raise ValueError("generation_mode should be in {}, but we get {}".format(["basic","sample","all"], generation_mode))
     input = torch.randn(1, HIDDEN_SIZE).bfloat16().to(device)
     module = torch.jit.trace(model.forward, input)
     torch.jit.save(module, f'{folder}/lm_head.pt')

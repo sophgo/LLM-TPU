@@ -15,7 +15,7 @@ seq_length=
 guess_len=1
 hidden_size=
 lm_quant_args=""
-generation_mode="greedy"
+generation_mode="basic"
 
 while [[ $# -gt 0 ]]; do
     key="$1"
@@ -100,7 +100,7 @@ if [ x$addr_mode == x"io_alone" ]; then
 fi
 
 
-if [ x$generation_mode == x"greedy" ]; then
+if [ x$generation_mode == x"basic" ]; then
     lm_quant_args="--quant_output"
     lm_input_shape_args="--input_shapes [[1,${hidden_size}]]"
 elif [ x$generation_mode == x"sample" ]; then

@@ -24,6 +24,11 @@ pip install transformers_stream_generator einops tiktoken accelerate transformer
 python export_onnx.py --model_path your_torch_path --generation_mode sample --device cuda
 ```
 
+### export topk + topp + temperature onnx
+```shell
+python export_onnx.py --model_path your_torch_path --generation_mode all --device cuda
+```
+
 ### export jacobi onnx
 ```shell
 python export_onnx_jacobi.py --model_path your_torch_path --guess_len 8 --generation_mode sample --device cuda
@@ -32,7 +37,7 @@ python export_onnx_jacobi.py --model_path your_torch_path --guess_len 8 --genera
 PS：
 1. 最好使用cuda导出，cpu导出block的时候，会卡在第一个block，只能kill
 2. your_torch_path：从官网下载的或者自己训练的模型的路径，例如./Qwen-7B-Chat
-3. generation_mode：生成token的方式，目前支持两种，greedy是贪婪采样，sample是使用topk+topp
+3. generation_mode：生成token的方式，目前支持两种，basic是贪婪采样，sample是使用topk + topp，all是使用topk + topp + temperature + max_new_tokens，并且把他们都作为参数
 4. 对于长回答，可以使用export_onnx_jacobi.py来导出加速（refs：https://github.com/hao-ai-lab/LookaheadDecoding）
 
 ## Compile bmodel
@@ -48,6 +53,11 @@ popd
 ./compile.sh --mode int4 --name qwen-7b --addr_mode io_alone --seq_length 8192
 ```
 
+### compile topk + topp + temperature bmodel
+```shell
+./compile.sh --mode int4 --name qwen-7b --addr_mode io_alone --generation_mode all --seq_length 8192
+```
+
 ### compile jacobi bmodel
 ```shell
 ./compile.sh --mode int4 --name qwen-7b --addr_mode io_alone --generation_mode sample --decode_mode jacobi --seq_length 8192
@@ -57,8 +67,8 @@ PS：
 1. mode：量化方式，目前支持fp16/bf16/int8/int4
 2. name：模型名称，目前Qwen系列支持 Qwen-1.8B/Qwen-7B/Qwen-14B
 3. addr_mode：地址分配方式，可以使用io_alone方式来加速
-4. generation_mode：token采样模式，为空时，使用greedy search，为sample，使用topk+topp
-5. decode_mode：编码模式，为空时，使用正常编码，为jacobi时，使用jacobi编码，只有前面使用export_onnx_jacobi.py时，用jacobi才有意义
+4. generation_mode：token采样模式，为空时，使用greedy search；为sample时，使用topk+topp；为all时使用topk + topp + temperature + max_new_tokens，并且可以作为参数传入
+5. decode_mode：编码模式，为空时，使用正常编码；为jacobi时，使用jacobi编码，只有前面使用export_onnx_jacobi.py时，用jacobi才有意义
 6. seq_length：模型支持的最大token长度
 
 ## Run Demo
@@ -95,9 +105,19 @@ mkdir build && cd build
 cmake .. && make
 cp qwen_jacobi ..
 cd ..
+```
 
-./qwen_jacobi --model ../compile/qwen-7b_int4_1dev.bmodel --tokenizer ../support/qwen.tiktoken --devid 3
+jacobi
+```
+./qwen_jacobi --model ../compile/qwen-7b_int4_1dev.bmodel --tokenizer ../support/qwen.tiktoken --devid 0
+```
+
+topk + topp + temperature + max_new_tokens + 
+```
+./qwen --model ../compile/qwen-7b_int4_1dev.bmodel --tokenizer ../support/qwen.tiktoken --devid 0 --temperature 0.98 --top_p 0.8 --max_new_tokens 100 --generation_mode sample --input_mode unprompted
 ```
 
 PS：
 1. 目前测试下来，python demo和cpp demo在速度上基本一致
+2. generation_mode：当传入basic，表示export_onnx.py导出只使用greedy的LmHead；当传入为greedy时，表示export_onnx.py导出可以使用sample的模型，但是使用greedy search；当传入为sample时，表示export_onnx.py导出可以使用sample的模型，并且使用sample采样
+3. input_mode：当传入prompted，表示自动使用提示；当传入为prompted，表示使用原始输入，不使用提示（只有当genneration!=basic时生效）
