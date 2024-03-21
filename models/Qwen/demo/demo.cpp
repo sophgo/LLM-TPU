@@ -17,10 +17,10 @@
 #include <fstream>
 #include <getopt.h>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <random>
 #include <vector>
-#include <limits>
 
 static const uint16_t ATTENTION_MASK = 0xC61C; // -9984 by bfloat16
 
@@ -82,7 +82,8 @@ class Qwen {
 public:
   void init(const std::vector<int> &devid, std::string model_path,
             std::string tokenizer_path, const float &__temperature,
-            const float &__top_p, const int &__max_new_tokens,
+            const float &__top_p, const float &repeat_penalty,
+            const int &repeat_last_n, const int &__max_new_tokens,
             const std::string &__generation_mode,
             const std::string &__input_mode);
   void chat();
@@ -99,7 +100,7 @@ private:
   int forward_next();
   int forward_first_with_topk(std::vector<int> &tokens,
                               std::string generation_mode = "sample");
-  int forward_next_with_topk(int cur_token,
+  int forward_next_with_topk(int cur_token, std::vector<int> &tokens,
                              std::string generation_mode = "sample");
   void load_tiktoken(std::string tokenizer_path);
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -126,6 +127,8 @@ private:
   // generation
   float temperature;
   uint16_t top_p;
+  float repeat_penalty;
+  int repeat_last_n;
   int max_new_tokens;
   std::string generation_mode;
   std::string input_mode;
@@ -163,7 +166,8 @@ void Qwen::load_tiktoken(std::string tokenizer_path) {
 
 void Qwen::init(const std::vector<int> &devices, std::string model_path,
                 std::string tokenizer_path, const float &__temperature,
-                const float &__top_p, const int &__max_new_tokens,
+                const float &__top_p, const float &__repeat_penalty,
+                const int &__repeat_last_n, const int &__max_new_tokens,
                 const std::string &__generation_mode,
                 const std::string &__input_mode) {
   // load tokenizer
@@ -172,6 +176,8 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path,
   // generation params
   temperature = __temperature;
   top_p = fp32_to_bf16_bits(__top_p);
+  repeat_penalty = __repeat_penalty;
+  repeat_last_n = __repeat_last_n;
   max_new_tokens = __max_new_tokens;
   generation_mode = __generation_mode;
   input_mode = __input_mode;
@@ -358,12 +364,22 @@ int Qwen::forward_first_with_topk(std::vector<int> &tokens,
   auto &lm_in0_mem = net_lm->stages[0].input_mems[0];
   auto &lm_in1_mem = net_lm->stages[0].input_mems[1];
   auto &lm_in2_mem = net_lm->stages[0].input_mems[2];
+  auto &lm_in3_mem = net_lm->stages[0].input_mems[3];
+  auto &lm_in4_mem = net_lm->stages[0].input_mems[4];
   auto &lm_out_logits_mem = net_lm->stages[0].output_mems[0];
   auto &lm_out_tokens_mem = net_lm->stages[0].output_mems[1];
-  bm_memcpy_d2d_byte(bm_handle, lm_in0_mem, 0, out_mem,
+
+  // repeat_penalty + top_p + top_k + temperature
+  std::vector<int> generated_tokens(SEQLEN, tokens[tokens.size() - 1]);
+  repeat_last_n = std::min(repeat_last_n, (int)tokens.size());
+  std::copy(tokens.end() - repeat_last_n, tokens.end(),
+            generated_tokens.begin());
+  bm_memcpy_s2d(bm_handle, lm_in0_mem, (void *)generated_tokens.data());
+  bm_memcpy_d2d_byte(bm_handle, lm_in1_mem, 0, out_mem,
                      (token_count - 1) * bytes, bytes);
-  bm_memcpy_s2d(bm_handle, lm_in1_mem, (void *)&top_p);
-  bm_memcpy_s2d(bm_handle, lm_in2_mem, (void *)&temperature);
+  bm_memcpy_s2d(bm_handle, lm_in2_mem, (void *)&top_p);
+  bm_memcpy_s2d(bm_handle, lm_in3_mem, (void *)&temperature);
+  bm_memcpy_s2d(bm_handle, lm_in4_mem, (void *)&repeat_penalty);
   net_launch(net_lm);
 
   // get logit & token
@@ -441,7 +457,8 @@ int Qwen::forward_next() {
   return token;
 }
 
-int Qwen::forward_next_with_topk(int cur_token, std::string generation_mode) {
+int Qwen::forward_next_with_topk(int cur_token, std::vector<int> &tokens,
+                                 std::string generation_mode) {
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = token_count - 1; i < SEQLEN; i++) {
     attention_mask[i] = ATTENTION_MASK;
@@ -493,11 +510,21 @@ int Qwen::forward_next_with_topk(int cur_token, std::string generation_mode) {
   auto &lm_in0_mem = net_lm->stages[0].input_mems[0];
   auto &lm_in1_mem = net_lm->stages[0].input_mems[1];
   auto &lm_in2_mem = net_lm->stages[0].input_mems[2];
+  auto &lm_in3_mem = net_lm->stages[0].input_mems[3];
+  auto &lm_in4_mem = net_lm->stages[0].input_mems[4];
   auto &lm_out_logits_mem = net_lm->stages[0].output_mems[0];
   auto &lm_out_tokens_mem = net_lm->stages[0].output_mems[1];
-  d2d(lm_in0_mem, out_mem);
-  bm_memcpy_s2d(bm_handle, lm_in1_mem, (void *)&top_p);
-  bm_memcpy_s2d(bm_handle, lm_in2_mem, (void *)&temperature);
+
+  // repeat_penalty + top_p + top_k + temperature
+  std::vector<int> generated_tokens(SEQLEN, tokens[tokens.size() - 1]);
+  repeat_last_n = std::min(repeat_last_n, (int)tokens.size());
+  std::copy(tokens.end() - repeat_last_n, tokens.end(),
+            generated_tokens.begin());
+  bm_memcpy_s2d(bm_handle, lm_in0_mem, (void *)&top_p);
+  d2d(lm_in1_mem, out_mem);
+  bm_memcpy_s2d(bm_handle, lm_in2_mem, (void *)&top_p);
+  bm_memcpy_s2d(bm_handle, lm_in3_mem, (void *)&temperature);
+  bm_memcpy_s2d(bm_handle, lm_in4_mem, (void *)&repeat_penalty);
   net_launch(net_lm);
 
   int candidate_num = net_lm->stages[0].output_shapes[0].dims[1];
@@ -606,7 +633,7 @@ void Qwen::answer_with_topk(const std::string &input_str) {
       token_count++;
     }
     tok_num++;
-    token = forward_next_with_topk(token);
+    token = forward_next_with_topk(token, input_ids);
   }
   auto time_3 = std::chrono::system_clock::now();
   auto ftl_dur =
@@ -655,25 +682,23 @@ void Usage() {
          "  --help                  : Show help info.\n"
          "  --model                 : Set model path \n"
          "  --tokenizer             : Set tokenizer path \n"
-         "  --devid                 : Set devices to run for model, e.g. 1,2, "
-         "if not provided, use 0\n"
-         "  --temperature           : Set temperature for generating new "
-         "token, e.g. 0.98, if not provided, default to 1 \n"
-         "  --top_p                 : Set top_p for generating new tokens, "
-         "e.g. 0.8, if not provided, default to 1 \n"
-         "  --max_new_tokens        : Set max new tokens, e.g. 100, if not "
-         "provided, stop at EOS or exceeding max length \n"
-         "  --generation_mode       : Set generation mode, e.g sample, if not "
-         "provided, default to greedy search \n"
-         "  --input_mode            : Set input mode, e.g. unprompted, if not "
-         "provided, use prompted \n"
+         "  --devid                 : Set devices to run for model, e.g. 1,2, if not provided, use 0\n"
+         "  --temperature           : Set temperature for generating new token, e.g. 1.0, if not provided, default to 1.0 \n"
+         "  --top_p                 : Set top_p for generating new tokens, e.g. 0.8, if not provided, default to 1 \n"
+         "  --repeat_penalty        : Set repeat_penalty for generating new tokens, e.g. 1.1, if not provided, default to 1.1 \n"
+         "  --repeat_last_n         : Set repeat_penalty for penalizing recent n tokens, e.g. 32, if not provided, default to 32 \n"
+         "  --max_new_tokens        : Set max new tokens, e.g. 100, if not provided, stop at EOS or exceeding max length \n"
+         "  --generation_mode       : Set generation mode, e.g sample, if not provided, default to greedy search \n"
+         "  --input_mode            : Set input mode, e.g. unprompted, if not provided, use prompted \n"
          "\n");
 }
 
 void processArguments(int argc, char *argv[], std::string &model_path,
                       std::string &tokenizer_path, std::vector<int> &devices,
-                      float &temperature, uint16_t &top_p, int &max_new_tokens,
-                      std::string &generation_mode, std::string &input_mode) {
+                      float &temperature, uint16_t &top_p,
+                      float &repeat_penalty, int &repeat_last_n,
+                      int &max_new_tokens, std::string &generation_mode,
+                      std::string &input_mode) {
   struct option longOptions[] = {
       {"model", required_argument, nullptr, 'm'},
       {"tokenizer", required_argument, nullptr, 't'},
@@ -681,6 +706,8 @@ void processArguments(int argc, char *argv[], std::string &model_path,
       {"help", no_argument, nullptr, 'h'},
       {"temperature", required_argument, nullptr, 'e'},
       {"top_p", required_argument, nullptr, 'p'},
+      {"repeat_penalty", required_argument, nullptr, 'r'},
+      {"repeat_last_n", required_argument, nullptr, 'l'},
       {"max_new_tokens", required_argument, nullptr, 'n'},
       {"generation_mode", required_argument, nullptr, 'g'},
       {"input_mode", required_argument, nullptr, 'i'},
@@ -689,7 +716,7 @@ void processArguments(int argc, char *argv[], std::string &model_path,
   int optionIndex = 0;
   int option;
 
-  while ((option = getopt_long(argc, argv, "m:t:d:h:e:p", longOptions,
+  while ((option = getopt_long(argc, argv, "m:t:d:h:e:p:r:l:n:g", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -706,6 +733,12 @@ void processArguments(int argc, char *argv[], std::string &model_path,
       break;
     case 'p':
       top_p = std::stof(optarg);
+      break;
+    case 'r':
+      repeat_penalty = std::stof(optarg);
+      break;
+    case 'l':
+      repeat_last_n = std::stoi(optarg);
       break;
     case 'n':
       max_new_tokens = std::stoi(optarg);
@@ -734,13 +767,16 @@ int main(int argc, char **argv) {
   std::string model_path;
   std::string tokenizer_path;
   std::vector<int> devices = {0};
-  float temperature = 1;
+  float temperature = 1.f;
   uint16_t top_p = 1;
+  float repeat_penalty = 1.1f;
+  int repeat_last_n = 32;
   int max_new_tokens = std::numeric_limits<int>::max();
   std::string generation_mode = "basic";
   std::string input_mode = "prompted";
   processArguments(argc, argv, model_path, tokenizer_path, devices, temperature,
-                   top_p, max_new_tokens, generation_mode, input_mode);
+                   top_p, repeat_penalty, repeat_last_n, max_new_tokens,
+                   generation_mode, input_mode);
   if (model_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);
@@ -749,7 +785,8 @@ int main(int argc, char **argv) {
   Qwen qwen;
   printf("Init Environment ...\n");
   qwen.init(devices, model_path, tokenizer_path, temperature, top_p,
-            max_new_tokens, generation_mode, input_mode);
+            repeat_penalty, repeat_last_n, max_new_tokens, generation_mode,
+            input_mode);
   printf("==========================\n");
   qwen.chat();
   qwen.deinit();

@@ -16,7 +16,7 @@ PS：
 ```shell
 cp files/Qwen-7B-Chat/* your_torch_path
 export PYTHONPATH=your_torch_path:$PYTHONPATH
-pip install transformers_stream_generator einops tiktoken accelerate transformers=4.32.0
+pip install transformers_stream_generator einops tiktoken accelerate transformers==4.32.0
 ```
 
 ### export basic onnx
@@ -24,7 +24,7 @@ pip install transformers_stream_generator einops tiktoken accelerate transformer
 python export_onnx.py --model_path your_torch_path --generation_mode sample --device cuda
 ```
 
-### export topk + topp + temperature onnx
+### export topk + topp + temperature + repeat_penalty onnx
 ```shell
 python export_onnx.py --model_path your_torch_path --generation_mode all --device cuda
 ```
@@ -53,7 +53,7 @@ popd
 ./compile.sh --mode int4 --name qwen-7b --addr_mode io_alone --seq_length 8192
 ```
 
-### compile topk + topp + temperature bmodel
+### compile topk + topp + temperature + repeat_penalty bmodel
 ```shell
 ./compile.sh --mode int4 --name qwen-7b --addr_mode io_alone --generation_mode all --seq_length 8192
 ```
@@ -67,7 +67,7 @@ PS：
 1. mode：量化方式，目前支持fp16/bf16/int8/int4
 2. name：模型名称，目前Qwen系列支持 Qwen-1.8B/Qwen-7B/Qwen-14B
 3. addr_mode：地址分配方式，可以使用io_alone方式来加速
-4. generation_mode：token采样模式，为空时，使用greedy search；为sample时，使用topk+topp；为all时使用topk + topp + temperature + max_new_tokens，并且可以作为参数传入
+4. generation_mode：token采样模式，为空时，使用greedy search；为sample时，使用topk+topp；为all时使用topk + topp + temperature + repeat_penalty + max_new_tokens，并且可以作为参数传入
 5. decode_mode：编码模式，为空时，使用正常编码；为jacobi时，使用jacobi编码，只有前面使用export_onnx_jacobi.py时，用jacobi才有意义
 6. seq_length：模型支持的最大token长度
 
@@ -112,9 +112,9 @@ jacobi
 ./qwen_jacobi --model ../compile/qwen-7b_int4_1dev.bmodel --tokenizer ../support/qwen.tiktoken --devid 0
 ```
 
-topk + topp + temperature + max_new_tokens + 
+topk + topp + temperature + max_new_tokens + repeat_penalty
 ```
-./qwen --model ../compile/qwen-7b_int4_1dev.bmodel --tokenizer ../support/qwen.tiktoken --devid 0 --temperature 0.98 --top_p 0.8 --max_new_tokens 100 --generation_mode sample --input_mode unprompted
+./qwen --model ../compile/qwen-7b_int4_1dev.bmodel --tokenizer ../support/qwen.tiktoken --devid 10 --top_p 0.8 --repeat_penalty 1.1 --repeat_last_n 32 --generation_mode sample --input_mode prompted
 ```
 
 PS：

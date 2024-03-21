@@ -19,6 +19,7 @@ parser = argparse.ArgumentParser(description='export onnx.')
 parser.add_argument('--model_path', type=str, help='path to the torch model.')
 parser.add_argument('--device', required=False, type=str, choices=["cpu", "cuda"], default="cuda")
 parser.add_argument('--generation_mode', type=str, choices=["basic", "sample", "all"], default="basic", help='mode to generate token.')
+# parser.add_argument('--repeat_last_n', type=int, default=50, help='penalize the recent n tokens.')
 
 args = parser.parse_args()
 
@@ -39,6 +40,7 @@ config = origin_model.config
 transformer = origin_model.transformer
 layers = transformer.h
 
+# REPEAT_LAST_N = args.repeat_last_n
 SEQ_LENGTH = config.seq_length
 NUM_LAYERS = config.num_hidden_layers
 HIDDEN_SIZE = config.hidden_size
@@ -152,9 +154,14 @@ class LmHeadAll(torch.nn.Module):
         self.keep_matrix = torch.zeros((1, self.top_k), dtype=torch.bool)
         self.keep_matrix[0, :self.min_tokens_to_keep] = True
 
-    def forward(self, hidden_states, top_p = 0.8, temperature = 0.98):
+    def forward(self, input_ids, hidden_states, top_p = 0.8, temperature = 1.0, penalty = 1.1):
         hidden_states = transformer.ln_f(hidden_states)
         m_logits = origin_model.lm_head(hidden_states)
+
+        # repeat penalty
+        logits = torch.gather(m_logits, 1, input_ids)
+        logits = torch.where(logits < 0, logits * penalty, logits / penalty)
+        m_logits.scatter_(1, input_ids, logits)
 
         # top_k
         logits, token = torch.topk(m_logits.float(), self.top_k)
@@ -236,10 +243,14 @@ def convert_lm_head():
 
 def convert_lm_head_all():   
     model = LmHeadAll()
+    input_ids = torch.tensor([range(SEQ_LENGTH)]).to(device)
     hidden_states = torch.randn(1, HIDDEN_SIZE).bfloat16().to(device)
     top_p = torch.tensor([0.8]).bfloat16().to(device)
     temperature = torch.tensor([0.98]).bfloat16().to(device)
-    module = torch.jit.trace(model.forward, (hidden_states, top_p, temperature))
+    penalty = torch.tensor([0.98]).bfloat16().to(device)
+    repeat_last_n = torch.tensor([32]).long().to(device)
+
+    module = torch.jit.trace(model.forward, (input_ids, hidden_states, top_p, temperature, penalty))
     torch.jit.save(module, f'{folder}/lm_head.pt')
 
 

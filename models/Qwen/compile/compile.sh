@@ -99,18 +99,17 @@ if [ x$addr_mode == x"io_alone" ]; then
     addr_args="--addr_mode io_alone"
 fi
 
+if [ x$decode_mode == x"jacobi" ]; then
+    guess_len=8
+fi
 
 if [ x$generation_mode == x"basic" ]; then
     lm_quant_args="--quant_output"
-    lm_input_shape_args="--input_shapes [[1,${hidden_size}]]"
+    lm_input_args="--input_shapes [[1,${hidden_size}]]"
 elif [ x$generation_mode == x"sample" ]; then
-    lm_input_shape_args="--input_shapes [[${guess_len},${hidden_size}]]"
+    lm_input_args="--input_shapes [[${guess_len},${hidden_size}]]"
 elif [ x$generation_mode == x"all" ]; then
-    lm_input_shape_args="--input_shapes [[${guess_len},${hidden_size}],[1],[1]]"
-fi
-
-if [ x$decode_mode == x"jacobi" ]; then
-    guess_len=8
+    lm_input_args="--input_shapes [[${guess_len},${seq_length}],[${guess_len},${hidden_size}],[1],[1],[1]]  --input_types int32,float32,float32,float32,float32"
 fi
 
 outdir=${folder}/embedding
@@ -164,7 +163,7 @@ pushd $outdir
 model_transform.py \
     --model_name lm_head \
     --model_def ../../onnx/lm_head.pt \
-    $lm_input_shape_args \
+    $lm_input_args \
     --mlir lm_head.mlir
 
 model_deploy.py \
