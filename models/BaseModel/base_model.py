@@ -97,9 +97,11 @@ f"""\n===========================================================
         print()
         print(f"TPS: {tps:.3f} token/s")
 
-    def stream_answer(self, tokens):
-        tok_num = 0
+    def stream_predict(self, query, messages=None):
         self.answer_cur = ""
+
+        self.input_str = query
+        tokens = self.generate_tokens()
 
         if not tokens:
             print("Sorry: your question is too wierd!!")
@@ -109,31 +111,20 @@ f"""\n===========================================================
             return
         
         # First token
-        first_start = time.time()
-        token = self.forward_first(tokens)
-        first_end = time.time()
-
+        next_token = self.forward_first(tokens)
+        output_tokens = [next_token]
+        
         # Following tokens
-        while token != self.sp.eos_token_id and self.token_length < self.SEQLEN:
-            diff = self.sp.decode([token], skip_special_tokens=True)
-            self.answer_cur += diff
-            print(diff, flush=True, end='')
+        while True:
+            next_token = self.forward_next(next_token)
+            if next_token == self.EOS:
+                break
             if self.token_length < self.SEQLEN:
                 self.token_length += 1
-            tok_num += 1
-            token = self.forward_next(token)
-        
-        # counting time
-        next_end = time.time()
-        first_duration = first_end - first_start
-        next_duration = next_end - first_end
-        tps = tok_num / next_duration
-
-        self.update_history()
-
-        print()
-        print(f"FTL: {first_duration:.3f} s")
-        print(f"TPS: {tps:.3f} token/s")
+            output_tokens += [next_token]
+            self.answer_cur = self.sp.decode(output_tokens)
+            self.history_update()
+            yield self.answer_cur, self.messages
 
     def forward_first(self, tokens):
         if self.generation_mode == "greedy":

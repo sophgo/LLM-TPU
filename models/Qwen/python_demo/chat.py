@@ -11,8 +11,8 @@ class Qwen(BaseModel):
             "<|im_start|>user\n{}<|im_end|>\n"
             "<|im_start|>assistant\n"
         )
-        self.SEQLEN = 8192
-        self.sp.eos_token_id = 151645 # tokenizer.encode("<|im_end|>")
+        self.SEQLEN = 512
+        self.EOS = self.sp.im_end_id # tokenizer.encode("<|im_end|>")
         self.messages = [self.system_prompt]
 
         # load model
@@ -22,7 +22,10 @@ class Qwen(BaseModel):
         if self.decode_mode == "jacobi":
             import chat_jacobi
             self.model = chat_jacobi.Qwen()
-        self.model.init(self.devices, self.sp.eos_token_id, self.model_path)
+        elif self.decode_mode == "basic":
+            import chat_basic
+            self.model = chat_basic.Qwen()
+        self.model.init(self.devices, self.EOS, self.model_path)
 
     def clear(self):
         self.messages = [self.system_prompt]
@@ -47,7 +50,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--devid', type=str, default=0, help='device ID to use.')
+    parser.add_argument('--devid', type=str, default='0', help='device ID to use.')
     parser.add_argument('--model_path', type=str, required=True, help='path to the bmodel file.')
     parser.add_argument('--tokenizer_path', type=str, required=True, help='path to the tokenizer file.')
     parser.add_argument('--generation_mode', type=str, default="greedy", choices=["greedy", "sample"], help='mode for generating next token.')
