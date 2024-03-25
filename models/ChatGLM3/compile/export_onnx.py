@@ -22,8 +22,10 @@ args = parser.parse_args()
 model_path = args.model_path
 folder = f"./tmp/onnx"
 
+generation_mode = args.generation_mode
+
 origin_model = AutoModel.from_pretrained(
-    model_path, trust_remote_code=True).eval()
+    model_path, trust_remote_code=True).float().eval()
 
 for param in origin_model.parameters():
     param.requires_grad = False
@@ -96,6 +98,16 @@ class LmHead(torch.nn.Module):
         m_logits = transformer.output_layer(hidden_states)
         _, token = torch.topk(m_logits, 1)
         return token
+    
+class LmHeadWithLogits(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, hidden_states):
+        hidden_states = transformer.encoder.final_layernorm(hidden_states)
+        m_logits = transformer.output_layer(hidden_states)
+        return m_logits
 
 
 def convert_block(layer_id):
@@ -149,7 +161,11 @@ def convert_embedding():
 
 
 def convert_lm_head():
-    model = LmHead()
+    if generation_mode == "basic":
+        model = LmHead()
+    elif generation_mode == "logits":
+        model = LmHeadWithLogits()
+
     input = torch.randn(1, HIDDEN_SIZE)
     
     torch.onnx.export(model, (input),

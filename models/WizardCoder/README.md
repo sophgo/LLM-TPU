@@ -180,8 +180,9 @@ demo/build/wizardcoder -m /path/to/bmodel -d 0
 
 示例：
 ```shell
-./wizardcoder -m ../../../models/WizardCoder-15B-V1.0/test/wizardcoder-15B-int4_rc1.bmodel -d 0
+./wizardcoder -m ../../../models/WizardCoder-15B-V1.0/test/wizardcoder-15B-int4_rc1.bmodel -v ../vocab/vocab.json -d 0
 ```
+实际路径请以本地情况为准。
 
 ## 运行效果
 

@@ -25,7 +25,6 @@ public:
   void init(const std::vector<int> &devid, std::string model_path, std::string tokenizer_path);
   void chat();
   void deinit();
-  int round = 0;
 
 private:
   void answer(const std::string &input_str);
@@ -33,6 +32,7 @@ private:
   int forward_first(std::vector<int> &tokens);
   int forward_next(int cur_token);
   void load_sentencepiece(std::string tokenizer_path);
+  std::string build_prompt(std::string query, std::vector<std::pair<std::string, std::string>> history);
 
 private:
   int device_num;
@@ -56,6 +56,9 @@ private:
   std::string name_lm;
   std::vector<std::string> name_blocks;
   std::vector<std::string> name_blocks_cache;
+  std::vector<std::pair<std::string, std::string>> history_vector;
+  std::string sys_config = R"(<s>[INST] <<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe.  Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\n
+If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information.\n<</SYS>>\n\n)";
   int SEQLEN;     // read from bmodel
   int NUM_LAYERS; // read from bmodel
   int token_length;
@@ -127,7 +130,7 @@ void LLama2::init(const std::vector<int> &devices, std::string model_path, std::
   }
 
   // set SEQLEN
-  SEQLEN = net_embed->stages[0].input_shapes[0].dims[1];
+  SEQLEN = net_embed->stages[0].input_shapes[0].dims[0];
 
   // net device mem
   inputs_embed_512.resize(net_embed->input_num);
@@ -363,8 +366,6 @@ int LLama2::forward_next(int cur_token) {
   for (int i = 0; i < device_num; ++i) {
     embed_1[i].shape = net_blocks_cache[0]->stages[0].input_shapes[0];
   }
-  int bytes = bm_mem_get_device_size(past_key[0][0].device_mem) / SEQLEN;
-  int token_offset = (token_length - 1) * bytes;
   std::vector<bm_tensor_t> inputs_block;
   std::vector<bm_tensor_t> outputs_block;
   for (int i = 0; i < device_num; ++i) {
@@ -381,6 +382,8 @@ int LLama2::forward_next(int cur_token) {
     for (int j = 0; j < device_num; ++j) {
       inputs_block[3 + j * 5] = past_key[i][j];
       inputs_block[4 + j * 5] = past_value[i][j];
+      int bytes = bm_mem_get_device_size(past_key[0][j].device_mem) / SEQLEN; // must in loop when devices size = 6
+      int token_offset = (token_length - 1) * bytes;
       bm_set_device_mem(&outputs_block[1 + j * 3].device_mem, bytes,
           bm_mem_get_device_addr(past_key[i][j].device_mem) + token_offset);
       bm_set_device_mem(&outputs_block[2 + j * 3].device_mem, bytes,
@@ -404,56 +407,54 @@ int LLama2::forward_next(int cur_token) {
   return token;
 }
 
+std::string LLama2::build_prompt(std::string query, std::vector<std::pair<std::string, std::string>> history_vector) {
+    std::string prompt = sys_config;
+    for (const auto& item : history_vector) {
+      prompt += item.first + " [/INST] " + item.second + "</s><s>[INST]] ";
+    }
+    prompt += query + " [/INST] ";
+    return prompt;
+}
+
+
 void LLama2::chat() {
   while (true) {
     std::cout << "\nQuestion: ";
     std::string input_str;
     std::getline(std::cin, input_str);
-    std::string sys_config = R"(<s>[INST] <<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe.  Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\n
-If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information.\n<</SYS>> )";
     if (input_str == "exit") {
       break;
     }
 
-    if(history == "") {
-      // input_str = sys_config + "\nQuestion:\n" + input_str + "\nAnswer\n:";
-      history = sys_config + input_str + " [/INST] ";
-    }
-    else {
-      history += "[INST]" + input_str + " [/INST] ";
-    }
     std::cout << "\nAnswer: " << std::flush;
-    answer(history);
+    answer(input_str);
     std::cout << std::endl;
   }
 }
 
 void LLama2::answer(const std::string &input_str) {
+  std::string sentence_input = build_prompt(input_str, history_vector);
+  std::string cur_anser = "";
+
   int tok_num = 1;
   std::vector<int> tokens;
-  std::vector<int> try_token;
-  sentencepiece.Encode(history, &tokens);
-  std::string test_input = "<s>";
-  sentencepiece.Encode(test_input, &try_token);
-  tokens.insert(tokens.begin(), 1);
-  if (tokens.empty()) {
+  sentencepiece.Encode(sentence_input, &tokens);
+  // tokens.insert(tokens.begin(), 1);
+  if (input_str.empty()) {
     printf("Sorry: your question is too wierd!!\n");
-    history = "";
-    round = 0;
+    cur_anser.clear();
     return;
   }
+
   // make sure token not too large
   token_length = tokens.size();
   if (token_length > SEQLEN - 10) {
-    // reset
-    if (round == 0) {
-      printf("Error: your question is too large!\n");
-      return;
-    }
-    round = 0;
-    history = "";
-    answer(input_str);
+    cur_anser.clear();
+    printf("Error: your question is too large!\n");
+    size_t half_size = history_vector.size() / 2;
+    history_vector.erase(history_vector.begin(), history_vector.begin() + half_size);
     return;
+
   }
   int pre_token = 0;
   auto t0 = std::chrono::system_clock::now();
@@ -467,7 +468,7 @@ void LLama2::answer(const std::string &input_str) {
     sentencepiece.Decode(pre_ids, &pre_word);
     sentencepiece.Decode(ids, &word);
     std::string diff = word.substr(pre_word.size());
-    history += diff;
+    cur_anser += diff;
     std::cout << diff << std::flush;
     if (token_length < SEQLEN) {
       token_length++;
@@ -481,11 +482,14 @@ void LLama2::answer(const std::string &input_str) {
   printf("\n\nfirst token latency: %f s", (use0.count() * 1e-6));
   printf("\nspeed: %f token/s\n", tok_num / (use1.count() * 1e-6));
   if (token_length >= SEQLEN) {
-    round = 0;
-    history = history.substr(history.size() / 2);
+    history_vector.push_back({input_str, cur_anser}); 
+    cur_anser.clear();
+
+    size_t half_size = history_vector.size() / 2;
+    history_vector.erase(history_vector.begin(), history_vector.begin() + half_size);
   } else {
-    history += " </s><s>";
-    round++;
+    history_vector.push_back({input_str, cur_anser});
+    cur_anser.clear();
   }
 }
 

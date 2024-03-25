@@ -29,20 +29,16 @@ parse_args() {
 
 # Mapping
 declare -A model_to_demo=(
+    ["chatglm2-6b"]="ChatGLM2"
     ["chatglm3-6b"]="ChatGLM3"
     ["llama2-7b"]="Llama2"
     ["qwen-7b"]="Qwen"
+    ["qwen1.5-1.8b"]="Qwen1.5"
     ["wizardcoder-15b"]="WizardCoder"
 )
 
 # Process Args
 parse_args "$@"
-
-# Check Model Name
-if [[ ! ${model_to_demo[$model]} ]]; then
-    >&2 echo -e "Error: Invalid name $model, the input name must be \033[31mchatglm3-6b|llama2-7b|qwen-7b|wizardcoder-15b\033[0m"
-    exit 1
-fi
 
 # Check Version
 compare_date="20231222"
@@ -58,6 +54,12 @@ if [ "$extracted_date" -lt "$compare_date" ]; then
     exit 1
 else
     echo "Driver date is $extracted_date, which is up to date. Continuing..."
+fi
+
+# Check Model Name
+if [[ ! ${model_to_demo[$model]} ]]; then
+    >&2 echo -e "Error: Invalid name $model, the input name must be \033[31mchatglm3-6b|chatglm2-6b|llama2-7b|qwen-7b|qwen1.5-1.8b|wizardcoder-15b\033[0m"
+    exit 1
 fi
 
 # Compile

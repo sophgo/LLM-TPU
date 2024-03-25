@@ -11,6 +11,7 @@
 |ChatGLM3-6B          |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/THUDM/chatglm3-6b)                          |
 |Qwen-7B              |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen-7B-Chat)                          |
 |Qwen-14B             |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen-14B-Chat)                         |
+|Qwen1.5-1.8B         |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen1.5-1.8B-Chat)                     |
 |Llama2-7B            |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf)              |
 |Llama2-13B           |                    |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/meta-llama/Llama-2-13b-chat-hf)             |
 |Falcon-40B           |                    |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/tiiuae/falcon-40b)                          |
@@ -32,7 +33,38 @@
 
 另外SoC的执行步骤和PCIE的有些区别，PCIE必须要安装docker后才能运行，这里将其分开说明。
 
-### SoC
+## 版本检查
+
+在开始之前，首先要检查sophon-driver的版本是否符合条件
+
+### SoC如何执行版本检查
+```
+uname -v
+```
+之后，会显示类似这样的一个时间`#2 SMP Sat Nov 18 10:07:36 HKT 2023`，如果你的日期>=20231222，也就是比较新，那么跳过这一步，如果日期<20231222，也就是版本比较老，那么参考[这个链接](https://doc.sophgo.com/sdk-docs/v23.09.01-lts/docs_latest_release/docs/SophonSDK_doc/zh/html/sdk_intro/5_update.html#soc)重新安装sdk，刷机包则用以下命令获取
+```
+pip3 install dfss
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/sdcard.tgz
+```
+
+### PCIE如何执行版本检查
+```
+cat /proc/bmsophon/driver_version
+```
+之后，会显示类似这样的一个release date`release version:0.5.0   release date: 20240304-175610`，如果你的日期>=20231222，也就是比较新，那么跳过这一步，如果日期<20231222，也就是版本比较老，那么按照如下步骤重新安装driver
+```
+pip3 install dfss
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/sophon-driver_0.5.0_amd64.deb
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/sophon-libsophon-dev_0.5.0_amd64.deb
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/sophon-libsophon_0.5.0_amd64.deb
+
+sudo apt remove sophon-driver sophon-libsophon
+sudo dpkg -i sophon-*.deb
+```
+
+## 跑通Demo
+
+### SoC如何跑通Demo
 
 #### 1. 克隆LLM-TPU项目，并执行run.sh脚本
 ```
@@ -40,7 +72,7 @@ git clone https://github.com/sophgo/LLM-TPU.git
 ./run.sh --model llama2-7b
 ```
 
-### PCIE
+### PCIE如何跑通Demo
 
 #### 1. 安装docker，并进入docker
 ```
@@ -66,11 +98,11 @@ git clone https://github.com/sophgo/LLM-TPU.git
 
 | Model           | SoC                                         | PCIE                                         |
 | :-------------- | :------------------------------------------ | :------------------------------------------- |
-| ChatGLM3-6B     | ./run.sh --model chatglm3-6b      | ./run.sh --model chatglm3-6b      |
-| Llama2-7B       | ./run.sh --model llama2-7b       | ./run.sh --model llama2-7b       |
-| Qwen-7B         | ./run.sh --model qwen-7b        | ./run.sh --model qwen-7b        |
-| LWM-Text-Chat   | ./run.sh --model lwm-text-chat   | ./run.sh --model lwm-text-chat   |
-| WizardCoder-15B | ./run.sh --model wizardcoder-15b  | ./run.sh --model wizardcoder-15b |
+| ChatGLM3-6B     | ./run.sh --model chatglm3-6b --arch soc     | ./run.sh --model chatglm3-6b --arch pcie     |
+| Llama2-7B       | ./run.sh --model llama2-7b --arch soc       | ./run.sh --model llama2-7b   --arch pcie     |
+| Qwen-7B         | ./run.sh --model qwen-7b --arch soc         | ./run.sh --model qwen-7b     --arch pcie     |
+| LWM-Text-Chat   | ./run.sh --model lwm-text-chat --arch soc   | ./run.sh --model lwm-text-chat  --arch pcie  |
+| WizardCoder-15B | ./run.sh --model wizardcoder-15b --arch soc | ./run.sh --model wizardcoder-15b --arch pcie |
 
 
 # 常见问题
@@ -83,6 +115,34 @@ A：您可以先在联网的大机器上git clone本项目，之后运行 ./run.
 
 最后再在Airbox上运行 ./run.sh --model llama2-7b
 
+### Q2：为什么在PCIE模式下，我在docker里运行以后第一次输出会出现如下的warning？
+Warning 部分：
+
+[a53lite_runtime][error] open file /opt/sophon/libsophon-current/lib/tpu_module/libbm1684x_kernel_module.so error!!
+
+[a53lite_runtime][error] /workspace/libsophon/bmlib/src/a53lite_api.cpp 488: load file failed!
+bm_module is null!
+
+A：这是由于docker内部本身不具有libsophon导致的，解决方法为
+```
+pip3 install dfss
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/sophon-driver_0.5.0_amd64.deb
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/sophon-libsophon-dev_0.5.0_amd64.deb
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/sophon-libsophon_0.5.0_amd64.deb
+
+sudo dpkg -i sophon-*.deb
+source /etc/profile
+```
+完成上述步骤后，下次推理时此类warning将不会出现。
+
+### Q3：推理出来精度异常，输出全是“！”
+
+A：可能是由于板子的tpu电压太低了，tpu降频就好了，降频命令如下
+```
+echo "setr tpll_clock 750000000" > /sys/kernel/debug/top/clock
+echo "setr mpll_clock 1800000000" > /sys/kernel/debug/top/clock
+echo "setr vpll_clock 100000000"> /sys/kernel/debug/top/clock
+```
 
 
 

@@ -7,10 +7,15 @@ num_device=1
 mode_args=""
 device_args=""
 quantize_args="--quantize W8BF16"
+addr_args=""
 name=""
 num_layers=
 out_model=$name.bmodel
-addr_flag=false
+seq_length=
+guess_len=1
+hidden_size=
+lm_quant_args=""
+generation_mode="basic"
 
 while [[ $# -gt 0 ]]; do
     key="$1"
@@ -28,9 +33,21 @@ while [[ $# -gt 0 ]]; do
         name="$2"
         shift 2
         ;;
-    --addr_flag)
-        addr_flag=true
-        shift
+    --addr_mode)
+        addr_mode="$2"
+        shift 2
+        ;;
+    --seq_length)
+        seq_length="$2"
+        shift 2
+        ;;
+    --generation_mode)
+        generation_mode="$2"
+        shift 2
+        ;;
+    --decode_mode)
+        decode_mode="$2"
+        shift 2
         ;;
     *)
         echo "Invalid option: $key" >&2
@@ -45,12 +62,15 @@ done
 
 if [ "$name" = "qwen-1_8b" ]; then
   num_layers=23
+  hidden_size=2048
   echo "Compile Qwen-1_8B"
 elif [ "$name" = "qwen-7b" ]; then 
   num_layers=31
+  hidden_size=4096
   echo "Compile Qwen-7B"
 elif [ "$name" = "qwen-14b" ]; then
   num_layers=39
+  hidden_size=5120
   echo "Compile Qwen-14B"
 else
   >&2 echo -e "Error: Invalid name $name, the input name must be \033[31mqwen-1_8b|qwen-7b|qwen-14b\033[0m"
@@ -75,9 +95,21 @@ else
     out_model=$name'_'$mode'_1dev.bmodel'
 fi
 
-addr_mode_flag=""
-if [[ "$addr_flag" = true ]]; then
-    addr_mode_flag="--addr_mode io_alone"
+if [ x$addr_mode == x"io_alone" ]; then
+    addr_args="--addr_mode io_alone"
+fi
+
+if [ x$decode_mode == x"jacobi" ]; then
+    guess_len=8
+fi
+
+if [ x$generation_mode == x"basic" ]; then
+    lm_quant_args="--quant_output"
+    lm_input_args="--input_shapes [[1,${hidden_size}]]"
+elif [ x$generation_mode == x"sample" ]; then
+    lm_input_args="--input_shapes [[${guess_len},${hidden_size}]]"
+elif [ x$generation_mode == x"all" ]; then
+    lm_input_args="--input_shapes [[${guess_len},${seq_length}],[${guess_len},${hidden_size}],[1],[1],[1]]  --input_types int32,float32,float32,float32,float32"
 fi
 
 outdir=${folder}/embedding
@@ -86,7 +118,9 @@ pushd $outdir
 
 model_transform.py \
     --model_name embedding \
-    --model_def ../onnx/embedding.onnx \
+    --model_def ../onnx/embedding.pt \
+    --input_shapes [[1,$seq_length]] \
+    --input_types "int32" \
     --mlir embedding.mlir
 
 model_deploy.py \
@@ -100,8 +134,9 @@ model_deploy.py \
 
 model_transform.py \
     --model_name embedding_cache \
-    --model_def ../onnx/embedding.onnx \
-    --input_shapes [[1,1]] \
+    --model_def ../onnx/embedding.pt \
+    --input_shapes [[1,$guess_len]] \
+    --input_types "int32" \
     --mlir embedding_cache.mlir
 
 model_deploy.py \
@@ -127,14 +162,15 @@ pushd $outdir
 
 model_transform.py \
     --model_name lm_head \
-    --model_def ../../onnx/lm_head.onnx \
+    --model_def ../../onnx/lm_head.pt \
+    $lm_input_args \
     --mlir lm_head.mlir
 
 model_deploy.py \
     --mlir lm_head.mlir \
     $quantize_args \
     --quant_input \
-    --quant_output \
+    $lm_quant_args \
     --chip bm1684x \
     $device_args \
     --model lm_head.bmodel
@@ -180,7 +216,7 @@ for ((i=0; i<=$num_layers; i++)); do
         --quant_output \
         --chip bm1684x \
         $device_args \
-        $addr_mode_flag \
+        $addr_args \
         --model block_cache_$i.bmodel
 
     rm *.npz

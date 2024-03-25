@@ -37,3 +37,5 @@ add_subdirectory(third_party/re2)
 add_executable(qwen demo.cpp tokenizer.cpp)
 target_link_libraries(qwen bmrt bmlib re2)
 
+add_executable(qwen_jacobi demo_jacobi.cpp tokenizer.cpp)
+target_link_libraries(qwen_jacobi bmrt bmlib re2)

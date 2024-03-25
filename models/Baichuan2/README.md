@@ -1,4 +1,4 @@
-![image](./assets/sophgo_chip.png)
+![image](../../assets/sophgo_chip.png)
 
 # Baichuan2-TPU
 
@@ -11,12 +11,14 @@
 .
 ├── README.md                           #使用说明
 ├── requirements.txt                    #需要使用的python wheel包
-├── assets
 ├── compile
 │   ├── compile.sh                      #用来编译TPU模型的脚本
-│   ├── export_onnx_fast.py             #用来导出onnx的脚本
-│   ├── modeling_baichuan.py            #替换Baichuan2-7B-chat的对应文件的备份
-│   └── torch_inference.py              #torch推理脚本
+│   ├── export_onnx.py                  #用来导出onnx的脚本
+│   ├── torch_inference.py              #torch推理脚本
+│   └── files
+│       └── Baichuan2-7B                #替换Baichuan2-7B-chat的对应文件的备份
+│           ├── config.json
+│           └── modeling_baichuan.py
 ├── demo                                #Baichuan2 c++代码文件
 │   ├── CMakeLists.txt
 │   └── demo.cpp                        #主程序
@@ -79,7 +81,7 @@ source ./envsetup.sh
 ``` shell
 git clone https://github.com/sophgo/Baichuan2-TPU.git
 cd Baichuan2
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 ```
 
 ### 步骤五：替换modeling_baichuan.py, 修改config.json, 生成onnx文件
@@ -87,8 +89,9 @@ pip install -r requirements.txt
 
 ``` shell
 cd compile
-cp modeling_baichuan.py $BAICHUAN2_PATH
-python export_onnx_fast.py --model_path your_model_path
+cp files/Baichuan2-7B/modeling_baichuan.py $BAICHUAN2_PATH
+cp files/Baichuan2-7B/config.json $BAICHUAN2_PATH
+python3 export_onnx.py --model_path $BAICHUAN2_PATH
 ```
 
 * PS1：your_model_path 指的是原模型下载后的地址, 如:"../../torch2onnx/Baichuan2-7B-Chat", 可以根据需要选择使用7b模型还是13b模型。
@@ -100,9 +103,10 @@ python export_onnx_fast.py --model_path your_model_path
 
 ``` shell
 ./compile.sh --mode int8
+mv baichuan2-7b_int8_1dev.bmodel ../model
 ```
 
-* PS1：编译完成后最终会在Llama2-TPU/compile路径下生成名为baichuan2-{X}b_{Y}_{Z}dev.bmodel,其中X为7或13，Y为`compile.sh`时选择的`mode`的数据类型,Z为推理的芯片数量(如果不指定num_device, 会省略{Z}dev的部分)
+* PS1：编译完成后最终会在Baichuan2-TPU/compile路径下生成名为baichuan2-{X}b_{Y}_{Z}dev.bmodel,其中X为7或13，Y为`compile.sh`时选择的`mode`的数据类型,Z为推理的芯片数量(如果不指定num_device, 会省略{Z}dev的部分)
 * PS2：生成bmodel耗时大概3小时以上，建议64G内存以及200G以上硬盘空间，不然很可能OOM或者no space left
 * PS3：目前给定的lib_pcie和lib_soc部分仅包含单芯的动态库，多芯部分会在后续更新
 
@@ -149,7 +153,7 @@ cmake .. -DTARGET_ARCH=soc # soc 只有一颗芯片，因此不支持多芯编�
 make -j
 ```
 
-编译生成llama2可执行程序。
+编译生成Baichuan2可执行程序。
 
 运行`baichuan2`:
 ```shell
@@ -159,7 +163,7 @@ make -j
 ## 编译程序(Python Web版本)【单芯】
 
 ```shell
-pip install gradio==3.39.0
+pip3 install gradio==3.39.0
 cd Baichuan2-TPU/web_demo
 mkdir build
 cd build
@@ -169,7 +173,7 @@ make -j
 
 编译成功会在`build`文件夹下生成`libtpuchat.so*`, 此时可以在web_demo.py中指定bmodel\_path token\_path device\_id, lib_path(编译生产的`libtpuchat.so*`文件, 默认路径是`./build`下), 以及dev_id。
 ```python
-python web_demo.py
+python3 web_demo.py
 ```
 即可成功运行web的demo。
 * PS：在用户不修改上述token\_path的lib\_path的存放路径前提下只需指定bmodel\_path即可运行程序。

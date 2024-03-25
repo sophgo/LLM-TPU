@@ -53,7 +53,7 @@ QwenTokenizer::QwenTokenizer(const std::string &tiktoken_path) {
   tokenizer = tiktoken::tiktoken(std::move(encoder), special_tokens, PAT_STR);
 }
 
-auto QwenTokenizer::build_prompt(const std::vector<std::string> &history) const
+auto QwenTokenizer::build_prompt(const std::vector<std::string> &history, const std::string &input_mode) const
     -> std::string {
   if (history.size() % 2 != 1) {
     std::cout << "invalid history size " << history.size();
@@ -61,15 +61,21 @@ auto QwenTokenizer::build_prompt(const std::vector<std::string> &history) const
   }
 
   std::ostringstream oss_prompt;
-  oss_prompt << "<|im_start|>system\nYou are a helpful assistant.<|im_end|>";
-  for (size_t i = 0; i < history.size() - 1; i += 2) {
-    oss_prompt << "\n<|im_start|>user\n"
-               << history[i] << "<|im_end|>\n<|im_start|>assistant\n" << history[i + 1]
-               << "<|im_end|>";
-  }
-  oss_prompt << "\n<|im_start|>user\n"
-             << history.back() << "<|im_end|>\n<|im_start|>assistant\n";
 
+  if (input_mode == "prompted") {
+    oss_prompt << "<|im_start|>system\nYou are a helpful assistant.<|im_end|>";
+    for (size_t i = 0; i < history.size() - 1; i += 2) {
+      oss_prompt << "\n<|im_start|>user\n"
+                 << history[i] << "<|im_end|>\n<|im_start|>assistant\n"
+                 << history[i + 1] << "<|im_end|>";
+    }
+    oss_prompt << "\n<|im_start|>user\n"
+               << history.back() << "<|im_end|>\n<|im_start|>assistant\n";
+  } else if (input_mode == "unprompted") {
+    for (size_t i = 0; i < history.size(); i += 1) {
+      oss_prompt << history[i];
+    }
+  }
   return oss_prompt.str();
 }
 
@@ -92,8 +98,10 @@ auto QwenTokenizer::decode(const std::vector<int> &ids) const -> std::string {
 }
 
 auto QwenTokenizer::encode_history(const std::vector<std::string> &history,
-                                   int max_length) const -> std::vector<int> {
-  std::string prompt = build_prompt(history);
+                                   int max_length,
+                                   std::string input_mode) const
+    -> std::vector<int> {
+  std::string prompt = build_prompt(history, input_mode);
   std::vector<int> input_ids = encode(prompt, max_length);
   return input_ids;
 }
