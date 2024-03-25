@@ -1,61 +1,38 @@
 import time
 from transformers import AutoTokenizer
 
+
 class BaseModel:
-    def __init__(self, model_path, tokenizer_path, devid, generation_mode="greedy", decode_mode="basic"):
-        # preprocess parameters, such as prompt & tokenizer
+    def __init__(self, args):
+        # preprocess parameters
         self.input_str = ""
         self.system_prompt = ""
 
         # model parameters
         self.token_length = 0
         self.SEQLEN = None
-        self.model_path = model_path
-        self.tokenizer_path = tokenizer_path
 
         # devid
-        if isinstance(devid, str):
-            self.devices = [int(d) for d in devid.split(",")]
-        elif isinstance(devid, int):
-            raise ValueError("The input device should be in string format, like --devid '0' or --devid '0,1', but we received --devid {}".format(str(devid)))
-        else:
-            raise ValueError("The type of devis is wrong!")
-
-        # postprocess parameters
-        if generation_mode not in ["greedy","sample"]:
-            raise ValueError("generation_mode should be in {}, but we get {}".format(["greedy","sample"], generation_mode))
-        self.generation_mode = generation_mode
-        if decode_mode not in ["basic","jacobi"]:
-            raise ValueError("decode_mode should be in {}, but we get {}".format(["basic","jacobi"], decode_mode))
-        self.decode_mode = decode_mode
+        self.devices = [int(d) for d in args.devid.split(",")]
 
         # load tokenizer
-        print("Load " + self.tokenizer_path + " ...")
-        self.sp = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
+        print("Load " + args.tokenizer_path + " ...")
+        self.sp = AutoTokenizer.from_pretrained(
+            args.tokenizer_path, trust_remote_code=True
+        )
 
         # warm up
-        self.sp.decode([0]) 
+        self.sp.decode([0])
         print("Done!")
-
-    def generate_tokens(self):
-        pass
-
-    def load_model(self):
-        pass
-
-    def clear(self):
-        pass
-
-    def history_update(self):
-        pass
 
     def chat(self):
         # Instruct:
         print(
-f"""\n===========================================================
+            f"""\n===========================================================
 1. If you want to quit, please entry one of [q, quit, exit]
 2. To create new chat-session, please entry one of [clear, new]
-===========================================================""")
+==========================================================="""
+        )
         # Stop Chatting with "exit" input
         while True:
             self.input_str = input("\nQuestion: ")
@@ -67,34 +44,52 @@ f"""\n===========================================================
                 self.clear()
             # Chat
             else:
-                tokens = self.generate_tokens()
+                tokens = self.encode_tokens()
 
-                print("\nAnswer: ", end='')
+                print("\nAnswer: ", end="")
                 self.stream_answer(tokens)
 
-    def answer(self, tokens):
+    # stat time cost
+    def stream_answer(self, tokens):
+        tok_num = 0
         self.answer_cur = ""
 
         if not tokens:
             print("Sorry: your question is too wierd!!")
             return
         if self.token_length > self.SEQLEN:
-            print("The maximum question length should be shorter than {} but we get {} instead.".format(self.SEQLEN, self.token_length))
+            print(
+                "The maximum question length should be shorter than {} but we get {} instead.".format(
+                    self.SEQLEN, self.token_length
+                )
+            )
             return
-        
-        # Inference
-        start = time.time()
-        result_tokens = self.model.answer(tokens)
-        self.answer_cur = self.sp.decode(result_tokens, skip_special_tokens=True)
-        print(self.answer_cur, end='')
-        end = time.time()
 
-        duration = end - start
-        tps = len(result_tokens) / duration
+        # First token
+        first_start = time.time()
+        token = self.forward_first(tokens)
+        first_end = time.time()
+
+        # Following tokens
+        while token != self.sp.eos_token_id and self.token_length < self.SEQLEN:
+            diff = self.sp.decode([token], skip_special_tokens=True)
+            self.answer_cur = self.answer_cur + " " + diff if self.insert_space else self.answer_cur + diff
+            print(diff, flush=True, end="")
+            if self.token_length < self.SEQLEN:
+                self.token_length += 1
+            tok_num += 1
+            token = self.forward_next()
+
+        # counting time
+        next_end = time.time()
+        first_duration = first_end - first_start
+        next_duration = next_end - first_end
+        tps = tok_num / next_duration
 
         self.update_history()
 
         print()
+        print(f"FTL: {first_duration:.3f} s")
         print(f"TPS: {tps:.3f} token/s")
 
     def stream_predict(self, query, messages=None):
@@ -107,13 +102,17 @@ f"""\n===========================================================
             print("Sorry: your question is too wierd!!")
             return
         if self.token_length > self.SEQLEN:
-            print("The maximum question length should be shorter than {} but we get {} instead.".format(self.SEQLEN, self.token_length))
+            print(
+                "The maximum question length should be shorter than {} but we get {} instead.".format(
+                    self.SEQLEN, self.token_length
+                )
+            )
             return
-        
+
         # First token
         next_token = self.forward_first(tokens)
         output_tokens = [next_token]
-        
+
         # Following tokens
         while True:
             next_token = self.forward_next(next_token)
@@ -127,16 +126,21 @@ f"""\n===========================================================
             yield self.answer_cur, self.messages
 
     def forward_first(self, tokens):
-        if self.generation_mode == "greedy":
-            token = self.model.forward_first(tokens)
-        elif self.generation_mode == "sample":
-            token = self.model.forward_first_with_topk(tokens, self.generation_mode)
-        return token
-    
-    def forward_next(self, token):
-        if self.generation_mode == "greedy":
-            token = self.model.forward_next(token)
-        elif self.generation_mode == "sample":
-            token = self.model.forward_next_with_topk(token, self.generation_mode)
+        token = self.model.forward_first(tokens)
         return token
 
+    def forward_next(self):
+        token = self.model.forward_next()
+        return token
+
+    def encode_tokens(self):
+        pass
+
+    def load_model(self):
+        pass
+
+    def clear(self):
+        pass
+
+    def history_update(self):
+        pass
