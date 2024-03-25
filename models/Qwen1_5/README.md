@@ -75,8 +75,8 @@ git clone https://huggingface.co/Qwen/Qwen1.5-7B-Chat
 本例程的`tools`目录下提供了修改好之后的`config.json`和`modeling_qwen2.py`。(transformers请更新到4.38.2以上)可以直接替换掉原仓库的文件：
 
 ```bash
-cp compile/Qwen1.5-1.8B-Chat/config.json Qwen1.5-1.8B-Chat/
-cp compile/Qwen1.5-1.8B-Chat/modeling_qwen2.py /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2/
+cp files/Qwen1.5-1.8B-Chat/config.json Qwen1.5-1.8B-Chat/
+cp files/Qwen1.5-1.8B-Chat/modeling_qwen2.py /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2/
 ```
 
 ### 4.1.3 导出onnx

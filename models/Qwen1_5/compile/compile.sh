@@ -7,8 +7,11 @@ num_device=1
 mode_args=""
 device_args=""
 quantize_args="--quantize F16"
+addr_args=""
 name=""
 num_layers=
+lm_quant_args=
+generation_mode="sample"
 out_model=$name.bmodel
 
 while [[ $# -gt 0 ]]; do
@@ -25,6 +28,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --name)
             name="$2"
+            shift 2
+            ;;
+        --addr_mode)
+            addr_mode="$2"
+            shift 2
+            ;;
+        --generation_mode)
+            generation_mode="$2"
             shift 2
             ;;
         *)
@@ -65,6 +76,16 @@ if [ x$num_device != x1 ]; then
     out_model=$name'_'$mode'_'$num_device'dev.bmodel'
 else
     out_model=$name'_'$mode'_1dev.bmodel'
+fi
+
+if [ x$addr_mode == x"io_alone" ]; then
+    addr_args="--addr_mode io_alone"
+fi
+
+if [ x$generation_mode == x"sample" ]; then
+    lm_quant_args=""
+else
+    lm_quant_args="--quant_output"
 fi
 
 outdir=${folder}/embedding
@@ -122,7 +143,7 @@ model_deploy.py \
     --mlir lm_head.mlir \
     $quantize_args \
     --quant_input \
-    --quant_output \
+    $lm_quant_args \
     --chip bm1684x \
     $device_args \
     --model lm_head.bmodel
@@ -168,6 +189,7 @@ for ((i=0; i<=$num_layers; i++)); do
         --quant_output \
         --chip bm1684x \
         $device_args \
+        $addr_args \
         --model block_cache_$i.bmodel
 
     rm *.npz
