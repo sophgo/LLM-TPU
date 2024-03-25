@@ -33,7 +33,7 @@ declare -A model_to_demo=(
     ["chatglm3-6b"]="ChatGLM3"
     ["llama2-7b"]="Llama2"
     ["qwen-7b"]="Qwen"
-    ["qwen1.5-1.8b"]="Qwen1.5"
+    ["qwen1.5-1.8b"]="Qwen1_5"
     ["wizardcoder-15b"]="WizardCoder"
 )
 
