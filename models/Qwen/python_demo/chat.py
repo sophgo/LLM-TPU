@@ -23,8 +23,8 @@ class Qwen(BaseModel):
             import chat_jacobi
             self.model = chat_jacobi.Qwen()
         elif self.decode_mode == "basic":
-            import chat_basic
-            self.model = chat_basic.Qwen()
+            import chat
+            self.model = chat.Qwen()
         self.model.init(self.devices, self.EOS, self.model_path)
 
     def clear(self):

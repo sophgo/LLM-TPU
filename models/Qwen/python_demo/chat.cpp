@@ -650,7 +650,7 @@ std::vector<int> Qwen::answer(std::vector<int> history_tokens) {
   return result_tokens;
 }
 
-PYBIND11_MODULE(chat_basic, m) {
+PYBIND11_MODULE(chat, m) {
     pybind11::class_<Qwen>(m, "Qwen")
         .def(pybind11::init<>())
         .def("init", &Qwen::init)
