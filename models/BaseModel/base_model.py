@@ -66,15 +66,16 @@ class BaseModel:
             return
 
         # First token
+        pre_token = 0
         first_start = time.time()
         token = self.forward_first(tokens)
         first_end = time.time()
 
         # Following tokens
         while token != self.sp.eos_token_id and self.token_length < self.SEQLEN:
-            diff = self.sp.decode([token], skip_special_tokens=True)
-            self.answer_cur = self.answer_cur + " " + diff if self.insert_space else self.answer_cur + diff
-            print(diff, flush=True, end="")
+            word = self.decode_tokens(pre_token, token)
+            pre_token = token
+            print(word, flush=True, end="")
             if self.token_length < self.SEQLEN:
                 self.token_length += 1
             tok_num += 1
@@ -135,6 +136,15 @@ class BaseModel:
 
     def encode_tokens(self):
         pass
+
+    def decode_tokens(self, pre_token, token):
+        if self.decode_mode == "diff":
+            pre_word = self.sp.decode([pre_token], skip_special_tokens=True)
+            word = self.sp.decode([pre_token, token], skip_special_tokens=True)
+            return word[len(pre_word):]
+        else:
+            word = self.sp.decode([token], skip_special_tokens=True)
+            return word
 
     def load_model(self):
         pass

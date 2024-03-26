@@ -10,14 +10,14 @@ class Qwen1_5(BaseModel):
         self.system_prompt = "You are a helpful assistant."
         self.SEQLEN = 512
         self.messages = [{"role": "system", "content": self.system_prompt}]
-        self.insert_space = True
+        self.decode_mode = "diff"
 
         # load model
         self.load_model(args)
 
     def load_model(self, args):
         if len(self.devices) > 1:
-            import chat_parallel
+            from Qwen1_5.python_demo import chat_parallel
             self.model = chat_parallel.Qwen()
             self.model.init(
                 self.devices,
@@ -25,7 +25,7 @@ class Qwen1_5(BaseModel):
                 args.model_path
             )
         elif args.generation_mode in ["greedy", "sample"]:
-            import chat
+            from Qwen1_5.python_demo import chat
             self.model = chat.Qwen()
             self.model.init(
                 self.devices,

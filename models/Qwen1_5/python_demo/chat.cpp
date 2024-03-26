@@ -84,6 +84,7 @@ public:
   void deinit();
   int forward_first(std::vector<int> &tokens);
   int forward_next();
+  std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
   std::mt19937 sgen;
   Qwen() : sgen(std::random_device()()){};
@@ -403,11 +404,36 @@ int Qwen::forward_next() {
   return token;
 }
 
+std::vector<int> Qwen::generate(std::vector<int> &history_tokens, int EOS) {
+  if (history_tokens.empty()) {
+    printf("Sorry: your question is too wierd!!\n");
+    history_tokens.clear();
+    return {};
+  }
+
+  // make sure token not too large
+  if ((int)history_tokens.size() > SEQLEN - 10) {
+    history_tokens.clear();
+    printf("Error: your question is too large!\n");
+    return {};
+  }
+
+  std::vector<int> result_tokens;
+  int token = forward_first(history_tokens);
+  while (token != EOS && token_length < SEQLEN) {
+    result_tokens.emplace_back(token);
+    token = forward_next();
+  }
+
+  return result_tokens;
+}
+
 PYBIND11_MODULE(chat, m) {
   pybind11::class_<Qwen>(m, "Qwen")
       .def(pybind11::init<>())
       .def("init", &Qwen::init)
       .def("forward_first", &Qwen::forward_first)
       .def("forward_next", &Qwen::forward_next)
+      .def("generate", &Qwen::generate)
       .def("deinit", &Qwen::deinit);
 }
