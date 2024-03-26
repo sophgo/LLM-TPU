@@ -54,7 +54,6 @@ def eval_chat(model, tokenizer, subject, dev_df, test_df, num_few_shot, max_leng
                 tokenizer.eos_token_id
             )
         response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
-        import pdb;pdb.set_trace() 
         # print(response)
 
         if response and response[0] in choices:

@@ -145,7 +145,6 @@ def run_eval(model, tokenizer, eval, args):
 
 
 def extract_choice(response):
-    import pdb;pdb.set_trace()
     '''
         Always return a choice, even cannot match by regex,
         to ensure fair comparison to other models.
