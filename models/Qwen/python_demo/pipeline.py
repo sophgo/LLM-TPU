@@ -2,30 +2,27 @@ import argparse
 
 from BaseModel.base_model import BaseModel
 
-
-class Qwen1_5(BaseModel):
+class Qwen(BaseModel):
     def __init__(self, args):
         super().__init__(args)
         # preprocess parameters, such as prompt & tokenizer
-        self.system_prompt = "You are a helpful assistant."
-        self.SEQLEN = 512
-        self.messages = [{"role": "system", "content": self.system_prompt}]
-        self.decode_mode = "diff"
+        self.system_prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
+        self.prompt = (
+            "<|im_start|>user\n{}<|im_end|>\n"
+            "<|im_start|>assistant\n"
+        )
+        self.EOS = self.sp.im_end_id # tokenizer.encode("<|im_end|>")
+        self.messages = [self.system_prompt]
 
         # load model
         self.load_model(args)
 
     def load_model(self, args):
-        if len(self.devices) > 1:
-            from Qwen1_5.python_demo import chat_parallel
-            self.model = chat_parallel.Qwen()
-            self.model.init(
-                self.devices,
-                self.sp.im_end_id,
-                args.model_path
-            )
-        elif args.generation_mode in ["greedy", "sample"]:
-            from Qwen1_5.python_demo import chat
+        if args.decode_mode == "jacobi":
+            import chat_jacobi
+            self.model = chat_jacobi.Qwen()
+        elif args.decode_mode == "basic":
+            import chat
             self.model = chat.Qwen()
             self.model.init(
                 self.devices,
@@ -36,32 +33,28 @@ class Qwen1_5(BaseModel):
                 args.generation_mode,
                 args.prompt_mode,
             )
+        self.SEQLEN = self.model.SEQLEN
 
     def clear(self):
-        self.messages = [{"role": "system", "content": self.system_prompt}]
+        self.messages = [self.system_prompt]
 
     def update_history(self):
         if self.token_length >= self.SEQLEN - 128:
-            print("... (reach the maximal length)", flush=True, end="")
+            print("... (reach the maximal length)", flush=True, end='')
             self.messages = [self.messages[0]]
-            self.messages.append({"role": "user", "content": self.input_str})
-            self.messages.append({"role": "assistant", "content": self.answer_cur})
+            self.messages.append(self.prompt.format(self.input_str) + self.answer_cur)
         else:
-            self.messages.append({"role": "assistant", "content": self.answer_cur})
+            self.messages[-1] = self.messages[-1] + self.answer_cur
 
     def encode_tokens(self):
-        self.messages.append({"role": "user", "content": self.input_str})
-        text = self.sp.apply_chat_template(
-            self.messages, tokenize=False, add_generation_prompt=True
-        )
+        self.messages.append(self.prompt.format(self.input_str))
+        text = "".join(self.messages)
         tokens = self.sp(text).input_ids
         return tokens
 
-
 def main(args):
-    model = Qwen1_5(args)
+    model = Qwen(args)
     model.chat()
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -75,6 +68,6 @@ if __name__ == "__main__":
     parser.add_argument('--max_new_tokens', type=int, default=1024, help='max new token length to generate')
     parser.add_argument('--generation_mode', type=str, choices=["greedy", "sample"], default="sample", help='mode for generating next token')
     parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
-
+    parser.add_argument('--decode_mode', type=str, default="basic", choices=["basic", "jacobi"], help='mode for decoding.')
     args = parser.parse_args()
     main(args)

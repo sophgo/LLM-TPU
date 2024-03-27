@@ -85,7 +85,7 @@ cp files/Qwen1.5-1.8B-Chat/modeling_qwen2.py /usr/local/lib/python3.10/dist-pack
 
 ```bash
 # 将/workspace/Qwen-7B-Chat换成docker环境中您的Qwen-7B-Chat仓库的路径
-python3 compile/export_onnx.py --model_path /workspace/Qwen1.5-1.8B-Chat --sequence_length your_sequence_length
+python3 compile/export_onnx.py --model_path /workspace/Qwen1.5-1.8B-Chat --seq_length your_sequence_length
 ```
 此时有大量onnx模型被导出到本例程中`compile/tmp/onnx`的目录。
 

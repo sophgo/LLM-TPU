@@ -7,23 +7,77 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <iostream>
-#include <cstdlib>
-#include <vector>
+#include "bmruntime_interface.h"
+#include "memory.h"
+#include <algorithm>
 #include <assert.h>
 #include <chrono>
-#include <algorithm>
+#include <cstdlib>
+#include <getopt.h>
+#include <inttypes.h>
+#include <iostream>
+#include <numeric>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include "memory.h"
-#include "bmruntime_interface.h"
-#include <getopt.h>
-#include <stdio.h>
-#include <inttypes.h>
 #include <random>
-#include <numeric>
+#include <stdio.h>
+#include <vector>
 
-static const uint16_t ATTENTION_MASK = 0xC61C; // -9984 by bfloat16
+static const uint16_t ATTENTION_MASK = 0xC61C;
+
+typedef union {
+  float fval;
+  uint32_t bits;
+  struct {
+    uint32_t frac : 23; // mantissa
+    uint32_t exp : 8;   // exponent
+    uint32_t sign : 1;  // sign
+  } format;
+} fp32;
+
+// from chatgpt
+static inline uint16_t fp32_to_bf16_bits(uint32_t f) {
+  /*
+   * Extract the sign of the input number into the high bit of the 16-bit word:
+   *
+   *      +---+-----+-------------------+
+   *      | S | EEEE EEEE | MMM MMMM     |
+   *      +---+-----+-------------------+
+   * Bits  15  14-7          6-0
+   */
+  const uint32_t sign = f & UINT32_C(0x80000000);
+  /*
+   * Extract the exponent and the top 7 bits of the mantissa into the bits 0-14
+   * of the 16-bit word:
+   *
+   *      +---+-----+-------------------+
+   *      | 0 | EEEE EEEE | MMM MMMM     |
+   *      +---+-----+-------------------+
+   * Bits  14  7-0          6-0
+   */
+  const uint32_t rest = (f >> 16) & UINT32_C(0x7FFF);
+
+  // Combine the sign with the rest of the number
+  const uint16_t bfloat16 = (sign >> 16) | rest;
+
+  // Handle rounding by examining the bits that are being truncated
+  const uint32_t rounding_mask = UINT32_C(0x00007FFF);
+  const uint32_t rounding_bits = f & rounding_mask;
+  const uint32_t halfway = UINT32_C(0x00004000);
+  if (rounding_bits > halfway || (rounding_bits == halfway && (bfloat16 & 1))) {
+    // Round up
+    return bfloat16 + 1;
+  } else {
+    // Truncate
+    return bfloat16;
+  }
+}
+
+static inline uint16_t fp32_value_to_bf16_ieee(float val) {
+  fp32 f0;
+  f0.fval = val;
+  return fp32_to_bf16_bits(f0.bits);
+}
 
 class Qwen {
 public:
@@ -38,21 +92,11 @@ public:
 
   std::mt19937 sgen;
   Qwen() : sgen(std::random_device()()){};
+  int sample(const std::vector<float> &probs, const std::vector<int> &tokens);
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
-
-  void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
-  int greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
-  int sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
-
-public:
-  int token_length;
-  int SEQLEN;     // read from bmodel
-  int NUM_LAYERS; // read from bmodel
-  bool io_alone;
-  std::vector<int> visited_tokens;
 
 private:
   std::vector<bm_handle_t> handles;
@@ -62,13 +106,18 @@ private:
   std::vector<const bm_net_info_t *> net_blocks_cache;
   const bm_net_info_t *net_embed;
   const bm_net_info_t *net_embed_cache;
-  const bm_net_info_t *net_lm, *net_greedy_head, *net_sample_head;
+  const bm_net_info_t *net_lm;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
+  int token_length;
+  int SEQLEN;     // read from bmodel
+  int NUM_LAYERS; // read from bmodel
+  bool io_alone;
+  std::vector<int> visited_tokens;
 
   // generation
   float temperature;
-  float top_p;
+  uint16_t top_p;
   float repeat_penalty;
   int repeat_last_n;
   int max_new_tokens;
@@ -108,11 +157,11 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path,
                 const std::string &__prompt_mode) {
   // generation params
   temperature = __temperature;
-  top_p = __top_p;
+  top_p = fp32_value_to_bf16_ieee(__top_p);
   max_new_tokens = __max_new_tokens;
   generation_mode = __generation_mode;
   prompt_mode = __prompt_mode;
-  
+
   // request bm_handle
   std::cout << "Device [ ";
   for (auto d : devices) {
@@ -145,11 +194,12 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path,
   net_embed = bmrt_get_network_info(p_bmrt, "embedding");
   net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
   net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
-  net_greedy_head = bmrt_get_network_info(p_bmrt, "greedy_head");
-  net_sample_head = bmrt_get_network_info(p_bmrt, "sample_head");
   SEQLEN = net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
   auto num_nets = bmrt_get_network_number(p_bmrt);
-  NUM_LAYERS = (num_nets - 5) / 2;
+  NUM_LAYERS = (num_nets - 2) / 2;
+
+  // resize
+  visited_tokens.resize(SEQLEN);
 
   // net blocks
   for (int i = 0; i < NUM_LAYERS; i++) {
@@ -194,91 +244,16 @@ void Qwen::deinit() {
   }
 }
 
-void Qwen::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
-  std::vector<bm_tensor_t> in_tensors(net->input_num);
-  std::vector<bm_tensor_t> out_tensors(net->output_num);
-
-  bmrt_tensor_with_device(
-      &in_tensors[0], logits_mem,
-      net->input_dtypes[0], net->stages[0].input_shapes[0]);
-
-  for (int i = 1; i < net->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net->stages[0].input_mems[i],
-        net->input_dtypes[i], net->stages[0].input_shapes[i]);
-  }
-  for (int i = 0; i < net->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net->stages[0].output_mems[i],
-        net->output_dtypes[i], net->stages[0].output_shapes[i]);
-  }
-  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
-                                   net->input_num, out_tensors.data(),
-                                   net->output_num, true, false);
-  assert(ret);
-  bm_thread_sync(bm_handle);
-}
-
-int Qwen::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
-  auto &out_mem = net->stages[0].output_mems[0];
-  head_launch(net, logits_mem);
-  int token = 0;
-  bm_memcpy_d2s(bm_handle, (void *)&token, out_mem);
-  return token;
-}
-
-int Qwen::sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
-  auto &in1_mem = net->stages[0].input_mems[1];
-  auto &in2_mem = net->stages[0].input_mems[2];
-  auto &in3_mem = net->stages[0].input_mems[3];
-  auto &in4_mem = net->stages[0].input_mems[4];
-  auto &out0_mem = net->stages[0].output_mems[0];
-  auto &out1_mem = net->stages[0].output_mems[1];
-
-  // repeat_penalty + top_p + top_k + temperature
-  std::vector<int> generated_tokens(SEQLEN, visited_tokens[token_length - 1]);
-  repeat_last_n = std::min(repeat_last_n, token_length);
-  std::copy(visited_tokens.begin() + token_length - repeat_last_n, 
-            visited_tokens.begin() + token_length,
-            generated_tokens.begin());
-  bm_memcpy_s2d(bm_handle, in1_mem, (void *)generated_tokens.data());
-  bm_memcpy_s2d(bm_handle, in2_mem, (void *)&top_p);
-  bm_memcpy_s2d(bm_handle, in3_mem, (void *)&temperature);
-  bm_memcpy_s2d(bm_handle, in4_mem, (void *)&repeat_penalty);
-
-  // inference
-  head_launch(net, logits_mem);
-
-  // get logit & token
-  int candidate_num = net->stages[0].output_shapes[0].dims[1];
-  std::vector<float> probs(candidate_num);
-  bm_memcpy_d2s(bm_handle, probs.data(), out0_mem);
-  std::vector<int> tokens(candidate_num);
-  bm_memcpy_d2s(bm_handle, tokens.data(), out1_mem);
-
-  // sample
+int Qwen::sample(const std::vector<float> &probs,
+                 const std::vector<int> &tokens) {
   std::discrete_distribution<> dist(probs.begin(), probs.end());
   return tokens[dist(sgen)];
 }
 
 int Qwen::forward_first(std::vector<int> &tokens) {
-  visited_tokens.resize(SEQLEN);
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
-  
-  token_length = tokens.size();
-
-  for (int i = 0; i < token_length; i++) {
-    position_id[i] = i;
-  }
-  for (int i = 0; i < token_length; i++) {
-    for (int j = 0; j < SEQLEN; j++) {
-      if (j <= i) {
-        attention_mask[i * SEQLEN + j] = 0;
-      }
-    }
-  }
 
   token_length = tokens.size();
 
@@ -316,35 +291,49 @@ int Qwen::forward_first(std::vector<int> &tokens) {
     d2d(past_value[idx], net_blocks[idx]->stages[0].output_mems[2]);
   }
 
-  // forward lmhead
   int bytes = out_mem.size / SEQLEN;
-  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
-  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
-  bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
+
+  auto &lm_in0_mem = net_lm->stages[0].input_mems[0];
+  auto &lm_in1_mem = net_lm->stages[0].input_mems[1];
+  auto &lm_in2_mem = net_lm->stages[0].input_mems[2];
+  auto &lm_out_logits_mem = net_lm->stages[0].output_mems[0];
+  auto &lm_out_tokens_mem = net_lm->stages[0].output_mems[1];
+
+  // top_p + top_k + temperature
+  bm_memcpy_d2d_byte(bm_handle, lm_in0_mem, 0, out_mem,
                      (token_length - 1) * bytes, bytes);
+  bm_memcpy_s2d(bm_handle, lm_in1_mem, (void *)&top_p);
+  bm_memcpy_s2d(bm_handle, lm_in2_mem, (void *)&temperature);
   net_launch(net_lm);
 
-  int token = 0;
+  // get logit & token
+  int candidate_num = net_lm->stages[0].output_shapes[0].dims[1];
+  std::vector<float> lm_logits(candidate_num);
+  bm_memcpy_d2s(bm_handle, lm_logits.data(), lm_out_logits_mem);
+  std::vector<int> lm_tokens(candidate_num);
+  bm_memcpy_d2s(bm_handle, lm_tokens.data(), lm_out_tokens_mem);
+
+  // process the lookahead tokens
+  int token;
   if (generation_mode == "greedy") {
-    token = greedy_search(net_greedy_head, lm_out_mem);
+    token = lm_tokens[0];
   } else if (generation_mode == "sample") {
-    token = sample(net_sample_head, lm_out_mem);
+    token = sample(lm_logits, lm_tokens);
   }
 
-  visited_tokens[token_length] = token;
+  visited_tokens.emplace_back(token);
   return token;
 }
 
 int Qwen::forward_next() {
   token_length += 1;
-  int cur_token = visited_tokens[token_length - 1];
+  int cur_token = visited_tokens[visited_tokens.size() - 1];
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = token_length - 1; i < SEQLEN; i++) {
     attention_mask[i] = ATTENTION_MASK;
   }
   int32_t position_id = token_length - 1;
-
   // embedding
   auto &in_mem = net_embed_cache->stages[0].input_mems[0];
   auto &out_mem = net_embed_cache->stages[0].output_mems[0];
@@ -389,27 +378,39 @@ int Qwen::forward_next() {
                        bytes);
   }
 
-  // forward lmhead
-  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
-  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
-  d2d(lm_in_mem, out_mem);
+  auto &lm_in0_mem = net_lm->stages[0].input_mems[0];
+  auto &lm_in1_mem = net_lm->stages[0].input_mems[1];
+  auto &lm_in2_mem = net_lm->stages[0].input_mems[2];
+  auto &lm_out_logits_mem = net_lm->stages[0].output_mems[0];
+  auto &lm_out_tokens_mem = net_lm->stages[0].output_mems[1];
+
+  // repeat_penalty + top_p + top_k + temperature
+  d2d(lm_in0_mem, out_mem);
+  bm_memcpy_s2d(bm_handle, lm_in1_mem, (void *)&top_p);
+  bm_memcpy_s2d(bm_handle, lm_in2_mem, (void *)&temperature);
   net_launch(net_lm);
 
-  int token = 0;
+  int candidate_num = net_lm->stages[0].output_shapes[0].dims[1];
+  std::vector<float> lm_logits(candidate_num);
+  bm_memcpy_d2s(bm_handle, lm_logits.data(), lm_out_logits_mem);
+  std::vector<int> lm_tokens(candidate_num);
+  bm_memcpy_d2s(bm_handle, lm_tokens.data(), lm_out_tokens_mem);
+
+  // process the lookahead tokens
+  int token;
   if (generation_mode == "greedy") {
-    token = greedy_search(net_greedy_head, lm_out_mem);
+    token = lm_tokens[0];
   } else if (generation_mode == "sample") {
-    token = sample(net_sample_head, lm_out_mem);
+    token = sample(lm_logits, lm_tokens);
   }
-  
-  visited_tokens[token_length] = token;
+
+  visited_tokens.emplace_back(token);
   return token;
 }
 
-
 std::vector<int> Qwen::generate(std::vector<int> &history_tokens, int EOS) {
   if (history_tokens.empty()) {
-    printf("Sorry: your question is empty!!\n");
+    printf("Sorry: your question is too wierd!!\n");
     history_tokens.clear();
     return {};
   }
@@ -432,12 +433,11 @@ std::vector<int> Qwen::generate(std::vector<int> &history_tokens, int EOS) {
 }
 
 PYBIND11_MODULE(chat, m) {
-    pybind11::class_<Qwen>(m, "Qwen")
-        .def(pybind11::init<>())
-        .def("init", &Qwen::init)
-        .def("forward_first", &Qwen::forward_first)
-        .def("forward_next", &Qwen::forward_next)
-        .def("generate", &Qwen::generate)
-        .def("deinit", &Qwen::deinit)
-        .def_readwrite("SEQLEN", &Qwen::SEQLEN); // read SEQLEN in pipeline.py
+  pybind11::class_<Qwen>(m, "Qwen")
+      .def(pybind11::init<>())
+      .def("init", &Qwen::init)
+      .def("forward_first", &Qwen::forward_first)
+      .def("forward_next", &Qwen::forward_next)
+      .def("generate", &Qwen::generate)
+      .def("deinit", &Qwen::deinit);
 }

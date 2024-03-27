@@ -21,12 +21,7 @@ pip install transformers_stream_generator einops tiktoken accelerate transformer
 
 ### export basic onnx
 ```shell
-python export_onnx.py --model_path your_torch_path --generation_mode sample --device cuda
-```
-
-### export topk + topp + temperature + repeat_penalty onnx
-```shell
-python export_onnx.py --model_path your_torch_path --generation_mode all --device cuda
+python export_onnx.py --model_path your_torch_path --device cuda
 ```
 
 ### export jacobi onnx
@@ -37,8 +32,7 @@ python export_onnx_jacobi.py --model_path your_torch_path --guess_len 8 --genera
 PS：
 1. 最好使用cuda导出，cpu导出block的时候，会卡在第一个block，只能kill
 2. your_torch_path：从官网下载的或者自己训练的模型的路径，例如./Qwen-7B-Chat
-3. generation_mode：生成token的方式，目前支持两种，basic是贪婪采样，sample是使用topk + topp，all是使用topk + topp + temperature + max_new_tokens，并且把他们都作为参数
-4. 对于长回答，可以使用export_onnx_jacobi.py来导出加速（refs：https://github.com/hao-ai-lab/LookaheadDecoding）
+3. 对于长回答，可以使用export_onnx_jacobi.py来导出加速（refs：https://github.com/hao-ai-lab/LookaheadDecoding）
 
 ## Compile bmodel
 
@@ -53,14 +47,9 @@ popd
 ./compile.sh --mode int4 --name qwen-7b --addr_mode io_alone --seq_length 8192
 ```
 
-### compile topk + topp + temperature + repeat_penalty bmodel
-```shell
-./compile.sh --mode int4 --name qwen-7b --addr_mode io_alone --generation_mode all --seq_length 8192
-```
-
 ### compile jacobi bmodel
 ```shell
-./compile.sh --mode int4 --name qwen-7b --addr_mode io_alone --generation_mode sample --decode_mode jacobi --seq_length 8192
+./compile_jacobi.sh --mode int4 --name qwen-7b --addr_mode io_alone --generation_mode sample --decode_mode jacobi --seq_length 8192
 ```
 
 PS：

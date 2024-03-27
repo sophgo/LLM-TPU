@@ -24,6 +24,9 @@ elseif (${TARGET_ARCH} STREQUAL "soc")
     message("SoC mode, starting......")
 endif()
 
+add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -Werror)
+set(CMAKE_BUILD_TYPE "Debug")
+
 find_package(pybind11 REQUIRED CONFIG)
 
 file(GLOB CPP_FILES ${PROJECT_SOURCE_DIR}/*.cpp)

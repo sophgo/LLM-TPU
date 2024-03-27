@@ -16,6 +16,7 @@ class BaseModel:
         self.devices = [int(d) for d in args.devid.split(",")]
 
         # load tokenizer
+        self.pre_token = 0
         print("Load " + args.tokenizer_path + " ...")
         self.sp = AutoTokenizer.from_pretrained(
             args.tokenizer_path, trust_remote_code=True
@@ -46,6 +47,19 @@ class BaseModel:
             else:
                 tokens = self.encode_tokens()
 
+                # check tokens
+                if not tokens:
+                    print("Sorry: your question is too empty!!")
+                    return
+                if self.token_length > self.SEQLEN:
+                    print(
+                        "The maximum question length should be shorter than {} but we get {} instead.".format(
+                            self.SEQLEN, self.token_length
+                        )
+                    )
+                    return
+
+
                 print("\nAnswer: ", end="")
                 self.stream_answer(tokens)
 
@@ -54,27 +68,14 @@ class BaseModel:
         tok_num = 0
         self.answer_cur = ""
 
-        if not tokens:
-            print("Sorry: your question is too wierd!!")
-            return
-        if self.token_length > self.SEQLEN:
-            print(
-                "The maximum question length should be shorter than {} but we get {} instead.".format(
-                    self.SEQLEN, self.token_length
-                )
-            )
-            return
-
         # First token
-        pre_token = 0
         first_start = time.time()
         token = self.forward_first(tokens)
         first_end = time.time()
 
         # Following tokens
-        while token != self.sp.eos_token_id and self.token_length < self.SEQLEN:
-            word = self.decode_tokens(pre_token, token)
-            pre_token = token
+        while token != self.EOS and self.token_length < self.SEQLEN:
+            word = self.decode_tokens(token)
             print(word, flush=True, end="")
             if self.token_length < self.SEQLEN:
                 self.token_length += 1
@@ -98,17 +99,6 @@ class BaseModel:
 
         self.input_str = query
         tokens = self.generate_tokens()
-
-        if not tokens:
-            print("Sorry: your question is too wierd!!")
-            return
-        if self.token_length > self.SEQLEN:
-            print(
-                "The maximum question length should be shorter than {} but we get {} instead.".format(
-                    self.SEQLEN, self.token_length
-                )
-            )
-            return
 
         # First token
         next_token = self.forward_first(tokens)
@@ -134,23 +124,18 @@ class BaseModel:
         token = self.model.forward_next()
         return token
 
+    def decode_tokens(self, token):
+        word = self.sp.decode([token], skip_special_tokens=True)
+        return word
+        
     def encode_tokens(self):
-        pass
-
-    def decode_tokens(self, pre_token, token):
-        if self.decode_mode == "diff":
-            pre_word = self.sp.decode([pre_token], skip_special_tokens=True)
-            word = self.sp.decode([pre_token, token], skip_special_tokens=True)
-            return word[len(pre_word):]
-        else:
-            word = self.sp.decode([token], skip_special_tokens=True)
-            return word
+        raise ValueError("Don't forget rewrite it again")
 
     def load_model(self):
-        pass
+        raise ValueError("Don't forget rewrite it again")
 
     def clear(self):
-        pass
+        raise ValueError("Don't forget rewrite it again")
 
     def history_update(self):
-        pass
+        raise ValueError("Don't forget rewrite it again")

@@ -12,10 +12,8 @@ name=""
 num_layers=
 out_model=$name.bmodel
 seq_length=
-guess_len=1
 hidden_size=
 lm_quant_args=""
-generation_mode="basic"
 
 while [[ $# -gt 0 ]]; do
     key="$1"
@@ -39,14 +37,6 @@ while [[ $# -gt 0 ]]; do
         ;;
     --seq_length)
         seq_length="$2"
-        shift 2
-        ;;
-    --generation_mode)
-        generation_mode="$2"
-        shift 2
-        ;;
-    --decode_mode)
-        decode_mode="$2"
         shift 2
         ;;
     *)
@@ -99,19 +89,6 @@ if [ x$addr_mode == x"io_alone" ]; then
     addr_args="--addr_mode io_alone"
 fi
 
-if [ x$decode_mode == x"jacobi" ]; then
-    guess_len=8
-fi
-
-if [ x$generation_mode == x"basic" ]; then
-    lm_quant_args="--quant_output"
-    lm_input_args="--input_shapes [[1,${hidden_size}]]"
-elif [ x$generation_mode == x"sample" ]; then
-    lm_input_args="--input_shapes [[${guess_len},${hidden_size}]]"
-elif [ x$generation_mode == x"all" ]; then
-    lm_input_args="--input_shapes [[${guess_len},${seq_length}],[${guess_len},${hidden_size}],[1],[1],[1]]  --input_types int32,float32,float32,float32,float32"
-fi
-
 outdir=${folder}/embedding
 mkdir -p $outdir
 pushd $outdir
@@ -135,7 +112,7 @@ model_deploy.py \
 model_transform.py \
     --model_name embedding_cache \
     --model_def ../onnx/embedding.pt \
-    --input_shapes [[1,$guess_len]] \
+    --input_shapes [[1,1]] \
     --input_types "int32" \
     --mlir embedding_cache.mlir
 
@@ -163,21 +140,42 @@ pushd $outdir
 model_transform.py \
     --model_name lm_head \
     --model_def ../../onnx/lm_head.pt \
-    $lm_input_args \
+    --input_shapes [[1,${hidden_size}]] \
     --mlir lm_head.mlir
 
 model_deploy.py \
     --mlir lm_head.mlir \
     $quantize_args \
     --quant_input \
-    $lm_quant_args \
     --chip bm1684x \
     $device_args \
     --model lm_head.bmodel
 
+
+model_transform.py \
+    --model_name greedy_head \
+    --model_def ../../onnx/greedy_head.onnx \
+    --mlir greedy_head.mlir
+
+model_deploy.py \
+    --mlir greedy_head.mlir \
+    --chip bm1684x \
+    --model greedy_head.bmodel
+
+
+model_transform.py \
+    --model_name sample_head \
+    --model_def ../../onnx/sample_head.onnx \
+    --mlir sample_head.mlir
+
+model_deploy.py \
+    --mlir sample_head.mlir \
+    --chip bm1684x \
+    --model sample_head.bmodel
+
 rm *.npz
 
-models=${models}${outdir}'/lm_head.bmodel '
+models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '$outdir'/sample_head.bmodel '
 popd
 
 echo $models
