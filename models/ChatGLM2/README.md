@@ -30,8 +30,102 @@ docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev
 git lfs install
 git clone git@hf.co:THUDM/chatglm2-6b
 ```
+并将本项目中./models/ChatGLM2/compile/files/chatglm2-6b中config.json与modeling_chatglm.py替换至上述下载后的文件夹中，并替换同名文件（其中需要采用其它sequence length的用户请参考[常见问题](#常见问题),默认sequence length = 512）
 
-并对该工程做三点修改：(也可以用我们修改好文件，路径在./compile/files中替换原模型中的对应文件)
+3. 下载`TPU-MLIR`代码并编译，(也可以直接下载编译好的release包解压)
+
+目前由于mlir还在维护中，编译GLM系列模型的用户请下载
+``` shell
+pip3 install dfss
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/mlir_club/glm_mlir.tar.gz
+tar -xf glm_mlir.tar.gz
+source source tpu-mlir_v1.6.45-gdc3e9f6b-20231220/envsetup.sh 
+```
+
+后续mlir维护完成后可以使用如下方式
+``` shell
+git clone git@github.com:sophgo/tpu-mlir.git
+cd tpu-mlir
+source ./envsetup.sh
+./build.sh
+```
+
+## 编译模型
+
+1. 导出所有onnx模型，如果过程中提示缺少某些组件，直接`pip3 install 组件`即可
+
+``` shell
+cd compile
+python3 export_onnx.py --model_path your_chatglm2-6b_path
+```
+此时有大量onnx模型被导出到tmp目录。
+
+2. 对onnx模型进行编译
+
+目前TPU-MLIR支持对ChatGLM2进行F16、INT8和INT4量化，且支持多芯分布式推理，默认情况下会进行F16量化和单芯推理，最终生成`chatglm2-6b_f16_1dev.bmodel`文件
+
+```shell
+./compile.sh --name chatglm2-6b --mode inference_mode --num_device device_number
+```
+
+其中：
+`--name` 为模型名称，在此指定为`chatglm2-6b`；
+`--mode` 为推理所使用的数据类型，可以选择`f16, int8, int4`中任意一种，默认为`f16`；
+`--num_device` 为推理所使用的芯片数量，请根据实际所使用的设备指定，默认`--num_device 1`。
+
+## 编译程序(C++版本)
+
+执行如下编译，（PCIE与SOC相同）：
+
+```shell
+cd demo
+mkdir build
+cd build
+cmake ..
+make
+```
+
+编译生成chatglm可执行程序，将`chatglm`放到demo目录下，同时按照下列方式指定芯片数量和bmodel路径。
+运行`chatglm`，默认单芯运行`chatglm2-6b_f16_1dev.bmodel`:
+```shell
+./chatglm --model chatglm2-6b_f16_1dev.bmodel --tokenizer ../support/tokenizer/tokenizer.model --devid  your_devid
+```
+其中`--devid`为用来推理的TPU编号，默认为0，如果使用多芯推理（需要保证编译的bmodel也是多芯）可以使用`,`来增加芯片，如`--devid 2,3` 表示使用TPU2 和 TPU3来进行推理。
+
+## 运行效果
+
+以下为单芯片下INT8量化模式的运行效果：
+
+![](./assets/chatglm.jpg)
+
+## 常见问题
+
+#### sentencepiece是怎么来的
+
+工程中已经有编译好的，所以不需要编译，如果好奇的话，参考如下步骤。
+
+下载[sentencepiece](https://github.com/google/sentencepiece)，并编译得到`libsentencepiece.a`
+
+```shell
+git clone git@github.com:google/sentencepiece.git
+cd sentencepiece
+mkdir build
+cd build
+cmake ..
+make -j
+```
+
+如果要编译SoC环境，则参考demo的编译方式，在makefile中指定交叉编译器
+
+#### demo程序无法正常运行
+
+如果demo程序拷贝到运行环境提示无法运行，比如接口找不到等等错误。
+原因是运行环境的库有所不同，将demo中的`./support/lib_pcie`（PCIE）或者 `./support/lib_soc`(SoC)里面的so文件拷贝到运行环境，链接到里面的so即可。
+
+
+#### 对源码做了哪些修改：
+
+一共做了三点修改：
 - 将`config.json`文件中`seq_length`配置为512；
 - 将`modeling_chatglm.py`文件中的如下代码：
 
@@ -64,106 +158,3 @@ if False:
 ```
 
 这是因为ONNX无法支持`torch.nn.functional.scaled_dot_product_attention`算子的转换。
-
-3. 下载`TPU-MLIR`代码并编译，(也可以直接下载编译好的release包解压)
-
-``` shell
-git clone git@github.com:sophgo/tpu-mlir.git
-cd tpu-mlir
-source ./envsetup.sh
-./build.sh
-```
-
-## 编译模型
-
-1. 指定`ChatGLM2-6B`的python路径
-
-``` shell
-export PYTHONPATH=your_chatglm2-6b_path:$PYTHONPATH
-```
-
-2. 导出所有onnx模型，如果过程中提示缺少某些组件，直接`pip3 install 组件`即可
-
-``` shell
-cd compile
-python3 export_onnx.py --model_path your_chatglm2-6b_path
-```
-此时有大量onnx模型被导出到tmp目录。
-
-3. 对onnx模型进行编译
-
-目前TPU-MLIR支持对ChatGLM2进行F16、INT8和INT4量化，且支持多芯分布式推理，默认情况下会进行F16量化和单芯推理，最终生成`chatglm2-6b_f16_1dev.bmodel`文件
-
-```shell
-./compile.sh --name chatglm2-6b
-```
-
-若想进行INT8或INT4量化，则执行以下命令，最终生成`chatglm2-6b_int8_1dev.bmodel`或`chatglm2-6b_int4_1dev.bmodel`文件，如下命令：
-
-```shell
-./compile.sh --mode int8 --name chatglm2-6b # or int4
-```
-
-若想进行2芯推理，则执行以下命令，最终生成`chatglm2-6b_f16_2dev.bmodel`文件，4芯8芯同理：
-
-```shell
-./compile.sh --num_device 2 --name chatglm2-6b
-```
-
-## 编译程序(C++版本)
-
-执行如下编译，（PCIE与SOC相同）：
-
-```shell
-cd demo
-mkdir build
-cd build
-cmake ..
-make
-```
-
-编译生成chatglm可执行程序，将`chatglm`放到demo目录下，同时按照下列方式指定芯片数量和bmodel路径。
-运行`chatglm`，默认单芯运行`chatglm2-6b_f16_1dev.bmodel`:
-```shell
-./chatglm --model chatglm2-6b_f16_1dev.bmodel --tokenizer ../support/tokenizer.model
-```
-
-如果是要运行INT8或INT4模型，则命令如下：
-```shell
-./chatglm --model chatglm2-6b_int8_1dev.bmodel --tokenizer ../support/tokenizer.model # same with int4
-```
-
-如果是2芯分布式推理，使用如下命令(比如指定在2号和3号芯片上运行, 用`source /etc/profiel`后使用`bm-smi`查询芯片id号)：
-```shell
-./chatglm --model chatglm2-6b_f16_2dev.bmodel --tokenizer ../support/tokenizer.model --devid 2,3
-```
-
-## 运行效果
-
-以下为单芯片下INT8量化模式的运行效果：
-
-![](./assets/chatglm.jpg)
-
-## 常见问题
-
-#### sentencepiece是怎么来的
-
-工程中已经有编译好的，所以不需要编译，如果好奇的话，参考如下步骤。
-
-下载[sentencepiece](https://github.com/google/sentencepiece)，并编译得到`libsentencepiece.a`
-
-```shell
-git clone git@github.com:google/sentencepiece.git
-cd sentencepiece
-mkdir build
-cd build
-cmake ..
-make -j
-```
-
-如果要编译SoC环境，则参考demo的编译方式，在makefile中指定交叉编译器
-
-#### demo程序无法正常运行
-
-如果demo程序拷贝到运行环境提示无法运行，比如接口找不到等等错误。
-原因是运行环境的库有所不同，将demo中的`./support/lib_pcie`（PCIE）或者 `./support/lib_soc`(SoC)里面的so文件拷贝到运行环境，链接到里面的so即可。
