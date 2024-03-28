@@ -48,10 +48,6 @@ Baichuan2模型在hugging face上完全开源，供用户下载使用。请根�
 # Make sure you have git-lfs installed (https://git-lfs.com)
 git lfs install
 git clone https://huggingface.co/baichuan-inc/Baichuan2-7B-Chat
-
-# if you want to clone without large files – just their pointers
-# prepend your git clone with the following env var:
-GIT_LFS_SKIP_SMUDGE=1
 ```
 
 ### 步骤二：下载docker
