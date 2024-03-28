@@ -267,19 +267,6 @@ int Qwen::forward_first(std::vector<int> &tokens) {
     }
   }
 
-  token_length = tokens.size();
-
-  for (int i = 0; i < token_length; i++) {
-    position_id[i] = i;
-  }
-  for (int i = 0; i < token_length; i++) {
-    for (int j = 0; j < SEQLEN; j++) {
-      if (j <= i) {
-        attention_mask[i * SEQLEN + j] = 0;
-      }
-    }
-  }
-
   // forward embeding
   auto &in_mem = net_embed->stages[0].input_mems[0];
   auto &out_mem = net_embed->stages[0].output_mems[0];
@@ -319,11 +306,11 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   }
 
   visited_tokens[token_length] = token;
+  token_length += 1;
   return token;
 }
 
 int Qwen::forward_next() {
-  token_length += 1;
   int cur_token = visited_tokens[token_length - 1];
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
@@ -390,6 +377,7 @@ int Qwen::forward_next() {
   }
   
   visited_tokens[token_length] = token;
+  token_length += 1;
   return token;
 }
 
@@ -427,6 +415,7 @@ PYBIND11_MODULE(chat, m) {
         .def("generate", &Qwen::generate)
         .def("deinit", &Qwen::deinit)
         .def_readwrite("SEQLEN", &Qwen::SEQLEN) // read SEQLEN in pipeline.py
+        .def_readwrite("token_length", &Qwen::token_length)
         .def_readwrite("temperature", &Qwen::temperature)
         .def_readwrite("top_p", &Qwen::top_p)
         .def_readwrite("repeat_penalty", &Qwen::repeat_penalty)

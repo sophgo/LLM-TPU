@@ -50,6 +50,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [[ -z "$seq_length" ]]; then
+    echo "Error: --seq_length is required." >&2
+    exit 1
+fi
+
 if [ "$name" = "qwen-1_8b" ]; then
   num_layers=23
   hidden_size=2048

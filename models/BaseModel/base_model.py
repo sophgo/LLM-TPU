@@ -4,13 +4,10 @@ from transformers import AutoTokenizer
 
 class BaseModel:
     def __init__(self, args):
-        # preprocess parameters
+        # parameters
         self.input_str = ""
         self.system_prompt = ""
-
-        # model parameters
-        self.token_length = 0
-        self.SEQLEN = None
+        self.enable_history = args.enable_history
 
         # devid
         self.devices = [int(d) for d in args.devid.split(",")]
@@ -27,6 +24,14 @@ class BaseModel:
         print("Done!")
 
     def chat(self):
+        # check
+        if not self.EOS:
+            print("Don't forget to set EOS")
+            return
+        if not self.SEQLEN:
+            print("Don't forget to set SEQLEN")
+            return
+
         # Instruct:
         print(
             f"""\n===========================================================
@@ -49,16 +54,15 @@ class BaseModel:
 
                 # check tokens
                 if not tokens:
-                    print("Sorry: your question is too empty!!")
+                    print("Sorry: your question is empty!!")
                     return
-                if self.token_length > self.SEQLEN:
+                if len(tokens) > self.SEQLEN:
                     print(
                         "The maximum question length should be shorter than {} but we get {} instead.".format(
-                            self.SEQLEN, self.token_length
+                            self.SEQLEN, len(tokens)
                         )
                     )
                     return
-
 
                 print("\nAnswer: ", end="")
                 self.stream_answer(tokens)
@@ -74,11 +78,10 @@ class BaseModel:
         first_end = time.time()
 
         # Following tokens
-        while token != self.EOS and self.token_length < self.SEQLEN:
+        while token != self.EOS and self.model.token_length < self.SEQLEN:
             word = self.decode_tokens(token)
+            self.answer_cur += word
             print(word, flush=True, end="")
-            if self.token_length < self.SEQLEN:
-                self.token_length += 1
             tok_num += 1
             token = self.forward_next()
 
@@ -88,7 +91,10 @@ class BaseModel:
         next_duration = next_end - first_end
         tps = tok_num / next_duration
 
-        self.update_history()
+        if self.enable_history:
+            self.update_history()
+        else:
+            self.clear()
 
         print()
         print(f"FTL: {first_duration:.3f} s")
@@ -113,7 +119,7 @@ class BaseModel:
                 self.token_length += 1
             output_tokens += [next_token]
             self.answer_cur = self.sp.decode(output_tokens)
-            self.history_update()
+            self.update_history()
             yield self.answer_cur, self.messages
 
     def forward_first(self, tokens):
@@ -137,5 +143,5 @@ class BaseModel:
     def clear(self):
         raise ValueError("Don't forget rewrite it again")
 
-    def history_update(self):
+    def update_history(self):
         raise ValueError("Don't forget rewrite it again")

@@ -38,7 +38,7 @@ class Qwen(BaseModel):
         self.messages = [self.system_prompt]
 
     def update_history(self):
-        if self.token_length >= self.SEQLEN - 128:
+        if self.model.token_length >= self.SEQLEN - 10:
             print("... (reach the maximal length)", flush=True, end='')
             self.messages = [self.messages[0]]
             self.messages.append(self.prompt.format(self.input_str) + self.answer_cur)
@@ -60,6 +60,7 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--model_path', type=str, required=True, help='path to the bmodel file')
     parser.add_argument('-t', '--tokenizer_path', type=str, default="../support/token_config", help='path to the tokenizer file')
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
+    parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory.")
     parser.add_argument('--temperature', type=float, default=1.0, help='temperature scaling factor for the likelihood distribution')
     parser.add_argument('--top_p', type=float, default=1.0, help='cumulative probability of token words to consider as a set of candidates')
     parser.add_argument('--repeat_penalty', type=float, default=1.0, help='penalty for repeated tokens')

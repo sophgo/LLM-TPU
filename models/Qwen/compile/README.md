@@ -80,11 +80,11 @@ source envsetup.sh
 cd /workspace/LLM-TPU/models/Qwen/python_demo
 mkdir build && cd build
 cmake .. && make
-cp chat_jacobi.cpython-310-x86_64-linux-gnu.so ..
+cp *cpython* ..
 cd ..
 
 
-python chat.py --devid 0 --model_path ../compile/qwen-7b_int4_1dev.bmodel --tokenizer_path ../support/token_config/ --generation_mode sample --decode_mode jacobi
+python3 pipeline.py --model_path qwen-7b_int4_1dev.bmodel --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy
 ```
 
 ### cpp demo
