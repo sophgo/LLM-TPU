@@ -42,7 +42,7 @@ if [ "$name" = "deepseek-6.7b" ]; then
   num_layers=31
   echo "Compile Deepseek-6.7B"
 else
-  >&2 echo -e "Error: Invalid name $name, the input name must be \033[31mllama2-7b|llama2-13b\033[0m"
+  >&2 echo -e "Error: Invalid name $name, the input name must be \033[31mdeepseek-6.7b\033[0m"
   exit 1
 fi
 
