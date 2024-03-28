@@ -19,20 +19,19 @@ class Qwen(BaseModel):
 
     def load_model(self, args):
         if args.decode_mode == "jacobi":
-            import chat_jacobi
+            from Qwen.python_demo import chat_jacobi
             self.model = chat_jacobi.Qwen()
         elif args.decode_mode == "basic":
-            import chat
+            from Qwen.python_demo import chat
             self.model = chat.Qwen()
-            self.model.init(
-                self.devices,
-                args.model_path,
-                args.temperature,
-                args.top_p,
-                args.max_new_tokens,
-                args.generation_mode,
-                args.prompt_mode,
-            )
+            self.model.init(self.devices, args.model_path)
+            self.model.temperature = args.temperature
+            self.model.top_p = args.top_p
+            self.model.repeat_penalty = args.repeat_penalty
+            self.model.repeat_last_n = args.repeat_last_n
+            self.model.max_new_tokens = args.max_new_tokens
+            self.model.generation_mode = args.generation_mode
+            self.model.prompt_mode = args.prompt_mode
         self.SEQLEN = self.model.SEQLEN
 
     def clear(self):

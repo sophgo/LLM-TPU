@@ -27,10 +27,7 @@ static const uint16_t ATTENTION_MASK = 0xC61C; // -9984 by bfloat16
 
 class Qwen {
 public:
-  void init(const std::vector<int> &devid, std::string model_path,
-            const float &__temperature, const float &__top_p,
-            const int &__max_new_tokens, const std::string &__generation_mode,
-            const std::string &__prompt_mode);
+  void init(const std::vector<int> &devid, std::string model_path);
   void deinit();
   int forward_first(std::vector<int> &tokens);
   int forward_next();
@@ -54,6 +51,15 @@ public:
   bool io_alone;
   std::vector<int> visited_tokens;
 
+  // generation
+  float temperature;
+  float top_p;
+  float repeat_penalty;
+  int repeat_last_n;
+  int max_new_tokens;
+  std::string generation_mode;
+  std::string prompt_mode;
+
 private:
   std::vector<bm_handle_t> handles;
   bm_handle_t bm_handle;
@@ -65,15 +71,6 @@ private:
   const bm_net_info_t *net_lm, *net_greedy_head, *net_sample_head;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
-
-  // generation
-  float temperature;
-  float top_p;
-  float repeat_penalty;
-  int repeat_last_n;
-  int max_new_tokens;
-  std::string generation_mode;
-  std::string prompt_mode;
 };
 
 void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
@@ -101,17 +98,7 @@ void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
 }
 
-void Qwen::init(const std::vector<int> &devices, std::string model_path,
-                const float &__temperature, const float &__top_p,
-                const int &__max_new_tokens,
-                const std::string &__generation_mode,
-                const std::string &__prompt_mode) {
-  // generation params
-  temperature = __temperature;
-  top_p = __top_p;
-  max_new_tokens = __max_new_tokens;
-  generation_mode = __generation_mode;
-  prompt_mode = __prompt_mode;
+void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   
   // request bm_handle
   std::cout << "Device [ ";
@@ -439,5 +426,12 @@ PYBIND11_MODULE(chat, m) {
         .def("forward_next", &Qwen::forward_next)
         .def("generate", &Qwen::generate)
         .def("deinit", &Qwen::deinit)
-        .def_readwrite("SEQLEN", &Qwen::SEQLEN); // read SEQLEN in pipeline.py
+        .def_readwrite("SEQLEN", &Qwen::SEQLEN) // read SEQLEN in pipeline.py
+        .def_readwrite("temperature", &Qwen::temperature)
+        .def_readwrite("top_p", &Qwen::top_p)
+        .def_readwrite("repeat_penalty", &Qwen::repeat_penalty)
+        .def_readwrite("repeat_last_n", &Qwen::repeat_last_n)
+        .def_readwrite("max_new_tokens", &Qwen::max_new_tokens)
+        .def_readwrite("generation_mode", &Qwen::generation_mode)
+        .def_readwrite("prompt_mode", &Qwen::prompt_mode);
 }

@@ -150,7 +150,7 @@ class SampleHead(torch.nn.Module):
         # repeat penalty
         logits = torch.gather(m_logits, 1, input_ids)
         logits = torch.where(logits < 0, logits * penalty, logits / penalty)
-        m_logits = logits.scatter(1, input_ids, logits)
+        m_logits.scatter_(1, input_ids, logits)
 
         # top_k
         logits, token = torch.topk(m_logits.float(), self.top_k)
@@ -224,7 +224,7 @@ def convert_lm_head():
 
 def convert_greedy_head():   
     model = GreedyHead()
-    m_logits = torch.randn(1, VOCAB_SIZE).bfloat16().to(device)
+    m_logits = torch.randn(1, VOCAB_SIZE)
 
     torch.onnx.export(
         model, (m_logits),
@@ -238,7 +238,7 @@ def convert_greedy_head():
 
 def convert_sample_head():   
     model = SampleHead()
-    m_logits = torch.randn(1, VOCAB_SIZE).bfloat16().to(device)
+    m_logits = torch.randn(1, VOCAB_SIZE)
     input_ids = torch.tensor([range(SEQ_LENGTH)])
     top_p = torch.tensor([0.8])
     temperature = torch.tensor([0.98])
