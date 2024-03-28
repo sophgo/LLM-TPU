@@ -12,12 +12,12 @@
 │   ├── compile.sh                       #bmodel编译脚本
 │   ├── export_onnx.py                   #onnx导出脚本
 │   └──files                             #onnx导出所需文件
-│       └── modeling_llama.py            #deepseek pytorch模型文件
+│       └── modeling_llama.py
 ├── deepseek.py                          #deepseek python代码
 ├── model                                #bmodel默认目录
 ├── requirements                         #python wheel包
-│   ├── requirements.txt                 #python wheel包依赖
-│   └── sophon-3.7.0-py3-none-any.whl    #sophon驱动wheel包
+│   ├── requirements.txt
+│   └── sophon-3.7.0-py3-none-any.whl
 └── token_config                         #deepseek tokenizer配置文件
     ├── generation_config.json
     ├── tokenizer_config.json
