@@ -12,12 +12,12 @@ import os
 import torch
 import argparse
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM
 torch.set_grad_enabled(False)
 
 parser = argparse.ArgumentParser(description='export onnx')
-parser.add_argument('--model_path', required=True, type=str, help='path to the torch model')
-parser.add_argument('--device', type=str, choices=["cpu", "cuda"], default="cuda")
+parser.add_argument('-m', '--model_path', type=str, help='path to the torch model')
+parser.add_argument('-d', '--device', type=str, choices=["cpu", "cuda"], default="cuda")
 
 args = parser.parse_args()
 
@@ -25,7 +25,6 @@ model_path = args.model_path
 folder = f"./tmp/onnx"
 
 device = torch.device(args.device)
-
 origin_model = AutoModelForCausalLM.from_pretrained(
     model_path, trust_remote_code=True,
     torch_dtype=torch.bfloat16, device_map="auto").eval()
@@ -45,8 +44,6 @@ HEAD_DIM = HIDDEN_SIZE // NUM_ATTENTION_HEADS
 VOCAB_SIZE = config.vocab_size
 
 print(f'Layers: {NUM_LAYERS}\nHidden size: {HIDDEN_SIZE}\n')
-
-tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
 class Embedding(torch.nn.Module):
 

@@ -12,19 +12,20 @@ import os
 import torch
 import argparse
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM
 torch.set_grad_enabled(False)
 
 parser = argparse.ArgumentParser(description='export onnx')
-parser.add_argument('--model_path', type=str, help='path to the torch model')
-parser.add_argument('--seq_length', type=int, default=512, help="sequence length")
+parser.add_argument('-m', '--model_path', type=str, help='path to the torch model')
+parser.add_argument('-s', '--seq_length', type=int, default=512, help="sequence length")
+parser.add_argument('-d', '--device', type=str, choices=["cpu", "cuda"], default="cpu")
 
 args = parser.parse_args()
 
 model_path = args.model_path
 folder = f"./tmp/onnx"
 
-device = torch.device("cpu")
+device = torch.device(args.device)
 origin_model = AutoModelForCausalLM.from_pretrained(
     model_path, trust_remote_code=True,
     torch_dtype=torch.float).eval()
@@ -41,10 +42,9 @@ NUM_LAYERS = config.num_hidden_layers
 HIDDEN_SIZE = config.hidden_size
 NUM_ATTENTION_HEADS = config.num_attention_heads
 HEAD_DIM = HIDDEN_SIZE // NUM_ATTENTION_HEADS
+VOCAB_SIZE = config.vocab_size
 
 print(f'Layers: {NUM_LAYERS}\nHidden size: {HIDDEN_SIZE}\n')
-
-tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
 class Embedding(torch.nn.Module):
 
@@ -98,13 +98,23 @@ class LmHead(torch.nn.Module):
         super().__init__()
 
     def forward(self, hidden_states):
-        hidden_states = transformer.ln_f(hidden_states)
+        hidden_states = transformer.norm(hidden_states)
         m_logits = origin_model.lm_head(hidden_states)
         return m_logits
+    
+
+class GreedyHead(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, m_logits):
+        _, token = torch.topk(m_logits.float(), 1)
+        return token
 
     
 # refs:https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py
-class LmHeadSample(torch.nn.Module):
+class PenaltySampleHead(torch.nn.Module):
 
     def __init__(self, top_k = 50, min_tokens_to_keep = 5):
         super().__init__()
@@ -113,9 +123,11 @@ class LmHeadSample(torch.nn.Module):
         self.keep_matrix = torch.zeros((1, self.top_k), dtype=torch.bool)
         self.keep_matrix[0, :self.min_tokens_to_keep] = True
 
-    def forward(self, hidden_states, top_p, temperature):
-        hidden_states = transformer.norm(hidden_states)
-        m_logits = origin_model.lm_head(hidden_states)
+    def forward(self, m_logits, input_ids, top_p, temperature, penalty):
+        # repeat penalty
+        logits = torch.gather(m_logits, 1, input_ids)
+        logits = torch.where(logits < 0, logits * penalty, logits / penalty)
+        m_logits.scatter_(1, input_ids, logits)
 
         # top_k
         logits, token = torch.topk(m_logits.float(), self.top_k)
@@ -187,18 +199,52 @@ def convert_embedding():
     
 
 def convert_lm_head():
-    model = LmHeadSample()
-    hidden_states = torch.randn(1, HIDDEN_SIZE).float16().to(device)
-    top_p = torch.tensor([0.8]).float16().to(device)
-    temperature = torch.tensor([0.98]).float16().to(device)
+    model = LmHead()
+    hidden_states = torch.randn(1, HIDDEN_SIZE).to(device)
 
-    torch.onnx.export(model, (hidden_states, top_p, temperature),
+    torch.onnx.export(model, (hidden_states),
                     f'{folder}/lm_head.onnx',
                     verbose=False,
-                    input_names=['hidden_states', 'top_p', 'temperature'],
-                    output_names=['probs', 'token'],
+                    input_names=['hidden_states'],
+                    output_names=['m_logits'],
                     do_constant_folding=True,
                     opset_version=15)
+
+
+def convert_greedy_head():
+    model = GreedyHead()
+    m_logits = torch.randn(1, VOCAB_SIZE)
+
+    torch.onnx.export(
+        model, (m_logits),
+        f'{folder}/greedy_head.onnx',
+        verbose=False,
+        input_names=['m_logits'],
+        output_names=['token'],
+        do_constant_folding=True,
+        opset_version=15)
+
+
+
+def convert_penalty_sample_head():
+    model = PenaltySampleHead()
+    m_logits = torch.randn(1, VOCAB_SIZE)
+    input_ids = torch.tensor([range(SEQ_LENGTH)])
+    top_p = torch.tensor([0.8])
+    temperature = torch.tensor([0.98])
+    penalty = torch.tensor([0.98])
+
+    torch.onnx.export(
+        model, (m_logits, input_ids, top_p, temperature, penalty),
+        f'{folder}/penalty_sample_head.onnx',
+        verbose=False,
+        input_names=[
+            'm_logits', 'input_ids', 'top_p', 'temperature',
+            'penalty'
+        ],
+        output_names=['probs', 'token'],
+        do_constant_folding=True,
+        opset_version=15)
 
 
 # create folder to store onnx
@@ -208,11 +254,13 @@ if not os.path.exists(folder):
 # export models
 print(f'Convert block & block_cache')
 for i in tqdm(range(NUM_LAYERS)):
-    convert_block(i)
-    convert_block_cache(i)
+   convert_block(i)
+   convert_block_cache(i)
 
 print(f'Convert embedding')
 convert_embedding()
 
 print(f'Convert lm_head')
 convert_lm_head()
+convert_greedy_head()
+convert_penalty_sample_head()

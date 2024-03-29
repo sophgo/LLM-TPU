@@ -8,8 +8,8 @@ class Qwen1_5(BaseModel):
         super().__init__(args)
         # preprocess parameters, such as prompt & tokenizer
         self.system_prompt = "You are a helpful assistant."
-        self.SEQLEN = 512
         self.messages = [{"role": "system", "content": self.system_prompt}]
+        self.EOS = self.sp.eos_token_id
         self.decode_mode = "diff"
 
         # load model
@@ -24,24 +24,24 @@ class Qwen1_5(BaseModel):
                 self.sp.im_end_id,
                 args.model_path
             )
-        elif args.generation_mode in ["greedy", "sample"]:
+        else:
             from Qwen1_5.python_demo import chat
             self.model = chat.Qwen()
-            self.model.init(
-                self.devices,
-                args.model_path,
-                args.temperature,
-                args.top_p,
-                args.max_new_tokens,
-                args.generation_mode,
-                args.prompt_mode,
-            )
+            self.model.init(self.devices, args.model_path)
+            self.model.temperature = args.temperature
+            self.model.top_p = args.top_p
+            self.model.repeat_penalty = args.repeat_penalty
+            self.model.repeat_last_n = args.repeat_last_n
+            self.model.max_new_tokens = args.max_new_tokens
+            self.model.generation_mode = args.generation_mode
+            self.model.prompt_mode = args.prompt_mode
+        self.SEQLEN = self.model.SEQLEN
 
     def clear(self):
         self.messages = [{"role": "system", "content": self.system_prompt}]
 
     def update_history(self):
-        if self.token_length >= self.SEQLEN - 128:
+        if self.token_length >= self.SEQLEN - 10:
             print("... (reach the maximal length)", flush=True, end="")
             self.messages = [self.messages[0]]
             self.messages.append({"role": "user", "content": self.input_str})
@@ -68,13 +68,13 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--model_path', type=str, required=True, help='path to the bmodel file')
     parser.add_argument('-t', '--tokenizer_path', type=str, default="../support/token_config", help='path to the tokenizer file')
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
+    parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory.")
     parser.add_argument('--temperature', type=float, default=1.0, help='temperature scaling factor for the likelihood distribution')
     parser.add_argument('--top_p', type=float, default=1.0, help='cumulative probability of token words to consider as a set of candidates')
     parser.add_argument('--repeat_penalty', type=float, default=1.0, help='penalty for repeated tokens')
     parser.add_argument('--repeat_last_n', type=int, default=32, help='repeat penalty for recent n tokens')
     parser.add_argument('--max_new_tokens', type=int, default=1024, help='max new token length to generate')
-    parser.add_argument('--generation_mode', type=str, choices=["greedy", "sample"], default="sample", help='mode for generating next token')
+    parser.add_argument('--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
     parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
-
     args = parser.parse_args()
     main(args)

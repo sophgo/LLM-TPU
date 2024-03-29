@@ -13,7 +13,6 @@ num_layers=
 out_model=$name.bmodel
 seq_length=
 hidden_size=
-lm_quant_args=""
 
 while [[ $# -gt 0 ]]; do
     key="$1"
