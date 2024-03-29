@@ -169,18 +169,18 @@ model_deploy.py \
 
 
 model_transform.py \
-    --model_name sample_head \
-    --model_def ../../onnx/sample_head.onnx \
-    --mlir sample_head.mlir
+    --model_name penalty_sample_head \
+    --model_def ../../onnx/penalty_sample_head.onnx \
+    --mlir penalty_sample_head.mlir
 
 model_deploy.py \
-    --mlir sample_head.mlir \
+    --mlir penalty_sample_head.mlir \
     --chip bm1684x \
-    --model sample_head.bmodel
+    --model penalty_sample_head.bmodel
 
 rm *.npz
 
-models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '$outdir'/sample_head.bmodel '
+models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '$outdir'/penalty_sample_head.bmodel '
 popd
 
 echo $models

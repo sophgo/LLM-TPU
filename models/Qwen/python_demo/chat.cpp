@@ -42,7 +42,7 @@ private:
 
   void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   int greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
-  int sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
+  int penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
 
 public:
   int token_length;
@@ -68,7 +68,7 @@ private:
   std::vector<const bm_net_info_t *> net_blocks_cache;
   const bm_net_info_t *net_embed;
   const bm_net_info_t *net_embed_cache;
-  const bm_net_info_t *net_lm, *net_greedy_head, *net_sample_head;
+  const bm_net_info_t *net_lm, *net_greedy_head, *net_penalty_sample_head;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
 };
@@ -133,7 +133,7 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
   net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
   net_greedy_head = bmrt_get_network_info(p_bmrt, "greedy_head");
-  net_sample_head = bmrt_get_network_info(p_bmrt, "sample_head");
+  net_penalty_sample_head = bmrt_get_network_info(p_bmrt, "penalty_sample_head");
   SEQLEN = net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
   auto num_nets = bmrt_get_network_number(p_bmrt);
   NUM_LAYERS = (num_nets - 5) / 2;
@@ -214,7 +214,7 @@ int Qwen::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
   return token;
 }
 
-int Qwen::sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
+int Qwen::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
   auto &in1_mem = net->stages[0].input_mems[1];
   auto &in2_mem = net->stages[0].input_mems[2];
   auto &in3_mem = net->stages[0].input_mems[3];
@@ -243,7 +243,7 @@ int Qwen::sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
   std::vector<int> tokens(candidate_num);
   bm_memcpy_d2s(bm_handle, tokens.data(), out1_mem);
 
-  // sample
+  // penalty_sample
   std::discrete_distribution<> dist(probs.begin(), probs.end());
   return tokens[dist(sgen)];
 }
@@ -301,8 +301,8 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   int token = 0;
   if (generation_mode == "greedy") {
     token = greedy_search(net_greedy_head, lm_out_mem);
-  } else if (generation_mode == "sample") {
-    token = sample(net_sample_head, lm_out_mem);
+  } else if (generation_mode == "penalty_sample") {
+    token = penalty_sample(net_penalty_sample_head, lm_out_mem);
   }
 
   visited_tokens[token_length] = token;
@@ -372,8 +372,8 @@ int Qwen::forward_next() {
   int token = 0;
   if (generation_mode == "greedy") {
     token = greedy_search(net_greedy_head, lm_out_mem);
-  } else if (generation_mode == "sample") {
-    token = sample(net_sample_head, lm_out_mem);
+  } else if (generation_mode == "penalty_sample") {
+    token = penalty_sample(net_penalty_sample_head, lm_out_mem);
   }
   
   visited_tokens[token_length] = token;

@@ -24,8 +24,6 @@ args = parser.parse_args()
 model_path = args.model_path
 folder = f"./tmp/onnx"
 
-generation_mode = args.generation_mode
-
 device = torch.device("cpu")
 origin_model = AutoModelForCausalLM.from_pretrained(
     model_path, trust_remote_code=True,
@@ -100,10 +98,9 @@ class LmHead(torch.nn.Module):
         super().__init__()
 
     def forward(self, hidden_states):
-        hidden_states = transformer.norm(hidden_states)
+        hidden_states = transformer.ln_f(hidden_states)
         m_logits = origin_model.lm_head(hidden_states)
-        _, token = torch.topk(m_logits.float(), 1)
-        return token
+        return m_logits
 
     
 # refs:https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py
