@@ -10,7 +10,6 @@ quantize_args="--quantize F16"
 addr_args=""
 name=""
 num_layers=
-lm_quant_args=
 out_model=$name.bmodel
 
 while [[ $# -gt 0 ]]; do
