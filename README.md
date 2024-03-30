@@ -21,6 +21,7 @@
 |LWM-Text-Chat        |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/LargeWorldModel/LWM-Text-Chat-1M)           |
 |Stable Diffusion     |                    |                    |:white\_check\_mark:|[LINK](https://huggingface.co/runwayml/stable-diffusion-v1-5)             |
 |Stable Diffusion XL  |                    |                    |:white\_check\_mark:|[LINK](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)   |
+|DeepSeek-6.7B        |                    |:white\_check\_mark:|                    |[LINK](hhttps://huggingface.co/deepseek-ai/deepseek-coder-6.7b-instruct)  |
 
 如果您想要知道转换细节和源码，可以到本项目[models](./models)子目录查看各类模型部署细节。
 
