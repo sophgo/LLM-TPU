@@ -46,6 +46,9 @@ done
 if [ "$name" = "qwen1.5-7b" ]; then
   num_layers=31
   echo "Compile Qwen1.5-7B"
+elif [ "$name" = "qwen1.5-4b" ]; then
+  num_layers=39
+  echo "Compile Qwen1.5-4B"
 elif [ "$name" = "qwen1.5-1.8b" ]; then 
   num_layers=23
   echo "Compile Qwen1.5-1.8B"
