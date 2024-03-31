@@ -102,9 +102,8 @@ class BaseModel:
 
     def stream_predict(self, query, messages=None):
         self.answer_cur = ""
-
+        tokens = self.encode_tokens()
         self.input_str = query
-        tokens = self.generate_tokens()
 
         # First token
         next_token = self.forward_first(tokens)
@@ -119,7 +118,10 @@ class BaseModel:
                 self.token_length += 1
             output_tokens += [next_token]
             self.answer_cur = self.sp.decode(output_tokens)
-            self.update_history()
+            if self.enable_history:
+                self.update_history()
+            else:
+                self.clear()
             yield self.answer_cur, self.messages
 
     def forward_first(self, tokens):
