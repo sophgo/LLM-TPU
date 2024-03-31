@@ -111,11 +111,9 @@ class BaseModel:
 
         # Following tokens
         while True:
-            next_token = self.forward_next(next_token)
+            next_token = self.forward_next()
             if next_token == self.EOS:
                 break
-            if self.token_length < self.SEQLEN:
-                self.token_length += 1
             output_tokens += [next_token]
             self.answer_cur = self.sp.decode(output_tokens)
             if self.enable_history:
