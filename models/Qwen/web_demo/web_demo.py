@@ -5,18 +5,21 @@ from Qwen.python_demo.pipeline import Qwen
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--devid', type=str, default='0', help='device ID to use.')
-parser.add_argument('--model_path', type=str, required=True, help='path to the bmodel file.')
-parser.add_argument('--tokenizer_path', type=str, required=True, help='path to the tokenizer file.')
-parser.add_argument('--generation_mode', type=str, default="greedy", choices=["greedy", "sample"], help='mode for generating next token.')
-parser.add_argument('--decode_mode', type=str, default="basic", choices=["basic", "jacobi"], help='mode for decoding.')
+parser.add_argument('-m', '--model_path', type=str, required=True, help='path to the bmodel file')
+parser.add_argument('-t', '--tokenizer_path', type=str, default="../support/token_config", help='path to the tokenizer file')
+parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
+parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory.")
+parser.add_argument('--temperature', type=float, default=1.0, help='temperature scaling factor for the likelihood distribution')
+parser.add_argument('--top_p', type=float, default=1.0, help='cumulative probability of token words to consider as a set of candidates')
+parser.add_argument('--repeat_penalty', type=float, default=1.0, help='penalty for repeated tokens')
+parser.add_argument('--repeat_last_n', type=int, default=32, help='repeat penalty for recent n tokens')
+parser.add_argument('--max_new_tokens', type=int, default=1024, help='max new token length to generate')
+parser.add_argument('--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
+parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
+parser.add_argument('--decode_mode', type=str, default="basic", choices=["basic", "jacobi"], help='mode for decoding')
 args = parser.parse_args()
 
-model = Qwen(model_path = args.model_path,
-            tokenizer_path = args.tokenizer_path,
-            devid = args.devid, 
-            generation_mode=args.generation_mode, 
-            decode_mode=args.decode_mode)
+model = Qwen(args)
 
 def postprocess(self, y):
     if y is None:
