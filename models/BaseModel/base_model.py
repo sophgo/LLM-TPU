@@ -5,9 +5,11 @@ from transformers import AutoTokenizer
 class BaseModel:
     def __init__(self, args):
         # parameters
+        self.EOS = None
+        self.SEQLEN = None
         self.input_str = ""
         self.system_prompt = ""
-        self.enable_history = args.enable_history
+        self.history = []
 
         # devid
         self.devices = [int(d) for d in args.devid.split(",")]
@@ -15,28 +17,29 @@ class BaseModel:
         # load tokenizer
         self.pre_token = 0
         print("Load " + args.tokenizer_path + " ...")
-        self.sp = AutoTokenizer.from_pretrained(
+        self.tokenizer = AutoTokenizer.from_pretrained(
             args.tokenizer_path, trust_remote_code=True
         )
 
         # warm up
-        self.sp.decode([0])
+        self.tokenizer.decode([0])
         print("Done!")
 
     def chat(self):
+        """
+        Start a chat session.
+        """
         # check
         if not self.EOS:
-            print("Don't forget to set EOS")
-            return
+            raise NotImplementedError("Forget to set End of Sentence Token Id(EOS)")
         if not self.SEQLEN:
-            print("Don't forget to set SEQLEN")
-            return
+            raise NotImplementedError("Forget to set End of Sentence Token Id")
 
-        # Instruct:
+        # Instruct
         print(
-            f"""\n===========================================================
-1. If you want to quit, please entry one of [q, quit, exit]
-2. To create new chat-session, please entry one of [clear, new]
+            """\n===========================================================
+1. If you want to quit, please enter one of [q, quit, exit]
+2. To create a new chat session, please enter one of [clear, new]
 ==========================================================="""
         )
         # Stop Chatting with "exit" input
@@ -67,8 +70,10 @@ class BaseModel:
                 print("\nAnswer: ", end="")
                 self.stream_answer(tokens)
 
-    # stat time cost
     def stream_answer(self, tokens):
+        """
+        Stream the answer for the given tokens.
+        """
         tok_num = 0
         self.answer_cur = ""
 
@@ -91,20 +96,27 @@ class BaseModel:
         next_duration = next_end - first_end
         tps = tok_num / next_duration
 
-        if self.enable_history:
-            self.update_history()
-        else:
-            self.clear()
+        self.update_history()
 
         print()
         print(f"FTL: {first_duration:.3f} s")
         print(f"TPS: {tps:.3f} token/s")
 
-    def stream_predict(self, query, messages=None):
+    def stream_predict(self, query):
+        """
+        Stream the prediction for the given query.
+        """
         self.answer_cur = ""
         tokens = self.encode_tokens()
         self.input_str = query
 
+        for answer_cur, history in self._generate_predictions(tokens):
+            yield answer_cur, history
+
+    def _generate_predictions(self, tokens):
+        """
+        Generate predictions for the given tokens.
+        """
         # First token
         next_token = self.forward_first(tokens)
         output_tokens = [next_token]
@@ -115,33 +127,54 @@ class BaseModel:
             if next_token == self.EOS:
                 break
             output_tokens += [next_token]
-            self.answer_cur = self.sp.decode(output_tokens)
+            self.answer_cur = self.tokenizer.decode(output_tokens)
             if self.enable_history:
                 self.update_history()
             else:
                 self.clear()
-            yield self.answer_cur, self.messages
+            yield self.answer_cur, self.history
 
     def forward_first(self, tokens):
+        """
+        Forward the first token.
+        """
         token = self.model.forward_first(tokens)
         return token
 
     def forward_next(self):
+        """
+        Forward the next token.
+        """
         token = self.model.forward_next()
         return token
 
     def decode_tokens(self, token):
-        word = self.sp.decode([token], skip_special_tokens=True)
+        """
+        Decode the given token.
+        """
+        word = self.tokenizer.decode([token], skip_special_tokens=True)
         return word
-        
+
     def encode_tokens(self):
-        raise ValueError("Don't forget rewrite it again")
+        """
+        Encode the input string to tokens.
+        """
+        raise NotImplementedError
 
     def load_model(self):
-        raise ValueError("Don't forget rewrite it again")
+        """
+        Load the model.
+        """
+        raise NotImplementedError
 
     def clear(self):
-        raise ValueError("Don't forget rewrite it again")
+        """
+        Clear the chat session.
+        """
+        raise NotImplementedError
 
     def update_history(self):
-        raise ValueError("Don't forget rewrite it again")
+        """
+        Update chat history.
+        """
+        raise NotImplementedError

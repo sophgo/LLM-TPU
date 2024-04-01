@@ -8,7 +8,7 @@ fi
 
 if [ ! -f "../../bmodels/qwen-7b_int4_1dev_none_addr.bmodel" ]; then
   pip3 install dfss
-  python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen-7b_int4_1dev_none_addr.bmodel
+  python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen-7b_int4_1dev.bmodel
   mv qwen-7b_int4_1dev_none_addr.bmodel ../../bmodels
 else
   echo "Bmodel Exists!"

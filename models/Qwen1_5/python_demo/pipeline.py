@@ -8,8 +8,8 @@ class Qwen1_5(BaseModel):
         super().__init__(args)
         # preprocess parameters, such as prompt & tokenizer
         self.system_prompt = "You are a helpful assistant."
-        self.messages = [{"role": "system", "content": self.system_prompt}]
-        self.EOS = self.sp.eos_token_id
+        self.history = [{"role": "system", "content": self.system_prompt}]
+        self.EOS = self.tokenizer.eos_token_id
         self.decode_mode = "diff"
 
         # load model
@@ -21,7 +21,7 @@ class Qwen1_5(BaseModel):
             self.model = chat_parallel.Qwen()
             self.model.init(
                 self.devices,
-                self.sp.im_end_id,
+                self.tokenizer.im_end_id,
                 args.model_path
             )
         else:
@@ -38,23 +38,21 @@ class Qwen1_5(BaseModel):
         self.SEQLEN = self.model.SEQLEN
 
     def clear(self):
-        self.messages = [{"role": "system", "content": self.system_prompt}]
+        self.history = [{"role": "system", "content": self.system_prompt}]
 
     def update_history(self):
-        if self.token_length >= self.SEQLEN - 10:
+        if self.model.token_length >= self.SEQLEN:
             print("... (reach the maximal length)", flush=True, end="")
-            self.messages = [self.messages[0]]
-            self.messages.append({"role": "user", "content": self.input_str})
-            self.messages.append({"role": "assistant", "content": self.answer_cur})
+            self.history = [{"role": "system", "content": self.system_prompt}]
         else:
-            self.messages.append({"role": "assistant", "content": self.answer_cur})
+            self.history.append({"role": "assistant", "content": self.answer_cur})
 
     def encode_tokens(self):
-        self.messages.append({"role": "user", "content": self.input_str})
-        text = self.sp.apply_chat_template(
-            self.messages, tokenize=False, add_generation_prompt=True
+        self.history.append({"role": "user", "content": self.input_str})
+        text = self.tokenizer.apply_chat_template(
+            self.history, tokenize=False, add_generation_prompt=True
         )
-        tokens = self.sp(text).input_ids
+        tokens = self.tokenizer(text).input_ids
         return tokens
 
 
@@ -68,7 +66,6 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--model_path', type=str, required=True, help='path to the bmodel file')
     parser.add_argument('-t', '--tokenizer_path', type=str, default="../support/token_config", help='path to the tokenizer file')
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
-    parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory.")
     parser.add_argument('--temperature', type=float, default=1.0, help='temperature scaling factor for the likelihood distribution')
     parser.add_argument('--top_p', type=float, default=1.0, help='cumulative probability of token words to consider as a set of candidates')
     parser.add_argument('--repeat_penalty', type=float, default=1.0, help='penalty for repeated tokens')
