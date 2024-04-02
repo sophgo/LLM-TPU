@@ -115,6 +115,12 @@ private:
   int SEQLEN;
   int NUM_LAYERS;
   std::vector<int> visited_tokens;
+  float temperature;
+  float top_p;
+  float repeat_penalty;
+  int repeat_last_n;
+  int max_new_tokens;
+  std::string prompt_mode;
 };
 
 void ChatGLM::load_sentencepiece(std::string tokenizer_path) {
@@ -818,6 +824,6 @@ PYBIND11_MODULE(chat, m) {
         .def("init", &ChatGLM::init)
         .def("answer", &ChatGLM::answer)
         .def("predict_option", &ChatGLM::predict_option)
-        .def("generate", &Qwen::generate)
+        .def("generate", &ChatGLM::generate)
         .def("deinit", &ChatGLM::deinit);
 }
