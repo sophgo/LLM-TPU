@@ -60,6 +60,8 @@ public:
   std::string predict_option(const std::string &input_str);
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
   std::string generation_mode;
+  std::mt19937 sgen;
+  ChatGLm() : sgen(std::random_device()()){};
 
 private:
   void tokenizer_encode(const std::string &input_str, std::vector<int> &tokens);
