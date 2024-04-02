@@ -9,7 +9,7 @@ class Qwen1_5(BaseModel):
         # preprocess parameters, such as prompt & tokenizer
         self.system_prompt = "You are a helpful assistant."
         self.messages = [{"role": "system", "content": self.system_prompt}]
-        self.EOS = self.sp.eos_token_id
+        self.EOS = self.tokenizer.eos_token_id
         self.decode_mode = "diff"
 
         # load model
@@ -45,10 +45,10 @@ class Qwen1_5(BaseModel):
 
     def encode_tokens(self):
         self.messages.append({"role": "user", "content": self.input_str})
-        text = self.sp.apply_chat_template(
+        text = self.tokenizer.apply_chat_template(
             self.messages, tokenize=False, add_generation_prompt=True
         )
-        tokens = self.sp(text).input_ids
+        tokens = self.tokenizer(text).input_ids
         return tokens
     
     def chat(self):
