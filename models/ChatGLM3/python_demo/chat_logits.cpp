@@ -65,10 +65,11 @@ private:
   void tokenizer_encode(const std::string &input_str, std::vector<int> &tokens);
   int forward_first(std::vector<int> &tokens);
   std::vector<uint16_t> forward_first_without_topk(std::vector<int> &tokens); 
-  int forward_next(int cur_token);
+  int forward_next();
   void move2end(const bm_tensor_t &kv);
   void load_sentencepiece(std::string tokenizer_path);
   void build_system_prompt();
+  void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   int greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   int penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
 
@@ -113,6 +114,7 @@ private:
   int EOS;
   int SEQLEN;
   int NUM_LAYERS;
+  std::vector<int> visited_tokens;
 };
 
 void ChatGLM::load_sentencepiece(std::string tokenizer_path) {
@@ -194,6 +196,7 @@ void ChatGLM::init(const std::vector<int> &devices, std::string model_path, std:
   net_blocks_cache.resize(NUM_LAYERS);
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
+  visited_tokens.resize(SEQLEN);
 
   // net device mem
   inputs_embed_512.resize(net_embed->input_num);
@@ -322,6 +325,31 @@ void ChatGLM::move2end(const bm_tensor_t &kv) {
   delete[] dst;
 }
 
+void ChatGLM::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  bmrt_tensor_with_device(
+      &in_tensors[0], logits_mem,
+      net->input_dtypes[0], net->stages[0].input_shapes[0]);
+
+  for (int i = 1; i < net->input_num; i++) {
+    bmrt_tensor_with_device(
+        &in_tensors[i], net->stages[0].input_mems[i],
+        net->input_dtypes[i], net->stages[0].input_shapes[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(
+        &out_tensors[i], net->stages[0].output_mems[i],
+        net->output_dtypes[i], net->stages[0].output_shapes[i]);
+  }
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
+                                   net->input_num, out_tensors.data(),
+                                   net->output_num, true, false);
+  assert(ret);
+  bm_thread_sync(bm_handle);
+}
+
 int ChatGLM::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
   auto &out_mem = net->stages[0].output_mems[0];
   head_launch(net, logits_mem);
@@ -365,11 +393,11 @@ int ChatGLM::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_me
 }
 
 int ChatGLM::forward_first(std::vector<int> &tokens) {
-  std::vector<int> input_ids(SEQLEN, 0);
+  // std::vector<int> input_ids(SEQLEN, 0);
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, 0);
-
-  std::copy(tokens.begin(), tokens.end(), input_ids.data());
+  std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
+  // std::copy(tokens.begin(), tokens.end(), input_ids.data());
 
   token_length = tokens.size();
   for (int i = 0; i < token_length; i++) {
@@ -386,7 +414,7 @@ int ChatGLM::forward_first(std::vector<int> &tokens) {
 
   // forward embeding
   std::vector<int> input_nums(device_num, 1);
-  std::vector<void*> datas(device_num, (void*)input_ids.data());
+  std::vector<void*> datas(device_num, (void*)visited_tokens.data());
   bmrt_memcpy_s2d_parallel(p_bmrt, inputs_embed_512.data(), datas.data(),
                           input_nums.data(), device_num);
   auto ret =
@@ -456,7 +484,8 @@ int ChatGLM::forward_first(std::vector<int> &tokens) {
   return token;
 }
 
-int ChatGLM::forward_next(int cur_token) {
+int ChatGLM::forward_next() {
+  int cur_token = visited_tokens[token_length - 1];
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = 0; i <= SEQLEN - token_length; i++) {
     attention_mask[i] = ATTENTION_MASK;
@@ -534,6 +563,8 @@ int ChatGLM::forward_next(int cur_token) {
   } else if (generation_mode == "penalty_sample") {
     token = penalty_sample(net_penalty_sample_head, &outputs_lm[0]);
   }
+  visited_tokens[token_length] = token;
+  token_length += 1;
   return token;
 }
 
@@ -608,7 +639,7 @@ void ChatGLM::answer(const std::string &input_str) {
       token_length++;
     }
     tok_num++;
-    token = forward_next(token);
+    token = forward_next();
   }
   auto t2 = std::chrono::system_clock::now();
   auto use0 = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0);
