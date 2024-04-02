@@ -25,7 +25,7 @@ elseif (${TARGET_ARCH} STREQUAL "soc")
 endif()
 
 find_package(pybind11 REQUIRED CONFIG)
-pybind11_add_module(chat chat.cpp)
+pybind11_add_module(chat chat_logits.cpp)
 
 target_link_libraries(chat PUBLIC bmrt bmlib sentencepiece)
 install(TARGETS chat DESTINATION python)
