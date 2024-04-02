@@ -58,6 +58,8 @@ public:
   void deinit();
   void answer(const std::string &input_str);
   std::string predict_option(const std::string &input_str);
+  std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
+  std::string generation_mode;
 
 private:
   void tokenizer_encode(const std::string &input_str, std::vector<int> &tokens);
@@ -67,6 +69,8 @@ private:
   void move2end(const bm_tensor_t &kv);
   void load_sentencepiece(std::string tokenizer_path);
   void build_system_prompt();
+  int greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
+  int penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
 
 private:
   std::vector<bm_handle_t> handles;
@@ -75,7 +79,7 @@ private:
   sentencepiece::SentencePieceProcessor sentencepiece;
   const bm_net_info_t *net_embed;
   const bm_net_info_t *net_embed_cache;
-  const bm_net_info_t *net_lm;
+  const bm_net_info_t *net_lm, *net_greedy_head, *net_penalty_sample_head;
   std::vector<const bm_net_info_t *> net_blocks;
   std::vector<const bm_net_info_t *> net_blocks_cache;
   std::vector<bm_tensor_t> inputs_embed_512, outputs_embed_512;
@@ -173,6 +177,8 @@ void ChatGLM::init(const std::vector<int> &devices, std::string model_path, std:
   net_embed = bmrt_get_network_info(p_bmrt, name_embed.c_str());
   net_embed_cache = bmrt_get_network_info(p_bmrt, name_embed_cache.c_str());
   net_lm = bmrt_get_network_info(p_bmrt, name_lm.c_str());
+  net_greedy_head = bmrt_get_network_info(p_bmrt, "greedy_head");
+  net_penalty_sample_head = bmrt_get_network_info(p_bmrt, "penalty_sample_head");
   for (int i = 0; i < NUM_LAYERS; i++) {
     net_blocks.emplace_back(
         bmrt_get_network_info(p_bmrt, name_blocks[i].c_str()));
@@ -316,6 +322,48 @@ void ChatGLM::move2end(const bm_tensor_t &kv) {
   delete[] dst;
 }
 
+int ChatGLM::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
+  auto &out_mem = net->stages[0].output_mems[0];
+  head_launch(net, logits_mem);
+  int token = 0;
+  bm_memcpy_d2s(bm_handle, (void *)&token, out_mem);
+  return token;
+}
+
+int ChatGLM::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
+  auto &in1_mem = net->stages[0].input_mems[1];
+  auto &in2_mem = net->stages[0].input_mems[2];
+  auto &in3_mem = net->stages[0].input_mems[3];
+  auto &in4_mem = net->stages[0].input_mems[4];
+  auto &out0_mem = net->stages[0].output_mems[0];
+  auto &out1_mem = net->stages[0].output_mems[1];
+
+  // repeat_penalty + top_p + top_k + temperature
+  std::vector<int> generated_tokens(SEQLEN, visited_tokens[token_length - 1]);
+  repeat_last_n = std::min(repeat_last_n, token_length);
+  std::copy(visited_tokens.begin() + token_length - repeat_last_n, 
+            visited_tokens.begin() + token_length,
+            generated_tokens.begin());
+  bm_memcpy_s2d(bm_handle, in1_mem, (void *)generated_tokens.data());
+  bm_memcpy_s2d(bm_handle, in2_mem, (void *)&top_p);
+  bm_memcpy_s2d(bm_handle, in3_mem, (void *)&temperature);
+  bm_memcpy_s2d(bm_handle, in4_mem, (void *)&repeat_penalty);
+
+  // inference
+  head_launch(net, logits_mem);
+
+  // get logit & token
+  int candidate_num = net->stages[0].output_shapes[0].dims[1];
+  std::vector<float> probs(candidate_num);
+  bm_memcpy_d2s(bm_handle, probs.data(), out0_mem);
+  std::vector<int> tokens(candidate_num);
+  bm_memcpy_d2s(bm_handle, tokens.data(), out1_mem);
+
+  // penalty_sample
+  std::discrete_distribution<> dist(probs.begin(), probs.end());
+  return tokens[dist(sgen)];
+}
+
 int ChatGLM::forward_first(std::vector<int> &tokens) {
   std::vector<int> input_ids(SEQLEN, 0);
   std::vector<int> position_id(SEQLEN, 0);
@@ -396,7 +444,15 @@ int ChatGLM::forward_first(std::vector<int> &tokens) {
   bm_thread_sync(bm_handle);
 
   int token = 0;
-  bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);
+  // bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);
+  if (generation_mode == "greedy") {
+    token = greedy_search(net_greedy_head, &outputs_lm[0]);
+  } else if (generation_mode == "penalty_sample") {
+    token = penalty_sample(net_penalty_sample_head, &outputs_lm[0]);
+  }
+
+  visited_tokens[token_length] = token;
+  token_length += 1;
   return token;
 }
 
@@ -472,7 +528,12 @@ int ChatGLM::forward_next(int cur_token) {
   bm_thread_sync(bm_handle);
 
   int token = 0;
-  bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);
+  // bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);
+  if (generation_mode == "greedy") {
+    token = greedy_search(net_greedy_head, &outputs_lm[0]);
+  } else if (generation_mode == "penalty_sample") {
+    token = penalty_sample(net_penalty_sample_head, &outputs_lm[0]);
+  }
   return token;
 }
 
@@ -696,11 +757,36 @@ std::string ChatGLM::predict_option(const std::string &input_str) {
   return option_map[max_index];
 }
 
+std::vector<int> ChatGLM::generate(std::vector<int> &history_tokens, int EOS) {
+  if (history_tokens.empty()) {
+    printf("Sorry: your question is empty!!\n");
+    history_tokens.clear();
+    return {};
+  }
+
+  // make sure token not too large
+  if ((int)history_tokens.size() > SEQLEN - 10) {
+    history_tokens.clear();
+    printf("Error: your question is too large!\n");
+    return {};
+  }
+
+  std::vector<int> result_tokens;
+  int token = forward_first(history_tokens);
+  while (token != EOS && token_length < SEQLEN) {
+    result_tokens.emplace_back(token);
+    token = forward_next();
+  }
+
+  return result_tokens;
+}
+
 PYBIND11_MODULE(chat, m) {
     pybind11::class_<ChatGLM>(m, "ChatGLM")
         .def(pybind11::init<>())
         .def("init", &ChatGLM::init)
         .def("answer", &ChatGLM::answer)
         .def("predict_option", &ChatGLM::predict_option)
+        .def("generate", &Qwen::generate)
         .def("deinit", &ChatGLM::deinit);
 }
