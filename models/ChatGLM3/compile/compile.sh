@@ -125,6 +125,27 @@ model_deploy.py \
     $device_args \
     --model lm_head.bmodel
 
+model_transform.py \
+    --model_name greedy_head \
+    --model_def ../../onnx/greedy_head.onnx \
+    --mlir greedy_head.mlir
+
+model_deploy.py \
+    --mlir greedy_head.mlir \
+    --chip bm1684x \
+    --model greedy_head.bmodel
+
+
+model_transform.py \
+    --model_name penalty_sample_head \
+    --model_def ../../onnx/penalty_sample_head.onnx \
+    --mlir penalty_sample_head.mlir
+
+model_deploy.py \
+    --mlir penalty_sample_head.mlir \
+    --chip bm1684x \
+    --model penalty_sample_head.bmodel
+
 rm *.npz
 
 models=${models}${outdir}'/lm_head.bmodel '
