@@ -21,6 +21,7 @@
 #include <getopt.h>
 #include <stdio.h>
 #include <inttypes.h>
+#include <random>
 
 static const uint16_t ATTENTION_MASK = 0xF0E2;
 
@@ -61,7 +62,7 @@ public:
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
   std::string generation_mode;
   std::mt19937 sgen;
-  ChatGLm() : sgen(std::random_device()()){};
+  ChatGLM() : sgen(std::random_device()()){};
 
 private:
   void tokenizer_encode(const std::string &input_str, std::vector<int> &tokens);
@@ -74,6 +75,8 @@ private:
   void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   int greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   int penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
+  void net_launch(const bm_net_info_t *net, int stage_idx = 0);
+  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
 
 private:
   std::vector<bm_handle_t> handles;
@@ -134,6 +137,31 @@ void ChatGLM::load_sentencepiece(std::string tokenizer_path) {
   }
   EOS = sentencepiece.eos_id();
   printf("Done!\n");
+}
+
+void ChatGLM::net_launch(const bm_net_info_t *net, int stage_idx) {
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  for (int i = 0; i < net->input_num; i++) {
+    bmrt_tensor_with_device(
+        &in_tensors[i], net->stages[stage_idx].input_mems[i],
+        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(
+        &out_tensors[i], net->stages[stage_idx].output_mems[i],
+        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
+  }
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
+                                   net->input_num, out_tensors.data(),
+                                   net->output_num, true, false);
+  assert(ret);
+  bm_thread_sync(bm_handle);
+}
+
+void ChatGLM::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
+  bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
 }
 
 void ChatGLM::init(const std::vector<int> &devices, std::string model_path, std::string tokenizer_path) {
@@ -472,19 +500,24 @@ int ChatGLM::forward_first(std::vector<int> &tokens) {
 
   // forward lmhead
   int bytes = embed_512[0].device_mem.size / SEQLEN;
-  bm_memcpy_d2d_byte(bm_handle, inputs_lm[0].device_mem, 0,
-                     embed_512[0].device_mem, (token_length - 1) * bytes,
-                     bytes);
-  ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &inputs_lm[0], 1,
-                              &outputs_lm[0], 1, true, false);
-  bm_thread_sync(bm_handle);
+  // bm_memcpy_d2d_byte(bm_handle, inputs_lm[0].device_mem, 0,
+  //                    embed_512[0].device_mem, (token_length - 1) * bytes,
+  //                    bytes);
+  // ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &inputs_lm[0], 1,
+  //                             &outputs_lm[0], 1, true, false);
+  // bm_thread_sync(bm_handle);
+  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
+  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
+  bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, embed_512[0].device_mem,
+                     (token_length - 1) * bytes, bytes);
+  net_launch(net_lm);
 
   int token = 0;
   // bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);
   if (generation_mode == "greedy") {
-    token = greedy_search(net_greedy_head, &outputs_lm[0]);
+    token = greedy_search(net_greedy_head, lm_out_mem);
   } else if (generation_mode == "penalty_sample") {
-    token = penalty_sample(net_penalty_sample_head, &outputs_lm[0]);
+    token = penalty_sample(net_penalty_sample_head, lm_out_mem);
   }
 
   visited_tokens[token_length] = token;
@@ -559,17 +592,21 @@ int ChatGLM::forward_next() {
   }
 
   // forward lmhead
-  ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &inputs_lm[0], 1,
-                              &outputs_lm[0], 1, true, false);
-  assert(ret);
-  bm_thread_sync(bm_handle);
+  // ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &inputs_lm[0], 1,
+  //                             &outputs_lm[0], 1, true, false);
+  // assert(ret);
+  // bm_thread_sync(bm_handle);
+  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
+  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
+  d2d(lm_in_mem, inputs_lm[0].device_mem);
+  net_launch(net_lm);
 
   int token = 0;
   // bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);
   if (generation_mode == "greedy") {
-    token = greedy_search(net_greedy_head, &outputs_lm[0]);
+    token = greedy_search(net_greedy_head, lm_out_mem);
   } else if (generation_mode == "penalty_sample") {
-    token = penalty_sample(net_penalty_sample_head, &outputs_lm[0]);
+    token = penalty_sample(net_penalty_sample_head, lm_out_mem);
   }
   visited_tokens[token_length] = token;
   token_length += 1;
