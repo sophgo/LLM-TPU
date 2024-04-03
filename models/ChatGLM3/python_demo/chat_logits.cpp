@@ -200,7 +200,7 @@ void ChatGLM::init(const std::vector<int> &devices, std::string model_path, std:
 
   // set NUM_LAYERS
   auto num_nets = bmrt_get_network_number(p_bmrt);
-  NUM_LAYERS = (num_nets - 2) / 2;
+  NUM_LAYERS = (num_nets - 4) / 2;
 
   // net names
   name_embed = "embedding";
