@@ -33,15 +33,6 @@ class Qwen {
 public:
   void init(const std::vector<int> &devid, std::string draft_model_path,
             std::string target_model_path);
-  void init_bmodel(void *p_bmrt, const bm_net_info_t *net_embed,
-                   const bm_net_info_t *net_embed_cache,
-                   const bm_net_info_t *net_lm,
-                   std::vector<const bm_net_info_t *> net_blocks,
-                   std::vector<const bm_net_info_t *> net_blocks_cache,
-                   const bm_net_info_t *net_greedy_head,
-                   const bm_net_info_t *net_penalty_sample_head,
-                   std::vector<bm_device_mem_t> &past_key,
-                   std::vector<bm_device_mem_t> &past_value, int &NUM_LAYERS);
   void deinit();
   int forward_first(void *p_bmrt, std::vector<int> &tokens,
                     const bm_net_info_t *net_embed,
@@ -50,14 +41,14 @@ public:
                     const bm_net_info_t *net_greedy_head,
                     const bm_net_info_t *net_penalty_sample_head,
                     std::vector<bm_device_mem_t> &past_key,
-                    std::vector<bm_device_mem_t> &past_value, int NUM_LAYERS);
+                    std::vector<bm_device_mem_t> &past_value, std::vector<float> &prob_history, int NUM_LAYERS);
   int forward_next(void *p_bmrt, const bm_net_info_t *net_embed,
                    std::vector<const bm_net_info_t *> net_blocks,
                    const bm_net_info_t *net_lm,
                    const bm_net_info_t *net_greedy_head,
                    const bm_net_info_t *net_penalty_sample_head,
                    std::vector<bm_device_mem_t> &past_key,
-                   std::vector<bm_device_mem_t> &past_value, int NUM_LAYERS);
+                   std::vector<bm_device_mem_t> &past_value, std::vector<float> &prob_history, int NUM_LAYERS);
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
   std::mt19937 sgen;
@@ -72,7 +63,8 @@ private:
   int greedy_search(void *p_bmrt, const bm_net_info_t *net,
                     bm_device_mem_t &logits_mem);
   int penalty_sample(void *p_bmrt, const bm_net_info_t *net,
-                     bm_device_mem_t &logits_mem);
+                     bm_device_mem_t &logits_mem, std::vector<float> &prob_history);
+  void roll_back(std::vector<float> &probs, std::vector<int> &tokens, std::vector<float> &prob_history);
 
 public:
   int token_length;
@@ -82,7 +74,8 @@ public:
   bool io_alone;
   int VOCAB_SIZE;
   std::vector<int> visited_tokens;
-  std::vector<int> prob_history;
+  std::vector<float> draft_prob_history;
+  std::vector<float> target_prob_history;
 
   // generation
   float temperature;
@@ -272,7 +265,8 @@ void Qwen::init(const std::vector<int> &devices, std::string draft_model_path,
          target_net_lm->stages[0].output_shapes[0].dims[1]);
   VOCAB_SIZE = draft_net_lm->stages[0].output_shapes[0].dims[1];
   visited_tokens.resize(SEQLEN);
-  prob_history.resize(K * VOCAB_SIZE);
+  draft_prob_history.resize(K * VOCAB_SIZE);
+  target_prob_history.resize(K * VOCAB_SIZE);
 }
 
 void Qwen::deinit() {
@@ -328,7 +322,7 @@ int Qwen::greedy_search(void *p_bmrt, const bm_net_info_t *net,
 }
 
 int Qwen::penalty_sample(void *p_bmrt, const bm_net_info_t *net,
-                         bm_device_mem_t &logits_mem) {
+                         bm_device_mem_t &logits_mem, std::vector<float> &prob_history) {
   auto &in1_mem = net->stages[0].input_mems[1];
   auto &in2_mem = net->stages[0].input_mems[2];
   auto &in3_mem = net->stages[0].input_mems[3];
@@ -356,9 +350,18 @@ int Qwen::penalty_sample(void *p_bmrt, const bm_net_info_t *net,
   std::vector<int> tokens(candidate_num);
   bm_memcpy_d2s(bm_handle, tokens.data(), out1_mem);
 
+  // roll back
+  roll_back(probs, tokens, prob_history);
+
   // penalty_sample
   std::discrete_distribution<> dist(probs.begin(), probs.end());
   return tokens[dist(sgen)];
+}
+
+void Qwen::roll_back(std::vector<float> &probs, std::vector<int> &tokens, std::vector<float> &prob_history) {
+  for (size_t i = 0; i < tokens.size(); i++) {
+    prob_history[tokens[i]] = probs[i];
+  }
 }
 
 int Qwen::forward_first(void *p_bmrt, std::vector<int> &tokens,
@@ -369,6 +372,7 @@ int Qwen::forward_first(void *p_bmrt, std::vector<int> &tokens,
                         const bm_net_info_t *net_penalty_sample_head,
                         std::vector<bm_device_mem_t> &past_key,
                         std::vector<bm_device_mem_t> &past_value,
+                        std::vector<float> &prob_history,
                         int NUM_LAYERS) {
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
@@ -422,7 +426,7 @@ int Qwen::forward_first(void *p_bmrt, std::vector<int> &tokens,
   if (generation_mode == "greedy") {
     token = greedy_search(p_bmrt, net_greedy_head, lm_out_mem);
   } else if (generation_mode == "penalty_sample") {
-    token = penalty_sample(p_bmrt, net_penalty_sample_head, lm_out_mem);
+    token = penalty_sample(p_bmrt, net_penalty_sample_head, lm_out_mem, prob_history);
   }
 
   visited_tokens[token_length] = token;
@@ -437,6 +441,7 @@ int Qwen::forward_next(void *p_bmrt, const bm_net_info_t *net_embed_cache,
                        const bm_net_info_t *net_penalty_sample_head,
                        std::vector<bm_device_mem_t> &past_key,
                        std::vector<bm_device_mem_t> &past_value,
+                       std::vector<float> &prob_history,
                        int NUM_LAYERS) {
   int cur_token = visited_tokens[token_length - 1];
 
@@ -499,7 +504,7 @@ int Qwen::forward_next(void *p_bmrt, const bm_net_info_t *net_embed_cache,
   if (generation_mode == "greedy") {
     token = greedy_search(p_bmrt, net_greedy_head, lm_out_mem);
   } else if (generation_mode == "penalty_sample") {
-    token = penalty_sample(p_bmrt, net_penalty_sample_head, lm_out_mem);
+    token = penalty_sample(p_bmrt, net_penalty_sample_head, lm_out_mem, prob_history);
   }
 
   visited_tokens[token_length] = token;
@@ -525,18 +530,20 @@ std::vector<int> Qwen::generate(std::vector<int> &history_tokens, int EOS) {
       std::bind(&Qwen::forward_first, this, d_bmrt, std::placeholders::_1,
                 draft_net_embed, draft_net_blocks, draft_net_lm,
                 draft_net_greedy_head, draft_net_penalty_sample_head,
-                draft_past_key, draft_past_value, DRAFT_NUM_LAYERS);
+                draft_past_key, draft_past_value, draft_prob_history, DRAFT_NUM_LAYERS);
   auto forward_draft_next =
       std::bind(&Qwen::forward_next, this, d_bmrt, draft_net_embed_cache,
                 draft_net_blocks_cache, draft_net_lm, draft_net_greedy_head,
-                draft_net_penalty_sample_head, draft_past_key, draft_past_value,
+                draft_net_penalty_sample_head, draft_past_key, draft_past_value, draft_prob_history,
                 DRAFT_NUM_LAYERS);
 
-  std::vector<int> result_tokens;
-  int token = forward_draft_first(history_tokens);
-  for (int i = 0; i < 2; i++) {
-    result_tokens.emplace_back(token);
-    token = forward_draft_next();
+  int token = 0;
+  std::vector<int> draft_tokens;
+
+  // forward K
+  draft_tokens.emplace_back(forward_draft_first(history_tokens));
+  for (int i = 0; i < K - 1; i++) {
+    draft_tokens.emplace_back(forward_draft_next());
   }
   // while (token != EOS && token_length < SEQLEN) {
   //   result_tokens.emplace_back(token);
