@@ -53,10 +53,15 @@ class Qwen1_5(BaseModel):
     
     def chat(self):
         from time import time
+        self.input_str = input("\nQuestion: ")
+        tokens = self.encode_tokens()
+        print(tokens)
         t1 = time()
-        res = self.model.generate([151644, 8948, 198, 2610, 525, 264, 10950, 17847, 13, 151645, 198, 151644, 872, 198, 14990, 151645, 198, 151644, 77091, 198], 151645)
+        res = self.model.generate(tokens, 151645)
         t2 = time()
         print(t2 - t1)
+        print(res)
+        # self.model.deinit()
         breakpoint()
 
 def main(args):
@@ -75,7 +80,7 @@ if __name__ == "__main__":
     parser.add_argument('--repeat_penalty', type=float, default=1.0, help='penalty for repeated tokens')
     parser.add_argument('--repeat_last_n', type=int, default=32, help='repeat penalty for recent n tokens')
     parser.add_argument('--max_new_tokens', type=int, default=1024, help='max new token length to generate')
-    parser.add_argument('--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
+    parser.add_argument('--generation_mode', type=str, choices=["penalty_sample"], default="penalty_sample", help='mode for generating next token')
     parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
     args = parser.parse_args()
     main(args)
