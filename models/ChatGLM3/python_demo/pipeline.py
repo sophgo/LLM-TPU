@@ -16,8 +16,8 @@ class ChatGLM(BaseModel):
         self.load_model(args)
 
     def load_model(self, args):
-        from Qwen1_5.python_demo import chat
-        self.model = chat.Qwen()
+        from ChatGLM3.python_demo import chat
+        self.model = chat.ChatGLM()
         self.model.init(self.devices, args.model_path)
         self.model.temperature = args.temperature
         self.model.top_p = args.top_p

@@ -53,7 +53,7 @@ static inline uint32_t fp16_ieee_to_fp32_bits(uint16_t h) {
 
 class ChatGLM {
 public:
-  void init(const std::vector<int> &devid, std::string model_path, std::string tokenizer_path);
+  void init(const std::vector<int> &devid, std::string model_path);
   void chat();
   void deinit();
   void answer(const std::string &input_str);
@@ -136,7 +136,7 @@ void ChatGLM::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
 }
 
-void ChatGLM::init(const std::vector<int> &devices, std::string model_path, std::string tokenizer_path) {
+void ChatGLM::init(const std::vector<int> &devices, std::string model_path) {
   device_num = devices.size();
   // request bm_handle
   std::cout << "Device [ ";
