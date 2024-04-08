@@ -390,6 +390,11 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   } else if (generation_mode == "penalty_sample") {
     token = penalty_sample(net_penalty_sample_head, lm_out_mem);
   }
+  else {
+    std::cerr << "\nError: Invalid generation mode.\n";
+    std::cerr << "Supported modes are 'greedy' or 'penalty_sample'.\n";
+    throw std::runtime_error("Invalid generation mode");
+  }
 
   visited_tokens[token_length] = token;
   token_length += 1;
@@ -460,6 +465,11 @@ int Qwen::forward_next() {
     token = greedy_search(net_greedy_head, lm_out_mem);
   } else if (generation_mode == "penalty_sample") {
     token = penalty_sample(net_penalty_sample_head, lm_out_mem);
+  }
+  else {
+    std::cerr << "\nError: Invalid generation mode.\n";
+    std::cerr << "Supported modes are 'greedy' or 'penalty_sample'.\n";
+    throw std::runtime_error("Invalid generation mode");
   }
   
   visited_tokens[token_length] = token;
