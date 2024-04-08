@@ -56,7 +56,7 @@ class Embedding(torch.nn.Module):
         return out.float()
 
 
-class QwenBlock(torch.nn.Module):
+class Block(torch.nn.Module):
 
     def __init__(self, layer_id):
         super().__init__()
@@ -73,7 +73,7 @@ class QwenBlock(torch.nn.Module):
         return hidden_states.float(), present_k.float(), present_v.float()
 
 
-class QwenBlockCache(torch.nn.Module):
+class BlockCache(torch.nn.Module):
 
     def __init__(self, layer_id):
         super().__init__()
@@ -145,7 +145,7 @@ class PenaltySampleHead(torch.nn.Module):
 
 
 def convert_block(layer_id):
-    model = QwenBlock(layer_id)
+    model = Block(layer_id)
     hidden_states = torch.randn(
         (1, SEQ_LENGTH, HIDDEN_SIZE)).to(torch.float).to(device)
     position_ids = torch.tensor(
@@ -164,7 +164,7 @@ def convert_block(layer_id):
 
 
 def convert_block_cache(layer_id):
-    model = QwenBlockCache(layer_id)
+    model = BlockCache(layer_id)
     hidden_states = torch.randn((1, 1, HIDDEN_SIZE)).to(torch.float).to(device)
     position_ids = torch.tensor([range(1)], dtype=torch.long).to(device)
     attention_mask = torch.ones(
