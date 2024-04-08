@@ -107,8 +107,8 @@ class BaseModel:
         Stream the prediction for the given query.
         """
         self.answer_cur = ""
-        tokens = self.encode_tokens()
         self.input_str = query
+        tokens = self.encode_tokens()
 
         for answer_cur, history in self._generate_predictions(tokens):
             yield answer_cur, history
