@@ -73,7 +73,8 @@ public:
   int DRAFT_NUM_LAYERS;  // read from bmodel
   int TARGET_NUM_LAYERS; // read from bmodel
   int candidate_num;     // read from bmodel
-  bool io_alone;
+  bool draft_io_alone;
+  bool target_io_alone;
   int VOCAB_SIZE;
   std::vector<int> draft_visited_tokens;
   std::vector<int> target_visited_tokens;
@@ -200,10 +201,10 @@ void Qwen::init(const std::vector<int> &devices, std::string draft_model_path,
   draft_past_key.resize(DRAFT_NUM_LAYERS);
   draft_past_value.resize(DRAFT_NUM_LAYERS);
   auto draft_addr_mode = draft_net_blocks_cache[0]->addr_mode;
-  io_alone = draft_addr_mode == 1;
+  draft_io_alone = draft_addr_mode == 1;
   for (int i = 0; i < DRAFT_NUM_LAYERS; i++) {
     assert(draft_addr_mode == draft_net_blocks_cache[i]->addr_mode);
-    if (io_alone) {
+    if (draft_io_alone) {
       draft_past_key[i] = draft_net_blocks_cache[i]->stages[0].input_mems[3];
       draft_past_value[i] = draft_net_blocks_cache[i]->stages[0].input_mems[4];
     } else {
@@ -222,11 +223,8 @@ void Qwen::init(const std::vector<int> &devices, std::string draft_model_path,
   target_net_embed = bmrt_get_network_info(t_bmrt, "embedding");
   target_net_embed_cache = bmrt_get_network_info(t_bmrt, "embedding_cache");
   target_net_lm = bmrt_get_network_info(t_bmrt, "lm_head");
-  target_net_greedy_head = bmrt_get_network_info(t_bmrt, "greedy_head");
-  target_net_penalty_sample_head =
-      bmrt_get_network_info(t_bmrt, "penalty_sample_head");
   auto target_num_nets = bmrt_get_network_number(t_bmrt);
-  TARGET_NUM_LAYERS = (target_num_nets - 5) / 2;
+  TARGET_NUM_LAYERS = (target_num_nets - 3) / 2;
 
   // target net blocks
   for (int i = 0; i < TARGET_NUM_LAYERS; i++) {
@@ -242,11 +240,10 @@ void Qwen::init(const std::vector<int> &devices, std::string draft_model_path,
   target_past_key.resize(TARGET_NUM_LAYERS);
   target_past_value.resize(TARGET_NUM_LAYERS);
   auto target_addr_mode = target_net_blocks_cache[0]->addr_mode;
-  assert(draft_addr_mode == target_addr_mode);
-  io_alone = target_addr_mode == 1;
+  target_io_alone = target_addr_mode == 1;
   for (int i = 0; i < TARGET_NUM_LAYERS; i++) {
     assert(target_addr_mode == target_net_blocks_cache[i]->addr_mode);
-    if (io_alone) {
+    if (target_io_alone) {
       target_past_key[i] = target_net_blocks_cache[i]->stages[0].input_mems[3];
       target_past_value[i] =
           target_net_blocks_cache[i]->stages[0].input_mems[4];
@@ -267,12 +264,8 @@ void Qwen::init(const std::vector<int> &devices, std::string draft_model_path,
          target_net_embed->stages[0].input_shapes[0].dims[1]);
   SEQLEN = draft_net_embed->stages[0].input_shapes[0].dims[1];
 
-  assert(draft_net_lm->stages[0].output_shapes[0].dims[1] ==
-         target_net_lm->stages[0].output_shapes[0].dims[1]);
   VOCAB_SIZE = draft_net_lm->stages[0].output_shapes[0].dims[1];
 
-  assert(draft_net_penalty_sample_head->stages[0].output_shapes[0].dims[1] ==
-         target_net_penalty_sample_head->stages[0].output_shapes[0].dims[1]);
   candidate_num =
       draft_net_penalty_sample_head->stages[0].output_shapes[0].dims[1];
 
@@ -283,11 +276,13 @@ void Qwen::init(const std::vector<int> &devices, std::string draft_model_path,
 }
 
 void Qwen::deinit() {
-  if (false == io_alone) {
+  if (false == draft_io_alone) {
     for (int i = 0; i < DRAFT_NUM_LAYERS; i++) {
       bm_free_device(bm_handle, draft_past_key[i]);
       bm_free_device(bm_handle, draft_past_value[i]);
     }
+  }
+  if (false == target_io_alone) {
     for (int i = 0; i < TARGET_NUM_LAYERS; i++) {
       bm_free_device(bm_handle, target_past_key[i]);
       bm_free_device(bm_handle, target_past_value[i]);
@@ -509,7 +504,7 @@ int Qwen::draft_forward_next(int index) {
     auto &out1_mem = draft_net_blocks_cache[idx]->stages[0].output_mems[1];
     auto &out2_mem = draft_net_blocks_cache[idx]->stages[0].output_mems[2];
     d2d(in0_mem, out_mem);
-    if (io_alone) {
+    if (draft_io_alone) {
       if (idx == 0) {
         bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
         bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
@@ -603,21 +598,38 @@ Qwen::target_forward_first(std::vector<int> &tokens) {
 
   // forward lmhead
   int bytes = out_mem.size / SEQLEN;
-  auto &lm_in_mem = target_net_lm->stages[0].input_mems[0];
-  auto &lm_out_mem = target_net_lm->stages[0].output_mems[0];
-  bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
+  auto &lm_in0_mem = target_net_lm->stages[0].input_mems[0];
+  auto &lm_in1_mem = target_net_lm->stages[0].input_mems[1];
+  auto &lm_in2_mem = target_net_lm->stages[0].input_mems[2];
+  auto &lm_in3_mem = target_net_lm->stages[0].input_mems[3];
+  auto &lm_in4_mem = target_net_lm->stages[0].input_mems[4];
+  auto &lm_out0_mem = target_net_lm->stages[0].output_mems[0];
+  auto &lm_out1_mem = target_net_lm->stages[0].output_mems[1];
+
+  // repeat_penalty + top_p + top_k + temperature
+  bm_memcpy_d2d_byte(bm_handle, lm_in0_mem, 0, out_mem,
                      (target_token_length - GUESS_LEN) * bytes,
                      GUESS_LEN * bytes);
+  std::vector<int> generated_tokens(SEQLEN, target_visited_tokens[target_token_length - 1]);
+  repeat_last_n = std::min(repeat_last_n, target_token_length);
+  std::copy(target_visited_tokens.begin() + target_token_length - repeat_last_n,
+            target_visited_tokens.begin() + target_token_length, generated_tokens.begin());
+  bm_memcpy_s2d(bm_handle, lm_in1_mem, (void *)generated_tokens.data());
+  bm_memcpy_s2d(bm_handle, lm_in2_mem, (void *)&top_p);
+  bm_memcpy_s2d(bm_handle, lm_in3_mem, (void *)&temperature);
+  bm_memcpy_s2d(bm_handle, lm_in4_mem, (void *)&repeat_penalty);
+
+  // inference
   net_launch(t_bmrt, target_net_lm);
 
-  auto pair =
-      batch_penalty_sample(t_bmrt, target_net_penalty_sample_head, lm_out_mem,
-                           target_visited_tokens, target_token_length);
+  // get logit & token
+  std::vector<float> batch_probs(candidate_num * GUESS_LEN);
+  bm_memcpy_d2s(bm_handle, batch_probs.data(), lm_out0_mem);
+  std::vector<int> batch_tokens(candidate_num * GUESS_LEN);
+  bm_memcpy_d2s(bm_handle, batch_tokens.data(), lm_out1_mem);
 
-  auto &batch_probs = pair.first;
-  auto &batch_tokens = pair.second;
 
-  for (int i = 0; i < GUESS_LEN; i++) {
+  for (int i = 0; i < K; i++) {
     std::vector<float> candidate_probs(batch_probs.begin() + i * candidate_num,
                                        batch_probs.begin() +
                                            (i + 1) * candidate_num);
@@ -629,7 +641,7 @@ Qwen::target_forward_first(std::vector<int> &tokens) {
   }
 
   target_token_length += 1;
-  return pair;
+  return std::make_pair(batch_probs, batch_tokens);
 }
 
 std::pair<std::vector<float>, std::vector<int>> Qwen::target_forward_next() {
@@ -671,7 +683,7 @@ std::pair<std::vector<float>, std::vector<int>> Qwen::target_forward_next() {
     auto &out1_mem = target_net_blocks_cache[idx]->stages[0].output_mems[1];
     auto &out2_mem = target_net_blocks_cache[idx]->stages[0].output_mems[2];
     d2d(in0_mem, out_mem);
-    if (io_alone) {
+    if (target_io_alone) {
       if (idx == 0) {
         bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_ids.data());
         bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
@@ -696,17 +708,34 @@ std::pair<std::vector<float>, std::vector<int>> Qwen::target_forward_next() {
   }
 
   // forward lmhead
-  auto &lm_in_mem = target_net_lm->stages[0].input_mems[0];
-  auto &lm_out_mem = target_net_lm->stages[0].output_mems[0];
-  d2d(lm_in_mem, out_mem);
+  auto &lm_in0_mem = target_net_lm->stages[0].input_mems[0];
+  auto &lm_in1_mem = target_net_lm->stages[0].input_mems[1];
+  auto &lm_in2_mem = target_net_lm->stages[0].input_mems[2];
+  auto &lm_in3_mem = target_net_lm->stages[0].input_mems[3];
+  auto &lm_in4_mem = target_net_lm->stages[0].input_mems[4];
+  auto &lm_out0_mem = target_net_lm->stages[0].output_mems[0];
+  auto &lm_out1_mem = target_net_lm->stages[0].output_mems[1];
+
+  // repeat_penalty + top_p + top_k + temperature
+  d2d(lm_in0_mem, out_mem);
+  std::vector<int> generated_tokens(SEQLEN, target_visited_tokens[target_token_length - 1]);
+  repeat_last_n = std::min(repeat_last_n, target_token_length);
+  std::copy(target_visited_tokens.begin() + target_token_length - repeat_last_n,
+            target_visited_tokens.begin() + target_token_length, generated_tokens.begin());
+  bm_memcpy_s2d(bm_handle, lm_in1_mem, (void *)generated_tokens.data());
+  bm_memcpy_s2d(bm_handle, lm_in2_mem, (void *)&top_p);
+  bm_memcpy_s2d(bm_handle, lm_in3_mem, (void *)&temperature);
+  bm_memcpy_s2d(bm_handle, lm_in4_mem, (void *)&repeat_penalty);
+
+  // inference
   net_launch(t_bmrt, target_net_lm);
 
-  auto pair = batch_penalty_sample(t_bmrt, target_net_penalty_sample_head,
-                                   lm_out_mem, target_visited_tokens,
-                                   target_token_length - GUESS_LEN);
+  // get logit & token
+  std::vector<float> batch_probs(candidate_num * GUESS_LEN);
+  bm_memcpy_d2s(bm_handle, batch_probs.data(), lm_out0_mem);
+  std::vector<int> batch_tokens(candidate_num * GUESS_LEN);
+  bm_memcpy_d2s(bm_handle, batch_tokens.data(), lm_out1_mem);
 
-  auto &batch_probs = pair.first;
-  auto &batch_tokens = pair.second;
 
   for (int i = 0; i < K; i++) {
     std::vector<float> candidate_probs(batch_probs.begin() + i * candidate_num,
@@ -720,7 +749,7 @@ std::pair<std::vector<float>, std::vector<int>> Qwen::target_forward_next() {
   }
 
   target_token_length += 1;
-  return pair;
+  return std::make_pair(batch_probs, batch_tokens);
 }
 
 int Qwen::verify(std::vector<int> &guess_tokens,
@@ -805,8 +834,8 @@ std::vector<int> Qwen::generate(std::vector<int> &history_tokens, int EOS) {
 
   // 2. Decode
   while (std::find(result_tokens.end() - GUESS_LEN, result_tokens.end(), EOS) ==
-             result_tokens.end() ||
-         result_tokens.size() > SEQLEN - history_tokens.size() - 10) {
+             result_tokens.end() &&
+         result_tokens.size() < SEQLEN - history_tokens.size() - 10) {
     guess_tokens.clear();
     draft_prob_history.clear();
     target_prob_history.clear();
