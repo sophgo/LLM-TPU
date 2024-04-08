@@ -866,7 +866,7 @@ std::vector<int> Qwen::generate(std::vector<int> &history_tokens, int EOS) {
   return result_tokens;
 }
 
-PYBIND11_MODULE(chat, m) {
+PYBIND11_MODULE(chat_speculative, m) {
   pybind11::class_<Qwen>(m, "Qwen")
       .def(pybind11::init<>())
       .def("init", &Qwen::init)

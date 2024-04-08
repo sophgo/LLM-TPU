@@ -19,7 +19,7 @@ class Qwen1_5(BaseModel):
         if len(self.devices) > 1:
             raise ValueError("not support now")
         else:
-            from Qwen1_5.speculative_sample_demo import chat
+            from Qwen1_5.speculative_sample_demo import chat_speculative
             self.model = chat.Qwen()
             self.model.init(self.devices, args.draft_model_path, args.target_model_path)
             self.model.temperature = args.temperature

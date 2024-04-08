@@ -19,3 +19,11 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen1.5
 
 
 ```
+
+```
+draft_model = qwen1.5_0.5b_int4
+target_model = qwen1.5_7b_int4
+测试完成481个token用时40.94239926338196 s，提升20%
+
+完成26个token用时2.04833984375 s，提升30%
+```
