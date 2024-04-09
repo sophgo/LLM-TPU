@@ -130,7 +130,7 @@ void LLama2::init(const std::vector<int> &devices, std::string model_path, std::
   }
 
   // set SEQLEN
-  SEQLEN = net_embed->stages[0].input_shapes[0].dims[0];
+  SEQLEN = net_embed->stages[0].input_shapes[0].dims[1];
 
   // net device mem
   inputs_embed_512.resize(net_embed->input_num);
@@ -581,4 +581,3 @@ int main(int argc, char **argv) {
   llama.deinit();
   return 0;
 }
-
