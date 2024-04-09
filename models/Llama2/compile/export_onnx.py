@@ -39,6 +39,7 @@ NUM_LAYERS = config.num_hidden_layers
 HIDDEN_SIZE = config.hidden_size
 NUM_ATTENTION_HEADS = config.num_attention_heads
 HEAD_DIM = HIDDEN_SIZE // NUM_ATTENTION_HEADS
+VOCAB_SIZE = config.vocab_size
 
 print(f'Layers: {NUM_LAYERS}\nHidden size: {HIDDEN_SIZE}\n')
 
@@ -95,9 +96,49 @@ class LmHead(torch.nn.Module):
     def forward(self, hidden_states):
         hidden_states = transformer.norm(hidden_states)
         m_logits = origin_model.lm_head(hidden_states)
-        _, token = torch.topk(m_logits, 1)
+        return m_logits
+
+
+class GreedyHead(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, m_logits):
+        _, token = torch.topk(m_logits.float(), 1)
         return token
 
+    
+# refs:https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py
+class PenaltySampleHead(torch.nn.Module):
+
+    def __init__(self, top_k = 50, min_tokens_to_keep = 5):
+        super().__init__()
+        self.top_k = top_k
+        self.min_tokens_to_keep = min_tokens_to_keep
+        self.keep_matrix = torch.zeros((1, self.top_k), dtype=torch.bool)
+        self.keep_matrix[0, :self.min_tokens_to_keep] = True
+
+    def forward(self, m_logits, input_ids, top_p, temperature, penalty):
+        # repeat penalty
+        logits = torch.gather(m_logits, 1, input_ids)
+        logits = torch.where(logits < 0, logits * penalty, logits / penalty)
+        m_logits.scatter_(1, input_ids, logits)
+
+        # top_k
+        logits, token = torch.topk(m_logits.float(), self.top_k)
+
+        # temperature
+        logits = logits / temperature
+
+        # top_p
+        cumulative_probs = logits.softmax(dim=1).cumsum(dim=1)
+        mask = cumulative_probs < top_p
+        mask = mask + self.keep_matrix
+        filtered_logits = torch.where(mask, logits, torch.FloatTensor([-1000.]))
+        probs = filtered_logits.softmax(dim=1)
+        return probs, token
+    
 def convert_block(layer_id):
     model = Block(layer_id)
     hidden_states = torch.randn((1, SEQ_LENGTH, HIDDEN_SIZE))
@@ -156,24 +197,60 @@ def convert_lm_head():
                       f'{folder}/lm_head.onnx',
                       verbose=False,
                       input_names=['hidden_states'],
-                      output_names=['token'],
+                      output_names=['m_logits'],
                       do_constant_folding=True,
                       opset_version=15)
 
+def convert_greedy_head():   
+    model = GreedyHead()
+    m_logits = torch.randn(1, VOCAB_SIZE)
 
+    torch.onnx.export(
+        model, (m_logits),
+        f'{folder}/greedy_head.onnx',
+        verbose=False,
+        input_names=['m_logits'],
+        output_names=['token'],
+        do_constant_folding=True,
+        opset_version=15)
+
+
+def convert_penalty_sample_head():   
+    model = PenaltySampleHead()
+    m_logits = torch.randn(1, VOCAB_SIZE)
+    input_ids = torch.tensor([range(SEQ_LENGTH)])
+    top_p = torch.tensor([0.8])
+    temperature = torch.tensor([0.98])
+    penalty = torch.tensor([0.98])
+
+    torch.onnx.export(
+        model, (m_logits, input_ids, top_p, temperature, penalty),
+        f'{folder}/penalty_sample_head.onnx',
+        verbose=False,
+        input_names=[
+            'm_logits', 'input_ids', 'top_p', 'temperature',
+            'penalty'
+        ],
+        output_names=['probs', 'token'],
+        do_constant_folding=True,
+        opset_version=15)
+    
 # create folder to store onnx
 if not os.path.exists(folder):
     os.makedirs(folder)
 
 # export models
-print(f'Convert block & block_cache')
-for i in tqdm(range(NUM_LAYERS)):
-    convert_block_cache(i)
-    convert_block(i)
+# print(f'Convert block & block_cache')
+# for i in tqdm(range(NUM_LAYERS)):
+#     convert_block_cache(i)
+#     convert_block(i)
 
 print(f'Convert embedding')
 convert_embedding()
 
 print(f'Convert lm_head')
 convert_lm_head()
+convert_greedy_head()
+convert_penalty_sample_head()
+print("Done")
 
