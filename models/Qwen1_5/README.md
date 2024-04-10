@@ -72,7 +72,7 @@ git clone https://huggingface.co/Qwen/Qwen1.5-7B-Chat
 如果git clone完代码之后出现卡住，可以尝试`ctrl+c`中断，然后进入仓库运行`git lfs pull`。
 
 ### 4.1.2 修改官方代码：
-本例程的`tools`目录下提供了修改好之后的`config.json`和`modeling_qwen2.py`。(transformers请更新到4.38.2以上)可以直接替换掉原仓库的文件：
+本例程的`compile/files`对应模型的目录下提供了修改好之后的`config.json`和`modeling_qwen2.py`。(transformers请更新到4.38.2以上)可以直接替换掉原仓库的文件：
 
 ```bash
 cp files/Qwen1.5-1.8B-Chat/config.json Qwen1.5-1.8B-Chat/
