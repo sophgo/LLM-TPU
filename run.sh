@@ -41,7 +41,7 @@ declare -A model_to_demo=(
 parse_args "$@"
 
 # Check Version
-compare_date="20231222"
+compare_date="20240110"
 if [ $arch == "pcie" ]; then
     extracted_date=$(cat /proc/bmsophon/driver_version | grep -o 'release date: [0-9]\{8\}' | grep -o '[0-9]\{8\}')
 
