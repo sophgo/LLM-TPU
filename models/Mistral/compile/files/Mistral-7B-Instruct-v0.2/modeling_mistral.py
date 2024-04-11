@@ -272,15 +272,10 @@ class MistralAttention(nn.Module):
           cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
 
-        if past_key_value is not None:
-            # reuse k, v, self_attention
-            #key_states = torch.cat([past_key_value[0], key_states], dim=2)
-            #value_states = torch.cat([past_key_value[1], value_states], dim=2)
-            
+        past_key_value_cur = (key_states, value_states) 
+        if use_cache:
             key_states = torch.cat([past_key_value[0], key_states], dim=1)
             value_states = torch.cat([past_key_value[1], value_states], dim=1)
-        past_key_value = (key_states, value_states) if use_cache else None
-        
         # repeat k/v heads if n_kv_heads < n_heads
         key_states = repeat_kv(key_states, self.num_key_value_groups)
         value_states = repeat_kv(value_states, self.num_key_value_groups)
@@ -319,7 +314,7 @@ class MistralAttention(nn.Module):
         if not output_attentions:
             attn_weights = None
 
-        return attn_output, attn_weights, past_key_value
+        return attn_output, attn_weights, past_key_value_cur
 
 
 class MistralFlashAttention2(MistralAttention):
@@ -777,8 +772,7 @@ class MistralDecoderLayer(nn.Module):
         if output_attentions:
             outputs += (self_attn_weights,)
 
-        if use_cache:
-            outputs += (present_key_value,)
+        outputs += (present_key_value,)
 
         return outputs
 
@@ -1386,4 +1380,3 @@ class MistralForSequenceClassification(MistralPreTrainedModel):
             hidden_states=transformer_outputs.hidden_states,
             attentions=transformer_outputs.attentions,
         )
-

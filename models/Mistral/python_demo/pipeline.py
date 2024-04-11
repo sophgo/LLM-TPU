@@ -1,31 +1,22 @@
 import argparse
 
-from BaseModel.base_model import BaseModel
-
+# from BaseModel.base_model import BaseModel
+from base_model import BaseModel
 
 class Mistral(BaseModel):
     def __init__(self, args):
         super().__init__(args)
         # preprocess parameters, such as prompt & tokenizer
-        self.history = []
         self.EOS = self.tokenizer.eos_token_id
-        self.decode_mode = "diff"
+        self.history = []
 
         # load model
         self.load_model(args)
 
     def load_model(self, args):
-        if len(self.devices) > 1:
-            from Mistral.python_demo import chat_parallel
-            self.model = chat_parallel.Model()
-            self.model.init(
-                self.devices,
-                self.tokenizer.im_end_id,
-                args.model_path
-            )
-        else:
-            from Mistral.python_demo import chat
-            self.model = chat.Model()
+        if args.decode_mode == "basic":
+            import chat
+            self.model = chat.Mistral()
             self.model.init(self.devices, args.model_path)
             self.model.temperature = args.temperature
             self.model.top_p = args.top_p
@@ -34,32 +25,25 @@ class Mistral(BaseModel):
             self.model.max_new_tokens = args.max_new_tokens
             self.model.generation_mode = args.generation_mode
             self.model.prompt_mode = args.prompt_mode
+        else:
+            raise ValueError("decode mode: {} is illegal!".format(args.decode_mode))
         self.SEQLEN = self.model.SEQLEN
-
-    def clear(self):
-        self.history = []
 
     def update_history(self):
         if self.model.token_length >= self.SEQLEN:
-            print("... (reach the maximal length)", flush=True, end="")
+            print("... (reach the maximal length)", flush=True, end='')
             self.history = []
         else:
-            self.history.append({"role": "assistant", "content": self.answer_cur})
+            self.history.append({"role":"assistant","content":self.answer_cur})
 
     def encode_tokens(self):
-        self.history.append({"role": "user", "content": self.input_str})
-        tokens = self.tokenizer.apply_chat_template(self.history)
+        self.history.append({"role":"user","content":self.input_str})
+        tokens = self.tokenizer.apply_chat_template(self.history, return_tensors="np")[0]
         return tokens
-    
-    # def chat(self):
-    #     res = self.model.generate([1, 733, 16289, 28793, 28705, 29383, 29530, 733, 28748, 16289, 28793], self.EOS)
-    #     breakpoint()
-
 
 def main(args):
     model = Mistral(args)
     model.chat()
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -73,5 +57,6 @@ if __name__ == "__main__":
     parser.add_argument('--max_new_tokens', type=int, default=1024, help='max new token length to generate')
     parser.add_argument('--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
     parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
+    parser.add_argument('--decode_mode', type=str, default="basic", choices=["basic", "jacobi"], help='mode for decoding')
     args = parser.parse_args()
     main(args)

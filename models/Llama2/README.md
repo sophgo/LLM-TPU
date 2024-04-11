@@ -171,12 +171,12 @@ cmake .. && make && cp llama2 .. && cd ..
 
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/llama2-13b_int4_6dev.bmodel
 
-./llama2 --model llama2-13b_int4_6dev.bmodel --tokenizer ../support/tokenizer.model  --devid 0,1,2,3,4,5
+./llama2 --model llama2-13b_int4_6dev.bmodel --tokenizer ../support/token_config/tokenizer.model  --devid 0,1,2,3,4,5
 
 
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/llama2-13b_int8_6dev.bmodel
 
-./llama2 --model llama2-13b_int8_6dev.bmodel --tokenizer ../support/tokenizer.model  --devid 0,1,2,3,4,5
+./llama2 --model llama2-13b_int8_6dev.bmodel --tokenizer ../support/token_config/tokenizer.model  --devid 0,1,2,3,4,5
 ```
 
 

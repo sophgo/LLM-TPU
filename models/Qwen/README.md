@@ -128,12 +128,12 @@ make
 ### a. 命令行交互
 - 单芯推理：使用如下命令。
 ```shell
-./qwen --model qwen-7b_int8_1dev.bmodel --tokenizer ../support/qwen.tiktoken --devid # devid 默认使用 0 号进行推理
+./qwen --model qwen-7b_int8_1dev.bmodel --tokenizer ../support/token_config/qwen.tiktoken --devid # devid 默认使用 0 号进行推理
 ```
 
 - 多芯分布式推理：如果是2芯分布式推理，使用如下命令(比如指定在2号和3号芯片上运行, 用`bm-smi`查询芯片id号)：
 ```shell
-./qwen --model qwen-7b_int8_2dev.bmodel --tokenizer ../support/qwen.tiktoken --devid 2,3
+./qwen --model qwen-7b_int8_2dev.bmodel --tokenizer ../support/token_config/qwen.tiktoken --devid 0,1
 ```
 
 #### 运行效果

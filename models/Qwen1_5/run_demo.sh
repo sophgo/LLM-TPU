@@ -14,15 +14,6 @@ else
   echo "Bmodel Exists!"
 fi
 
-# download libsophon
-# if [ $arch == "pcie" ]; then
-#   python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/libsophon-0.5.0_pcie.tar.gz
-#   tar xvf libsophon-0.5.0_pcie.tar.gz
-# elif [ $arch = "soc" ]; then 
-#   python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/libsophon-0.5.0_soc.tar.gz
-#   tar xvf libsophon-0.5.0_soc.tar.gz
-# fi
-
 if [ ! -f "./python_demo/chat.cpython-310-x86_64-linux-gnu.so" ]; then
   cd python_demo && rm -rf build && mkdir build && cd build
   cmake .. && make -j4

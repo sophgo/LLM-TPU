@@ -23,4 +23,4 @@ fi
 
 # run demo
 echo $PWD
-./demo/llama2 --model ../../bmodels/llama2-7b_int4_1dev.bmodel --tokenizer ./support/tokenizer.model --devid 0
+./demo/llama2 --model ../../bmodels/llama2-7b_int4_1dev.bmodel --tokenizer ./support/token_config/tokenizer.model --devid 0

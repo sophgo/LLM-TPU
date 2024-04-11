@@ -14,15 +14,6 @@ else
   echo "Bmodel Exists!"
 fi
 
-# download libsophon
-# if [ $arch == "pcie" ]; then
-#   python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/libsophon-0.5.0_pcie.tar.gz
-#   tar xvf libsophon-0.5.0_pcie.tar.gz
-# elif [ $arch = "soc" ]; then 
-#   python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/libsophon-0.5.0_soc.tar.gz
-#   tar xvf libsophon-0.5.0_soc.tar.gz
-# fi
-
 if [ ! -f "./demo/qwen" ]; then
   git submodule update --init
   cd demo && rm -rf build && mkdir build && cd build
@@ -36,4 +27,4 @@ fi
 # run demo
 # source /etc/profile.d/libsophon-bin-path.sh
 # export LD_LIBRARY_PATH=$PWD/../libsophon-0.5.0/lib
-./demo/qwen --model ../../bmodels/qwen-7b_int4_1dev_none_addr.bmodel --tokenizer ./support/qwen.tiktoken --devid 0
+./demo/qwen --model ../../bmodels/qwen-7b_int4_1dev_none_addr.bmodel --tokenizer ./support/token_config/qwen.tiktoken --devid 0

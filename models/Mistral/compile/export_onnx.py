@@ -15,9 +15,9 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM
 torch.set_grad_enabled(False)
 
-parser = argparse.ArgumentParser(description='export onnx')
-parser.add_argument('-m', '--model_path', type=str,help='path to the torch model')
-parser.add_argument('-s', '--seq_length', type=int, default=512, help="sequence length")
+parser = argparse.ArgumentParser(description='export onnx.')
+parser.add_argument('--model_path', type=str, default ="../Mistral-7B-Instruct-v0.2" ,help='path to the torch model.')
+parser.add_argument('--seq_length', type=int, default=512, help="sequence length")
 
 args = parser.parse_args()
 
@@ -36,11 +36,12 @@ layers = transformer.layers
 SEQ_LENGTH = args.seq_length
 NUM_LAYERS = config.num_hidden_layers
 HIDDEN_SIZE = config.hidden_size
-NUM_KEY_VALUE_HEADS = config.num_key_value_heads
-HEAD_DIM = HIDDEN_SIZE // config.num_attention_heads
+NUM_ATTENTION_HEADS = config.num_attention_heads
+HEAD_DIM = HIDDEN_SIZE // NUM_ATTENTION_HEADS
 VOCAB_SIZE = config.vocab_size
-
 print(f'Layers: {NUM_LAYERS}\nHidden size: {HIDDEN_SIZE}\n')
+
+tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
 class Embedding(torch.nn.Module):
 
@@ -62,7 +63,8 @@ class Block(torch.nn.Module):
         hidden_states, past_kv = self.layer(hidden_states,
                                             attention_mask,
                                             position_ids,
-                                            use_cache=True)
+                                            use_cache=False)
+
         present_k, present_v = past_kv
         return hidden_states, present_k, present_v
 
@@ -136,7 +138,6 @@ class PenaltySampleHead(torch.nn.Module):
         probs = filtered_logits.softmax(dim=1)
         return probs, token
 
-
 def convert_block(layer_id):
     model = Block(layer_id)
     hidden_states = torch.randn((1, SEQ_LENGTH, HIDDEN_SIZE))
@@ -158,9 +159,10 @@ def convert_block_cache(layer_id):
     hidden_states = torch.randn((1, 1, HIDDEN_SIZE))
     position_ids = torch.tensor([range(1)], dtype=torch.long)
     attention_mask = -1000 * torch.ones((1, 1, 1, SEQ_LENGTH + 1), dtype=torch.float32).triu(diagonal=1)
-    past_k = torch.randn((1, SEQ_LENGTH, NUM_KEY_VALUE_HEADS, HEAD_DIM))
-    past_v = torch.randn((1, SEQ_LENGTH, NUM_KEY_VALUE_HEADS, HEAD_DIM))
-
+    past_k = torch.randn((1, SEQ_LENGTH, config.num_key_value_heads, HEAD_DIM))
+    past_v = torch.randn((1, SEQ_LENGTH, config.num_key_value_heads, HEAD_DIM))
+    results = model(hidden_states, position_ids, attention_mask, past_k, past_v)
+    
     torch.onnx.export(
         model, (hidden_states, position_ids, attention_mask, past_k, past_v),
         f'{folder}/block_cache_{layer_id}.onnx',
@@ -195,12 +197,11 @@ def convert_lm_head():
                       f'{folder}/lm_head.onnx',
                       verbose=False,
                       input_names=['hidden_states'],
-                      output_names=['token'],
+                      output_names=['m_logits'],
                       do_constant_folding=True,
                       opset_version=15)
 
-
-def convert_greedy_head():
+def convert_greedy_head():   
     model = GreedyHead()
     m_logits = torch.randn(1, VOCAB_SIZE)
 
@@ -214,7 +215,7 @@ def convert_greedy_head():
         opset_version=15)
 
 
-def convert_penalty_sample_head():
+def convert_penalty_sample_head():   
     model = PenaltySampleHead()
     m_logits = torch.randn(1, VOCAB_SIZE)
     input_ids = torch.tensor([range(SEQ_LENGTH)])
@@ -234,7 +235,6 @@ def convert_penalty_sample_head():
         do_constant_folding=True,
         opset_version=15)
 
-
 # create folder to store onnx
 if not os.path.exists(folder):
     os.makedirs(folder)
@@ -252,3 +252,4 @@ print(f'Convert lm_head')
 convert_lm_head()
 convert_greedy_head()
 convert_penalty_sample_head()
+print("Done")

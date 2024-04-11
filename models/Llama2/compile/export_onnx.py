@@ -240,10 +240,10 @@ if not os.path.exists(folder):
     os.makedirs(folder)
 
 # export models
-# print(f'Convert block & block_cache')
-# for i in tqdm(range(NUM_LAYERS)):
-#     convert_block_cache(i)
-#     convert_block(i)
+print(f'Convert block & block_cache')
+for i in tqdm(range(NUM_LAYERS)):
+    convert_block_cache(i)
+    convert_block(i)
 
 print(f'Convert embedding')
 convert_embedding()
