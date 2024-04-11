@@ -1,6 +1,6 @@
 ![](./assets/tpumlir.png)
 
-# Qwen
+# Mistral
 
 本工程实现BM1684X部署语言大模型[Mistral-7B-Instruct-v0.2](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X的PCIE环境，或者SoC环境。
 
@@ -33,14 +33,9 @@ source ./envsetup.sh  #激活环境变量
 
 ### 3. 更新第三方库
 
-下载本项目后（可通过下载：
+下载本项目：
 ``` shell
 git clone git@github.com:sophgo/LLM-TPU.git
-```
-更新第三方库:
-``` shell
-cd LLM-TPU
-git submodule update --init
 ```
 
 ### 4. 下载pytorch.bin模型
@@ -49,7 +44,8 @@ git submodule update --init
 cd LLM-TPU/models/Mistral/
 git lfs install
 git clone https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2
-cp compile/files/Mistral-7B-Instruct-v0.2/* Mistral-7B-Instruct-v0.2/
+cp compile/files/Mistral-7B-Instruct-v0.2/config.json Mistral-7B-Instruct-v0.2/
+cp compile/files/Mistral-7B-Instruct-v0.2/modeling_mistral.py /usr/local/lib/python3.10/dist-packages/transformers/models/mistral/modeling_mistral.py
 export PYTHONPATH=$PWD/Mistral-7B-Instruct-v0.2:$PYTHONPATH
 
 cd compile
