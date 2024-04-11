@@ -94,7 +94,7 @@ def reset_state():
 gr.Chatbot.postprocess = postprocess
 
 with gr.Blocks() as demo:
-    gr.HTML("""<h1 align="center">Qwen-7B TPU</h1>""")
+    gr.HTML("""<h1 align="center">Llama2-TPU</h1>""")
 
     chatbot = gr.Chatbot()
     with gr.Row():
