@@ -15,7 +15,6 @@ class BaseModel:
         self.devices = [int(d) for d in args.devid.split(",")]
 
         # load tokenizer
-        self.pre_token = 0
         print("Load " + args.tokenizer_path + " ...")
         self.tokenizer = AutoTokenizer.from_pretrained(
             args.tokenizer_path, trust_remote_code=True
@@ -76,20 +75,22 @@ class BaseModel:
         """
         tok_num = 0
         self.answer_cur = ""
+        self.answer_token = []
 
         # First token
         first_start = time.time()
         token = self.forward_first(tokens)
         first_end = time.time()
-
         # Following tokens
         while token != self.EOS and self.model.token_length < self.SEQLEN:
-            word = self.decode_tokens(token)
-            self.answer_cur += word
+            pre_word = self.decode_tokens([token])
+            word = self.decode_tokens([token, token])[len(pre_word):]
+            self.answer_token += [token]
             print(word, flush=True, end="")
             tok_num += 1
             token = self.forward_next()
-
+        self.answer_cur = self.tokenizer.decode(self.answer_token)
+        
         # counting time
         next_end = time.time()
         first_duration = first_end - first_start
@@ -128,11 +129,14 @@ class BaseModel:
                 break
             output_tokens += [next_token]
             self.answer_cur = self.tokenizer.decode(output_tokens)
-            if self.enable_history:
+            if self.model.token_length >= self.SEQLEN:
                 self.update_history()
+                yield self.answer_cur + "\n\n\nReached the maximum length; The history context has been cleared.", self.history
+                break
             else:
-                self.clear()
-            yield self.answer_cur, self.history
+                yield self.answer_cur, self.history
+
+        self.update_history()
 
     def forward_first(self, tokens):
         """
@@ -152,7 +156,7 @@ class BaseModel:
         """
         Decode the given token.
         """
-        word = self.tokenizer.decode([token], skip_special_tokens=True)
+        word = self.tokenizer.decode(token, skip_special_tokens=True)
         return word
 
     def encode_tokens(self):

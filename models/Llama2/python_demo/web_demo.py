@@ -1,21 +1,25 @@
 import time
 import gradio as gr
 import mdtex2html
-from chat import TPULlama2
+from pipeline import Llama2
 import argparse
 
-parser = argparse.ArgumentParser(description='Web_Demo for Llama2.')
-parser.add_argument('--dev', type=int, default=0, help='Device ID to use.')
-parser.add_argument('--bmodel_path', type=str, default="../compile/llama2-7b.bmodel", help='Path to the bmodel file.')
-parser.add_argument('--token_path', type=str, default="../src/tokenizer.model", help='ath to the tokenizer file.')
-parser.add_argument('--lib_path', type=str, default="./build/libtpuchat.so", help='Path to the lib file.')
-
+parser = argparse.ArgumentParser()
+parser.add_argument('-m', '--model_path', type=str, required=True, help='path to the bmodel file')
+parser.add_argument('-t', '--tokenizer_path', type=str, default="../support/token_config", help='path to the tokenizer file')
+parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
+parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory.")
+parser.add_argument('--temperature', type=float, default=1.0, help='temperature scaling factor for the likelihood distribution')
+parser.add_argument('--top_p', type=float, default=1.0, help='cumulative probability of token words to consider as a set of candidates')
+parser.add_argument('--repeat_penalty', type=float, default=1.0, help='penalty for repeated tokens')
+parser.add_argument('--repeat_last_n', type=int, default=32, help='repeat penalty for recent n tokens')
+parser.add_argument('--max_new_tokens', type=int, default=1024, help='max new token length to generate')
+parser.add_argument('--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
+parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
+parser.add_argument('--decode_mode', type=str, default="basic", choices=["basic", "jacobi"], help='mode for decoding')
 args = parser.parse_args()
 
-llama2 = TPULlama2(device_id = args.dev,
-                 bmodel_path = args.bmodel_path,
-                 token_path = args.token_path,
-                 lib_path = args.lib_path)
+model = Llama2(args)
 
 def postprocess(self, y):
     if y is None:
@@ -26,9 +30,6 @@ def postprocess(self, y):
             None if response is None else mdtex2html.convert(response),
         )
     return y
-
-
-gr.Chatbot.postprocess = postprocess
 
 def parse_text(text):
     """copy from https://github.com/GaiZhenbiao/ChuanhuChatGPT/"""
@@ -78,7 +79,7 @@ def gen(input, history):
 def predict(input, chatbot, max_length, top_p, temperature, history):
 
     chatbot.append((parse_text(input), ""))
-    for response, history in llama2.stream_predict(input, history):
+    for response, history in model.stream_predict(input):
         chatbot[-1] = (parse_text(input), parse_text(response))
         yield chatbot, history
 
@@ -90,9 +91,10 @@ def reset_user_input():
 def reset_state():
     return [], [], None
 
+gr.Chatbot.postprocess = postprocess
 
 with gr.Blocks() as demo:
-    gr.HTML("""<h1 align="center">Llama2-7B TPU</h1>""")
+    gr.HTML("""<h1 align="center">Qwen-7B TPU</h1>""")
 
     chatbot = gr.Chatbot()
     with gr.Row():
@@ -104,7 +106,7 @@ with gr.Blocks() as demo:
                 submitBtn = gr.Button("Submit", variant="primary")
         with gr.Column(scale=1):
             emptyBtn = gr.Button("Clear History")
-            max_length = gr.Slider(0, 32768, value=8192, step=1.0, label="Maximum length", interactive=True)
+            max_length = gr.Slider(1, 20, value=1, step=1.0, label="Maximum length", interactive=True)
             top_p = gr.Slider(0, 1, value=0.8, step=0.01, label="Top P", interactive=True)
             temperature = gr.Slider(0, 1, value=0.95, step=0.01, label="Temperature", interactive=True)
 
@@ -116,4 +118,5 @@ with gr.Blocks() as demo:
 
     emptyBtn.click(reset_state, outputs=[chatbot, history], show_progress=True)
 
-demo.queue().launch(share=True, server_name="0.0.0.0", inbrowser=True)
+demo.queue().launch(share=False, server_name="0.0.0.0", server_port=8003, inbrowser=True)
+

@@ -1,7 +1,6 @@
 import argparse
 
-# from BaseModel.base_model import BaseModel
-from base_model import BaseModel
+from BaseModel.base_model import BaseModel
 
 class Llama2(BaseModel):
     def __init__(self, args):
@@ -46,14 +45,14 @@ If a question does not make any sense, or is not factually coherent, explain why
         for item in self.history:
             content = item["content"]
             if item["role"] == "system":
-                tokens.extend(self.tokenizer.encode("<s>[INST] <<SYS>>\n{}\n <</SYS>>".format(content))[1:])
+                tokens.extend(self.tokenizer.encode("<s>[INST] <<SYS>>\n{}\n <</SYS>>".format(content), add_special_tokens = False))
             elif item["role"] == "user":
-                tokens.extend(self.tokenizer.encode(content + " [/INST]")[1:])
+                tokens.extend(self.tokenizer.encode(content + " [/INST]", add_special_tokens = False))
             elif item["role"] == "assistant":
-                tokens.extend(self.tokenizer.encode(content + " </s><s>")[1:])
+                tokens.extend(self.tokenizer.encode(content + " </s><s>", add_special_tokens = False))
             else:
                 raise ValueError("role should be in {system , user assitent} but we get {}".format(item["role"]))
-        tokens.extend(self.tokenizer.encode("[INST]" + self.input_str + " [/INST] ")[1:])
+        tokens.extend(self.tokenizer.encode("[INST]" + self.input_str + " [/INST] ", add_special_tokens = False))
         self.history.append({"role":"user","content":self.input_str})
         return tokens
 
