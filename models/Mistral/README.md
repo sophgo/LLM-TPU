@@ -37,6 +37,11 @@ source ./envsetup.sh  #激活环境变量
 ``` shell
 git clone git@github.com:sophgo/LLM-TPU.git
 ```
+第三方库环境要求
+``` shell
+pip3 install transformers==4.39.1
+pip3 install torch==2.0.1
+```
 
 ### 4. 下载pytorch.bin模型
 
