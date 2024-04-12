@@ -76,9 +76,9 @@ fi
 
 if [ x$num_device != x1 ]; then
     device_args="--num_device $num_device"
-    out_model=$name'_'$mode'_'$num_device'dev.bmodel'
+    out_model=$name'_'$mode'_'$num_device'dev_'$seq_length'.bmodel'
 else
-    out_model=$name'_'$mode'_1dev.bmodel'
+    out_model=$name'_'$mode'_1dev_'$seq_length'.bmodel'
 fi
 
 if [ x$addr_mode == x"io_alone" ]; then
