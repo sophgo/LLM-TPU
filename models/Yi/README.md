@@ -1,6 +1,6 @@
 ![](./assets/tpumlir.png)
 
-# Mistral
+# Yi
 
 本工程实现BM1684X部署语言大模型[Yi-6B-Chat](https://huggingface.co/01-ai/Yi-6B-Chat)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X的PCIE环境，或者SoC环境。
 
@@ -50,7 +50,7 @@ sudo apt-get install pybind11-dev
 ### 4. 下载pytorch.bin模型
 
 ``` shell
-cd LLM-TPU/models/Mistral/
+cd LLM-TPU/models/Yi/
 git lfs install
 git clone https://huggingface.co/01-ai/Yi-6B-Chat
 cp compile/files/Yi-6B-Chat/config.json Yi-6B-Chat
