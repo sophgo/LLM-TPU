@@ -13,10 +13,8 @@ pip3 install pybind11[global] transformers_stream_generator einops tiktoken acce
 
 ```
 cd /workspace/LLM-TPU/models/CodeFuse/python_demo
-mkdir build && cd build
-cmake .. && make
-cp *cpython* ..
-cd ..
+mkdir build
+cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 
 python3 pipeline.py --model_path codefuse-7b_int4_1dev.bmodel --tokenizer_path ../token_config/ --devid 0 --generation_mode greedy

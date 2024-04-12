@@ -7,94 +7,25 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <iostream>
-#include <cstdlib>
-#include <vector>
+#include <algorithm>
 #include <assert.h>
 #include <chrono>
-#include <algorithm>
+#include <cstdlib>
+#include <getopt.h>
+#include <inttypes.h>
+#include <iostream>
+#include <numeric>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include "memory.h"
-#include "bmruntime_interface.h"
-#include <getopt.h>
-#include <stdio.h>
-#include <inttypes.h>
 #include <random>
-#include <numeric>
+#include <stdio.h>
+#include <vector>
 
-static const uint16_t ATTENTION_MASK = 0xC61C; // -9984 by bfloat16
+#include "bmruntime_interface.h"
+#include "memory.h"
+#include "untils.h"
 
-typedef union {
-  float    fval;
-  uint32_t bits;
-  struct {
-    uint32_t frac : 23; // mantissa
-    uint32_t exp  : 8;  // exponent
-    uint32_t sign : 1;  // sign
-  } format;
-} fp32;
-
-static inline uint32_t bf16_to_fp32_bits(uint16_t h) {
-  // BF16 的位模式是：1 位符号，8 位指数，7 位尾数
-  // 我们需要将其转换为 float 的位模式：1 位符号，8 位指数，23 位尾数
-  // 扩展 BF16 到 32 位，尾数部分需要填充 16 位的 0
-  uint32_t sign = (uint32_t)(h & 0x8000) << 16; // 符号位
-  uint32_t exp  = (uint32_t)(h & 0x7F80) << 16; // 指数位
-  uint32_t frac = (uint32_t)(h & 0x007F) << 16; // 尾数位
-
-  // 将尾数的 7 位左移，以对齐到 23 位尾数的位置
-  frac <<= (23 - 7);
-  
-  // 组合成 float 的位模式
-  return sign | exp | frac;
-}
-
-void dump_bf16_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset) {
-  int size = 10;
-  std::vector<uint16_t> data(size);
-  bm_memcpy_d2s(bm_handle, data.data(), mem);
-  std::cout << "-------------------------------------" << std::endl;
-  fp32 t;
-  // 使用最后一个数据作为示例
-  t.bits = bf16_to_fp32_bits(data[0]);
-  std::cout << t.fval << std::endl;
-  // 打印前 10 个数据
-  for(int i = 0; i < 10; i++){
-    t.bits = bf16_to_fp32_bits(data[i]);
-    std::cout << t.fval << std::endl;
-  }
-  std::cout << "-------------------------------------" << std::endl;
-}
-
-void dump_fp32_tensor(bm_handle_t bm_handle, bm_device_mem_t &mem, int offset) {
-  int size = 10;
-  std::vector<float> data(size);
-  bm_memcpy_d2s(bm_handle, data.data(), mem);
-  std::cout<<"-------------------------------------"<<std::endl;
-  std::cout<< data[data.size()-1] << std::endl;
-  for(int i=0;i<10;i++){
-    std::cout<< data[i] << std::endl;
-  }
-  std::cout<<"-------------------------------------"<<std::endl;
-  auto ptr = data.data();
-  ptr[0] = ptr[0];
-}
-
-void dump_int_tensor(bm_handle_t bm_handle, bm_device_mem_t &mem, int offset) {
-  int size = 10;
-  std::vector<int> data(size);
-  bm_memcpy_d2s(bm_handle, data.data(), mem);
-  std::cout<<"-------------------------------------"<<std::endl;
-  std::cout<< data[data.size()-1] << std::endl;
-  for(int i=0;i<10;i++){
-    std::cout<< data[i] << std::endl;
-  }
-  std::cout<<"-------------------------------------"<<std::endl;
-  auto ptr = data.data();
-  ptr[0] = ptr[0];
-}
-
+static const float ATTENTION_MASK = -10000.;
 
 class CodeFuse {
 public:
@@ -121,6 +52,7 @@ public:
   int NUM_LAYERS; // read from bmodel
   bool io_alone;
   std::vector<int> visited_tokens;
+  uint16_t mask_value;
 
   // generation
   float temperature;
@@ -170,7 +102,7 @@ void CodeFuse::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
 }
 
 void CodeFuse::init(const std::vector<int> &devices, std::string model_path) {
-  
+
   // request bm_handle
   std::cout << "Device [ ";
   for (auto d : devices) {
@@ -221,6 +153,17 @@ void CodeFuse::init(const std::vector<int> &devices, std::string model_path) {
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
   }
 
+  // convert attention to uint16_t
+  if (net_blocks_cache[0]->input_dtypes[2] == BM_FLOAT16) {
+    mask_value = fp32_to_fp16_bits(ATTENTION_MASK);
+  } else if (net_blocks_cache[0]->input_dtypes[2] == BM_FLOAT16) {
+    mask_value = fp32_to_bf16_bits(ATTENTION_MASK);
+  } else {
+    std::cerr << "\nError: Invalid attention dtype\n";
+    std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
+    throw std::runtime_error("Invalid attention dtype");
+  }
+
   // kv cache
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
@@ -229,14 +172,14 @@ void CodeFuse::init(const std::vector<int> &devices, std::string model_path) {
   for (int i = 0; i < NUM_LAYERS; i++) {
     assert(addr_mode == net_blocks_cache[i]->addr_mode);
     if (io_alone) {
-      past_key[i] = net_blocks_cache[i]->stages[0].input_mems[2];
-      past_value[i] = net_blocks_cache[i]->stages[0].input_mems[3];
+      past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
+      past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
     } else {
       auto ret = bm_malloc_device_byte(bm_handle, &past_key[i],
-                                       net_blocks_cache[i]->max_input_bytes[2]);
+                                       net_blocks_cache[i]->max_input_bytes[3]);
       assert(BM_SUCCESS == ret);
       ret = bm_malloc_device_byte(bm_handle, &past_value[i],
-                                  net_blocks_cache[i]->max_input_bytes[3]);
+                                  net_blocks_cache[i]->max_input_bytes[4]);
       assert(BM_SUCCESS == ret);
     }
   }
@@ -254,6 +197,7 @@ void CodeFuse::deinit() {
     bm_dev_free(h);
   }
 }
+
 
 void CodeFuse::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
@@ -323,16 +267,15 @@ int CodeFuse::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_m
 }
 
 int CodeFuse::forward_first(std::vector<int> &tokens) {
-  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
+  std::vector<int> position_id(SEQLEN, 0);
+  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, mask_value);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
-  std::vector<int> cur_len(SEQLEN, 0);
-  
+
   token_length = tokens.size();
 
-  for (int i = 0; i < SEQLEN; i++) {
-    cur_len[i] = i;
+  for (int i = 0; i < token_length; i++) {
+    position_id[i] = i;
   }
-
   for (int i = 0; i < token_length; i++) {
     for (int j = 0; j < SEQLEN; j++) {
       if (j <= i) {
@@ -355,8 +298,8 @@ int CodeFuse::forward_first(std::vector<int> &tokens) {
     d2d(in0_mem, out_mem);
     if (idx == 0) {
       // only first time need copy
-      bm_memcpy_s2d(bm_handle, in1_mem, (void *)attention_mask.data());
-      bm_memcpy_s2d(bm_handle, in2_mem, (void *)cur_len.data());
+      bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
+      bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     }
     net_launch(net_blocks[idx]);
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
@@ -389,10 +332,9 @@ int CodeFuse::forward_next() {
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = token_length - 1; i < SEQLEN; i++) {
-    attention_mask[i] = ATTENTION_MASK;
+    attention_mask[i] = mask_value;
   }
-  int32_t cur_len = token_length - 1;
-
+  int32_t position_id = token_length - 1;
   // embedding
   auto &in_mem = net_embed_cache->stages[0].input_mems[0];
   auto &out_mem = net_embed_cache->stages[0].output_mems[0];
@@ -415,19 +357,19 @@ int CodeFuse::forward_next() {
     d2d(in0_mem, out_mem);
     if (io_alone) {
       if (idx == 0) {
-        bm_memcpy_s2d(bm_handle, in1_mem, (void *)attention_mask.data());
-        bm_memcpy_s2d(bm_handle, in4_mem, (void *)&cur_len);
+        bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
+        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
       } else {
         d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
         d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
       }
     } else {
       if (idx == 0) {
-        bm_memcpy_s2d(bm_handle, in1_mem, (void *)attention_mask.data());
-        bm_memcpy_s2d(bm_handle, in4_mem, (void *)&cur_len);
+        bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
+        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
       }
-      d2d(in2_mem, past_key[idx]);
-      d2d(in3_mem, past_value[idx]);
+      d2d(in3_mem, past_key[idx]);
+      d2d(in4_mem, past_value[idx]);
     }
     net_launch(net_blocks_cache[idx]);
     out_mem = out0_mem;
@@ -449,12 +391,11 @@ int CodeFuse::forward_next() {
   } else if (generation_mode == "penalty_sample") {
     token = penalty_sample(net_penalty_sample_head, lm_out_mem);
   }
-  
+
   visited_tokens[token_length] = token;
   token_length += 1;
   return token;
 }
-
 
 std::vector<int> CodeFuse::generate(std::vector<int> &history_tokens, int EOS) {
   if (history_tokens.empty()) {
@@ -481,20 +422,20 @@ std::vector<int> CodeFuse::generate(std::vector<int> &history_tokens, int EOS) {
 }
 
 PYBIND11_MODULE(chat, m) {
-    pybind11::class_<CodeFuse>(m, "CodeFuse")
-        .def(pybind11::init<>())
-        .def("init", &CodeFuse::init)
-        .def("forward_first", &CodeFuse::forward_first)
-        .def("forward_next", &CodeFuse::forward_next)
-        .def("generate", &CodeFuse::generate)
-        .def("deinit", &CodeFuse::deinit)
-        .def_readwrite("SEQLEN", &CodeFuse::SEQLEN) // read SEQLEN in pipeline.py
-        .def_readwrite("token_length", &CodeFuse::token_length)
-        .def_readwrite("temperature", &CodeFuse::temperature)
-        .def_readwrite("top_p", &CodeFuse::top_p)
-        .def_readwrite("repeat_penalty", &CodeFuse::repeat_penalty)
-        .def_readwrite("repeat_last_n", &CodeFuse::repeat_last_n)
-        .def_readwrite("max_new_tokens", &CodeFuse::max_new_tokens)
-        .def_readwrite("generation_mode", &CodeFuse::generation_mode)
-        .def_readwrite("prompt_mode", &CodeFuse::prompt_mode);
+  pybind11::class_<CodeFuse>(m, "CodeFuse")
+      .def(pybind11::init<>())
+      .def("init", &CodeFuse::init)
+      .def("forward_first", &CodeFuse::forward_first)
+      .def("forward_next", &CodeFuse::forward_next)
+      .def("generate", &CodeFuse::generate)
+      .def("deinit", &CodeFuse::deinit)
+      .def_readwrite("SEQLEN", &CodeFuse::SEQLEN) // read SEQLEN in pipeline.py
+      .def_readwrite("token_length", &CodeFuse::token_length)
+      .def_readwrite("temperature", &CodeFuse::temperature)
+      .def_readwrite("top_p", &CodeFuse::top_p)
+      .def_readwrite("repeat_penalty", &CodeFuse::repeat_penalty)
+      .def_readwrite("repeat_last_n", &CodeFuse::repeat_last_n)
+      .def_readwrite("max_new_tokens", &CodeFuse::max_new_tokens)
+      .def_readwrite("generation_mode", &CodeFuse::generation_mode)
+      .def_readwrite("prompt_mode", &CodeFuse::prompt_mode);
 }

@@ -6,7 +6,7 @@ folder="tmp"
 num_device=1
 mode_args=""
 device_args=""
-quantize_args="--quantize W8BF16"
+quantize_args="--quantize W8F16"
 addr_args=""
 name=""
 num_layers=
@@ -64,11 +64,11 @@ else
 fi
 
 if [ x$mode == x"int8" ]; then
-    quantize_args="--quantize W8BF16"
-elif [ x$mode == x"bf16" ]; then
-    quantize_args="--quantize BF16"
+    quantize_args="--quantize W8F16"
+elif [ x$mode == x"f16" ]; then
+    quantize_args="--quantize F16"
 elif [ x$mode == x"int4" ]; then
-    quantize_args="--quantize W4BF16 --q_group_size 64"
+    quantize_args="--quantize W4F16 --q_group_size 64"
 else
     echo "Error, unknown quantize mode"
     exit 1
@@ -98,7 +98,7 @@ model_transform.py \
 
 model_deploy.py \
     --mlir embedding.mlir \
-    --quantize BF16 \
+    --quantize F16 \
     --quant_input \
     --quant_output \
     --chip bm1684x \
@@ -114,7 +114,7 @@ model_transform.py \
 
 model_deploy.py \
     --mlir embedding_cache.mlir \
-    --quantize BF16 \
+    --quantize F16 \
     --quant_input \
     --quant_output \
     --chip bm1684x \

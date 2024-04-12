@@ -51,13 +51,16 @@ if rotary_pos_emb is not None:
 ```
 ```python
 if rotary_pos_emb is not None:
-    q_pos_emb, k_pos_emb = rotary_pos_emb
+    # breakpoint()
+    # q_pos_emb, k_pos_emb = rotary_pos_emb
     # Slice the pos emb for current inference
     # cur_len = query.shape[1]
-    q_pos_emb = q_pos_emb[:, cur_len, :, :]
-    k_pos_emb = k_pos_emb[:, cur_len, :, :]
-    query = apply_rotary_pos_emb(query, q_pos_emb)
-    key = apply_rotary_pos_emb(key, k_pos_emb)
+    # q_pos_emb = q_pos_emb[:, -cur_len:, :, :]
+    # k_pos_emb = k_pos_emb[:, -cur_len:, :, :]
+    # query = apply_rotary_pos_emb(query, q_pos_emb)
+    # key = apply_rotary_pos_emb(key, k_pos_emb)
+    query = apply_rotary_pos_emb(query, rotary_pos_emb)
+    key = apply_rotary_pos_emb(key, rotary_pos_emb)
 ```
 
 
@@ -118,4 +121,42 @@ if attention_mask is not None:
 if attention_mask is not None:
     # Apply the attention mask
     attn_weights = attn_weights + attention_mask
+```
+
+
+这一步是为了常量折叠，这一步至关重要，tpu-mlir自带的cos和sin会精度损失
+```python
+# def apply_rotary_pos_emb(t, freqs):
+#     if apply_rotary_emb_func is not None:
+#         t_ = t.float()
+#         freqs = freqs.squeeze(0).squeeze(1)
+#         cos = freqs[:, : freqs.shape[-1] // 2].cos()
+#         sin = freqs[:, : freqs.shape[-1] // 2].sin()
+#         output = apply_rotary_emb_func(t_, cos, sin).type_as(t)
+#         return output
+#     else:
+#         rot_dim = freqs.shape[-1]
+#         t_, t_pass_ = t[..., :rot_dim], t[..., rot_dim:]
+#         t_ = t_.float()
+#         t_pass_ = t_pass_.float()
+#         t_ = (t_ * freqs.cos()) + (_rotate_half(t_) * freqs.sin())
+#         return torch.cat((t_, t_pass_), dim=-1).type_as(t)
+```
+```python
+def apply_rotary_pos_emb(t, freqs):
+    cos, sin = freqs
+    if apply_rotary_emb_func is not None and t.is_cuda:
+        t_ = t.float()
+        cos = cos.squeeze(0).squeeze(1)[:, : cos.shape[-1] // 2]
+        sin = sin.squeeze(0).squeeze(1)[:, : sin.shape[-1] // 2]
+        output = apply_rotary_emb_func(t_, cos, sin).type_as(t)
+        return output
+    else:
+        rot_dim = freqs[0].shape[-1]
+        cos, sin = freqs
+        t_, t_pass_ = t[..., :rot_dim], t[..., rot_dim:]
+        t_ = t_.float()
+        t_pass_ = t_pass_.float()
+        t_ = (t_ * cos) + (_rotate_half(t_) * sin)
+        return torch.cat((t_, t_pass_), dim=-1).type_as(t)
 ```

@@ -370,8 +370,7 @@ class QWenAttention(nn.Module):
         encoder_attention_mask: Optional[torch.FloatTensor] = None,
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
-        rotary_pos_emb: Optional[tuple] = (),
-        cur_len: Optional[int] = 0
+        rotary_pos_emb: Optional[tuple] = ()
     ):
 
         mixed_x_layer = self.c_attn(hidden_states)
@@ -409,13 +408,17 @@ class QWenAttention(nn.Module):
                 rotary_pos_emb = (rotary_pos_emb,) * 2
 
         if rotary_pos_emb is not None:
-            q_pos_emb, k_pos_emb = rotary_pos_emb
+            # breakpoint()
+            # q_pos_emb, k_pos_emb = rotary_pos_emb
             # Slice the pos emb for current inference
             # cur_len = query.shape[1]
-            q_pos_emb = q_pos_emb[:, cur_len, :, :]
-            k_pos_emb = k_pos_emb[:, cur_len, :, :]
-            query = apply_rotary_pos_emb(query, q_pos_emb)
-            key = apply_rotary_pos_emb(key, k_pos_emb)
+            # q_pos_emb = q_pos_emb[:, -cur_len:, :, :]
+            # k_pos_emb = k_pos_emb[:, -cur_len:, :, :]
+            # query = apply_rotary_pos_emb(query, q_pos_emb)
+            # key = apply_rotary_pos_emb(key, k_pos_emb)
+            query = apply_rotary_pos_emb(query, rotary_pos_emb)
+            key = apply_rotary_pos_emb(key, rotary_pos_emb)
+            
 
         if use_cache:
             present = (key, value)
@@ -530,8 +533,7 @@ class QWenBlock(nn.Module):
         encoder_attention_mask: Optional[torch.FloatTensor] = None,
         use_cache: Optional[bool] = False,
         output_attentions: Optional[bool] = False,
-        rotary_pos_emb: Optional[tuple] = (),
-        cur_len: Optional[int] = 0
+        rotary_pos_emb: Optional[tuple] = ()
     ):
         layernorm_output = self.ln_1(hidden_states)
 
@@ -542,8 +544,7 @@ class QWenBlock(nn.Module):
             head_mask=head_mask,
             use_cache=use_cache,
             output_attentions=output_attentions,
-            rotary_pos_emb=rotary_pos_emb,
-            cur_len=cur_len
+            rotary_pos_emb=rotary_pos_emb
         )
         attn_output = attn_outputs[0]
 
@@ -1193,20 +1194,37 @@ def _rotate_half(x):
     x1, x2 = x.unbind(dim=-2)
     return torch.cat((-x2, x1), dim=-1)
 
+# def apply_rotary_pos_emb(t, freqs):
+#     if apply_rotary_emb_func is not None:
+#         t_ = t.float()
+#         freqs = freqs.squeeze(0).squeeze(1)
+#         cos = freqs[:, : freqs.shape[-1] // 2].cos()
+#         sin = freqs[:, : freqs.shape[-1] // 2].sin()
+#         output = apply_rotary_emb_func(t_, cos, sin).type_as(t)
+#         return output
+#     else:
+#         rot_dim = freqs.shape[-1]
+#         t_, t_pass_ = t[..., :rot_dim], t[..., rot_dim:]
+#         t_ = t_.float()
+#         t_pass_ = t_pass_.float()
+#         t_ = (t_ * freqs.cos()) + (_rotate_half(t_) * freqs.sin())
+#         return torch.cat((t_, t_pass_), dim=-1).type_as(t)
+
 def apply_rotary_pos_emb(t, freqs):
-    if apply_rotary_emb_func is not None:
+    cos, sin = freqs
+    if apply_rotary_emb_func is not None and t.is_cuda:
         t_ = t.float()
-        freqs = freqs.squeeze(0).squeeze(1)
-        cos = freqs[:, : freqs.shape[-1] // 2].cos()
-        sin = freqs[:, : freqs.shape[-1] // 2].sin()
+        cos = cos.squeeze(0).squeeze(1)[:, : cos.shape[-1] // 2]
+        sin = sin.squeeze(0).squeeze(1)[:, : sin.shape[-1] // 2]
         output = apply_rotary_emb_func(t_, cos, sin).type_as(t)
         return output
     else:
-        rot_dim = freqs.shape[-1]
+        rot_dim = freqs[0].shape[-1]
+        cos, sin = freqs
         t_, t_pass_ = t[..., :rot_dim], t[..., rot_dim:]
         t_ = t_.float()
         t_pass_ = t_pass_.float()
-        t_ = (t_ * freqs.cos()) + (_rotate_half(t_) * freqs.sin())
+        t_ = (t_ * cos) + (_rotate_half(t_) * sin)
         return torch.cat((t_, t_pass_), dim=-1).type_as(t)
 
 
