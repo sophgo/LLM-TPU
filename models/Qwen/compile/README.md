@@ -24,11 +24,6 @@ pip install transformers_stream_generator einops tiktoken accelerate transformer
 python export_onnx.py --model_path your_torch_path --device cuda
 ```
 
-### export jacobi onnx
-```shell
-python export_onnx_jacobi.py --model_path your_torch_path --guess_len 8 --generation_mode sample --device cuda
-```
-
 PS：
 1. 最好使用cuda导出，cpu导出block的时候，会卡在第一个block，只能kill
 2. your_torch_path：从官网下载的或者自己训练的模型的路径，例如./Qwen-7B-Chat
