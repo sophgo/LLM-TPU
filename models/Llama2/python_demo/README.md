@@ -19,5 +19,5 @@ cp *cpython* ..
 cd ..
 
 
-python3 pipeline.py --model_path qwen-7b_int4_1dev.bmodel --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy
+python3 pipeline.py --model_path your_bmodel_path --tokenizer_path ../token_config/ --devid 0 --generation_mode greedy
 ```
