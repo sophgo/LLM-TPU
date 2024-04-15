@@ -10,6 +10,7 @@ quantize_args="--quantize F16"
 addr_args=""
 name=""
 num_layers=
+seq_length=
 out_model=$name.bmodel
 
 while [[ $# -gt 0 ]]; do
@@ -58,6 +59,11 @@ elif [ "$name" = "qwen1.5-0.5b" ]; then
 else
   >&2 echo -e "Error: Invalid name $name, the input name must be \033[31mqwen1.5-1.8b|qwen1.5-7b\033[0m"
   exit 1
+fi
+
+if [[ -z "$seq_length" ]]; then
+    echo "Error: --seq_length is required." >&2
+    exit 1
 fi
 
 if [ x$mode == x"int8" ]; then

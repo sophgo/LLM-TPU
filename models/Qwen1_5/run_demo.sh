@@ -16,14 +16,13 @@ fi
 
 if [ ! -f "./python_demo/chat.cpython-310-x86_64-linux-gnu.so" ]; then
   cd python_demo && rm -rf build && mkdir build && cd build
-  cmake .. && make -j4
-  cp chat.cpython-310-x86_64-linux-gnu.so .. && cd ../..
+  cmake .. && make -j
+  cp chat.cpython-310-x86_64-linux-gnu.so ..
+  cd ../..
 else
-  echo "qwen1.5 files Exist!"
+  echo "chat.so exists!"
 fi
 
 # run demo
-# source /etc/profile.d/libsophon-bin-path.sh
-# export LD_LIBRARY_PATH=$PWD/../libsophon-0.5.0/lib
-source ../../envsetup.sh
-python3 python_demo/chat.py --model_path ../../bmodels/qwen1.5-1.8b_int4_1dev.bmodel --tokenizer_path ./support/token_config --devid '0'
+echo $PWD
+python3 python_demo/pipeline.py --model ../../bmodels/qwen1.5-1.8b_int4_1dev.bmodel --tokenizer ./token_config --devid 0
