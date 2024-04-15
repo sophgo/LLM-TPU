@@ -12,15 +12,15 @@ else
   echo "Bmodel Exists!"
 fi
 
-if [ ! -f "./demo/llama2" ]; then
-  cd demo && rm -rf build && mkdir build && cd build
+if [ ! -f "./python_demo/chat.cpython-310-x86_64-linux-gnu.so" ]; then
+  cd python_demo && rm -rf build && mkdir build && cd build
   cmake .. && make -j
-  cp llama2 ..
+  cp chat.cpython-310-x86_64-linux-gnu.so ..
   cd ../..
 else
-  echo "llama2 file Exists!"
+  echo "chat.so exists!"
 fi
 
 # run demo
 echo $PWD
-./demo/llama2 --model ../../bmodels/llama2-7b_int4_1dev.bmodel --tokenizer ./support/token_config/tokenizer.model --devid 0
+python3 python_demo/pipeline.py --model ../../bmodels/llama2-7b_int4_1dev.bmodel --tokenizer ./token_config --devid 0

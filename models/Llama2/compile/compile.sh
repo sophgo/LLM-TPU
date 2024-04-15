@@ -11,6 +11,7 @@ quantize_args="--quantize F16"
 name=""
 num_layers=
 hidden_size=
+seq_length=
 out_model=$name.bmodel
 
 while [[ $# -gt 0 ]]; do
@@ -48,6 +49,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [[ -z "$seq_length" ]]; then
+    echo "Error: --seq_length is required." >&2
+    exit 1
+fi
+
 if [ "$name" = "llama2-7b" ]; then
   num_layers=31
   hidden_size=4096
@@ -74,9 +80,9 @@ fi
 
 if [ x$num_device != x1 ]; then
     device_args="--num_device $num_device"
-    out_model=$name'_'$mode'_'$num_device'dev.bmodel'
+    out_model=$name'_'$mode'_'$num_device'dev_'$seq_length'.bmodel'
 else
-    out_model=$name'_'$mode'_1dev.bmodel'
+    out_model=$name'_'$mode'_1dev_'$seq_length'.bmodel'
 fi
 
 if [ x$addr_mode == x"io_alone" ]; then
