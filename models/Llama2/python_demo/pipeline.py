@@ -48,8 +48,10 @@ If a question does not make any sense, or is not factually coherent, explain why
         
         self.SEQLEN = self.model.SEQLEN
 
+
     def clear(self):
         self.history = [self.system]
+
 
     def update_history(self):
         if self.model.token_length >= self.SEQLEN:
@@ -81,12 +83,6 @@ If a question does not make any sense, or is not factually coherent, explain why
         """
         Start a chat session.
         """
-        # check
-        if not self.EOS:
-            raise NotImplementedError("Forget to set End of Sentence Token Id(EOS)")
-        if not self.SEQLEN:
-            raise NotImplementedError("Forget to set End of Sentence Token Id")
-
         # Instruct
         print(
             """\n=================================================================
@@ -177,12 +173,12 @@ If a question does not make any sense, or is not factually coherent, explain why
         Generate predictions for the given tokens.
         """
         # First token
-        next_token = self.forward_first(tokens)
+        next_token = self.model.forward_first(tokens)
         output_tokens = [next_token]
 
         # Following tokens
         while True:
-            next_token = self.forward_next()
+            next_token = self.model.forward_next()
             if next_token == self.EOS:
                 break
             output_tokens += [next_token]
