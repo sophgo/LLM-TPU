@@ -11,6 +11,7 @@ quantize_args="--quantize F16"
 name=""
 num_layers=
 hidden_size=
+seq_length=
 out_model=$name.bmodel
 
 while [[ $# -gt 0 ]]; do
@@ -47,6 +48,11 @@ while [[ $# -gt 0 ]]; do
         ;;
     esac
 done
+
+if [[ -z "$seq_length" ]]; then
+    echo "Error: --seq_length is required." >&2
+    exit 1
+fi
 
 if [ "$name" = "mistral-7b" ]; then
   num_layers=31
