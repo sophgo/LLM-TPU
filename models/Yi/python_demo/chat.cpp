@@ -25,7 +25,7 @@
 
 static const uint16_t ATTENTION_MASK = 0xF0E2;
 
-class Mistral {
+class Yi {
 public:
   void init(const std::vector<int> &devid, std::string model_path);
   void deinit();
@@ -34,7 +34,7 @@ public:
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
   std::mt19937 sgen;
-  Mistral() : sgen(std::random_device()()){};
+  Yi() : sgen(std::random_device()()){};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -73,7 +73,7 @@ private:
   std::vector<bm_device_mem_t> past_value;
 };
 
-void Mistral::net_launch(const bm_net_info_t *net, int stage_idx) {
+void Yi::net_launch(const bm_net_info_t *net, int stage_idx) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
   std::vector<bm_tensor_t> out_tensors(net->output_num);
 
@@ -94,11 +94,11 @@ void Mistral::net_launch(const bm_net_info_t *net, int stage_idx) {
   bm_thread_sync(bm_handle);
 }
 
-void Mistral::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
+void Yi::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
 }
 
-void Mistral::init(const std::vector<int> &devices, std::string model_path) {
+void Yi::init(const std::vector<int> &devices, std::string model_path) {
   
   // request bm_handle
   std::cout << "Device [ ";
@@ -171,7 +171,7 @@ void Mistral::init(const std::vector<int> &devices, std::string model_path) {
   }
 }
 
-void Mistral::deinit() {
+void Yi::deinit() {
   if (false == io_alone) {
     for (int i = 0; i < NUM_LAYERS; i++) {
       bm_free_device(bm_handle, past_key[i]);
@@ -184,7 +184,7 @@ void Mistral::deinit() {
   }
 }
 
-void Mistral::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
+void Yi::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
   std::vector<bm_tensor_t> out_tensors(net->output_num);
 
@@ -209,7 +209,7 @@ void Mistral::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem)
   bm_thread_sync(bm_handle);
 }
 
-int Mistral::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
+int Yi::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
   auto &out_mem = net->stages[0].output_mems[0];
   head_launch(net, logits_mem);
   int token = 0;
@@ -217,7 +217,7 @@ int Mistral::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem
   return token;
 }
 
-int Mistral::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
+int Yi::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
   auto &in1_mem = net->stages[0].input_mems[1];
   auto &in2_mem = net->stages[0].input_mems[2];
   auto &in3_mem = net->stages[0].input_mems[3];
@@ -251,7 +251,7 @@ int Mistral::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_me
   return tokens[dist(sgen)];
 }
 
-int Mistral::forward_first(std::vector<int> &tokens) {
+int Yi::forward_first(std::vector<int> &tokens) {
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
@@ -312,7 +312,7 @@ int Mistral::forward_first(std::vector<int> &tokens) {
   return token;
 }
 
-int Mistral::forward_next() {
+int Yi::forward_next() {
   int cur_token = visited_tokens[token_length - 1];
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
@@ -384,7 +384,7 @@ int Mistral::forward_next() {
 }
 
 
-std::vector<int> Mistral::generate(std::vector<int> &history_tokens, int EOS) {
+std::vector<int> Yi::generate(std::vector<int> &history_tokens, int EOS) {
   if (history_tokens.empty()) {
     printf("Sorry: your question is empty!!\n");
     history_tokens.clear();
@@ -409,20 +409,20 @@ std::vector<int> Mistral::generate(std::vector<int> &history_tokens, int EOS) {
 }
 
 PYBIND11_MODULE(chat, m) {
-    pybind11::class_<Mistral>(m, "Mistral")
+    pybind11::class_<Yi>(m, "Yi")
         .def(pybind11::init<>())
-        .def("init", &Mistral::init)
-        .def("forward_first", &Mistral::forward_first)
-        .def("forward_next", &Mistral::forward_next)
-        .def("generate", &Mistral::generate)
-        .def("deinit", &Mistral::deinit)
-        .def_readwrite("SEQLEN", &Mistral::SEQLEN) // read SEQLEN in pipeline.py
-        .def_readwrite("token_length", &Mistral::token_length)
-        .def_readwrite("temperature", &Mistral::temperature)
-        .def_readwrite("top_p", &Mistral::top_p)
-        .def_readwrite("repeat_penalty", &Mistral::repeat_penalty)
-        .def_readwrite("repeat_last_n", &Mistral::repeat_last_n)
-        .def_readwrite("max_new_tokens", &Mistral::max_new_tokens)
-        .def_readwrite("generation_mode", &Mistral::generation_mode)
-        .def_readwrite("prompt_mode", &Mistral::prompt_mode);
+        .def("init", &Yi::init)
+        .def("forward_first", &Yi::forward_first)
+        .def("forward_next", &Yi::forward_next)
+        .def("generate", &Yi::generate)
+        .def("deinit", &Yi::deinit)
+        .def_readwrite("SEQLEN", &Yi::SEQLEN) // read SEQLEN in pipeline.py
+        .def_readwrite("token_length", &Yi::token_length)
+        .def_readwrite("temperature", &Yi::temperature)
+        .def_readwrite("top_p", &Yi::top_p)
+        .def_readwrite("repeat_penalty", &Yi::repeat_penalty)
+        .def_readwrite("repeat_last_n", &Yi::repeat_last_n)
+        .def_readwrite("max_new_tokens", &Yi::max_new_tokens)
+        .def_readwrite("generation_mode", &Yi::generation_mode)
+        .def_readwrite("prompt_mode", &Yi::prompt_mode);
 }

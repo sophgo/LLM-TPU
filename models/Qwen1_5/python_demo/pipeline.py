@@ -166,12 +166,12 @@ class Qwen1_5():
         Generate predictions for the given tokens.
         """
         # First token
-        next_token = self.forward_first(tokens)
+        next_token = self.model.forward_first(tokens)
         output_tokens = [next_token]
 
         # Following tokens
         while True:
-            next_token = self.forward_next()
+            next_token = self.model.forward_next()
             if next_token == self.EOS:
                 break
             output_tokens += [next_token]

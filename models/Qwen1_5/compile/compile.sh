@@ -6,10 +6,11 @@ folder="tmp"
 num_device=1
 mode_args=""
 device_args=""
-quantize_args="--quantize F16"
 addr_args=""
+quantize_args="--quantize F16"
 name=""
 num_layers=
+hidden_size=
 seq_length=
 out_model=$name.bmodel
 
@@ -33,6 +34,10 @@ while [[ $# -gt 0 ]]; do
             addr_mode="$2"
             shift 2
             ;;
+        --seq_length)
+            seq_length="$2"
+            shift 2
+            ;;
         *)
             echo "Invalid option: $key" >&2
             exit 1
@@ -44,20 +49,29 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [[ -z "$seq_length" ]]; then
+    echo "Error: --seq_length is required." >&2
+    exit 1
+fi
+
 if [ "$name" = "qwen1.5-7b" ]; then
   num_layers=31
+  hidden_size=4096
   echo "Compile Qwen1.5-7B"
 elif [ "$name" = "qwen1.5-4b" ]; then
   num_layers=39
+  hidden_size=2560
   echo "Compile Qwen1.5-4B"
 elif [ "$name" = "qwen1.5-1.8b" ]; then 
   num_layers=23
+  hidden_size=2048
   echo "Compile Qwen1.5-1.8B"
 elif [ "$name" = "qwen1.5-0.5b" ]; then 
   num_layers=23
+  hidden_size=1024
   echo "Compile Qwen1.5-0.5B"
 else
-  >&2 echo -e "Error: Invalid name $name, the input name must be \033[31mqwen1.5-1.8b|qwen1.5-7b\033[0m"
+  >&2 echo -e "Error: Invalid name $name, the input name must be \033[31mqwen1.5-0.5b|qwen1.5-1.8b|qwen1.5-4b|qwen1.5-7b\033[0m"
   exit 1
 fi
 
