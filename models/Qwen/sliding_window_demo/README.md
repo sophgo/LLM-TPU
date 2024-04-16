@@ -24,7 +24,7 @@ popd
 
 ### compile bmodel
 ```shell
-./compile.sh --mode int4 --name qwen-7b --addr_mode io_alone --seq_length 8192
+./compile.sh --mode int4 --name qwen-7b --seq_length 8192
 ```
 
 ### 下载迁移好的模型
