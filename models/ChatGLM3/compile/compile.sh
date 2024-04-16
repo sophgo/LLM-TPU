@@ -120,7 +120,6 @@ model_deploy.py \
     --mlir lm_head.mlir \
     $quantize_args \
     --quant_input \
-    --quant_output \
     --chip bm1684x \
     $device_args \
     --model lm_head.bmodel
@@ -148,7 +147,7 @@ model_deploy.py \
 
 rm *.npz
 
-models=${models}${outdir}'/lm_head.bmodel '
+models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '$outdir'/penalty_sample_head.bmodel '
 popd
 
 echo $models

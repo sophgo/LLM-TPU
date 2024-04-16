@@ -7,8 +7,7 @@ class ChatGLM(BaseModel):
     def __init__(self, args):
         super().__init__(args)
         # preprocess parameters, such as prompt & tokenizer
-        self.system_prompt = "You are ChatGLM3, a large language model trained by Zhipu.AI. Follow the user's instructions carefully. Respond using markdown."
-        self.history = [{"role": "system", "content": self.system_prompt}]
+        self.history = list()
         self.EOS = self.tokenizer.eos_token_id
         self.decode_mode = "diff"
 
@@ -29,21 +28,23 @@ class ChatGLM(BaseModel):
         self.SEQLEN = self.model.SEQLEN
 
     def clear(self):
-        self.history = [{"role": "system", "content": self.system_prompt}]
+        self.history = []
 
     def update_history(self):
         if self.model.token_length >= self.SEQLEN:
             print("... (reach the maximal length)", flush=True, end="")
-            self.history = [{"role": "system", "content": self.system_prompt}]
+            self.history = []
         else:
             self.history.append({"role": "assistant", "content": self.answer_cur})
 
     def encode_tokens(self):
+        # self.history.append({"role": "user", "content": self.input_str})
+        # text = self.tokenizer.apply_chat_template(
+        #     self.history, tokenize=False, add_generation_prompt=True
+        # )
+        # tokens = self.tokenizer(text).input_ids
+        tokens = self.tokenizer.build_chat_input(self.input_str, history=self.history)['input_ids'].tolist()[0]
         self.history.append({"role": "user", "content": self.input_str})
-        text = self.tokenizer.apply_chat_template(
-            self.history, tokenize=False, add_generation_prompt=True
-        )
-        tokens = self.tokenizer(text).input_ids
         return tokens
 
 

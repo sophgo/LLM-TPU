@@ -176,6 +176,11 @@ typedef struct bm_module
   unsigned char md5[MD5SUM_LEN];
 }bm_module;
 
+typedef struct rdrop_info {
+	int tpu_rdrop;
+	int vddc_rdrop;
+}rdrop_info;
+
 typedef struct bm_module *tpu_kernel_module_t;
 typedef int tpu_kernel_function_t;
 
@@ -189,6 +194,18 @@ typedef int tpu_kernel_function_t;
  * @retval  dyn lib ptr
  */
 tpu_kernel_module_t tpu_kernel_load_module_file(bm_handle_t handle, const char *module_file);
+
+/**
+ * @name    tpu_kernel_load_module_file_to_core
+ * @brief   To load dyn file
+ * @ingroup bmlib_runtime
+ *
+ * @param [in]  handle          The device handle
+ * @param [in]  module_file     dyn file
+ * @param [in]  core_id
+ * @retval  dyn lib ptr
+ */
+tpu_kernel_module_t tpu_kernel_load_module_file_to_core(bm_handle_t handle, const char *module_file, int core_id);
 
 /**
  * @name    tpu_kernel_load_module_file_key
@@ -216,6 +233,19 @@ tpu_kernel_module_t tpu_kernel_load_module_file_key(bm_handle_t handle, const ch
 bm_status_t tpu_kernel_unload_module(bm_handle_t handle, tpu_kernel_module_t p_module);
 
 /**
+ * @name    tpu_kernel_unload_module_from_core
+ * @brief   To unload dyn file
+ * @ingroup bmlib_runtime
+ *
+ * @param [in]  handle          The device handle
+ * @param [in]  p_module        dyn lib ptr
+ * @param [in]  core_id         core id
+ * @retval  BM_SUCCESS  Succeeds.
+ *          Other code  Fails.
+ */
+bm_status_t tpu_kernel_unload_module_from_core(bm_handle_t handle, tpu_kernel_module_t p_module, int core_id);
+
+/**
  * @name    tpu_kernel_free_module
  * @brief   To free p_module when not use
  * @ingroup bmlib_runtime
@@ -240,6 +270,19 @@ bm_status_t tpu_kernel_free_module(bm_handle_t handle, tpu_kernel_module_t p_mod
 tpu_kernel_module_t tpu_kernel_load_module(bm_handle_t handle, const char *data, size_t length);
 
 /**
+ * @name    tpu_kernel_load_module_to_core
+ * @brief   To load dyn module
+ * @ingroup bmlib_runtime
+ *
+ * @param [in]  handle          The device handle
+ * @param [in]  data            dyn module
+ * @param [in]  length          dyn module size
+ * @param [in]  core_id         core id
+ * @retval  dyn lib ptr
+ */
+tpu_kernel_module_t tpu_kernel_load_module_to_core(bm_handle_t handle, const char *data, size_t length, int core_id);
+
+/**
  * @name    tpu_kernel_get_function
  * @brief   To get function from lib
  * @ingroup bmlib_runtime
@@ -250,6 +293,19 @@ tpu_kernel_module_t tpu_kernel_load_module(bm_handle_t handle, const char *data,
  * @retval  function id
  */
 tpu_kernel_function_t tpu_kernel_get_function(bm_handle_t handle, tpu_kernel_module_t module, const char *function);
+
+/**
+ * @name    tpu_kernel_get_function_from_core
+ * @brief   To get function from lib
+ * @ingroup bmlib_runtime
+ *
+ * @param [in]  handle          The device handle
+ * @param [in]  module          dyn module
+ * @param [in]  function        funtion name
+ * @param [in]  core_id         core id
+ * @retval  function id
+ */
+tpu_kernel_function_t tpu_kernel_get_function_from_core(bm_handle_t handle, tpu_kernel_module_t module, const char *function, int core_id);
 
 /**
  * @name    tpu_kernel_launch
@@ -266,6 +322,21 @@ tpu_kernel_function_t tpu_kernel_get_function(bm_handle_t handle, tpu_kernel_mod
 bm_status_t tpu_kernel_launch(bm_handle_t handle, tpu_kernel_function_t function, void *args, size_t size);
 
 /**
+ * @name    tpu_kernel_launch_from_core
+ * @brief   To launch function with sync
+ * @ingroup bmlib_runtime
+ *
+ * @param [in]  handle          The device handle
+ * @param [in]  function        function id
+ * @param [in]  args            funtion args
+ * @param [in]  size            args size
+ * @param [in]  core_id         core id
+ * @retval  BM_SUCCESS  Succeeds.
+ *          Other code  Fails.
+ */
+bm_status_t tpu_kernel_launch_from_core(bm_handle_t handle, tpu_kernel_function_t function, void *args, size_t size, int core_id);
+
+/**
  * @name    tpu_kernel_launch_async
  * @brief   To launch function with async
  * @ingroup bmlib_runtime
@@ -278,6 +349,21 @@ bm_status_t tpu_kernel_launch(bm_handle_t handle, tpu_kernel_function_t function
  *          Other code  Fails.
  */
 bm_status_t tpu_kernel_launch_async(bm_handle_t handle, tpu_kernel_function_t function, void *args, size_t size);
+
+/**
+ * @name    tpu_kernel_launch_async_from_core
+ * @brief   To launch function with async
+ * @ingroup bmlib_runtime
+ *
+ * @param [in]  handle          The device handle
+ * @param [in]  function        function id
+ * @param [in]  args            funtion args
+ * @param [in]  size            args size
+ * @param [in]  core_id         core_id
+ * @retval  BM_SUCCESS  Succeeds.
+ *          Other code  Fails.
+ */
+bm_status_t tpu_kernel_launch_async_from_core(bm_handle_t handle, tpu_kernel_function_t function, void *args, size_t size, int core_id);
 
 /**
  * @name    tpu_kernel_launch_async_multi_cores
@@ -1608,6 +1694,18 @@ DECL_EXPORT bm_status_t bm_handle_sync_from_core(bm_handle_t handle, int core_id
 DECL_EXPORT bm_status_t bm_thread_sync(bm_handle_t handle);
 
 /**
+ * @name    bm_set_sync_timeout
+ * @brief   To set sync timeout ms.
+ * @ingroup bmlib_runtime
+ *
+ * @param [in] handle  The device handle
+ * @param [in] timeout Sync timeout
+ * @retval  BM_SUCCESS Succeeds.
+ *          Other code Fails.
+ */
+DECL_EXPORT bm_status_t bm_set_sync_timeout(bm_handle_t handle, int timeout);
+
+/**
  * @name    bm_thread_sync_from_core
  * @brief   To synchronize APIs of the current thread. The thread will block
  *          until all the outstanding APIs of the current thread are finished.
@@ -1744,6 +1842,54 @@ DECL_EXPORT bm_status_t bm_set_clk_tpu_freq(bm_handle_t handle, int freq);
  *          Other code  Fails.
  */
 DECL_EXPORT bm_status_t bm_get_clk_tpu_freq(bm_handle_t handle, int *freq);
+
+/**
+ * @name    bm_set_tpu_volt
+ * @brief   set TPU voltage
+ * @ingroup bmlib_runtime
+ *
+ * @param [in]   handle The device handle
+ * @param [out]  The tpu_target volt
+ * @retval  BM_SUCCESS  Succeeds.
+ *          Other code  Fails.
+ */
+DECL_EXPORT bm_status_t bm_set_tpu_volt(bm_handle_t handle, unsigned int tpu_volt);
+
+/**
+ * @name    bm_set_rdrop
+ * @brief   set TPU and VDDC rdrop
+ * @ingroup bmlib_runtime
+ *
+ * @param [in]   handle The device handle
+ * @param [in]  The struct rdrop_info contains tpu_rdrop and vddc_rdrop
+ * @retval  BM_SUCCESS  Succeeds.
+ *          Other code  Fails.
+ */
+DECL_EXPORT bm_status_t bm_set_rdrop(bm_handle_t handle, struct rdrop_info ri);
+
+/**
+ * @name    bm_get_rdrop
+ * @brief   get TPU and VDDC rdrop
+ * @ingroup bmlib_runtime
+ *
+ * @param [in]   handle The device handle
+ * @param [out]  The struct rdrop_info contains tpu_rdrop and vddc_rdrop
+ * @retval  BM_SUCCESS  Succeeds.
+ *          Other code  Fails.
+ */
+DECL_EXPORT bm_status_t bm_get_rdrop(bm_handle_t handle, struct rdrop_info* ri);
+
+/**
+ * @name    bm_set_vddc_volt
+ * @brief   set VDDC voltage
+ * @ingroup bmlib_runtime
+ *
+ * @param [in]   handle The device handle
+ * @param [out]  The vddc_target volt
+ * @retval  BM_SUCCESS  Succeeds.
+ *          Other code  Fails.
+ */
+DECL_EXPORT bm_status_t bm_set_vddc_volt(bm_handle_t handle, unsigned int vddc_volt);
 
 /*******************misc functions ********************************************/
 struct bm_misc_info {
@@ -2493,7 +2639,7 @@ DECL_EXPORT bm_status_t bm_get_tpu_power(bm_handle_t handle, float *tpu_power);
  * @ingroup device management api
  *
  * @param [in]   handle The device handle
- * @param [out]  tpu_volt
+ * @param [out]  The tpu current volt
  * @retval  BM_SUCCESS  Succeeds.
  *          Other code  Fails.
  */
