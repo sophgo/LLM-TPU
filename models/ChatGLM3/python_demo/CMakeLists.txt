@@ -24,6 +24,9 @@ elseif (${TARGET_ARCH} STREQUAL "soc")
 	message("SoC mode, starting......")
 endif()
 
+add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -Werror)
+set(CMAKE_BUILD_TYPE "Debug")
+
 find_package(pybind11 REQUIRED CONFIG)
 pybind11_add_module(chat chat.cpp)
 
