@@ -127,14 +127,7 @@ cd ..
 
 运行`pipeline.py`:
 ```shell
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
 source ../../../envsetup.sh
->>>>>>> b9adbbe ([chatglm3] update README for python_demo)
-=======
-source ../../../envsetup.sh
->>>>>>> 22250bf ([chatglm3] update README for python_demo)
 python3 pipeline.py --model_path $PATH_TO_BMODEL --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy
 ```
 
