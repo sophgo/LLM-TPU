@@ -32,7 +32,7 @@
   "padded_vocab_size": 65024,
   "post_layer_norm": true,
   "rmsnorm": true,
-  "seq_length": 8192,
+  "seq_length": 512,
   "use_cache": true,
   "torch_dtype": "float16",
   "transformers_version": "4.30.2",
