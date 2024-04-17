@@ -83,11 +83,11 @@ source ./envsetup.sh
 export PYTHONPATH=your_chatglm3-6b_path:$PYTHONPATH
 ```
 
-2. 导出所有onnx模型，如果过程中提示缺少某些组件，直接`pip3 install 组件`即可
+2. 导出所有onnx模型，如果过程中提示缺少某些组件，直接`pip3 install 组件`即可；seq_length需与config.json中的设置相同，device默认为cpu。
 
 ``` shell
 cd compile
-python3 export_onnx.py --model_path your_chatglm3-6b_path
+python3 export_onnx.py --model_path your_chatglm3-6b_path --seq_length 512 --device cpu
 ```
 此时有大量onnx模型被导出到tmp目录。
 
@@ -105,10 +105,29 @@ python3 export_onnx.py --model_path your_chatglm3-6b_path
 ./compile.sh --mode int8 --name chatglm3-6b # or int4
 ```
 
-若想进行2芯推理，则执行以下命令，最终生成`chatglm3-6b_f16_2dev.bmodel`文件，4芯8芯同理：
+若想进行2芯推理，则执行以下命令，最终生成`chatglm3-6b_f16_2dev.bmodel`文件，4芯8芯同理（python_demo目前仅支持单芯）：
 
 ```shell
 ./compile.sh --num_device 2 --name chatglm3-6b
+```
+
+## 编译程序(python_demo版本)
+
+执行如下编译，(PCIE版本与SoC版本相同)：
+
+```shell
+cd python_demo
+mkdir build
+cd build
+cmake ..
+make
+mv chat.cpython-310-x86_64-linux-gnu.so ..
+cd ..
+```
+
+运行`pipeline.py`:
+```shell
+python3 pipeline.py --model_path $PATH_TO_BMODEL --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy
 ```
 
 ## 编译程序(C++版本)
