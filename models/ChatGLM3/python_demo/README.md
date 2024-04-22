@@ -16,6 +16,6 @@ cd /workspace/LLM-TPU/models/ChatGLM3/python_demo
 mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..
 
-
+source /workspace/LLM-TPU/envsetup.sh
 python3 pipeline.py --model_path ../compile/chatglm3-6b_int4_1dev.bmodel --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy
 ```
