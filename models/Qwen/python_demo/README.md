@@ -1,7 +1,7 @@
 ### python demo
 ```
 sudo apt-get update
-sudo apt-get install pybind11[global]
+sudo apt-get install pybind11-dev
 pip3 install transformers_stream_generator einops tiktoken accelerate transformers==4.32.0
 ```
 
