@@ -43,7 +43,7 @@ pushd /workspace/LLM-TPU && source envsetup.sh && popd
 也可以直接下载编译好的模型，不用自己编译
 ```shell
 pip3 install dfss
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/chatglm3-6b_int4_1dev_2048.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/chatglm3-6b_int4_2dev.bmodel
 ```
 
 ```shell
@@ -52,5 +52,5 @@ mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 
-python3 pipeline.py --model_path ../compile/chatglm3-6b_int4_1dev.bmodel --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy
+python3 pipeline.py --model_path chatglm3-6b_int4_2dev.bmodel --tokenizer_path ../support/token_config/ --devid 0,1 --generation_mode greedy
 ```
