@@ -3,7 +3,7 @@
 ## Export onnx
 
 ```shell
-pip install transformers_stream_generator einops tiktoken accelerate transformers==4.32.0
+pip install sentencepiece transformers==4.30.2
 ```
 
 ### export onnx
