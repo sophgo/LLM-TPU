@@ -272,8 +272,8 @@ void ChatGLM::init(const std::vector<int> &devices, std::string model_path) {
   for (int i = 0; i < device_num; ++i) {
     present_key_cache[i] = past_keys[0][i];
     present_value_cache[i] = past_values[0][i];
-    present_key_cache[i].shape.dims[1] = 1;
-    present_value_cache[i].shape.dims[1] = 1;
+    present_key_cache[i].shape.dims[0] = 1;
+    present_value_cache[i].shape.dims[0] = 1;
 
     ret = bmrt_tensor_ex(&inputs_lm[i], p_bmrt, i, net_lm->input_dtypes[0],
                         net_lm->stages[0].input_shapes[0]);
@@ -380,11 +380,11 @@ int ChatGLM::forward_first(std::vector<int> &tokens) {
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);
   visited_tokens[token_length] = token;
-  token_length += 1;
   return token;
 }
 
 int ChatGLM::forward_next() {
+  token_length += 1;
   int cur_token = visited_tokens[token_length - 1];
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
@@ -437,12 +437,12 @@ int ChatGLM::forward_next() {
     for (int j = 0; j < device_num; ++j) {
       inputs_block[3 + j * 5] = past_keys[i][j];
       inputs_block[4 + j * 5] = past_values[i][j];
-      // int bytes = bm_mem_get_device_size(past_keys[0][j].device_mem) / SEQLEN;
-      // int token_offset = (token_length - 1) * bytes;
-      // bm_set_device_mem(&outputs_block[1 + j * 3].device_mem, bytes,
-      //     bm_mem_get_device_addr(past_keys[i][j].device_mem) + token_offset);
-      // bm_set_device_mem(&outputs_block[2 + j * 3].device_mem, bytes,
-      //     bm_mem_get_device_addr(past_values[i][j].device_mem) + token_offset);
+      int bytes = bm_mem_get_device_size(past_keys[0][j].device_mem) / SEQLEN;
+      int token_offset = (token_length - 1) * bytes;
+      bm_set_device_mem(&outputs_block[1 + j * 3].device_mem, bytes,
+          bm_mem_get_device_addr(past_keys[i][j].device_mem) + token_offset);
+      bm_set_device_mem(&outputs_block[2 + j * 3].device_mem, bytes,
+          bm_mem_get_device_addr(past_values[i][j].device_mem) + token_offset);
     }
     net_launch(name_blocks_cache[i], inputs_block, outputs_block);
   }
@@ -457,7 +457,6 @@ int ChatGLM::forward_next() {
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);
   visited_tokens[token_length] = token;
-  token_length += 1;
   return token;
 }
 

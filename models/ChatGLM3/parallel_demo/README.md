@@ -24,7 +24,7 @@ popd
 
 ### compile bmodel
 ```shell
-./compile.sh --mode int4 --name chatglm3-6b
+./compile.sh --mode int4 --name chatglm3-6b --num_device 2
 ```
 
 

@@ -201,7 +201,7 @@ def test_net_with_mask():
     k_cache = []
     v_cache = []
 
-    for i in range(NUM_LAYERS):
+    for i in range(1):
         out, kv_cache = blocks[i](out, position_ids, attention_mask)
         k, v = kv_cache
         # k[SEQ_LENGTH - token_len:] = k[:token_len]
@@ -219,7 +219,6 @@ def test_net_with_mask():
     out_ids = [int(token)]
     word = tokenizer._convert_id_to_token(int(token[0]))
     print(word, end="")
-    breakpoint()
     while token > 2 and token_len < 640:
         token_len += 1
         # import pdb;pdb.set_trace()
@@ -229,13 +228,13 @@ def test_net_with_mask():
         attention_mask = torch.ones((1, 1, 1, SEQ_LENGTH + 1))*-1000
         attention_mask[:, :, :, :token_len-1] = 0
         attention_mask[:, :, :, -1] = 0
-        for i in range(NUM_LAYERS):
+        for i in range(1):
             out, present_k_cache, present_v_cache = block_kvs[i](out, position_ids,
                                                        attention_mask,
                                                        k_cache[i], v_cache[i])
             import pdb;pdb.set_trace()
-            # k_cache[i][:SEQ_LENGTH - token_len] = 0
-            # v_cache[i][:SEQ_LENGTH - token_len] = 0
+            k_cache[i][token_len-1] = present_k_cache
+            v_cache[i][token_len-1] = present_v_cache
         # import pdb;pdb.set_trace()
         lm = LmHead()
         token = lm(out)
