@@ -112,7 +112,7 @@ class ChatGLM():
         print(f"TPS: {tps:.3f} token/s")
 
     def load_model(self, args):
-        from ChatGLM3.python_demo import chat
+        import chat
         self.model = chat.ChatGLM()
         self.model.init(self.devices, args.model_path)
         self.model.temperature = args.temperature
