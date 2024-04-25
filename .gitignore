@@ -5,3 +5,5 @@ deploy/
 .vscode
 *.npz
 __pycache__
+core
+*.so

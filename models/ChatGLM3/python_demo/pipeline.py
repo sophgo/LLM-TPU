@@ -27,7 +27,7 @@ class ChatGLM():
         print("Done!")
         self.history = list()
         self.EOS = self.tokenizer.eos_token_id
-        self.decode_mode = "diff"
+        self.enable_history = args.enable_history
 
         # load model
         self.load_model(args)
@@ -105,11 +105,51 @@ class ChatGLM():
         next_duration = next_end - first_end
         tps = tok_num / next_duration
 
-        self.update_history()
+        if self.enable_history:
+            self.update_history()
+        else:
+            self.clear()
 
         print()
         print(f"FTL: {first_duration:.3f} s")
         print(f"TPS: {tps:.3f} token/s")
+
+    ## For Web Demo
+    def stream_predict(self, query):
+        """
+        Stream the prediction for the given query.
+        """
+        self.answer_cur = ""
+        self.input_str = query
+        tokens = self.encode_tokens()
+
+        for answer_cur, history in self._generate_predictions(tokens):
+            yield answer_cur, history
+
+
+    def _generate_predictions(self, tokens):
+        """
+        Generate predictions for the given tokens.
+        """
+        # First token
+        next_token = self.model.forward_first(tokens)
+        output_tokens = [next_token]
+
+        # Following tokens
+        while True:
+            next_token = self.model.forward_next()
+            if next_token == self.EOS:
+                break
+            output_tokens += [next_token]
+            self.answer_cur = self.tokenizer.decode(output_tokens)
+            if self.model.token_length >= self.SEQLEN:
+                self.update_history()
+                yield self.answer_cur + "\n\n\nReached the maximum length; The history context has been cleared.", self.history
+                break
+            else:
+                yield self.answer_cur, self.history
+
+        self.update_history()
 
     def load_model(self, args):
         import chat
@@ -162,5 +202,6 @@ if __name__ == "__main__":
     parser.add_argument('--max_new_tokens', type=int, default=1024, help='max new token length to generate')
     parser.add_argument('--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
     parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
+    parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory")
     args = parser.parse_args()
     main(args)

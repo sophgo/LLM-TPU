@@ -20,12 +20,12 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 # python demo
 ```
-python3 pipeline.py --model_path qwen-7b_int4_1dev.bmodel --tokenizer_path ../token_config/ --devid 0 --generation_mode greedy
+python3 pipeline.py --model_path qwen-7b_int4_1dev.bmodel --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy
 ```
 
 # web demo
 ```
-python3 web_demo.py --model_path qwen-7b_int4_1dev.bmodel --tokenizer_path ../token_config/ --devid 0
+python3 web_demo.py --model_path qwen-7b_int4_1dev.bmodel --tokenizer_path ../support/token_config/ --devid 0
 ```
 
 ## 常见问题
