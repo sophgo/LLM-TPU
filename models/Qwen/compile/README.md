@@ -24,6 +24,11 @@ pip install transformers_stream_generator einops tiktoken accelerate transformer
 python export_onnx.py --model_path your_torch_path --device cuda
 ```
 
+### export onnx used for parallel demo
+```shell
+python export_onnx.py --model_path your_torch_path --device cuda --lmhead_with_topk 1
+```
+
 PS：
 1. 最好使用cuda导出，cpu导出block的时候，会卡在第一个block，只能kill
 2. your_torch_path：从官网下载的或者自己训练的模型的路径，例如./Qwen-7B-Chat
@@ -45,6 +50,11 @@ popd
 ### compile jacobi bmodel
 ```shell
 ./compile_jacobi.sh --mode int4 --name qwen-7b --addr_mode io_alone --generation_mode sample --decode_mode jacobi --seq_length 8192
+```
+
+### compile bmodel for parallel demo
+```shell
+./compile.sh --mode int4 --name qwen-7b --addr_mode io_alone --seq_length 8192 --num_device 8
 ```
 
 PS：

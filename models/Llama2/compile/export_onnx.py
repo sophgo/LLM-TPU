@@ -18,6 +18,7 @@ torch.set_grad_enabled(False)
 parser = argparse.ArgumentParser(description='export onnx.')
 parser.add_argument('--model_path', type=str, help='path to the torch model.')
 parser.add_argument('--seq_length', type=int, default=512, help="sequence length")
+parser.add_argument('--lmhead_with_topk', type=int, default=0, help="only trace the LmHeadWithTopK")
 
 args = parser.parse_args()
 
@@ -88,6 +89,18 @@ class BlockCache(torch.nn.Module):
         return hidden_states, present_k, present_v
 
 
+class LmHeadWithTopK(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, hidden_states):
+        hidden_states = transformer.norm(hidden_states)
+        m_logits = origin_model.lm_head(hidden_states)
+        _, token = torch.topk(m_logits, 1)
+        return token
+
+
 class LmHead(torch.nn.Module):
 
     def __init__(self):
@@ -138,7 +151,8 @@ class PenaltySampleHead(torch.nn.Module):
         filtered_logits = torch.where(mask, logits, torch.FloatTensor([-1000.]))
         probs = filtered_logits.softmax(dim=1)
         return probs, token
-    
+
+
 def convert_block(layer_id):
     model = Block(layer_id)
     hidden_states = torch.randn((1, SEQ_LENGTH, HIDDEN_SIZE))
@@ -179,15 +193,14 @@ def convert_block_cache(layer_id):
 def convert_embedding():
     model = Embedding()
     input_ids = torch.tensor([range(SEQ_LENGTH)])
+    module = torch.jit.trace(model.forward, input_ids)
+    torch.jit.save(module, f'{folder}/embedding.pt')
 
-    torch.onnx.export(model, (input_ids),
-                      f'{folder}/embedding.onnx',
-                      verbose=False,
-                      input_names=['input_ids'],
-                      output_names=['input_embed'],
-                      do_constant_folding=True,
-                      opset_version=15)
-
+def convert_lm_head_with_topk():
+    model = LmHeadWithTopK()
+    input = torch.randn(1, 1, HIDDEN_SIZE)
+    module = torch.jit.trace(model.forward, input)
+    torch.jit.save(module, f'{folder}/lm_head_with_topk.pt')
 
 def convert_lm_head():
     model = LmHead()
@@ -234,7 +247,7 @@ def convert_penalty_sample_head():
         output_names=['probs', 'token'],
         do_constant_folding=True,
         opset_version=15)
-    
+ 
 # create folder to store onnx
 if not os.path.exists(folder):
     os.makedirs(folder)
@@ -249,8 +262,11 @@ print(f'Convert embedding')
 convert_embedding()
 
 print(f'Convert lm_head')
-convert_lm_head()
-convert_greedy_head()
-convert_penalty_sample_head()
-print("Done")
+if args.lmhead_with_topk != 0:
+    convert_lm_head_with_topk()
+else:
+    convert_lm_head()
+    convert_greedy_head()
+    convert_penalty_sample_head()
 
+print("Done")

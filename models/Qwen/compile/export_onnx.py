@@ -17,7 +17,9 @@ torch.set_grad_enabled(False)
 
 parser = argparse.ArgumentParser(description='export onnx')
 parser.add_argument('-m', '--model_path', type=str, help='path to the torch model')
-parser.add_argument('-d', '--device', type=str, choices=["cpu", "cuda"], default="cuda")
+parser.add_argument('-d', '--device', type=str, choices=["cpu", "cuda"], default="cpu")
+parser.add_argument('-n', '--num_threads', type=int, default=1, help='The number of threads used for torch if device is cpu')
+parser.add_argument('--lmhead_with_topk', type=int, default=0, help="only trace the LmHeadWithTopK")
 
 args = parser.parse_args()
 
@@ -25,6 +27,9 @@ model_path = args.model_path
 folder = f"./tmp/onnx"
 
 device = torch.device(args.device)
+if device == 'cpu':
+    torch.set_num_threads(args.num_threads)
+
 origin_model = AutoModelForCausalLM.from_pretrained(
     model_path, trust_remote_code=True,
     torch_dtype=torch.bfloat16, device_map="auto").eval()
@@ -101,6 +106,17 @@ class QwenBlockCache(torch.nn.Module):
         return hidden_states.float(), present_k.float(), present_v.float()
 
 
+class LmHeadWithTopK(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, hidden_states):
+        hidden_states = transformer.ln_f(hidden_states)
+        m_logits = origin_model.lm_head(hidden_states)
+        _, token = torch.topk(m_logits.float(), 1)
+        return token
+
 class LmHead(torch.nn.Module):
 
     def __init__(self):
@@ -161,7 +177,7 @@ def convert_block(layer_id):
         [range(SEQ_LENGTH)], dtype=torch.long).to(device)
     attention_mask = torch.randn(
         (1, 1, SEQ_LENGTH, SEQ_LENGTH)).bfloat16().to(device)
-    
+
     torch.onnx.export(
         model, (hidden_states, position_ids, attention_mask),
         f'{folder}/block_{layer_id}.onnx',
@@ -196,14 +212,20 @@ def convert_block_cache(layer_id):
 
 def convert_embedding():
     model = Embedding()
-    input_ids = torch.tensor([range(SEQ_LENGTH)]).to(device)
+    input_ids = torch.tensor([1, range(SEQ_LENGTH)], dtype=torch.int32).to(device)
     module = torch.jit.trace(model.forward, input_ids)
     torch.jit.save(module, f'{folder}/embedding.pt')
 
 
+def convert_lm_head_with_topk():
+    model = LmHeadWithTopK()
+    hidden_states = torch.randn(1, 1, HIDDEN_SIZE).bfloat16().to(device)
+    module = torch.jit.trace(model.forward, hidden_states)
+    torch.jit.save(module, f'{folder}/lm_head_with_topk.pt')
+
 def convert_lm_head():
     model = LmHead()
-    hidden_states = torch.randn(1, HIDDEN_SIZE).bfloat16().to(device)
+    hidden_states = torch.randn(1, 1, HIDDEN_SIZE).bfloat16().to(device)
     module = torch.jit.trace(model.forward, hidden_states)
     torch.jit.save(module, f'{folder}/lm_head.pt')
 
@@ -257,7 +279,12 @@ print(f'Convert embedding')
 convert_embedding()
 
 print(f'Convert lm_head')
-convert_lm_head()
-convert_greedy_head()
-convert_penalty_sample_head()
+if args.lmhead_with_topk != 0:
+    convert_lm_head_with_topk()
+else:
+    convert_lm_head()
+    convert_greedy_head()
+    convert_penalty_sample_head()
+
+print("Done")
 

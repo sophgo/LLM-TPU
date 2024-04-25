@@ -55,11 +55,11 @@ if [[ -z "$seq_length" ]]; then
 fi
 
 if [ "$name" = "llama2-7b" ]; then
-  num_layers=31
+  num_layers=32
   hidden_size=4096
   echo "Compile Llama2-7B"
 elif [ "$name" = "llama2-13b" ]; then 
-  num_layers=39
+  num_layers=40
   hidden_size=5120
   echo "Compile Llama2-13B"
 else
@@ -89,13 +89,15 @@ if [ x$addr_mode == x"io_alone" ]; then
     addr_args="--addr_mode io_alone"
 fi
 
-outdir=${folder}/embedding
+outdir=${folder}/${mode}_${num_device}/embedding
 mkdir -p $outdir
 pushd $outdir
 
 model_transform.py \
     --model_name embedding \
-    --model_def ../onnx/embedding.onnx \
+    --model_def ../../onnx/embedding.pt \
+    --input_shapes [[1,$seq_length]] \
+    --input_types "int32" \
     --mlir embedding.mlir
 
 model_deploy.py \
@@ -109,8 +111,9 @@ model_deploy.py \
 
 model_transform.py \
     --model_name embedding_cache \
-    --model_def ../onnx/embedding.onnx \
+    --model_def ../../onnx/embedding.pt \
     --input_shapes [[1,1]] \
+    --input_types "int32" \
     --mlir embedding_cache.mlir
 
 model_deploy.py \
@@ -134,45 +137,64 @@ outdir=${folder}/$mode"_"$num_device"dev"/lm_head
 mkdir -p $outdir
 pushd $outdir
 
-model_transform.py \
-    --model_name lm_head \
-    --model_def ../../onnx/lm_head.onnx \
-    --input_shapes [[1,${hidden_size}]] \
-    --mlir lm_head.mlir
+if [[ $num_device -gt 1 ]]; then
+    model_transform.py \
+        --model_name lm_head \
+        --model_def ../../onnx/lm_head_with_topk.pt \
+        --input_shapes [[1,1,${hidden_size}]] \
+        --mlir lm_head.mlir
 
-model_deploy.py \
-    --mlir lm_head.mlir \
-    $quantize_args \
-    --quant_input \
-    --chip bm1684x \
-    $device_args \
-    --model lm_head.bmodel
+    model_deploy.py \
+        --mlir lm_head.mlir \
+        $quantize_args \
+        --quant_input \
+        --chip bm1684x \
+        $device_args \
+        --model lm_head.bmodel
 
+    rm *.npz
+    models=${models}${outdir}'/lm_head.bmodel '
+else
+    model_transform.py \
+        --model_name lm_head \
+        --model_def ../../onnx/lm_head.onnx \
+        --input_shapes [[1,${hidden_size}]] \
+        --mlir lm_head.mlir
+    
+    model_deploy.py \
+        --mlir lm_head.mlir \
+        $quantize_args \
+        --quant_input \
+        --chip bm1684x \
+        $device_args \
+        --model lm_head.bmodel
+    
+    
+    model_transform.py \
+        --model_name greedy_head \
+        --model_def ../../onnx/greedy_head.onnx \
+        --mlir greedy_head.mlir
+    
+    model_deploy.py \
+        --mlir greedy_head.mlir \
+        --chip bm1684x \
+        --model greedy_head.bmodel
+    
+    
+    model_transform.py \
+        --model_name penalty_sample_head \
+        --model_def ../../onnx/penalty_sample_head.onnx \
+        --mlir penalty_sample_head.mlir
+    
+    model_deploy.py \
+        --mlir penalty_sample_head.mlir \
+        --chip bm1684x \
+        --model penalty_sample_head.bmodel
+    
+    rm *.npz
+    models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '$outdir'/penalty_sample_head.bmodel '
+fi
 
-model_transform.py \
-    --model_name greedy_head \
-    --model_def ../../onnx/greedy_head.onnx \
-    --mlir greedy_head.mlir
-
-model_deploy.py \
-    --mlir greedy_head.mlir \
-    --chip bm1684x \
-    --model greedy_head.bmodel
-
-
-model_transform.py \
-    --model_name penalty_sample_head \
-    --model_def ../../onnx/penalty_sample_head.onnx \
-    --mlir penalty_sample_head.mlir
-
-model_deploy.py \
-    --mlir penalty_sample_head.mlir \
-    --chip bm1684x \
-    --model penalty_sample_head.bmodel
-
-rm *.npz
-
-models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '$outdir'/penalty_sample_head.bmodel '
 popd
 
 echo $models
@@ -183,7 +205,7 @@ mkdir -p $outdir
 pushd $outdir
 mkdir -p $outdir
 
-for ((i=0; i<=$num_layers; i++)); do
+for ((i=0; i<$num_layers; i++)); do
     model_transform.py \
         --model_name block_$i \
         --model_def ../../onnx/block_$i.onnx \
