@@ -133,9 +133,10 @@ If a question does not make any sense, or is not factually coherent, explain why
         first_end = time.time()
         # Following tokens
         while token != self.EOS and self.model.token_length < self.SEQLEN:
-            word = self.tokenizer.decode(token, skip_special_tokens=True)
+            pre_word = self.tokenizer.decode([token], skip_special_tokens=True)
+            word = self.tokenizer.decode([token, token], skip_special_tokens=True)[len(pre_word):]
             self.answer_token += [token]
-            print(word, flush=True, end="_")
+            print(word, flush=True, end="")
             tok_num += 1
             token = self.model.forward_next()
         self.answer_cur = self.tokenizer.decode(self.answer_token)
@@ -210,6 +211,6 @@ if __name__ == "__main__":
     parser.add_argument('--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
     parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
     parser.add_argument('--decode_mode', type=str, default="basic", choices=["basic", "jacobi"], help='mode for decoding')
-    parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory.")
+    parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory")
     args = parser.parse_args()
     main(args)
