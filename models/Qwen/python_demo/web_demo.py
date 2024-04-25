@@ -1,7 +1,7 @@
 import time
 import gradio as gr
 import mdtex2html
-from Qwen.python_demo.pipeline import Qwen
+from pipeline import Qwen
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -79,7 +79,7 @@ def gen(input, history):
 def predict(input, chatbot, max_length, top_p, temperature, history):
 
     chatbot.append((parse_text(input), ""))
-    for response, history in model.stream_predict(input, history):
+    for response, history in model.stream_predict(input):
         chatbot[-1] = (parse_text(input), parse_text(response))
         yield chatbot, history
 
@@ -118,5 +118,5 @@ with gr.Blocks() as demo:
 
     emptyBtn.click(reset_state, outputs=[chatbot, history], show_progress=True)
 
-demo.queue().launch(share=True, server_name="0.0.0.0", inbrowser=True)
+demo.queue().launch(share=True, server_name="0.0.0.0", server_port=8003, inbrowser=True)
 
