@@ -30,7 +30,7 @@ pipeline = transformers.pipeline(
     model_kwargs={"torch_dtype": torch.float},
     device="cpu",
 )
-breakpoint()
+
 origin_model = pipeline.model.eval()
 tokenizer = pipeline.tokenizer
 
