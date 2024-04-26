@@ -25,4 +25,4 @@ fi
 
 # run demo
 echo $PWD
-python3 python_demo/pipeline.py --model ../../bmodels/qwen-7b_int4_1dev.bmodel --tokenizer ./token_config --devid 0
+python3 python_demo/pipeline.py --model ../../bmodels/qwen-7b_int4_1dev.bmodel --tokenizer ./support/token_config --devid 0
