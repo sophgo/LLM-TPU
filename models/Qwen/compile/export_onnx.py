@@ -212,7 +212,7 @@ def convert_block_cache(layer_id):
 
 def convert_embedding():
     model = Embedding()
-    input_ids = torch.tensor([1, range(SEQ_LENGTH)], dtype=torch.int32).to(device)
+    input_ids = torch.tensor([range(SEQ_LENGTH)], dtype=torch.int32).to(device)
     module = torch.jit.trace(model.forward, input_ids)
     torch.jit.save(module, f'{folder}/embedding.pt')
 
