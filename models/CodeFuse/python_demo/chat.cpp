@@ -156,7 +156,7 @@ void CodeFuse::init(const std::vector<int> &devices, std::string model_path) {
   // convert attention to uint16_t
   if (net_blocks_cache[0]->input_dtypes[2] == BM_FLOAT16) {
     mask_value = fp32_to_fp16_bits(ATTENTION_MASK);
-  } else if (net_blocks_cache[0]->input_dtypes[2] == BM_FLOAT16) {
+  } else if (net_blocks_cache[0]->input_dtypes[2] == BM_BFLOAT16) {
     mask_value = fp32_to_bf16_bits(ATTENTION_MASK);
   } else {
     std::cerr << "\nError: Invalid attention dtype\n";
