@@ -4,7 +4,7 @@
 按如下命令下载并安装驱动，**注意目前必须要这一版本的驱动，旧版本驱动不支持最新的多芯模型**：
 ```shell
 pip3 install dfss
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/libsophon-0425deb.tar.gz
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/drivers/libsophon-0425deb.tar.gz
 tar -xzf libsophon-0425deb.tar.gz
 cd libsophon-0425deb
 sudo apt remove sophon-driver sophon-libsophon
