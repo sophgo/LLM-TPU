@@ -414,6 +414,7 @@ int Qwen::forward_next() {
 
 int Qwen::forward_prompt_first(std::vector<int> &tokens) {
   visited_tokens.clear();
+  visited_tokens.resize(SEQLEN);
   std::vector<int> position_id(MAX_PROMPT_LENGTH, 0);
   std::vector<uint16_t> attention_mask(MAX_PROMPT_LENGTH * SEQLEN, mask_value);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());

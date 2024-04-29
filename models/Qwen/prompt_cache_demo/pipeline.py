@@ -128,7 +128,6 @@ class Qwen():
             print(word, flush=True, end="")
             tok_num += 1
             token = self.model.forward_next()
-            break
         self.answer_cur = self.tokenizer.decode(self.answer_token)
         
         # counting time
