@@ -84,6 +84,8 @@ def main(args):
         submit_path ="submisstion_int8.json"
     elif "int4" in args.model_path:
         submit_path ="submisstion_int4.json"
+    elif "f16" in args.model_path:
+        submit_path ="submission_f16.json"
     subject_path = "subject_mapping.json"
     subject_map = load_json(subject_path)
     
@@ -104,8 +106,9 @@ def main(args):
     res = {}
     subject_num = len(os.listdir(test_path))
     print(f"Subject numbers: {subject_num}")
-
+    count = 0
     for dev_csv_file, test_csv_file in zip(os.listdir(dev_path), os.listdir(test_path)):
+        count = count + 1
         dev_csv_path = os.path.join(dev_path, dev_csv_file)
         test_csv_path = os.path.join(test_path, test_csv_file)
         dev_df = pd.read_csv(dev_csv_path)
@@ -119,6 +122,7 @@ def main(args):
         print("======================================")
         print("======================================")
         print("Current subject:", subject)
+        print("subject no: ", count)
         print("======================================")
         print("======================================")
         for i in tqdm(range(len(test_df))):
