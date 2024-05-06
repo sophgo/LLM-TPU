@@ -3,7 +3,7 @@ import json
 import argparse
 from tqdm import tqdm
 import pandas as pd
-from models.ChatGLM3.python_demo import chat
+from models.ChatGLM3.eval_demo import chat
 from transformers import AutoTokenizer
 import re
 
@@ -33,13 +33,14 @@ def bmodel_infer(model, tokenizer, prompt, history):
     token = model.generate(tokens, tokenizer.eos_token_id)
     answer_cur = tokenizer.decode(token)
     return answer_cur
-def bmodel_infer_fast(model, tokenizer, prompt, history):
+
+def bmodel_generate_option(model, tokenizer, prompt, history):
     tokens = tokenizer.build_chat_input(prompt, history=history)['input_ids'].tolist()[0]
-    token = model.forward_first(tokens)
-    token = model.forward_next()
-    token = model.forward_next()
-    answer_cur = tokenizer.decode(token)
-    return answer_cur
+    # import pdb; pdb.set_trace()
+    token = model.predict_option(tokens)
+    # import pdb;pdb.set_trace()
+    return token
+
 def extract_cot_answer(self, line, gen_ans):
     m = re.findall(r'所以答案是(.+?)。', gen_ans, re.M)
     if len(m) > 0 and m[-1] in self.choices:
@@ -81,9 +82,9 @@ def main(args):
     dev_path = "ceval-exam/dev"
     test_path = "ceval-exam/test"
     if "int8" in args.model_path:
-        submit_path ="submisstion_int8.json"
+        submit_path ="submission_int8.json"
     elif "int4" in args.model_path:
-        submit_path ="submisstion_int4.json"
+        submit_path ="submission_int4.json"
     elif "f16" in args.model_path:
         submit_path ="submission_f16.json"
     subject_path = "subject_mapping.json"
@@ -130,7 +131,7 @@ def main(args):
             print("")
             print("prompt:", prompt)
             if args.eval_mode == "fast":
-                pred = bmodel_infer_fast(model, tokenizer, prompt, history = [])
+                pred = bmodel_generate_option(model, tokenizer, prompt, history = [])
             else:
                 pred = bmodel_infer(model, tokenizer, prompt, history = [])
             print("prediction:", pred)
