@@ -24,12 +24,13 @@ popd
 
 ### compile bmodel
 ```shell
-./compile.sh --mode int8 --name chatglm3-6b --num_device 2
+./compile.sh --mode int4 --name chatglm3-6b --num_device 2
 ```
 
 也可以直接下载编译好的模型，不用自己编译
 ```shell
 pip3 install dfss
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/chatglm3-6b_int4_2dev_512.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/chatglm3-6b_int8_2dev_512.bmodel
 ```
 
@@ -43,5 +44,5 @@ sudo pip3 install pybind11[global] sentencepiece
 mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..
 
-python3 pipeline.py --model_path chatglm3-6b_int8_2dev_512.bmodel --tokenizer_path ../support/token_config/ --devid 0,1 --generation_mode greedy
+python3 pipeline.py --model_path chatglm3-6b_int4_2dev_512.bmodel --tokenizer_path ../support/token_config/ --devid 0,1 --generation_mode greedy
 ```
