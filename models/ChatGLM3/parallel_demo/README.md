@@ -11,7 +11,7 @@ pip install sentencepiece transformers==4.30.2
 ```shell
 cp files/chatglm3-6b/modeling_chatglm.py ../compile/chatglm3-6b
 
-python export_onnx.py --model_path ../compile/chatglm3-6b --device cpu --seq_length 512
+python export_onnx.py --model_path ../compile/chatglm3-6b --device cpu --seq_length 512 --num_threads 8
 ```
 
 ## Compile bmodel

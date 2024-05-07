@@ -20,11 +20,14 @@ parser = argparse.ArgumentParser(description='export onnx')
 parser.add_argument('-m', '--model_path', type=str, help='path to the torch model')
 parser.add_argument('-s', '--seq_length', type=int, default=512, help="sequence length")
 parser.add_argument('-d', '--device', type=str, choices=["cpu", "cuda"], default="cpu")
+parser.add_argument('-n', '--num_threads', type=int, default=1, help='The number of threads used for torch if device is cpu')
 args = parser.parse_args()
 
 model_path = args.model_path
 folder = f"./tmp/onnx"
 device = torch.device(args.device)
+if device == 'cpu':
+    torch.set_num_threads(args.num_threads)
 
 origin_model = AutoModel.from_pretrained(
     model_path, trust_remote_code=True, torch_dtype=torch.float, device_map='auto').eval()
@@ -245,7 +248,7 @@ def test_net_with_mask():
         print(word, end="")
     print("\noutput_ids:{}".format(out_ids))
 
-test_net_with_mask()
+# test_net_with_mask()
 # create folder to store onnx
 if not os.path.exists(folder):
     os.makedirs(folder)
