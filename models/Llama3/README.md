@@ -124,3 +124,7 @@ python3 pipeline.py -m your_model_path -t ../token_config --devid your_devid
 python3 pipeline.py --help
 ```
 
+## web demo
+```
+python3 web_demo.py --model_path llama3-8b_int4_1dev.bmodel --tokenizer_path ../token_config/ --devid 0
+```
