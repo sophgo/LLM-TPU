@@ -23,7 +23,7 @@
 
 #include "bmruntime_interface.h"
 #include "memory.h"
-#include "untils.h"
+#include "utils.h"
 
 static const float ATTENTION_MASK = -10000.;
 
