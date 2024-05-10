@@ -1,7 +1,7 @@
 # onnx导出
 ```
 cp ../compile/files/Qwen-7B-Chat/* your_torch_path
-python export_onnx.py --model_path your_torch_path --device cpu --num_threads 8 --max_prompt_length 4096 --seq_length 8192
+python export_onnx.py --model_path your_torch_path --device cpu --num_threads 8 --max_prompt_length 6144 --seq_length 8192
 ```
 这里的max_prompt_length指的是prompt的最大长度，seq_length指的是输入加输出之和的最大长度
 

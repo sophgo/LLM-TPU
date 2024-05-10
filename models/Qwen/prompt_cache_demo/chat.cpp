@@ -54,6 +54,7 @@ public:
   int SEQLEN;     // read from bmodel
   int NUM_LAYERS; // read from bmodel
   int MAX_PROMPT_LENGTH;
+  int MAX_UNPROMPT_LENGTH;
   bool io_alone;
   std::vector<int> visited_tokens;
   std::vector<int> prompt_tokens;
@@ -166,7 +167,8 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
         bmrt_get_network_info(p_bmrt, prompt_cache_name.c_str()));
   }
 
-  MAX_PROMPT_LENGTH = net_blocks_prompt_cache[0]->stages[0].input_shapes[0].dims[1]; // real seqlen
+  MAX_UNPROMPT_LENGTH = net_blocks_prompt_cache[0]->stages[0].input_shapes[0].dims[1]; // real seqlen
+  MAX_PROMPT_LENGTH = net_blocks_prompt_cache[0]->stages[0].input_shapes[3].dims[1]; // real seqlen
 
   // convert attention to uint16_t
   if (net_blocks_cache[0]->input_dtypes[2] == BM_FLOAT16) {
@@ -415,8 +417,8 @@ int Qwen::forward_next() {
 int Qwen::forward_prompt_first(std::vector<int> &tokens) {
   visited_tokens.clear();
   visited_tokens.resize(SEQLEN);
-  std::vector<int> position_id(MAX_PROMPT_LENGTH, 0);
-  std::vector<uint16_t> attention_mask(MAX_PROMPT_LENGTH * SEQLEN, mask_value);
+  std::vector<int> position_id(MAX_UNPROMPT_LENGTH, 0);
+  std::vector<uint16_t> attention_mask(MAX_UNPROMPT_LENGTH * SEQLEN, mask_value);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
   
   token_length = tokens.size();
@@ -472,7 +474,7 @@ int Qwen::forward_prompt_first(std::vector<int> &tokens) {
   }
 
   // forward lmhead
-  int bytes = out_mem.size / MAX_PROMPT_LENGTH;
+  int bytes = out_mem.size / MAX_UNPROMPT_LENGTH;
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
   auto &lm_out_mem = net_lm->stages[0].output_mems[0];
   bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,

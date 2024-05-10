@@ -59,7 +59,7 @@ transformer = origin_model.transformer
 layers = transformer.h
 
 SEQ_LENGTH = args.seq_length
-PROMPT_LENGTH = args.max_prompt_length
+MAX_PROMPT_LENGTH = args.max_prompt_length
 NUM_LAYERS = config.num_hidden_layers
 HIDDEN_SIZE = config.hidden_size
 NUM_ATTENTION_HEADS = config.num_attention_heads
@@ -230,12 +230,12 @@ def convert_block_cache(layer_id):
 
 def convert_block_prompt_cache(layer_id):
     model = QwenBlockCache(layer_id)
-    hidden_states = torch.randn((1, PROMPT_LENGTH, HIDDEN_SIZE)).to(device)
-    position_ids = torch.tensor([range(PROMPT_LENGTH)], dtype=torch.long).to(device)
+    hidden_states = torch.randn((1, SEQ_LENGTH - MAX_PROMPT_LENGTH, HIDDEN_SIZE)).to(device)
+    position_ids = torch.tensor([range(SEQ_LENGTH - MAX_PROMPT_LENGTH)], dtype=torch.long).to(device)
     attention_mask = torch.ones(
-        (1, 1, PROMPT_LENGTH, SEQ_LENGTH)).to(device)
-    past_k = torch.randn((1, SEQ_LENGTH - PROMPT_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)).to(device)
-    past_v = torch.randn((1, SEQ_LENGTH - PROMPT_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)).to(device)
+        (1, 1, SEQ_LENGTH - MAX_PROMPT_LENGTH, SEQ_LENGTH)).to(device)
+    past_k = torch.randn((1, MAX_PROMPT_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)).to(device)
+    past_v = torch.randn((1, MAX_PROMPT_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)).to(device)
 
     torch.onnx.export(
         model, (hidden_states, position_ids, attention_mask, past_k, past_v),
