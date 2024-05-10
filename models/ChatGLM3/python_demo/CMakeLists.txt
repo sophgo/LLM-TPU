@@ -6,6 +6,7 @@ if (NOT DEFINED TARGET_ARCH)
 endif()
 
 include_directories(${PROJECT_SOURCE_DIR}/../support/include)
+include_directories(${PROJECT_SOURCE_DIR}/../../../support/include)
 
 if (${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "aarch64")
 	add_definitions(-DSOC_TARGET)
