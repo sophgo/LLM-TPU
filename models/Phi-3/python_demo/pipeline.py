@@ -115,16 +115,9 @@ class Phi3():
         first_start = time.time()
         token = self.model.forward_first(tokens)
         first_end = time.time()
-        # Following tokens
-        # while token not in self.EOS and self.model.token_length < self.SEQLEN:
-        #     word = self.tokenizer.decode(token, skip_special_tokens=True)
-        #     self.answer_token += [token]
-        #     print(word, flush=True, end="")
-        #     tok_num += 1
-        #     token = self.model.forward_next()
 
+        # Following tokens
         while token not in self.EOS and self.model.token_length < self.SEQLEN:
-            # breakpoint()
             pre_word = self.tokenizer.decode([token], skip_special_tokens=True)
             word = self.tokenizer.decode([token, token], skip_special_tokens=True)[len(pre_word):]
             self.answer_token += [token]
@@ -193,9 +186,9 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m', '--model_path', type=str, default="/workspace/compile/phi3-4b_int4_1dev.bmodel", help='path to the bmodel file')
-    parser.add_argument('-t', '--tokenizer_path', type=str, default="/workspace/Phi-3-mini/token_config", help='path to the tokenizer file')
-    parser.add_argument('-d', '--devid', type=str, default='1', help='device ID to use')
+    parser.add_argument('-m', '--model_path', type=str, required=True, help='path to the bmodel file')
+    parser.add_argument('-t', '--tokenizer_path', type=str, default="../support/token_config", help='path to the tokenizer file')
+    parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
     parser.add_argument('--temperature', type=float, default=1.0, help='temperature scaling factor for the likelihood distribution')
     parser.add_argument('--top_p', type=float, default=1.0, help='cumulative probability of token words to consider as a set of candidates')
     parser.add_argument('--repeat_penalty', type=float, default=1.0, help='penalty for repeated tokens')

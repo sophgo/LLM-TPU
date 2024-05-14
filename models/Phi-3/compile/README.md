@@ -26,7 +26,7 @@ popd
 
 ### compile basic bmodel
 ```shell
-./compile.sh --mode int4 --name phi3-4b --addr_mode io_alone --seq_length 8192
+./compile.sh --mode int4 --name phi3-4b
 ```
 
 PS：
@@ -52,11 +52,9 @@ source envsetup.sh
 ```
 
 ```
-cd /workspace/LLM-TPU/models/Qwen/python_demo
-mkdir build && cd build
-cmake .. && make
-cp *cpython* ..
-cd ..
+cd /workspace/LLM-TPU/models/Phi-3/python_demo
+mkdir build
+cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 
 python3 pipeline.py --model_path phi3-4b_int4_1dev.bmodel --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy

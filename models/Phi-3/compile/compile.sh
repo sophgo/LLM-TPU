@@ -85,7 +85,7 @@ pushd $outdir
 
 model_transform.py \
     --model_name embedding \
-    --model_def /workspace/tmp/onnx/embedding.onnx \
+    --model_def ../../onnx/embedding.onnx \
     --mlir embedding.mlir
 
 model_deploy.py \
@@ -99,7 +99,7 @@ model_deploy.py \
 
 model_transform.py \
     --model_name embedding_cache \
-    --model_def /workspace/tmp/onnx/embedding.onnx \
+    --model_def ../../onnx/embedding.onnx \
     --input_shapes [[1,1]] \
     --mlir embedding_cache.mlir
 
@@ -126,7 +126,7 @@ pushd $outdir
 
 model_transform.py \
     --model_name lm_head \
-    --model_def /workspace/tmp/onnx/lm_head.onnx \
+    --model_def ../../onnx/lm_head.onnx \
     --input_shapes [[1,${hidden_size}]] \
     --mlir lm_head.mlir
 
@@ -141,7 +141,7 @@ model_deploy.py \
 
 model_transform.py \
     --model_name greedy_head \
-    --model_def /workspace/tmp/onnx/greedy_head.onnx \
+    --model_def ../../onnx/greedy_head.onnx \
     --mlir greedy_head.mlir
 
 model_deploy.py \
@@ -152,7 +152,7 @@ model_deploy.py \
 
 model_transform.py \
     --model_name penalty_sample_head \
-    --model_def /workspace/tmp/onnx/penalty_sample_head.onnx \
+    --model_def ../../onnx/penalty_sample_head.onnx \
     --mlir penalty_sample_head.mlir
 
 model_deploy.py \
@@ -176,7 +176,7 @@ mkdir -p $outdir
 for ((i=0; i<=$num_layers; i++)); do
     model_transform.py \
         --model_name block_$i \
-        --model_def /workspace/tmp/onnx/block_$i.onnx \
+        --model_def ../../onnx/block_$i.onnx \
         --mlir block_$i.mlir
 
     model_deploy.py \
@@ -190,7 +190,7 @@ for ((i=0; i<=$num_layers; i++)); do
 
     model_transform.py \
         --model_name block_cache_$i \
-        --model_def /workspace/tmp/onnx/block_cache_$i.onnx \
+        --model_def ../../onnx/block_cache_$i.onnx \
         --mlir block_cache_$i.mlir
 
     model_deploy.py \
