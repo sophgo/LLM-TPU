@@ -175,11 +175,6 @@ class ChatGLM():
             self.history.append({"role": "assistant", "content": self.answer_cur})
 
     def encode_tokens(self):
-        # self.history.append({"role": "user", "content": self.input_str})
-        # text = self.tokenizer.apply_chat_template(
-        #     self.history, tokenize=False, add_generation_prompt=True
-        # )
-        # tokens = self.tokenizer(text).input_ids
         tokens = self.tokenizer.build_chat_input(self.input_str, history=self.history)['input_ids'].tolist()[0]
         self.history.append({"role": "user", "content": self.input_str})
         return tokens
