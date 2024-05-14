@@ -18,7 +18,7 @@ class Yi():
 
         # warm up
         self.tokenizer.decode([0])
-        self.system = None
+        self.system = ""
         self.EOS = 7
         self.history = []
         self.enable_history = args.enable_history
@@ -44,13 +44,13 @@ class Yi():
 
 
     def clear(self):
-        self.history = [self.system]
+        self.history = []
 
 
     def update_history(self):
         if self.model.token_length >= self.SEQLEN:
             print("... (reach the maximal length)", flush=True, end='')
-            self.history = [self.system]
+            self.history = []
         else:
             self.history.append({"role":"assistant","content":self.answer_cur})
 
@@ -116,7 +116,7 @@ class Yi():
         while token != self.EOS and self.model.token_length < self.SEQLEN:
             word = self.tokenizer.decode(token, skip_special_tokens=True)
             self.answer_token += [token]
-            print(word, flush=True, end="_")
+            print(word, flush=True, end="")
             tok_num += 1
             token = self.model.forward_next()
         self.answer_cur = self.tokenizer.decode(self.answer_token)
