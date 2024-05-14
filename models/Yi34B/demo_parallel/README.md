@@ -19,7 +19,7 @@ sudo dpkg -i *.deb
 ```shell
 mkdir build && cd build
 cmake .. && make -j8
-./yi_parallel --model path_to_bmodel --devid 0,1 --tokenizer ../../support/tokenizer.model
+./yi_parallel --model path_to_bmodel --devid 0,1 --tokenizer ../../support/token_config/tokenizer.model
 ```
 
 ## 4. 常见问题
