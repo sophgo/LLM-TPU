@@ -53,22 +53,21 @@ sudo apt-get install pybind11-dev
 cd LLM-TPU/models/Yi34B/
 git lfs install
 git clone https://huggingface.co/01-ai/Yi-34B-Chat
-cp compile/files/Yi-6B-Chat/config.json Yi-34B-Chat
-cp compile/files/Yi-6B-Chat/modeling_llama.py /usr/local/lib/python3.10/dist-packages/transformers/models/llama/modeling_llama.py
+cp compile/files/Yi-34B-Chat/modeling_llama.py /usr/local/lib/python3.10/dist-packages/transformers/models/llama/modeling_llama.py
 export PYTHONPATH=$PWD/Yi-34B-Chat:$PYTHONPATH
 
 cd compile
-python3 export_onnx.py --model_path ../Yi-6B-Chat
+python3 export_onnx.py --model_path ../Yi-34B-Chat
 ```
 
 该工程比较大，会花较长时间。
-在导出onnx前，请确保`files/Yi-6B-Chat`中的文件已经替换了运行时实际使用的`transformers`下的对应文件。（默认sequence length为512）
+在导出onnx前，请确保`files/Yi-34B-Chat`中的文件已经替换了运行时实际使用的`transformers`下的对应文件。（默认sequence length为512）
 
 ## 5. 编译模型
 
 注意此时在Docker环境workspace目录。
 
-目前TPU-MLIR支持对`Yi-34B-Chat`进行FP16、INT8和INT4量化，仅支持多芯分布式推理，默认情况下会进行INT4量化和双芯推理，最终生成`yi-34b_int4_2dev.bmodel`文件。（请先确保之前执行了[mlir的编译与环境的激活](#2-下载tpu-mlir代码并编译)).
+目前TPU-MLIR支持对`Yi-34B-Chat`进行INT8和INT4量化，仅支持多芯分布式推理，默认情况下会进行INT4量化和双芯推理，最终生成`yi-34b_int4_2dev.bmodel`文件。（请先确保之前执行了[mlir的编译与环境的激活](#2-下载tpu-mlir代码并编译)).
 
 若想进行2芯推理，则执行以下命令，最终生成`yi-34b_int4_2dev.bmodel`文件，4芯8芯同理：
 
@@ -77,6 +76,7 @@ python3 export_onnx.py --model_path ../Yi-6B-Chat
 ```
 
 ## 6. 使用Sophgo提供的模型
+*以下模型最大上下文长度为512
 您也可以使用Sophgo已经编译好的模型进行后续推理，其使用方式为
 ```shell
 pip3 install dfss
@@ -85,29 +85,10 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/yi-34b_
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/yi-34b_int4_8dev.bmodel
 ```
 
-## 7. 编译程序(Python)
-
-执行如下编译：
-
-```shell
-cd /workspace/LLM-TPU/models/Yi34B/python_demo
-mkdir build
-cd build
-cmake ..
-make
-cp chat.cpython-310-x86_64-linux-gnu.so ..
-cd ..
-```
-
-### a. 命令行交互
-- 单芯推理：使用如下命令。
-```shell
-python3 pipeline.py --model your_bmodel_path --devid 0 # devid 默认使用 0 号进行推理
-```
-请根据实际bmodel的路径设置`your_bmodel_path`, 其它更多的参数可以通过
-```shell
-python3 pipeline.py --help
-```
-进行查看
+## 7. python_demo运行
 
 详细命令请参考python_demo/README.md
+
+## 8. demo_parallel运行
+
+详细命令请参考demo_parallel/README.md (当前由于官方sentencepiece/tokenizer.model存在异常，该C++例程暂时不支持正常推理)
