@@ -115,29 +115,39 @@ class Llama3():
         first_start = time.time()
         token = self.model.forward_first(tokens)
         first_end = time.time()
+
+        full_word_tokens = []
         # Following tokens
         while token not in self.EOS and self.model.token_length < self.SEQLEN:
-            word = self.tokenizer.decode(token, skip_special_tokens=True)
+            full_word_tokens.append(token)
+            word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
+            if "�" in word:
+                token = self.model.forward_next()
+                tok_num += 1
+                continue
+
             self.answer_token += [token]
             print(word, flush=True, end="")
-            tok_num += 1
             token = self.model.forward_next()
-        self.answer_cur = self.tokenizer.decode(self.answer_token)
-        
+            tok_num += 1
+            full_word_tokens = []
+
         # counting time
         next_end = time.time()
         first_duration = first_end - first_start
         next_duration = next_end - first_end
         tps = tok_num / next_duration
 
+        print()
+        print(f"FTL: {first_duration:.3f} s")
+        print(f"TPS: {tps:.3f} token/s")
+
+        self.answer_cur = self.tokenizer.decode(self.answer_token)
+
         if self.enable_history:
             self.update_history()
         else:
             self.clear()
-
-        print()
-        print(f"FTL: {first_duration:.3f} s")
-        print(f"TPS: {tps:.3f} token/s")
 
 
     ## For Web Demo
