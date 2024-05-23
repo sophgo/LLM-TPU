@@ -67,6 +67,7 @@ private:
   int SEQLEN;     // read from bmodel
   int NUM_LAYERS; // read from bmodel
   bool io_alone;
+  bool is_dynamic;
   std::unique_ptr<QwenTokenizer> tk;
   std::vector<std::string> history;
 };
@@ -208,6 +209,7 @@ void QwenChat::init(const std::vector<int> &devices,
     assert(true == ret);
   }
 
+  is_dynamic = net_blocks[0]->is_dynamic;
   auto addr_mode = net_blocks_cache[0]->addr_mode;
   io_alone = (addr_mode == 1);
   past_keys.resize(NUM_LAYERS);
@@ -250,6 +252,23 @@ void QwenChat::init(const std::vector<int> &devices,
         assert(true == ret);
       }
     }
+  }
+
+  int value = 0;
+  for (int i = 0; i < NUM_LAYERS; i++) {
+    for (int j = 0; j < device_num; j++) {
+      bool status = bm_memset_device_ext(handles[j], &value, 1, past_keys[i][j].device_mem);
+      assert(BM_SUCCESS == status);
+      status = bm_memset_device_ext(handles[j], &value, 1, past_values[i][j].device_mem);
+      assert(BM_SUCCESS == status);
+    }
+  }
+
+  for (int j = 0; j < device_num; j++) {
+      bool status = bm_memset_device_ext(handles[j], &value, 1, hidden_states[j].device_mem);
+      assert(BM_SUCCESS == status);
+      status = bm_memset_device_ext(handles[j], &value, 1, hidden_states_cache[j].device_mem);
+      assert(BM_SUCCESS == status);
   }
 
   present_key_cache.resize(device_num);
@@ -303,10 +322,20 @@ int QwenChat::forward_first(std::vector<int> &tokens) {
   for (int i = 0; i < token_length; i++) {
     position_id[i] = i;
   }
-  for (int i = 0; i < token_length; i++) {
-    for (int j = 0; j < SEQLEN; j++) {
-      if (j <= i) {
-        attention_mask[i * SEQLEN + j] = 0;
+  if (is_dynamic) {
+    for (int i = 0; i < token_length; i++) {
+      for (int j = 0; j < token_length; j++) {
+        if (j <= i) {
+          attention_mask[i * token_length + j] = 0;
+        }
+      }
+    }
+  } else {
+    for (int i = 0; i < token_length; i++) {
+      for (int j = 0; j < SEQLEN; j++) {
+        if (j <= i) {
+          attention_mask[i * SEQLEN + j] = 0;
+        }
       }
     }
   }
@@ -345,6 +374,21 @@ int QwenChat::forward_first(std::vector<int> &tokens) {
     outputs_block.push_back(tmp_hidden_states[i]);
     outputs_block.push_back(past_keys[0][i]);
     outputs_block.push_back(past_values[0][i]);
+    if (is_dynamic) {
+      int h_bytes = bm_mem_get_device_size(tmp_hidden_states[i].device_mem) / SEQLEN;
+      bm_set_device_mem(&inputs_block[0 + i * 3].device_mem, h_bytes * token_length,
+                        bm_mem_get_device_addr(tmp_hidden_states[i].device_mem));
+      int pid_bytes = bm_mem_get_device_size(inputs_pid[i].device_mem) / SEQLEN;
+      bm_set_device_mem(&inputs_block[1 + i * 3].device_mem, pid_bytes * token_length,
+                        bm_mem_get_device_addr(inputs_pid[i].device_mem));
+      int mask_bytes = bm_mem_get_device_size(inputs_attention[i].device_mem) / SEQLEN / SEQLEN;
+      bm_set_device_mem(&inputs_block[2 + i * 3].device_mem, mask_bytes * token_length * token_length,
+                        bm_mem_get_device_addr(inputs_attention[i].device_mem));
+      inputs_block[0 + i * 3].shape.dims[1] = token_length;
+      inputs_block[1 + i * 3].shape.dims[1] = token_length;
+      inputs_block[2 + i * 3].shape.dims[2] = token_length;
+      inputs_block[2 + i * 3].shape.dims[3] = token_length;
+    }
   }
 
   for (int i = 0; i < NUM_LAYERS; i++) {

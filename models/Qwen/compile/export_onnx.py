@@ -17,6 +17,7 @@ torch.set_grad_enabled(False)
 
 parser = argparse.ArgumentParser(description='export onnx')
 parser.add_argument('-m', '--model_path', type=str, help='path to the torch model')
+parser.add_argument('-s', '--seq_length', type=int, default=8192, help="sequence length")
 parser.add_argument('-d', '--device', type=str, choices=["cpu", "cuda"], default="cpu")
 parser.add_argument('-n', '--num_threads', type=int, default=1, help='The number of threads used for torch if device is cpu')
 parser.add_argument('--lmhead_with_topk', type=int, default=0, help="only trace the LmHeadWithTopK")
@@ -41,7 +42,7 @@ config = origin_model.config
 transformer = origin_model.transformer
 layers = transformer.h
 
-SEQ_LENGTH = config.seq_length
+SEQ_LENGTH = args.seq_length
 NUM_LAYERS = config.num_hidden_layers
 HIDDEN_SIZE = config.hidden_size
 NUM_ATTENTION_HEADS = config.num_attention_heads

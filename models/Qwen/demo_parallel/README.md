@@ -4,9 +4,9 @@
 按如下命令下载并安装驱动，**注意目前必须要这一版本的驱动，旧版本驱动不支持最新的多芯模型**：
 ```shell
 pip3 install dfss
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/drivers/libsophon-0425deb.tar.gz
-tar -xzf libsophon-0425deb.tar.gz
-cd libsophon-0425deb
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/drivers/libsophon-0523deb.tar.gz
+tar -xzf libsophon-0523deb.tar.gz
+cd libsophon-0523deb
 sudo apt remove sophon-driver sophon-libsophon
 sudo dpkg -i *.deb
 ```
@@ -18,7 +18,7 @@ sudo dpkg -i *.deb
 ```shell
 docker pull sophgo/tpuc_dev:latest
 # myname1234 is just an example, you can set your own name
-docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev:latest bash
+docker run --privileged --name myname1234 -v /dev:/dev -v /opt/sophon:/opt/sophon -v /etc/profile.d:/etc/profile.d -v /etc/ld.so.conf.d:/etc/ld.so.conf.d -v $PWD:/workspace -it sophgo/tpuc_dev:latest bash
 
 docker exec -it myname1234 bash
 ```
@@ -27,13 +27,18 @@ docker exec -it myname1234 bash
 ```shell
 cd Qwen/compile
 python3 ./export_onnx.py -m path_to/Qwen-72B-Chat/ --num_threads 72 --lmhead_with_topk 1
+# 静态编译
 ./compile.sh --mode int4 --num_device 8 --addr_mode io_alone --seq_length 8192
+# 动态编译
+./compile.sh --mode int4 --num_device 8 --addr_mode io_alone --seq_length 8192 --dynamic 1
 ```
 
 如果不打算编译模型，可以通过以下命令下载已编译好的模型，目前有如下模型已经预编译好，**注意最新版本的驱动需要重新下载下方的模型**：
 ```shell
 pip3 install dfss
 # int4
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels/qwen-72b_int4_8192_8dev_dyn.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels/qwen-14b_int4_8dev.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels/qwen-72b_int4_8192_8dev.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels/qwen-14b_int4_8dev.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels/qwen-14b_int4_6dev.bmodel
@@ -67,7 +72,21 @@ cmake .. && make -j8
       sudo reboot
       ```
     - iommu关闭后速度依然上不来，可能还需要配置一下PCIE链路，运行如下命令，之后再重新安装驱动：
-      ```bash
-      sudo setpci -v -s 99:*.0 ecap_acs+6.w=0
-      sudo setpci -v -s 32:*.0 ecap_acs+6.w=0
-      ```
+        - 运行如下命令，确定卡的编号：
+        ```bash
+        lspci | grep 4052
+        # 如果只有一张卡，显示可能如下，82便是卡的编号。多张卡会显示多个
+        # 81:00.0 PCI bridge: PMC-Sierra Inc. Device 4052
+        # 82:00.0 PCI bridge: PMC-Sierra Inc. Device 4052
+        # 82:01.0 PCI bridge: PMC-Sierra Inc. Device 4052
+        # 82:02.0 PCI bridge: PMC-Sierra Inc. Device 4052
+        # 82:03.0 PCI bridge: PMC-Sierra Inc. Device 4052
+        # 82:04.0 PCI bridge: PMC-Sierra Inc. Device 4052
+        # 82:05.0 PCI bridge: PMC-Sierra Inc. Device 4052
+        # 82:06.0 PCI bridge: PMC-Sierra Inc. Device 4052
+        # 82:07.0 PCI bridge: PMC-Sierra Inc. Device 4052
+        ```
+        - 配置PCIE链路，每张卡都需要运行如下命令：
+        ```bash
+        sudo setpci -v -s 82:*.0 ecap_acs+6.w=0
+        ```

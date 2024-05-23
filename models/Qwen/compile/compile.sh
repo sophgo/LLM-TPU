@@ -8,11 +8,13 @@ mode_args=""
 device_args=""
 quantize_args="--quantize W8BF16"
 addr_args=""
+dyn_args=""
 name=""
 num_layers=
 out_model=$name.bmodel
 seq_length=
 hidden_size=
+dynamic=0
 
 while [[ $# -gt 0 ]]; do
     key="$1"
@@ -36,6 +38,10 @@ while [[ $# -gt 0 ]]; do
         ;;
     --seq_length)
         seq_length="$2"
+        shift 2
+        ;;
+    --dynamic)
+        dynamic="$2"
         shift 2
         ;;
     *)
@@ -97,6 +103,11 @@ if [ x$addr_mode == x"io_alone" ]; then
     addr_args="--addr_mode io_alone"
 fi
 
+if [ x$dynamic == x1 ]; then
+    dynamic_args="--dynamic"
+    out_model=${name}_${mode}_seq${seq_length}_${num_device}dev_dyn.bmodel
+fi
+
 outdir=${folder}/$mode"_"$num_device"dev"/embedding
 mkdir -p $outdir
 pushd $outdir
@@ -115,6 +126,7 @@ model_deploy.py \
     --quant_output \
     --chip bm1684x \
     $device_args \
+    $dyn_args \
     --model embedding.bmodel
 
 model_transform.py \
@@ -135,7 +147,7 @@ model_deploy.py \
 
 models=$models' '$outdir'/embedding.bmodel '$outdir'/embedding_cache.bmodel '
 
-rm *.npz
+rm -f *.npz
 popd
 
 echo $models
@@ -201,7 +213,7 @@ else
     models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '$outdir'/penalty_sample_head.bmodel '
 fi
 
-rm *.npz
+rm -f *.npz
 popd
 echo $models
 
@@ -223,6 +235,7 @@ for ((i=0; i<$num_layers; i++)); do
         --quant_output \
         --chip bm1684x \
         $device_args \
+        $dyn_args \
         --model block_$i.bmodel
 
     model_transform.py \
@@ -238,9 +251,10 @@ for ((i=0; i<$num_layers; i++)); do
         --chip bm1684x \
         $device_args \
         $addr_args \
+        $dyn_args \
         --model block_cache_$i.bmodel
 
-    rm *.npz
+    rm -f *.npz
 
     models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
 
