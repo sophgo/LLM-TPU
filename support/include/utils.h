@@ -140,6 +140,12 @@ static inline uint32_t fp16_ieee_to_fp32_bits(uint16_t h) {
           ~zero_mask);
 }
 
+float fp16_ieee_to_fp32_value(uint16_t d) {
+  fp32 t;
+  t.bits = fp16_ieee_to_fp32_bits(d);
+  return t.fval;
+}
+
 void dump_bf16_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
                       int size) {
   std::vector<uint16_t> data(size);
