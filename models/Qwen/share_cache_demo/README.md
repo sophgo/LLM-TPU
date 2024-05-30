@@ -29,5 +29,5 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 # python demo
 ```
-python3 pipeline.py --model_path qwen-7b_int4_shareseq6144_1dev.bmodel --tokenizer_path ../support/token_config/ --devid 1 --generation_mode greedy
+python3 pipeline.py --model_path qwen-7b_int4_shareseq5888_unshare1024_seq7424_1dev.bmodel --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample
 ```
