@@ -28,6 +28,8 @@ parser.add_argument('-b', '--batch_size', type=int, default=2, help='batch size'
 parser.add_argument('-s', '--seq_length', type=int, default=512, help="sequence length")
 parser.add_argument('-n', '--num_threads', type=int, default=1, help='The number of threads used for torch if device is cpu')
 parser.add_argument('--share_length', type=int, default=6144, help="share length")
+parser.add_argument('--unshare_length', type=int, default=4096, help="unshare length")
+parser.add_argument('--slice_length', type=int, default=4096, help="slice length")
 
 args = parser.parse_args()
 
@@ -63,9 +65,11 @@ config = origin_model.config
 transformer = origin_model.transformer
 layers = transformer.h
 
+
+SLICE_LENGTH = args.slice_length
 SEQ_LENGTH = args.seq_length
 SHARE_LENGTH = args.share_length
-UNSHARE_LENGTH = SEQ_LENGTH - SHARE_LENGTH
+UNSHARE_LENGTH = args.unshare_length
 BATCH_SIZE = args.batch_size
 NUM_LAYERS = config.num_hidden_layers
 HIDDEN_SIZE = config.hidden_size
@@ -234,6 +238,28 @@ def convert_block(layer_id):
         output_names=['hidden_states', 'past_k', 'past_v'],
         do_constant_folding=True,
         opset_version=15)
+    
+
+def convert_block_share(layer_id):
+    model = QwenBlockCache(layer_id)
+    hidden_states = torch.randn((1, SHARE_LENGTH - SLICE_LENGTH, HIDDEN_SIZE)).to(device)
+    position_ids = torch.tensor([range(SHARE_LENGTH - SLICE_LENGTH)], dtype=torch.long).to(device)
+    attention_mask = torch.ones(
+        (1, 1, SHARE_LENGTH - SLICE_LENGTH, SHARE_LENGTH)).to(device)
+    past_k = torch.randn((1, SLICE_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)).to(device)
+    past_v = torch.randn((1, SLICE_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)).to(device)
+
+    torch.onnx.export(
+        model, (hidden_states, position_ids, attention_mask, past_k, past_v),
+        f'{folder}/block_share_{layer_id}.onnx',
+        verbose=False,
+        input_names=[
+            'input_states', 'position_ids', 'attention_mask', 'history_k',
+            'history_v'
+        ],
+        output_names=['hidden_states', 'past_k', 'past_v'],
+        do_constant_folding=True,
+        opset_version=15)
 
 
 def convert_block_cache(layer_id):
@@ -258,18 +284,18 @@ def convert_block_cache(layer_id):
         opset_version=15)
 
 
-def convert_block_share(layer_id):
+def convert_block_unshare(layer_id):
     model = QwenBlockCache(layer_id)
     hidden_states = torch.randn((1, UNSHARE_LENGTH, HIDDEN_SIZE)).to(device)
     position_ids = torch.tensor([range(UNSHARE_LENGTH)], dtype=torch.long).to(device)
     attention_mask = torch.ones(
-        (1, 1, UNSHARE_LENGTH, SEQ_LENGTH)).to(device)
+        (1, 1, UNSHARE_LENGTH, SHARE_LENGTH + UNSHARE_LENGTH)).to(device)
     past_k = torch.randn((1, SHARE_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)).to(device)
     past_v = torch.randn((1, SHARE_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)).to(device)
 
     torch.onnx.export(
         model, (hidden_states, position_ids, attention_mask, past_k, past_v),
-        f'{folder}/block_share_{layer_id}.onnx',
+        f'{folder}/block_unshare_{layer_id}.onnx',
         verbose=False,
         input_names=[
             'input_states', 'position_ids', 'attention_mask', 'history_k',
@@ -388,9 +414,8 @@ if not os.path.exists(folder):
 print(f'Convert block & block_cache')
 for i in tqdm(range(NUM_LAYERS)):
     convert_block(i) # prefill
-    convert_block_share(i) # prefill
-    # convert_block_cache(i) # decode
-    convert_block_share_cache(i) # decode
+    convert_block_unshare(i)
+    convert_block_cache(i) # decode
 
 print(f'Convert embedding')
 convert_embedding()

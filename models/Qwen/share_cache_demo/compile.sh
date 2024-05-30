@@ -6,7 +6,7 @@ folder="tmp"
 num_device=1
 mode_args=""
 device_args=""
-quantize_args="--quantize W8F16"
+quantize_args="--quantize W8BF16"
 addr_args=""
 name=""
 num_layers=
@@ -81,11 +81,11 @@ else
 fi
 
 if [ x$mode == x"int8" ]; then
-    quantize_args="--quantize W8F16"
+    quantize_args="--quantize W8BF16"
 elif [ x$mode == x"f16" ]; then
-    quantize_args="--quantize F16"
+    quantize_args="--quantize BF16"
 elif [ x$mode == x"int4" ]; then
-    quantize_args="--quantize W4F16 --q_group_size 64"
+    quantize_args="--quantize W4BF16 --q_group_size 64"
 else
     echo "Error, unknown quantize mode"
     exit 1
@@ -115,7 +115,7 @@ model_transform.py \
 
 model_deploy.py \
     --mlir embedding.mlir \
-    --quantize F16 \
+    --quantize BF16 \
     --quant_input \
     --quant_output \
     --chip bm1684x \
@@ -131,7 +131,7 @@ model_transform.py \
 
 model_deploy.py \
     --mlir embedding_unshare.mlir \
-    --quantize F16 \
+    --quantize BF16 \
     --quant_input \
     --quant_output \
     --chip bm1684x \
@@ -141,13 +141,13 @@ model_deploy.py \
 model_transform.py \
     --model_name embedding_cache \
     --model_def ../../onnx/embedding.pt \
-    --input_shapes [[2,1]] \
+    --input_shapes [[1,1]] \
     --input_types "int32" \
     --mlir embedding_cache.mlir
 
 model_deploy.py \
     --mlir embedding_cache.mlir \
-    --quantize F16 \
+    --quantize BF16 \
     --quant_input \
     --quant_output \
     --chip bm1684x \
@@ -227,42 +227,41 @@ for ((i=0; i<$num_layers; i++)); do
         --quant_output \
         --chip bm1684x \
         $device_args \
-        --dynamic \
         --model block_$i.bmodel
 
     model_transform.py \
-        --model_name block_share_$i \
-        --model_def ../../onnx/block_share_$i.onnx \
-        --mlir block_share_$i.mlir
+        --model_name block_unshare_$i \
+        --model_def ../../onnx/block_unshare_$i.onnx \
+        --mlir block_unshare_$i.mlir
 
     model_deploy.py \
-        --mlir block_share_$i.mlir \
+        --mlir block_unshare_$i.mlir \
         ${quantize_args} \
         --quant_input \
         --quant_output \
         --chip bm1684x \
         $device_args \
-        --model block_share_$i.bmodel
+        --model block_unshare_$i.bmodel
 
     model_transform.py \
-        --model_name block_share_cache_$i \
-        --model_def ../../onnx/block_share_cache_$i.onnx \
-        --mlir block_share_cache_$i.mlir
+        --model_name block_cache_$i \
+        --model_def ../../onnx/block_cache_$i.onnx \
+        --mlir block_cache_$i.mlir
 
     model_deploy.py \
-        --mlir block_share_cache_$i.mlir \
+        --mlir block_cache_$i.mlir \
         ${quantize_args} \
         --quant_input \
         --quant_output \
         --chip bm1684x \
         $device_args \
         $addr_args \
-        --disable_layer_group \
-        --model block_share_cache_$i.bmodel
+        --model block_cache_$i.bmodel
+
+    models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_unshare_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
 
     rm *.npz
-
-    models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_share_'$i'.bmodel '$outdir'/block_share_cache_'$i'.bmodel '
+    
 
 done
 popd

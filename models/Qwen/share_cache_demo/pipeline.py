@@ -28,13 +28,13 @@ class Qwen():
         )
         self.EOS = self.tokenizer.im_end_id # tokenizer.encode("<|im_end|>")
         self.history = [self.system_prompt]
-        self.enable_history = args.enable_history
 
         # load model
         self.load_model(args)
 
 
     def load_model(self, args):
+        load_start = time.time()
         self.model = chat.Qwen()
         self.model.init(self.devices, args.model_path)
         self.model.temperature = args.temperature
@@ -44,6 +44,9 @@ class Qwen():
         self.model.max_new_tokens = args.max_new_tokens
         self.model.generation_mode = args.generation_mode
         self.SEQLEN = self.model.SEQLEN
+        self.MAX_SHARE_LENGTH = self.model.MAX_SHARE_LENGTH
+        load_end = time.time()
+        print(f"\nLoad Time: {(load_end - load_start):.3f} s")
 
 
     def clear(self):
@@ -105,7 +108,7 @@ class Qwen():
                 self.stream_answer(tokens)
 
 
-    def stream_answer(self, tokens, prompt_cache):
+    def stream_answer(self, tokens, share_cache):
         """
         Stream the answer for the given tokens.
         """
@@ -113,15 +116,16 @@ class Qwen():
         self.answer_cur = ""
         self.answer_token = []
 
+        print()
         # First token
         first_start = time.time()
-        if not prompt_cache:
-            token = self.model.forward_first(tokens)
+        if share_cache:
+            token = self.model.forward_unshare(tokens)
         else:
-            token = self.model.forward_prompt_first(tokens)
+            raise ValueError("Only Support share_cache=True")
         first_end = time.time()
         # Following tokens
-        while token != self.EOS and self.model.token_length < self.SEQLEN:
+        while token != self.EOS and self.model.unshare_length < self.SEQLEN + self.model.MAX_SHARE_LENGTH:
             word = self.tokenizer.decode(token, skip_special_tokens=True)
             self.answer_token += [token]
             print(word, flush=True, end="")
@@ -135,10 +139,6 @@ class Qwen():
         next_duration = next_end - first_end
         tps = tok_num / next_duration
 
-        if self.enable_history:
-            self.update_history()
-        else:
-            self.clear()
 
         print()
         print(f"FTL: {first_duration:.3f} s")
@@ -174,47 +174,54 @@ class Qwen():
             output_tokens += [next_token]
             self.answer_cur = self.tokenizer.decode(output_tokens)
             if self.model.token_length >= self.SEQLEN:
-                self.update_history()
                 yield self.answer_cur + "\n\n\nReached the maximum length; The history context has been cleared.", self.history
                 break
             else:
                 yield self.answer_cur, self.history
 
-        self.update_history()
 
     def read_json(self, json_path, task_id):
         with open(json_path, 'r') as file:
             text = json.load(file)
-        content_str = "\n<|im_start|>user\n" + text[task_id]['content']
+        system_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
+        content_str = system_str + text[task_id]['content']
         question_str = text[task_id]['question'] + "<|im_end|>\n<|im_start|>assistant\n"
         return content_str, question_str
 
-    def test_prompt_cache(self):
-        # share_str, unshare_str_0 = self.read_json("sophgo_kv_cache_share_test_case.json", 0)
-        # _, unshare_str_1 = self.read_json("sophgo_kv_cache_share_test_case.json", 1)
-        share_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
-        unshare_str_0 = "can you help me<|im_end|>\n<|im_start|>assistant\n"
-        unshare_str_1 = "tell me about sophgo<|im_end|>\n<|im_start|>assistant\n"
+    def test_share_cache(self):
+        share_str, unshare_str_0 = self.read_json("sophgo_kv_cache_share_test_case.json", 0)
+        _, unshare_str_1 = self.read_json("sophgo_kv_cache_share_test_case.json", 1)
+        _, unshare_str_2 = self.read_json("sophgo_kv_cache_share_test_case.json", 2)
+        # share_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
+        # unshare_str_0 = "can you help me<|im_end|>\n<|im_start|>assistant\n"
+        # unshare_str_1 = "tell me a love story<|im_end|>\n<|im_start|>assistant\n"
 
         # share prefill
+        share_start = time.time()
         share_tokens = self.tokenizer.encode(share_str)
         self.model.forward_first(share_tokens)
+        share_end = time.time()
+        print(f"\nShare FTL Time: {(share_end - share_start):.3f} s")
 
-        # unshare prefill
-        # task_id = 0 & task_id = 1
+        # task 0
         unshare_tokens_0 = self.tokenizer.encode(unshare_str_0)
-        unshare_tokens_1 = self.tokenizer.encode(unshare_str_1)
-        self.model.forward_share_first(unshare_tokens_0, 0)
-        self.model.forward_share_first(unshare_tokens_1, 1)
-        # breakpoint()
+        self.model.forward_unshare(unshare_tokens_0)
+        self.stream_answer(unshare_tokens_0, share_cache=True)
 
-        # unshare decode
-        self.model.forward_share_next()
+        # task 1
+        unshare_tokens_1 = self.tokenizer.encode(unshare_str_1)
+        self.model.forward_unshare(unshare_tokens_1)
+        self.stream_answer(unshare_tokens_1, share_cache=True)
+
+        # task 2
+        unshare_tokens_2 = self.tokenizer.encode(unshare_str_2)
+        self.model.forward_unshare(unshare_tokens_2)
+        self.stream_answer(unshare_tokens_2, share_cache=True)
 
 
 def main(args):
     model = Qwen(args)
-    model.test_prompt_cache()
+    model.test_share_cache()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -228,7 +235,6 @@ if __name__ == "__main__":
     parser.add_argument('--max_new_tokens', type=int, default=1024, help='max new token length to generate')
     parser.add_argument('--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
     parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
-    parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory")
     # parser.add_argument('--prompt_length', type=int, default=1024, help="prompt length to reuse fixed prompt tokens")
     args = parser.parse_args()
     main(args)
