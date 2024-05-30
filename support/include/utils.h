@@ -45,7 +45,7 @@ static inline uint32_t bf16_to_fp32_bits(uint16_t h) {
   uint32_t frac = (uint32_t)(h & 0x007F) << 16; // 尾数位
 
   // 将尾数的 7 位左移，以对齐到 23 位尾数的位置
-  frac <<= (23 - 7);
+  // frac <<= (23 - 7);
 
   // 组合成 float 的位模式
   return sign | exp | frac;
