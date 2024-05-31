@@ -13,7 +13,7 @@ python export_onnx.py --model_path ../prompt_cache_demo/Qwen-7B-Chat --device cp
 pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen-7b_int4_shareseq5888_unshare1024_seq7424_1dev.bmodel
 ```
-（使用的TPU-MLIR版本cb7ae49e78f2f8641a7d0f995733431ad04a79eb）
+*使用的TPU-MLIR版本：cb7ae49e78f2f8641a7d0f995733431ad04a79eb
 
 # 分片方式
 |第一片                  |第二片                 |第三片              |
@@ -32,3 +32,6 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 ```
 python3 pipeline.py --model_path qwen-7b_int4_shareseq5888_unshare1024_seq7424_1dev.bmodel --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample
 ```
+
+# 效果图
+![](../../../assets/Qwen_share_cache_demo.png)
