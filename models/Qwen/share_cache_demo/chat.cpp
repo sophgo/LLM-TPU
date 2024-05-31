@@ -37,7 +37,7 @@ static const float ATTENTION_MASK = -10000.;
 //     int  cnt = bm_mem_get_device_size(t) / sizeof(T);
 //     auto buffer = std::make_unique<T[]>(cnt);
 //     bm_memcpy_d2s(handle, buffer.get(), t);
-    
+ 
 //     if constexpr (std::is_same_v<T, uint16_t>) {
 //       std::vector<float> data(cnt);
 //       for (int i = 0; i < cnt; i++)
@@ -394,7 +394,7 @@ int Qwen::forward_unshare(std::vector<int> &tokens) {
   // forward blocks
   int bytes =
       bm_mem_get_device_size(net_blocks_unshare[0]->stages[0].input_mems[3]) / MAX_SHARE_LENGTH;
-  int share_size = share_length * bytes;
+  // int share_size = share_length * bytes;
   int max_share_offset = MAX_SHARE_LENGTH * bytes;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks_unshare[idx]->stages[0].input_mems[0];
@@ -411,8 +411,8 @@ int Qwen::forward_unshare(std::vector<int> &tokens) {
         d2d(in1_mem, net_blocks_unshare[0]->stages[0].input_mems[1]);
         d2d(in2_mem, net_blocks_unshare[0]->stages[0].input_mems[2]);
       }
-      d2d(in3_mem, past_key[idx], 0, share_size);
-      d2d(in4_mem, past_value[idx], 0, share_size);
+      d2d(in3_mem, past_key[idx]);
+      d2d(in4_mem, past_value[idx]);
     } else {
       throw std::runtime_error("Only support io_alone");
     }
@@ -448,9 +448,10 @@ int Qwen::forward_next() {
   for (int i = 0; i < share_length; i++) {
     attention_mask[i] = 0;
   }
-  for (int i = MAX_SHARE_LENGTH; i < MAX_SHARE_LENGTH + unshare_length; i++) {
+  for (int i = MAX_SHARE_LENGTH; i < MAX_SHARE_LENGTH + unshare_length - 1; i++) {
     attention_mask[i] = 0;
   }
+  attention_mask[SEQLEN] = 0;
   int32_t position_id = share_length + unshare_length - 1;
 
   // embedding
@@ -482,6 +483,7 @@ int Qwen::forward_next() {
     } else {
       throw std::runtime_error("Only support io_alone");
     }
+
     net_launch(net_blocks_cache[idx]);
     out_mem = out0_mem;
     bm_memcpy_d2d_byte(bm_handle, past_key[idx], token_offset, out1_mem, 0,
