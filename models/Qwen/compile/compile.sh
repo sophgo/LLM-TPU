@@ -104,7 +104,7 @@ if [ x$addr_mode == x"io_alone" ]; then
 fi
 
 if [ x$dynamic == x1 ]; then
-    dynamic_args="--dynamic"
+    dyn_args="--dynamic"
     out_model=${name}_${mode}_seq${seq_length}_${num_device}dev_dyn.bmodel
 fi
 
