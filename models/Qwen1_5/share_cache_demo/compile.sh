@@ -8,12 +8,14 @@ mode_args=""
 device_args=""
 quantize_args="--quantize W8F16"
 addr_args=""
+dyn_args=""
 name=""
 num_layers=
 out_model=$name.bmodel
 share_length=
 unshare_length=
 hidden_size=
+dynamic=0
 
 while [[ $# -gt 0 ]]; do
     key="$1"
@@ -41,6 +43,10 @@ while [[ $# -gt 0 ]]; do
         ;;
     --unshare_length)
         unshare_length="$2"
+        shift 2
+        ;;
+    --dynamic)
+        dynamic="$2"
         shift 2
         ;;
     *)
@@ -100,6 +106,11 @@ if [ x$num_device != x1 ]; then
     out_model=${name}_${mode}_shareseq${share_length}_${num_device}dev.bmodel
 else
     out_model=${name}_${mode}_shareseq${share_length}_1dev.bmodel
+fi
+
+if [ x$dynamic == x1 ]; then
+    dyn_args="--dynamic"
+    out_model=${name}_${mode}_shareseq${share_length}_${num_device}dev_dyn.bmodel
 fi
 
 if [ x$addr_mode == x"io_alone" ]; then
@@ -229,6 +240,7 @@ for ((i=0; i<$num_layers; i++)); do
         ${quantize_args} \
         --quant_input \
         --quant_output \
+        $dyn_args \
         --chip bm1684x \
         $device_args \
         --model block_$i.bmodel

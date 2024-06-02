@@ -22,6 +22,7 @@
 #include <random>
 #include <stdio.h>
 #include <vector>
+#include "utils.h"
 
 static const uint16_t ATTENTION_MASK = 0xF0E2;
 

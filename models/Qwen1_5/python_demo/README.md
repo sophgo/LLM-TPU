@@ -1,17 +1,23 @@
+# Command
+
+### export onnx + combine bmodel
+请见Qwen1_5/compile/README.md
+
+### 下载迁移好的模型
+也可以直接下载编译好的模型，不用自己编译
+```shell
+pip3 install dfss
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen1.5-1.8b_int4_seq512_1dev.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen1.5-1.8b_int8_seq512_1dev.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen1.5-1.8b_int4_seq1280_1dev.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen1.5-1.8b_int8_seq1280_1dev.bmodel
+```
+
 ### python demo
-```
-sudo apt-get update
-sudo apt-get install pybind11-dev
-pip3 install transformers_stream_generator einops tiktoken accelerate transformers==4.32.0
-```
 
-```
-cd /workspace/LLM-TPU/models/Qwen1_5/python_demo
-mkdir build && cd build
-cmake .. && make
-cp *cpython* ..
-cd ..
+```shell
+mkdir build
+cd build && cmake .. && make && cp *cpython* .. && cd ..
 
-
-python3 pipeline.py --model_path your_bmodel_path --tokenizer_path ../token_config/ --devid 0 --generation_mode greedy
+python3 pipeline.py --model_path qwen1.5-1.8b_int4_seq512_1dev.bmodel --tokenizer_path ../token_config/ --devid 0 --generation_mode penalty_sample
 ```
