@@ -95,17 +95,17 @@ class QwenBlock(torch.nn.Module):
         super().__init__()
         self.layer_id = layer_id
         self.layer = layers[layer_id]
-        self.rotary_emb = transformer.rotary_emb(SEQ_LENGTH)
-        self.cos_emb = self.rotary_emb[0].view(SEQ_LENGTH, HEAD_DIM)
-        self.sin_emb = self.rotary_emb[1].view(SEQ_LENGTH, HEAD_DIM)
+        # self.rotary_emb = transformer.rotary_emb(SEQ_LENGTH)
+        # self.cos_emb = self.rotary_emb[0].view(SEQ_LENGTH, HEAD_DIM)
+        # self.sin_emb = self.rotary_emb[1].view(SEQ_LENGTH, HEAD_DIM)
 
     def forward(self, hidden_states, position_ids, attention_mask):
-        cos_pos = self.cos_emb[position_ids].unsqueeze(2)
-        sin_pos = self.sin_emb[position_ids].unsqueeze(2)
+        # cos_pos = self.cos_emb[position_ids].unsqueeze(2)
+        # sin_pos = self.sin_emb[position_ids].unsqueeze(2)
         hidden_states, past_kv = self.layer(
             hidden_states,
             attention_mask=attention_mask,
-            rotary_pos_emb_list=[[cos_pos, sin_pos]],
+            position_ids=position_ids,
             use_cache=True)
         present_k, present_v = past_kv
         return hidden_states.float(), present_k.float(), present_v.float()
@@ -117,19 +117,19 @@ class QwenBlockCache(torch.nn.Module):
         super().__init__()
         self.layer_id = layer_id
         self.layer = layers[layer_id]
-        self.rotary_emb = transformer.rotary_emb(SEQ_LENGTH)
-        self.cos_emb = self.rotary_emb[0].view(SEQ_LENGTH, HEAD_DIM)
-        self.sin_emb = self.rotary_emb[1].view(SEQ_LENGTH, HEAD_DIM)
+        # self.rotary_emb = transformer.rotary_emb(SEQ_LENGTH)
+        # self.cos_emb = self.rotary_emb[0].view(SEQ_LENGTH, HEAD_DIM)
+        # self.sin_emb = self.rotary_emb[1].view(SEQ_LENGTH, HEAD_DIM)
 
     def forward(self, hidden_states, position_ids, attention_mask, past_k,
                 past_v):
-        cos_pos = self.cos_emb[position_ids].unsqueeze(2)
-        sin_pos = self.sin_emb[position_ids].unsqueeze(2)
+        # cos_pos = self.cos_emb[position_ids].unsqueeze(2)
+        # sin_pos = self.sin_emb[position_ids].unsqueeze(2)
         hidden_states, past_kv = self.layer(
             hidden_states,
             layer_past=(past_k, past_v),
             attention_mask=attention_mask,
-            rotary_pos_emb_list=[[cos_pos, sin_pos]],
+            position_ids=position_ids,
             use_cache=True)
         present_k, present_v = past_kv
         return hidden_states.float(), present_k.float(), present_v.float()

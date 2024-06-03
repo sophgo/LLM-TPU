@@ -251,6 +251,12 @@ class QWenAttention(nn.Module):
         self.scale_attn_weights = True
 
         self.projection_size = config.kv_channels * config.num_attention_heads
+        self.max_seq_len = config.seq_length
+        self.rotary_emb = QwenRotaryEmbedding(
+            self.head_dim,
+            max_position_embeddings=config.max_position_embeddings,
+            base=config.rotary_emb_base
+        )
 
         assert self.projection_size % config.num_attention_heads == 0
         self.hidden_size_per_attention_head = (
@@ -466,7 +472,7 @@ class QWenAttention(nn.Module):
     def forward(
         self,
         hidden_states: Optional[Tuple[torch.FloatTensor]],
-        rotary_pos_emb_list: Optional[List[List[torch.Tensor]]] = None,
+        position_ids: Optional[torch.Tensor] = None,
         registered_causal_mask: Optional[torch.Tensor] = None,
         layer_past: Optional[Tuple[torch.Tensor]] = None,
         attention_mask: Optional[torch.FloatTensor] = None,
@@ -477,35 +483,37 @@ class QWenAttention(nn.Module):
         use_cache: Optional[bool] = False,
     ):
         mixed_x_layer = self.c_attn(hidden_states)
-
         query, key, value = mixed_x_layer.split(self.split_size, dim=2)
 
         query = self._split_heads(query, self.num_heads, self.head_dim)
         key = self._split_heads(key, self.num_heads, self.head_dim)
         value = self._split_heads(value, self.num_heads, self.head_dim)
 
-        if rotary_pos_emb_list is not None:
-            cur_len = query.shape[1]
-            if len(rotary_pos_emb_list) == 1:
-                rotary_pos_emb = rotary_pos_emb_list[0]
-                rotary_pos_emb = [i[:, -cur_len:, :, :] for i in rotary_pos_emb]
-                rotary_pos_emb = (rotary_pos_emb,) * 2
-                q_pos_emb, k_pos_emb = rotary_pos_emb
-                # Slice the pos emb for current inference
-                query = apply_rotary_pos_emb(query, q_pos_emb)
-                key = apply_rotary_pos_emb(key, k_pos_emb)
-            else:
-                query_list = []
-                key_list = []
-                for i, rotary_pos_emb in enumerate(rotary_pos_emb_list):
-                    rotary_pos_emb = [i[:, -cur_len:, :, :] for i in rotary_pos_emb]
-                    rotary_pos_emb = (rotary_pos_emb,) * 2
-                    q_pos_emb, k_pos_emb = rotary_pos_emb
-                    # Slice the pos emb for current inference
-                    query_list += [apply_rotary_pos_emb(query[i:i+1, :, :], q_pos_emb)]
-                    key_list += [apply_rotary_pos_emb(key[i:i+1, :, :], k_pos_emb)]
-                query = torch.cat(query_list, dim=0)
-                key = torch.cat(key_list, dim=0)
+        # if rotary_pos_emb_list is not None:
+        #     cur_len = query.shape[1]
+        #     if len(rotary_pos_emb_list) == 1:
+        #         rotary_pos_emb = rotary_pos_emb_list[0]
+        #         rotary_pos_emb = [i[:, -cur_len:, :, :] for i in rotary_pos_emb]
+        #         rotary_pos_emb = (rotary_pos_emb,) * 2
+        #         q_pos_emb, k_pos_emb = rotary_pos_emb
+        #         # Slice the pos emb for current inference
+        #         query = apply_rotary_pos_emb(query, q_pos_emb)
+        #         key = apply_rotary_pos_emb(key, k_pos_emb)
+        #     else:
+        #         query_list = []
+        #         key_list = []
+        #         for i, rotary_pos_emb in enumerate(rotary_pos_emb_list):
+        #             rotary_pos_emb = [i[:, -cur_len:, :, :] for i in rotary_pos_emb]
+        #             rotary_pos_emb = (rotary_pos_emb,) * 2
+        #             q_pos_emb, k_pos_emb = rotary_pos_emb
+        #             # Slice the pos emb for current inference
+        #             query_list += [apply_rotary_pos_emb(query[i:i+1, :, :], q_pos_emb)]
+        #             key_list += [apply_rotary_pos_emb(key[i:i+1, :, :], k_pos_emb)]
+        #         query = torch.cat(query_list, dim=0)
+        #         key = torch.cat(key_list, dim=0)
+
+        cos, sin = self.rotary_emb(value, seq_len=self.seq_length)
+        query, key = apply_rotary_pos_emb(query, key, cos, sin, position_ids)
 
         if self.use_cache_quantization:
             key = quantize_cache_v(key.permute(0, 2, 1, 3),
@@ -520,87 +528,6 @@ class QWenAttention(nn.Module):
             present = (key, value)
         else:
             present = None
-
-        # if len(layer_past) == 4:
-        #     share_attention_mask, unshare_attention_mask = attention_mask
-        #     share_past_key, share_past_value, unshare_past_key, unshare_past_value = layer_past
-
-        #     size_temp = value.size(-1)
-        #     share_length = share_past_value.size(1)
-        #     # share (QK)
-        #     share_attn_weights = torch.matmul(query.transpose(1, 2), share_past_value.transpose(1, 2).transpose(2, 3))
-        #     share_attn_weights = share_attn_weights / (size_temp ** 0.5)
-        #     share_attn_weights = share_attn_weights + share_attention_mask
-
-        #     # unshare (QK)
-        #     unshare_key = torch.cat((unshare_past_key, key), dim=1)
-        #     unshare_attn_weights = torch.matmul(query.transpose(1, 2), unshare_key.transpose(1, 2).transpose(2, 3))
-        #     unshare_attn_weights = unshare_attn_weights / (size_temp ** 0.5)
-        #     unshare_attn_weights = unshare_attn_weights + unshare_attention_mask
-
-        #     # softmax
-        #     attn_weights = torch.cat((share_attn_weights, unshare_attn_weights), dim=-1)
-        #     attn_weights = nn.functional.softmax(attn_weights, dim=-1)
-
-        #     # share (Softmax(QK) * V)
-        #     share_attn_weights = attn_weights[:,:,:,:share_length]
-        #     share_attn_output = torch.matmul(share_attn_weights, share_past_value.transpose(1, 2))
-
-        #     # unshare (Softmax(QK) * V)
-        #     unshare_value = torch.cat((unshare_past_value, value), dim=1)
-        #     unshare_attn_weights = attn_weights[:,:,:,share_length:]
-        #     unshare_attn_output = torch.matmul(unshare_attn_weights, unshare_value.transpose(1, 2))
-
-        #     # add & reshape & c_proj
-        #     attn_output = share_attn_output + unshare_attn_output
-        #     attn_output = attn_output.reshape(-1, 1, self.num_heads * self.head_dim)
-        #     attn_output = self.c_proj(attn_output)
-        #     return (attn_output, (unshare_key, unshare_value))
-        if layer_past and len(layer_past) == 4 and layer_past[2].shape[0] != 1:
-            share_attention_mask, unshare_attention_mask = attention_mask
-            share_past_key, share_past_value, unshare_past_key, unshare_past_value = layer_past
-
-            size_temp = value.size(-1)
-            share_length = share_past_value.size(1)
-            unshare_length = unshare_past_value.size(1)
-            # share (QK)
-            share_attn_weights = torch.matmul(query.transpose(1, 2), share_past_key.transpose(1, 2).transpose(2, 3))
-            share_attn_weights = share_attn_weights / (size_temp ** 0.5)
-            share_attn_weights = share_attn_weights + share_attention_mask
-
-            # unshare (QK)
-            # unshare_key = torch.cat((unshare_past_key, key), dim=1)
-            unshare_attn_weights = torch.matmul(query.transpose(1, 2), unshare_past_key.transpose(1, 2).transpose(2, 3))
-            unshare_attn_weights = unshare_attn_weights / (size_temp ** 0.5)
-            unshare_attn_weights = unshare_attn_weights + unshare_attention_mask
-
-            # self
-            self_attn_weights = torch.matmul(query.transpose(1, 2), key.transpose(1, 2).transpose(2, 3))
-            self_attn_weights = self_attn_weights / (size_temp ** 0.5)
-
-            # softmax
-            attn_weights = torch.cat((share_attn_weights, unshare_attn_weights, self_attn_weights), dim=-1)
-            attn_weights = nn.functional.softmax(attn_weights, dim=-1)
-
-            # share (Softmax(QK) * V)
-            share_attn_weights = attn_weights[:,:,:,:share_length]
-            share_attn_output = torch.matmul(share_attn_weights, share_past_value.transpose(1, 2))
-
-            # unshare (Softmax(QK) * V)
-            # unshare_value = torch.cat((unshare_past_value, value), dim=1)
-            unshare_attn_weights = attn_weights[:,:,:,share_length:share_length + unshare_length]
-            unshare_attn_output = torch.matmul(unshare_attn_weights, unshare_past_value.transpose(1, 2))
-
-            # self (Softmax(QK) * V)
-            self_attn_weights = attn_weights[:,:,:,share_length + unshare_length:share_length + unshare_length + 1]
-            self_attn_output = torch.matmul(self_attn_weights, value.transpose(1, 2))
-
-            # add & reshape & c_proj
-            attn_output = share_attn_output + unshare_attn_output + self_attn_output
-            attn_output = attn_output.reshape(-1, 1, self.num_heads * self.head_dim)
-            attn_output = self.c_proj(attn_output)
-            return (attn_output, (key, value))
-
 
         if layer_past is not None:
             past_key, past_value = layer_past[0], layer_past[1]
@@ -730,7 +657,7 @@ class QWenBlock(nn.Module):
     def forward(
         self,
         hidden_states: Optional[Tuple[torch.FloatTensor]],
-        rotary_pos_emb_list: Optional[List[List[torch.Tensor]]] = None,
+        position_ids: Optional[torch.Tensor] = None,
         registered_causal_mask: Optional[torch.Tensor] = None,
         layer_past: Optional[Tuple[torch.Tensor]] = None,
         attention_mask: Optional[torch.FloatTensor] = None,
@@ -744,7 +671,7 @@ class QWenBlock(nn.Module):
 
         attn_outputs = self.attn(
             layernorm_output,
-            rotary_pos_emb_list,
+            position_ids,
             registered_causal_mask=registered_causal_mask,
             layer_past=layer_past,
             attention_mask=attention_mask,
@@ -841,7 +768,6 @@ class QWenModel(QWenPreTrainedModel):
             if self.rotary_ndims is not None
             else config.kv_channels
         )
-        self.rotary_emb = RotaryEmbedding(dim, base=config.rotary_emb_base)
 
         self.use_flash_attn = config.use_flash_attn
         self.is_fp32 = not (config.bf16 or config.fp16)
@@ -1491,22 +1417,98 @@ def _rotate_half(x):
     return torch.cat((-x2, x1), dim=-1)
 
 
-def apply_rotary_pos_emb(t, freqs):
-    cos, sin = freqs
-    if apply_rotary_emb_func is not None and t.is_cuda:
-        t_ = t.float()
-        cos = cos.squeeze(0).squeeze(1)[:, : cos.shape[-1] // 2]
-        sin = sin.squeeze(0).squeeze(1)[:, : sin.shape[-1] // 2]
-        output = apply_rotary_emb_func(t_, cos, sin).type_as(t)
-        return output
-    else:
-        rot_dim = freqs[0].shape[-1]
-        cos, sin = freqs
-        t_, t_pass_ = t[..., :rot_dim], t[..., rot_dim:]
-        t_ = t_.float()
-        t_pass_ = t_pass_.float()
-        t_ = (t_ * cos) + (_rotate_half(t_) * sin)
-        return torch.cat((t_, t_pass_), dim=-1).type_as(t)
+# def apply_rotary_pos_emb(t, freqs):
+#     cos, sin = freqs
+#     if apply_rotary_emb_func is not None and t.is_cuda:
+#         t_ = t.float()
+#         cos = cos.squeeze(0).squeeze(1)[:, : cos.shape[-1] // 2]
+#         sin = sin.squeeze(0).squeeze(1)[:, : sin.shape[-1] // 2]
+#         output = apply_rotary_emb_func(t_, cos, sin).type_as(t)
+#         return output
+#     else:
+#         rot_dim = freqs[0].shape[-1]
+#         cos, sin = freqs
+#         t_, t_pass_ = t[..., :rot_dim], t[..., rot_dim:]
+#         t_ = t_.float()
+#         t_pass_ = t_pass_.float()
+#         t_ = (t_ * cos) + (_rotate_half(t_) * sin)
+#         return torch.cat((t_, t_pass_), dim=-1).type_as(t)
+
+# Copied from transformers.models.mistral.modeling_mistral.MistralRotaryEmbedding with Mistral->Qwen2
+class QwenRotaryEmbedding(nn.Module):
+    def __init__(self, dim, max_position_embeddings=2048, base=10000, device=None):
+        super().__init__()
+
+        self.dim = dim
+        self.max_position_embeddings = max_position_embeddings
+        self.base = base
+        inv_freq = 1.0 / (self.base ** (torch.arange(0, self.dim, 2, dtype=torch.int64).float().to(device) / self.dim))
+        self.register_buffer("inv_freq", inv_freq, persistent=False)
+
+        # Build here to make `torch.jit.trace` work.
+        self._set_cos_sin_cache(
+            seq_len=max_position_embeddings, device=self.inv_freq.device, dtype=torch.get_default_dtype()
+        )
+
+    def _set_cos_sin_cache(self, seq_len, device, dtype):
+        self.max_seq_len_cached = seq_len
+        t = torch.arange(self.max_seq_len_cached, device=device, dtype=torch.int64).type_as(self.inv_freq)
+
+        freqs = torch.outer(t, self.inv_freq)
+        # Different from paper, but it uses a different permutation in order to obtain the same calculation
+        emb = torch.cat((freqs, freqs), dim=-1)
+        self.register_buffer("cos_cached", emb.cos().to(dtype), persistent=False)
+        self.register_buffer("sin_cached", emb.sin().to(dtype), persistent=False)
+
+    def forward(self, x, seq_len=None):
+        # x: [bs, num_attention_heads, seq_len, head_size]
+        if seq_len > self.max_seq_len_cached:
+            self._set_cos_sin_cache(seq_len=seq_len, device=x.device, dtype=x.dtype)
+
+        return (
+            self.cos_cached[:seq_len].to(dtype=x.dtype),
+            self.sin_cached[:seq_len].to(dtype=x.dtype),
+        )
+
+# Copied from transformers.models.llama.modeling_llama.rotate_half
+def rotate_half(x):
+    """Rotates half the hidden dims of the input."""
+    x1 = x[..., : x.shape[-1] // 2]
+    x2 = x[..., x.shape[-1] // 2 :]
+    return torch.cat((-x2, x1), dim=-1)
+
+# Copied from transformers.models.mistral.modeling_mistral.apply_rotary_pos_emb
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
+    """Applies Rotary Position Embedding to the query and key tensors.
+
+    Args:
+        q (`torch.Tensor`): The query tensor.
+        k (`torch.Tensor`): The key tensor.
+        cos (`torch.Tensor`): The cosine part of the rotary embedding.
+        sin (`torch.Tensor`): The sine part of the rotary embedding.
+        position_ids (`torch.Tensor`):
+            The position indices of the tokens corresponding to the query and key tensors. For example, this can be
+            used to pass offsetted position ids when working with a KV-cache.
+        unsqueeze_dim (`int`, *optional*, defaults to 1):
+            The 'unsqueeze_dim' argument specifies the dimension along which to unsqueeze cos[position_ids] and
+            sin[position_ids] so that they can be properly broadcasted to the dimensions of q and k. For example, note
+            that cos[position_ids] and sin[position_ids] have the shape [batch_size, seq_len, head_dim]. Then, if q and
+            k have the shape [batch_size, heads, seq_len, head_dim], then setting unsqueeze_dim=1 makes
+            cos[position_ids] and sin[position_ids] broadcastable to the shapes of q and k. Similarly, if q and k have
+            the shape [batch_size, seq_len, heads, head_dim], then set unsqueeze_dim=2.
+    Returns:
+        `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
+    """
+    # The first two dimensions of cos and sin are always 1, so we can `squeeze` them.
+    cos = cos.squeeze(1).squeeze(0)  # [seq_len, dim]
+    sin = sin.squeeze(1).squeeze(0)  # [seq_len, dim]
+    cos = cos[position_ids].unsqueeze(1)  # [bs, 1, seq_len, dim]
+    sin = sin[position_ids].unsqueeze(1)  # [bs, 1, seq_len, dim]
+    cos = cos.transpose(1, 2)
+    sin = sin.transpose(1, 2)
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed, k_embed
 
 
 class RMSNorm(torch.nn.Module):

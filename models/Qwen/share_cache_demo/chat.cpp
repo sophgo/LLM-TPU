@@ -68,6 +68,7 @@ public:
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
+  void dynamic_net_launch(const bm_net_info_t *net, int token_length, int stage_idx = 0);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset, int size);
@@ -127,6 +128,34 @@ void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
         &out_tensors[i], net->stages[stage_idx].output_mems[i],
         net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
   }
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
+                                   net->input_num, out_tensors.data(),
+                                   net->output_num, true, false);
+  assert(ret);
+  bm_thread_sync(bm_handle);
+}
+
+void Qwen::dynamic_net_launch(const bm_net_info_t *net, int token_length, int stage_idx) {
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  for (int i = 0; i < net->input_num; i++) {
+    bmrt_tensor_with_device(
+        &in_tensors[i], net->stages[stage_idx].input_mems[i],
+        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(
+        &out_tensors[i], net->stages[stage_idx].output_mems[i],
+        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
+  }
+  // in_tensors[0].shape.dims[1] = token_length;
+  // in_tensors[1].shape.dims[1] = token_length;
+  // in_tensors[2].shape.dims[2] = token_length;
+  // in_tensors[2].shape.dims[3] = token_length;
+  // out_tensors[0].shape.dims[1] = token_length;
+  // out_tensors[1].shape.dims[1] = token_length;
+  // out_tensors[2].shape.dims[1] = token_length;
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
@@ -353,8 +382,11 @@ void Qwen::forward_first(std::vector<int> &tokens) {
       bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
       bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     }
-
-    net_launch(net_blocks[idx]);
+    if (is_dynamic) {
+      dynamic_net_launch(net_blocks[idx], share_length);
+    } else {
+      net_launch(net_blocks[idx]);
+    }
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1], 0);
     d2d(past_value[idx], net_blocks[idx]->stages[0].output_mems[2], 0);
