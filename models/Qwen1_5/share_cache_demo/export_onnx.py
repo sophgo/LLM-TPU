@@ -9,6 +9,7 @@
 # ==============================================================================
 
 import os
+import json
 import torch
 import argparse
 from tqdm import tqdm
@@ -25,8 +26,18 @@ parser.add_argument('--unshare_length', type=int, default=4096, help="unshare le
 
 args = parser.parse_args()
 
+def modify_json(json_path):
+    with open(json_path, 'r') as file:
+        config_json = json.load(file)
+    config_json['seq_length'] = args.seq_length
+    with open(json_path, 'w') as file:
+        json.dump(config_json, file, indent=4)
+
 model_path = args.model_path
+json_path = os.path.join(model_path, "config.json")
 folder = f"./tmp/onnx"
+
+modify_json(json_path)
 
 device = torch.device(args.device)
 origin_model = AutoModelForCausalLM.from_pretrained(
