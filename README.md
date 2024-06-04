@@ -145,13 +145,18 @@ source /etc/profile
 
 ### Q3：推理出来精度异常，输出全是“！”
 
-A：可能是由于板子的tpu电压太低了，tpu降频就好了，降频命令如下
+A：
+解决方式一：
+
+可能是由于板子的tpu电压太低了，tpu降频就好了，降频命令如下
 ```
 echo "setr tpll_clock 750000000" > /sys/kernel/debug/top/clock
 echo "setr mpll_clock 1800000000" > /sys/kernel/debug/top/clock
 echo "setr vpll_clock 100000000"> /sys/kernel/debug/top/clock
 ```
 
+解决方式二：
 
+断电几分钟，echo 3 > /proc/sys/vm/drop_caches  ，清缓存就正常了，有可能是什么操作造成了内存踩踏
 
 
