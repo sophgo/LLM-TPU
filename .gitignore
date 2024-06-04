@@ -7,3 +7,4 @@ deploy/
 __pycache__
 core
 *.so
+*.log
