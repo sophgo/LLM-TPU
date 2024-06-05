@@ -42,7 +42,8 @@ void dump_tensor_to_file(
     if constexpr (std::is_same_v<T, uint16_t>) {
       std::vector<float> data(cnt);
       for (int i = 0; i < cnt; i++)
-        data[i] = fp16_ieee_to_fp32_value(buffer[i]);
+        data[i] = bf16_to_fp32_value(buffer[i]);
+        // data[i] = fp16_ieee_to_fp32_value(buffer[i]);
       cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
     } else if constexpr (std::is_same_v<T, int32_t>){
       std::vector<int> data(cnt);
@@ -392,9 +393,9 @@ void Qwen::forward_first(std::vector<int> &tokens) {
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1], 0);
     d2d(past_value[idx], net_blocks[idx]->stages[0].output_mems[2], 0);
 
-    dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[0],{1,6016,4096},"output_" + std::to_string(idx) + ".npz","input_states");
-    dump_tensor_to_file<int32_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[0],{1,6016},"output_" + std::to_string(idx) + ".npz","position_ids");
-    dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[0],{1,1,6016,6016},"output_" + std::to_string(idx) + ".npz","attention_mask");
+    dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[0],{1,6016,4096},"output_" + std::to_string(idx) + ".npz","hidden_states");
+    dump_tensor_to_file<int32_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[1],{1,6016},"output_" + std::to_string(idx) + ".npz","present_key");
+    dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[2],{1,1,6016,6016},"output_" + std::to_string(idx) + ".npz","present_value");
   }
   return;
 }

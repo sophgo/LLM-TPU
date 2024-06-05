@@ -1,6 +1,6 @@
 # Command
 your_torch_model是你模型的路径
-```
+```shell
 pip install transformers_stream_generator einops tiktoken accelerate transformers==4.32.0
 
 cp files/Qwen-7B-Chat/* your_torch_model
@@ -10,7 +10,7 @@ cp files/Qwen-7B-Chat/* your_torch_model
 
 # 直接下载
 如果你不想编译模型，也可以直接下载
-```
+```shell
 pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen-7b_int4_shareseq6016_unshare1536_seq7552_1dev_dyn.bmodel
 ```
@@ -24,13 +24,13 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen-7b
 |share_length=6016      |unshare_length=1536    |decode_length=0    |
 
 # 编译库文件
-```
+```shell
 mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..
 ```
 
 # python demo
-```
+```shell
 python3 pipeline.py --model_path qwen-7b_int4_shareseq6016_unshare1536_seq7552_1dev.bmodel --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample
 ```
 
@@ -50,7 +50,7 @@ cd third_party && git clone https://github.com/rogersce/cnpy.git
 
 ## 2. 修改CMakeLists.txt 
 将CMakeLists.txt替换为以下内容
-```
+```makefile
 cmake_minimum_required(VERSION 3.10)
 project(codefuse)
 
@@ -90,22 +90,31 @@ endforeach()
 
 ### 3. 修改chat_debug.cpp文件
 根据你需要查看的logits来写正确的代码，可以参考以下代码（位于chat_debug.cpp:397行）
-```
-    dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[0],{1,6016,4096},"output_" + std::to_string(idx) + ".npz","input_states");
-    dump_tensor_to_file<int32_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[0],{1,6016},"output_" + std::to_string(idx) + ".npz","position_ids");
-    dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[0],{1,1,6016,6016},"output_" + std::to_string(idx) + ".npz","attention_mask");
+```cpp
+dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[0],{1,6016,4096},"output_" + std::to_string(idx) + ".npz","hidden_states");
+dump_tensor_to_file<int32_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[1],{1,6016},"output_" + std::to_string(idx) + ".npz","present_key");
+dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[2],{1,1,6016,6016},"output_" + std::to_string(idx) + ".npz","present_value");
 ```
 注意
 * shape一定要设置正确，可以通过model_tool --info xxx.bmodel来查看shape
+* 如果compile.sh转的是bf16类型，那么dump_tensor_to_file需要使用bf16_to_fp32_value；compile.sh转的是fp16类型，那么dump_tensor_to_file需要使用fp16_ieee_to_fp32_value
 
 ### 4. 导出npz文件
 运行以下命令
-```
+```shell
 rm *.npz
 python3 pipeline.py --model_path qwen-7b_int4_shareseq6016_1dev_dyn.bmodel --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --mode debug
 ```
 
 * 如果之前目录下有output_x.npz文件，记得提前删掉，不然会有问题
 * 开启--mode debug模式来导出
+
+### 5. 如何使用
+```python
+import numpy as np
+x = np.load("output_0.npz")
+print(x.files)
+print(x["hidden_states"])
+```
 
 
