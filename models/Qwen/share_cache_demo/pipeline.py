@@ -1,6 +1,5 @@
 import argparse
 
-import chat
 import json
 import time
 from transformers import AutoTokenizer
@@ -35,7 +34,12 @@ class Qwen():
 
     def load_model(self, args):
         load_start = time.time()
-        self.model = chat.Qwen()
+        if args.mode == "debug":
+            import chat_debug
+            self.model = chat_debug.Qwen()
+        else:
+            import chat
+            self.model = chat.Qwen()
         self.model.init(self.devices, args.model_path)
         self.model.temperature = args.temperature
         self.model.top_p = args.top_p
@@ -218,10 +222,33 @@ class Qwen():
         self.model.forward_unshare(unshare_tokens_2)
         self.stream_answer(unshare_tokens_2, share_cache=True)
 
+    def debug_share_cache(self):
+        share_str, unshare_str_0 = self.read_json("sophgo_kv_cache_share_test_case.json", 0)
+        _, unshare_str_1 = self.read_json("sophgo_kv_cache_share_test_case.json", 1)
+        _, unshare_str_2 = self.read_json("sophgo_kv_cache_share_test_case.json", 2)
+        # share_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
+        # unshare_str_0 = "can you help me<|im_end|>\n<|im_start|>assistant\n"
+        # unshare_str_1 = "tell me a love story<|im_end|>\n<|im_start|>assistant\n"
+
+        # share prefill
+        share_start = time.time()
+        share_tokens = self.tokenizer.encode(share_str)
+        self.model.forward_first(share_tokens)
+        share_end = time.time()
+        print(f"\nShare FTL Time: {(share_end - share_start):.3f} s")
+
+        # task 0
+        unshare_tokens_0 = self.tokenizer.encode(unshare_str_0)
+        self.model.forward_unshare(unshare_tokens_0)
+        self.stream_answer(unshare_tokens_0, share_cache=True)
+
 
 def main(args):
     model = Qwen(args)
-    model.test_share_cache()
+    if args.mode == "debug":
+        model.debug_share_cache()
+    else:
+        model.test_share_cache()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -235,6 +262,7 @@ if __name__ == "__main__":
     parser.add_argument('--max_new_tokens', type=int, default=1024, help='max new token length to generate')
     parser.add_argument('--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
     parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
+    parser.add_argument('--mode', type=str, choices=["debug", "default"], default="default", help='use debug to dump logits')
     # parser.add_argument('--prompt_length', type=int, default=1024, help="prompt length to reuse fixed prompt tokens")
     args = parser.parse_args()
     main(args)
