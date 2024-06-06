@@ -140,6 +140,12 @@ static inline uint32_t fp16_ieee_to_fp32_bits(uint16_t h) {
           ~zero_mask);
 }
 
+float bf16_to_fp32_value(uint16_t d) {
+  fp32 t;
+  t.bits = bf16_to_fp32_bits(d);
+  return t.fval;
+}
+
 float fp16_ieee_to_fp32_value(uint16_t d) {
   fp32 t;
   t.bits = fp16_ieee_to_fp32_bits(d);
