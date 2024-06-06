@@ -438,10 +438,12 @@ int Qwen::forward_prompt_first(std::vector<int> &tokens) {
   }
 
   // forward embeding
-  auto &in_mem = net_embed->stages[0].input_mems[0];
-  auto &out_mem = net_embed->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)visited_tokens.data());
+  auto &embed_in_mem = net_embed->stages[0].input_mems[0];
+  auto &embed_out_mem = net_embed->stages[0].output_mems[0];
+  bm_memcpy_s2d(bm_handle, embed_in_mem, (void *)visited_tokens.data());
   net_launch(net_embed); // prefil embedding
+
+  auto &out_mem = net_blocks_prompt_cache[0]->stages[0].output_mems[0];
 
   // forward blocks
   int prompt_bytes =
@@ -453,12 +455,13 @@ int Qwen::forward_prompt_first(std::vector<int> &tokens) {
     auto &in2_mem = net_blocks_prompt_cache[idx]->stages[0].input_mems[2];
     auto &in3_mem = net_blocks_prompt_cache[idx]->stages[0].input_mems[3];
     auto &in4_mem = net_blocks_prompt_cache[idx]->stages[0].input_mems[4];
-    d2d(in0_mem, out_mem);
     if (io_alone) {
       if (idx == 0) {
+        d2d(in0_mem, embed_out_mem);
         bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
         bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
       } else {
+        d2d(in0_mem, net_blocks_prompt_cache[idx-1]->stages[0].output_mems[0]);
         d2d(in1_mem, net_blocks_prompt_cache[0]->stages[0].input_mems[1]);
         d2d(in2_mem, net_blocks_prompt_cache[0]->stages[0].input_mems[2]);
       }
@@ -468,7 +471,6 @@ int Qwen::forward_prompt_first(std::vector<int> &tokens) {
       throw std::runtime_error("Only support io_alone");
     }
     net_launch(net_blocks_prompt_cache[idx]);
-    out_mem = net_blocks_prompt_cache[idx]->stages[0].output_mems[0];
     d2d(past_key[idx], net_blocks_prompt_cache[idx]->stages[0].output_mems[1], prompt_offset);
     d2d(past_value[idx], net_blocks_prompt_cache[idx]->stages[0].output_mems[2], prompt_offset);
   }
@@ -477,7 +479,8 @@ int Qwen::forward_prompt_first(std::vector<int> &tokens) {
   int bytes = out_mem.size / MAX_UNPROMPT_LENGTH;
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
   auto &lm_out_mem = net_lm->stages[0].output_mems[0];
-  bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
+  bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, 
+                     net_blocks_prompt_cache[NUM_LAYERS-1]->stages[0].output_mems[0],
                      (token_length - 1) * bytes, bytes);
   net_launch(net_lm);
 
