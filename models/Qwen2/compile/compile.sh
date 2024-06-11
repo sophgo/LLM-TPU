@@ -1,7 +1,7 @@
 #!/bin/bash
 set -ex
 models=
-mode="f16"
+mode="bf16"
 folder="tmp"
 num_device=1
 mode_args=""
@@ -55,7 +55,7 @@ if [[ -z "$seq_length" ]]; then
 fi
 
 if [ "$name" = "qwen2-7b" ]; then
-  num_layers=0
+  num_layers=27
   hidden_size=3584
   echo "Compile Qwen2-7B"
 else
@@ -70,7 +70,7 @@ fi
 
 if [ x$mode == x"int8" ]; then
     quantize_args="--quantize W8BF16"
-elif [ x$mode == x"f16" ]; then
+elif [ x$mode == x"bf16" ]; then
     quantize_args="--quantize BF16"
 elif [ x$mode == x"int4" ]; then
     quantize_args="--quantize W4BF16 --q_group_size 64"
@@ -81,9 +81,9 @@ fi
 
 if [ x$num_device != x1 ]; then
     device_args="--num_device $num_device"
-    out_model=$name'_'$mode'_'$num_device'dev.bmodel'
+    out_model=$name'_'$mode'_seq'$seq_length'_'$num_device'dev.bmodel'
 else
-    out_model=$name'_'$mode'_1dev.bmodel'
+    out_model=$name'_'$mode'_seq'$seq_length'_1dev.bmodel'
 fi
 
 if [ x$addr_mode == x"io_alone" ]; then

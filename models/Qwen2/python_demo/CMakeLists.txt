@@ -1,5 +1,5 @@
-cmake_minimum_required(VERSION 2.8)
-project(qwen1_5)
+cmake_minimum_required(VERSION 3.10)
+project(qwen2)
 
 if (NOT DEFINED TARGET_ARCH)
     set(TARGET_ARCH pcie)
