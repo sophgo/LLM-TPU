@@ -1,12 +1,12 @@
 # 多芯demo
 
 ## 1. 安装驱动
-按如下命令下载并安装驱动，**注意目前必须要这一版本的驱动，旧版本驱动不支持最新的多芯模型**：
+按如下命令下载并安装驱动，**注意使用0611版本的驱动，旧版本驱动跑动态Qwen1.5-32B存在问题**：
 ```shell
 pip3 install dfss
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/drivers/libsophon-0523deb.tar.gz
-tar -xzf libsophon-0523deb.tar.gz
-cd libsophon-0523deb
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/drivers/libsophon-0611deb.tar.gz
+tar -xzf libsophon-0611deb.tar.gz
+cd libsophon-0611deb
 sudo apt remove sophon-driver sophon-libsophon
 sudo dpkg -i *.deb
 ```
@@ -32,7 +32,7 @@ popd
 python3 ./export_onnx.py -m path_to/Qwen1.5-32B-Chat/ --num_threads 72 --lmhead_with_topk 1
 # 静态编译
 ./compile.sh --mode int4 --num_device 8 --addr_mode io_alone --seq_length 8192
-# 动态编译
+# 动态编译，注意使用0611版本的驱动
 ./compile.sh --mode int4 --num_device 8 --addr_mode io_alone --seq_length 8192 --dynamic 1
 ```
 

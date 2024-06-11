@@ -63,6 +63,7 @@ private:
   std::vector<bm_tensor_t> inputs_lm, outputs_lm;
 
   int device_num;
+  int TOKEN_LEN;
   int token_length;
   int SEQLEN;     // read from bmodel
   int NUM_LAYERS; // read from bmodel
@@ -324,9 +325,9 @@ int QwenChat::forward_first(std::vector<int> &tokens) {
   }
   if (is_dynamic) {
     for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j < token_length; j++) {
+      for (int j = 0; j < TOKEN_LEN; j++) {
         if (j <= i) {
-          attention_mask[i * token_length + j] = 0;
+          attention_mask[i * TOKEN_LEN + j] = 0;
         }
       }
     }
@@ -376,18 +377,18 @@ int QwenChat::forward_first(std::vector<int> &tokens) {
     outputs_block.push_back(past_values[0][i]);
     if (is_dynamic) {
       int h_bytes = bm_mem_get_device_size(tmp_hidden_states[i].device_mem) / SEQLEN;
-      bm_set_device_mem(&inputs_block[0 + i * 3].device_mem, h_bytes * token_length,
+      bm_set_device_mem(&inputs_block[0 + i * 3].device_mem, h_bytes * TOKEN_LEN,
                         bm_mem_get_device_addr(tmp_hidden_states[i].device_mem));
       int pid_bytes = bm_mem_get_device_size(inputs_pid[i].device_mem) / SEQLEN;
-      bm_set_device_mem(&inputs_block[1 + i * 3].device_mem, pid_bytes * token_length,
+      bm_set_device_mem(&inputs_block[1 + i * 3].device_mem, pid_bytes * TOKEN_LEN,
                         bm_mem_get_device_addr(inputs_pid[i].device_mem));
       int mask_bytes = bm_mem_get_device_size(inputs_attention[i].device_mem) / SEQLEN / SEQLEN;
-      bm_set_device_mem(&inputs_block[2 + i * 3].device_mem, mask_bytes * token_length * token_length,
+      bm_set_device_mem(&inputs_block[2 + i * 3].device_mem, mask_bytes * TOKEN_LEN * TOKEN_LEN,
                         bm_mem_get_device_addr(inputs_attention[i].device_mem));
-      inputs_block[0 + i * 3].shape.dims[1] = token_length;
-      inputs_block[1 + i * 3].shape.dims[1] = token_length;
-      inputs_block[2 + i * 3].shape.dims[2] = token_length;
-      inputs_block[2 + i * 3].shape.dims[3] = token_length;
+      inputs_block[0 + i * 3].shape.dims[1] = TOKEN_LEN;
+      inputs_block[1 + i * 3].shape.dims[1] = TOKEN_LEN;
+      inputs_block[2 + i * 3].shape.dims[2] = TOKEN_LEN;
+      inputs_block[2 + i * 3].shape.dims[3] = TOKEN_LEN;
     }
   }
 
@@ -519,6 +520,7 @@ void QwenChat::answer(const std::string &input_str) {
   history.emplace_back(std::move(input_str));
   auto input_ids = tk->encode_history(history, SEQLEN);
   token_length = input_ids.size();
+  TOKEN_LEN = token_length;
   auto time_1 = std::chrono::system_clock::now();
   int pre_token = 0;
   int token = forward_first(input_ids);

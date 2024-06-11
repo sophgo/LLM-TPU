@@ -11,6 +11,7 @@ if (${TARGET_ARCH} STREQUAL "pcie")
     add_definitions(-DPCIE_TARGET)
     # link_directories(${PROJECT_SOURCE_DIR}/../support/lib_pcie)
     link_directories(/opt/sophon/libsophon-current/lib/)
+    # link_directories(/workspace3/libsophon/install/libsophon-0.5.1/lib/)
     message("Pcie mode, starting......")
 endif()
 
