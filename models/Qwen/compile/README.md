@@ -21,7 +21,7 @@ pip install transformers_stream_generator einops tiktoken accelerate transformer
 
 ### export basic onnx
 ```shell
-python export_onnx.py --model_path your_torch_path --device cuda
+python export_onnx.py --model_path your_torch_path --device cuda --seq_length 8192
 ```
 
 ### export onnx used for parallel demo
