@@ -23,6 +23,35 @@
 #include <stdio.h>
 #include <vector>
 #include "utils.h"
+#include "cnpy.h"
+
+template <typename T>
+void dump_tensor_to_file(
+        bm_handle_t&          handle,
+        bm_device_mem_t&          t,
+        std::vector<size_t>&& shape,
+        const std::string&    filename,
+        const std::string&    tensor_name) {
+    int  cnt = bm_mem_get_device_size(t) / sizeof(T);
+    auto buffer = std::make_unique<T[]>(cnt);
+    bm_memcpy_d2s(handle, buffer.get(), t);
+ 
+    if constexpr (std::is_same_v<T, uint16_t>) {
+      std::vector<float> data(cnt);
+      for (int i = 0; i < cnt; i++)
+        // data[i] = bf16_to_fp32_value(buffer[i]);
+        data[i] = fp16_ieee_to_fp32_value(buffer[i]);
+      cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
+    } else if constexpr (std::is_same_v<T, int32_t>){
+      std::vector<int> data(cnt);
+      memcpy(data.data(), buffer.get(), sizeof(int) * cnt);
+      cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
+    } else {
+      std::vector<float> data(cnt);
+      memcpy(data.data(), buffer.get(), sizeof(float) * cnt);
+      cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
+    }
+}
 
 static const uint16_t ATTENTION_MASK = 0xF0E2;
 
@@ -39,7 +68,15 @@ public:
 
 private:
   void move2end(const bm_device_mem_t &kv);
+  void move_kv_cache(
+    bm_tensor_t &past_key_v,
+    bm_tensor_t &past_value_v,
+    std::vector<bm_tensor_t> &outputs_block,
+    int token_length
+  );
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
+  std::vector<std::vector<bm_tensor_t>>  tensor_launch(const bm_net_info_t *net, int stage_idx = 0);
+  void net_launch(const bm_net_info_t *net, std::vector<bm_tensor_t> &in_tensors, std::vector<bm_tensor_t> &out_tensors);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
 
   void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
@@ -51,6 +88,7 @@ public:
   int SEQLEN;     // read from bmodel
   int NUM_LAYERS; // read from bmodel
   bool io_alone;
+  int device_num;
   std::vector<int> visited_tokens;
 
   // generation
@@ -71,8 +109,9 @@ private:
   const bm_net_info_t *net_embed;
   const bm_net_info_t *net_embed_cache;
   const bm_net_info_t *net_lm, *net_greedy_head, *net_penalty_sample_head;
-  std::vector<bm_device_mem_t> past_key;
-  std::vector<bm_device_mem_t> past_value;
+  // std::vector<bm_device_mem_t> past_key;
+  // std::vector<bm_device_mem_t> past_value;
+  std::vector<bm_tensor_t> past_key, past_value;
 };
 
 void ChatGLM::net_launch(const bm_net_info_t *net, int stage_idx) {
@@ -96,6 +135,32 @@ void ChatGLM::net_launch(const bm_net_info_t *net, int stage_idx) {
   bm_thread_sync(bm_handle);
 }
 
+std::vector<std::vector<bm_tensor_t>> 
+ChatGLM::tensor_launch(const bm_net_info_t *net, int stage_idx) {
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  for (int i = 0; i < net->input_num; i++) {
+    bmrt_tensor_with_device(
+        &in_tensors[i], net->stages[stage_idx].input_mems[i],
+        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(
+        &out_tensors[i], net->stages[stage_idx].output_mems[i],
+        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
+  }
+  return {in_tensors, out_tensors};
+}
+
+void ChatGLM::net_launch(const bm_net_info_t *net, std::vector<bm_tensor_t> &in_tensors, std::vector<bm_tensor_t> &out_tensors) {
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
+                                   net->input_num, out_tensors.data(),
+                                   net->output_num, true, false);
+  assert(ret);
+  bm_thread_sync(bm_handle);
+}
+
 void ChatGLM::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
 }
@@ -103,6 +168,7 @@ void ChatGLM::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
 void ChatGLM::init(const std::vector<int> &devices, std::string model_path) {
 
   // request bm_handle
+  device_num = devices.size();
   std::cout << "Device [ ";
   for (auto d : devices) {
     std::cout << d << " ";
@@ -153,22 +219,39 @@ void ChatGLM::init(const std::vector<int> &devices, std::string model_path) {
   }
 
   // kv cache
+  auto addr_mode = net_blocks_cache[0]->addr_mode;
+  io_alone = (addr_mode == 1);
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
-  auto addr_mode = net_blocks_cache[0]->addr_mode;
-  io_alone = addr_mode == 1;
-  for (int i = 0; i < NUM_LAYERS; i++) {
-    assert(addr_mode == net_blocks_cache[i]->addr_mode);
-    if (io_alone) {
-      past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
-      past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
-    } else {
-      auto ret = bm_malloc_device_byte(bm_handle, &past_key[i],
-                                       net_blocks_cache[i]->max_input_bytes[3]);
-      assert(BM_SUCCESS == ret);
-      ret = bm_malloc_device_byte(bm_handle, &past_value[i],
-                                  net_blocks_cache[i]->max_input_bytes[4]);
-      assert(BM_SUCCESS == ret);
+  if (io_alone) {
+    for (int i = 0; i < NUM_LAYERS; i++) {
+      auto &net = net_blocks_cache[i];
+      bmrt_tensor_with_device(
+        &past_key[i],
+        net->stages[0].input_mems[3],
+        net->input_dtypes[3],
+        net->stages[0].input_shapes[3]);
+      bmrt_tensor_with_device(
+        &past_value[i],
+        net->stages[0].input_mems[4],
+        net->input_dtypes[4],
+        net->stages[0].input_shapes[4]);
+    }
+  } else {
+    for (int i = 0; i < NUM_LAYERS; i++) {
+      auto &net = net_blocks_cache[i];
+      ret = bmrt_tensor_ex(
+        &past_key[i], p_bmrt,
+        net->input_loc_devices[3],
+        net->input_dtypes[3],
+        net->stages[0].input_shapes[3]);
+      assert(true == ret);
+      ret = bmrt_tensor_ex(
+        &past_value[i], p_bmrt,
+        net->input_loc_devices[4],
+        net->input_dtypes[4],
+        net->stages[0].input_shapes[4]);
+      assert(true == ret);
     }
   }
 }
@@ -176,8 +259,8 @@ void ChatGLM::init(const std::vector<int> &devices, std::string model_path) {
 void ChatGLM::deinit() {
   if (false == io_alone) {
     for (int i = 0; i < NUM_LAYERS; i++) {
-      bm_free_device(bm_handle, past_key[i]);
-      bm_free_device(bm_handle, past_value[i]);
+      bm_free_device(bm_handle, past_key[i].device_mem);
+      bm_free_device(bm_handle, past_value[i].device_mem);
     }
   }
   bmrt_destroy(p_bmrt);
@@ -186,24 +269,59 @@ void ChatGLM::deinit() {
   }
 }
 
-// after first block, move real result to end of mem
-void ChatGLM::move2end(const bm_device_mem_t &kv) {
-  if (token_length >= SEQLEN) {
-    return;
-  }
-  auto total_size = bm_mem_get_device_size(kv);
-  auto bytes = total_size / SEQLEN;
-  auto real_size = token_length * bytes;
-  auto mem =
-      bm_mem_from_device(bm_mem_get_device_addr(kv), real_size);
-  auto buffer = new uint8_t[real_size];
-  auto dst = new uint8_t[total_size];
-  bm_memcpy_d2s(bm_handle, (void *)buffer, mem);
-  memset(dst, 0, total_size - real_size);
-  memcpy(dst + total_size - real_size, buffer, real_size);
-  bm_memcpy_s2d(bm_handle, kv, (void *)dst);
-  delete[] buffer;
-  delete[] dst;
+void ChatGLM::move_kv_cache(
+    bm_tensor_t &past_key_v,
+    bm_tensor_t &past_value_v,
+    std::vector<bm_tensor_t> &outputs_block,
+    int token_length) {
+  std::vector<bm_tensor_t> dst_tensors, src_tensors;
+  dst_tensors.push_back(past_key_v);
+  dst_tensors.push_back(past_value_v); 
+  src_tensors.push_back(outputs_block[1]);
+  src_tensors.push_back(outputs_block[2]);
+
+  std::vector<bm_shape_t> shapes, dst_strides, src_strides;
+  bm_shape_t shape = past_key_v.shape;
+  bm_shape_t dst_str = {
+    .num_dims = 4,
+    .dims = {
+      shape.dims[1]*shape.dims[2]*shape.dims[3],
+      shape.dims[2]*shape.dims[3],
+      shape.dims[3],
+      1
+    }
+  };
+  // key_stride, value_stride
+  dst_strides.push_back(dst_str);
+  dst_strides.push_back(dst_str);
+
+  shape.dims[2] = 1;
+  shapes.push_back(shape);
+  shapes.push_back(shape);
+  bm_shape_t src_str = {
+    .num_dims = 4,
+    .dims = {
+      shape.dims[1]*shape.dims[2]*shape.dims[3],
+      shape.dims[2]*shape.dims[3],
+      shape.dims[3],
+      1
+    }
+  };
+  // key_stride, value_stride
+  src_strides.push_back(src_str);
+  src_strides.push_back(src_str);
+
+  std::vector<int> tensor_num(device_num, 2);
+  std::vector<size_t> dst_offsets, src_offsets(device_num * 2, 0);
+  int bytes = bm_mem_get_device_size(past_key_v.device_mem) / SEQLEN;
+  int token_offset = (token_length - 1) * bytes;
+  dst_offsets.push_back(token_offset);
+  dst_offsets.push_back(token_offset);
+  bool ret = bmrt_memcpy_d2d_stride_ex_parallel(
+      p_bmrt, dst_tensors.data(), dst_offsets.data(), dst_strides.data(),
+      src_tensors.data(), src_offsets.data(), src_strides.data(),
+      shapes.data(), tensor_num.data(), device_num);
+  assert(ret);
 }
 
 void ChatGLM::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
@@ -310,9 +428,14 @@ int ChatGLM::forward_first(std::vector<int> &tokens) {
       bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     }
     net_launch(net_blocks[idx]);
+    if (idx == 0) {
+      dump_tensor_to_file<uint16_t>(bm_handle,in0_mem,{1,512,4096},"input_" + std::to_string(idx) + ".npz","input_states");
+      dump_tensor_to_file<int32_t>(bm_handle,in1_mem,{1,512},"input_" + std::to_string(idx) + ".npz","position_ids");
+      dump_tensor_to_file<uint16_t>(bm_handle,in2_mem,{1,1,512,512},"input_" + std::to_string(idx) + ".npz","attention_mask");
+    }
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
-    d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1]);
-    d2d(past_value[idx], net_blocks[idx]->stages[0].output_mems[2]);
+    d2d(past_key[idx].device_mem, net_blocks[idx]->stages[0].output_mems[1]);
+    d2d(past_value[idx].device_mem, net_blocks[idx]->stages[0].output_mems[2]);
   }
 
   // forward lmhead
@@ -376,15 +499,33 @@ int ChatGLM::forward_next() {
         bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
         bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
       }
-      in3_mem = past_key[idx];
-      in4_mem = past_value[idx];
+      in3_mem = past_key[idx].device_mem;
+      in4_mem = past_value[idx].device_mem;
     }
-    net_launch(net_blocks_cache[idx]);
+    auto tensors = tensor_launch(net_blocks_cache[idx]);
+    auto in_tensors = tensors[0];
+    auto out_tensors = tensors[1];
+    net_launch(net_blocks_cache[idx], in_tensors, out_tensors);
     out_mem = out0_mem;
-    bm_memcpy_d2d_byte(bm_handle, past_key[idx], token_offset, out1_mem, 0,
-                       bytes);
-    bm_memcpy_d2d_byte(bm_handle, past_value[idx], token_offset, out2_mem, 0,
-                       bytes);
+    // bm_memcpy_d2d_byte(bm_handle, past_key[idx], token_offset, out1_mem, 0,
+    //                    bytes);
+    // bm_memcpy_d2d_byte(bm_handle, past_value[idx], token_offset, out2_mem, 0,
+    //                    bytes);
+    // bm_tensor_t in_tensors;
+    // int tensor_num[1] = {1};
+    // bm_shape_t shapes[1] = {4, {1,2,512,128}};
+    // bm_shape_t dst_strides[1] = {4, {1, 1, 1, 1}};
+    // bm_shape_t src_strides[1] = {4, {1, 1, 1, 1}};
+
+    // // bmrt_tensor_with_device(
+    // //     &in_tensors, net_blocks_cache[idx]->stages[0].input_mems[1],
+    // //     net_blocks_cache[idx]->input_dtypes[1], net_blocks_cache[idx]->stages[0].input_shapes[1]);
+
+    // bm_set_device_mem(&in_tensors.device_mem, bm_mem_get_device_size(out1_mem),
+    //                   bm_mem_get_device_addr(out1_mem));
+
+    // bmrt_memcpy_d2d_stride_ex_parallel(p_bmrt, &past_key[idx], 0, dst_strides, &in_tensors, 0, src_strides, shapes, tensor_num, 1);
+    move_kv_cache(past_key[idx], past_value[idx], out_tensors, token_length);
   }
 
   // forward lmhead
