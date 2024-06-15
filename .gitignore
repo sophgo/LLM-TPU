@@ -8,3 +8,6 @@ __pycache__
 core
 *.so
 *.log
+*.zip
+*.tar.gz
+*.deb

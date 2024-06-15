@@ -160,4 +160,6 @@ echo "setr vpll_clock 100000000"> /sys/kernel/debug/top/clock
 
 断电几分钟，echo 3 > /proc/sys/vm/drop_caches  ，清缓存就正常了，有可能是什么操作造成了内存踩踏
 
+### Q4：执行python_demo时报这个错 ValueError: vector::_M_default_append
 
+A：CMakeLists.txt版本的问题，修改CMakeLists.txt，将第一行改为cmake_minimum_required(VERSION 3.10)
