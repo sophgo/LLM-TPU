@@ -432,7 +432,7 @@ int Qwen::forward_unshare(std::vector<int> &tokens) {
   int bytes =
       bm_mem_get_device_size(net_blocks_unshare[0]->stages[0].input_mems[3]) / MAX_SHARE_LENGTH;
   // int share_size = share_length * bytes;
-  int max_share_offset = MAX_SHARE_LENGTH * bytes;
+  int max_share_offset = share_length * bytes;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks_unshare[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks_unshare[idx]->stages[0].input_mems[1];
@@ -481,14 +481,19 @@ int Qwen::forward_unshare(std::vector<int> &tokens) {
 int Qwen::forward_next() {
   int cur_token = unshare_tokens[unshare_length - 1];
 
-  std::vector<uint16_t> attention_mask(SEQLEN + 1, mask_value);
-  for (int i = 0; i < share_length; i++) {
-    attention_mask[i] = 0;
+  // std::vector<uint16_t> attention_mask(SEQLEN + 1, mask_value);
+  // for (int i = 0; i < share_length; i++) {
+  //   attention_mask[i] = 0;
+  // }
+  // for (int i = MAX_SHARE_LENGTH; i < MAX_SHARE_LENGTH + unshare_length - 1; i++) {
+  //   attention_mask[i] = 0;
+  // }
+  // attention_mask[SEQLEN] = 0;
+
+  std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
+  for (int i = share_length + unshare_length; i < SEQLEN; i++) {
+    attention_mask[i] = mask_value;
   }
-  for (int i = MAX_SHARE_LENGTH; i < MAX_SHARE_LENGTH + unshare_length - 1; i++) {
-    attention_mask[i] = 0;
-  }
-  attention_mask[SEQLEN] = 0;
   int32_t position_id = share_length + unshare_length - 1;
 
   // embedding
@@ -500,7 +505,7 @@ int Qwen::forward_next() {
   // blocks
   int bytes =
       bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
-  int token_offset = (MAX_SHARE_LENGTH + unshare_length - 1) * bytes;
+  int token_offset = (share_length + unshare_length - 1) * bytes;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
@@ -526,8 +531,11 @@ int Qwen::forward_next() {
                        bytes);
     bm_memcpy_d2d_byte(bm_handle, past_value[idx], token_offset, out2_mem, 0,
                        bytes);
+    // dump_tensor_to_file<uint16_t>(bm_handle,net_blocks_cache[idx]->stages[0].output_mems[0],{1,1,2560},"output_" + std::to_string(idx) + ".npz","hidden_states");
+    // dump_tensor_to_file<uint16_t>(bm_handle,net_blocks_cache[idx]->stages[0].output_mems[1],{1, 1, 20, 128},"output_" + std::to_string(idx) + ".npz","present_key");
+    // dump_tensor_to_file<uint16_t>(bm_handle,net_blocks_cache[idx]->stages[0].output_mems[2],{1, 1, 20, 128},"output_" + std::to_string(idx) + ".npz","present_value");
   }
-
+  
   // forward lmhead
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
   auto &lm_out_mem = net_lm->stages[0].output_mems[0];

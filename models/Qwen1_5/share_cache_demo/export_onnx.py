@@ -272,6 +272,102 @@ def convert_penalty_sample_head():
         do_constant_folding=True,
         opset_version=15)
 
+def build_prompt(query):
+    return f'<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n{query}'
+
+def test_net_with_mask():
+    embed = Embedding()
+    blocks = [Block(i) for i in range(NUM_LAYERS)]
+    blocks_unshare = [BlockCache(i) for i in range(NUM_LAYERS)]
+    block_kvs = [BlockCache(i) for i in range(NUM_LAYERS)]
+    query = """"""
+    print(query)
+    promt = build_prompt(query)
+    import numpy as np
+    from transformers import AutoTokenizer
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    ids = tokenizer.encode(promt)
+    print("input ids:{}".format(ids))
+    token_len = len(ids)
+    ori_token_len = token_len
+    ids = ids + (SHARE_LENGTH - token_len) * [0]
+    input_ids = torch.tensor(ids).view(SHARE_LENGTH).to(device)
+    out = embed(input_ids).view(1, SHARE_LENGTH, HIDDEN_SIZE)
+    position_ids = list(range(token_len)) + (SHARE_LENGTH - token_len) * [0]
+    position_ids = torch.tensor([position_ids]).to(device)
+    attention_mask = torch.ones((SHARE_LENGTH, SHARE_LENGTH)).float() * -10000.0
+    for i in range(token_len):
+        for j in range(token_len):
+            if j <= i:
+                attention_mask[i][j] = 0.0
+    attention_mask = attention_mask.view(1, 1, SHARE_LENGTH, SHARE_LENGTH).to(device)
+    k_cache = torch.zeros(NUM_LAYERS, 1, SEQ_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)
+    v_cache = torch.zeros(NUM_LAYERS, 1, SEQ_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)
+    for i in range(NUM_LAYERS):
+        out, k, v = blocks[i](out, position_ids, attention_mask)
+        k_cache[i][:, :token_len]= k[:, :token_len]
+        v_cache[i][:, :token_len]= v[:, :token_len]
+
+    # unshare
+    query2 = """tell me about sophgo in ten word<|im_end|>\n<|im_start|>assistant\n"""
+    ids = tokenizer.encode(query2)
+    unshare_token_len = len(ids)
+    ids = ids + (UNSHARE_LENGTH - unshare_token_len) * [0]
+    input_ids = torch.tensor(ids).view(UNSHARE_LENGTH).to(device)
+    out = embed(input_ids).view(1, UNSHARE_LENGTH, HIDDEN_SIZE)
+    position_ids = list(range(token_len, token_len + unshare_token_len)) + (UNSHARE_LENGTH - unshare_token_len) * [0]
+    position_ids = torch.tensor([position_ids]).to(device)
+    attention_mask = torch.ones((UNSHARE_LENGTH, UNSHARE_LENGTH + SHARE_LENGTH)).float() * -10000.0
+    for i in range(unshare_token_len):
+        for j in range(token_len):
+            attention_mask[i][j] = 0.0
+        for j in range(SHARE_LENGTH, SHARE_LENGTH + UNSHARE_LENGTH):
+            if j - SHARE_LENGTH <= i:
+                attention_mask[i][j] = 0.0
+    attention_mask = attention_mask.view(1, 1, SHARE_LENGTH, UNSHARE_LENGTH + SHARE_LENGTH).to(device)
+    for i in range(NUM_LAYERS):
+        out, k, v = blocks_unshare[i](out, position_ids, attention_mask, k_cache[i][:,:SHARE_LENGTH], v_cache[i][:,:SHARE_LENGTH])
+        k_cache[i][:,SHARE_LENGTH:SHARE_LENGTH + unshare_token_len] = k[:,:unshare_token_len]
+        v_cache[i][:,SHARE_LENGTH:SHARE_LENGTH + unshare_token_len] = v[:,:unshare_token_len]
+    out = out[:, unshare_token_len - 1:unshare_token_len].view(1, 1, HIDDEN_SIZE)
+    lm = LmHead()
+    greedy_head = GreedyHead()
+    token = greedy_head(lm(out)).view(1)
+    out_ids = [int(token)]
+    word = tokenizer.decode([int(token)])
+    print(word, end="")
+    
+    token_len = token_len + unshare_token_len
+
+    # decode
+    while int(token) != tokenizer.eos_token_id and token_len < SEQ_LENGTH:
+        token_len += 1
+        unshare_token_len += 1
+        input_ids = torch.tensor([token]).to(device)
+        out = embed(input_ids).view(1, 1, HIDDEN_SIZE)
+        position_ids = torch.tensor([[token_len - 1]]).to(device)
+        attention_mask = -10000 * torch.ones((1, 1, 1, SEQ_LENGTH + 1)).float().to(device)
+        for i in range(ori_token_len):
+            attention_mask[0,0,0,i] = 0
+        for i in range(SHARE_LENGTH, SHARE_LENGTH + unshare_token_len):
+            attention_mask[0,0,0,i] = 0
+        attention_mask[:, :, :, SEQ_LENGTH] = 0
+        # attention_mask = torch.zeros((1, 1, 1, SEQ_LENGTH + 1)).float().to(device)
+        # attention_mask[:, :, :, token_len:SEQ_LENGTH] = -10000.0
+        for i in range(NUM_LAYERS):
+            out, k, v = block_kvs[i](out, position_ids, attention_mask, k_cache[i], v_cache[i])
+            k_cache[i][:,unshare_token_len + SHARE_LENGTH:unshare_token_len + SHARE_LENGTH+1] = k
+            v_cache[i][:,unshare_token_len + SHARE_LENGTH:unshare_token_len + SHARE_LENGTH+1] = v
+        print(out)
+        token = greedy_head(lm(out)).view(1)
+        out_ids.append(int(token))
+        word = tokenizer.decode([int(token)])
+        print(word, end="")
+        # np.save(f'torch_{token_len}.npy', out)
+    print("\noutput_ids:{}".format(out_ids))
+    
+
+# test_net_with_mask()
 
 # create folder to store onnx
 if not os.path.exists(folder):
