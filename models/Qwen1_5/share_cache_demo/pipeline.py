@@ -99,7 +99,7 @@ class Qwen1_5():
                 self.stream_answer(tokens)
 
 
-    def stream_answer(self, tokens, share_cache):
+    def stream_answer(self, tokens):
         """
         Stream the answer for the given tokens.
         """
@@ -110,10 +110,7 @@ class Qwen1_5():
         print()
         # First token
         first_start = time.time()
-        if share_cache:
-            token = self.model.forward_unshare(tokens)
-        else:
-            raise ValueError("Only Support share_cache=True")
+        token = self.model.forward_unshare(tokens)
         first_end = time.time()
         # Following tokens
         while token != self.EOS and self.model.unshare_length < self.SEQLEN + self.model.MAX_SHARE_LENGTH:
@@ -132,7 +129,7 @@ class Qwen1_5():
 
 
         print()
-        print(f"FTL: {first_duration:.3f} s")
+        print(f"Unshare FTL Time: {first_duration:.3f} s")
         print(f"TPS: {tps:.3f} token/s")
 
 
@@ -196,18 +193,15 @@ class Qwen1_5():
 
         # task 0
         unshare_tokens_0 = self.tokenizer.encode(unshare_str_0)
-        self.model.forward_unshare(unshare_tokens_0)
-        self.stream_answer(unshare_tokens_0, share_cache=True)
+        self.stream_answer(unshare_tokens_0)
 
         # task 1
         unshare_tokens_1 = self.tokenizer.encode(unshare_str_1)
-        self.model.forward_unshare(unshare_tokens_1)
-        self.stream_answer(unshare_tokens_1, share_cache=True)
+        self.stream_answer(unshare_tokens_1)
 
         # task 2
         unshare_tokens_2 = self.tokenizer.encode(unshare_str_2)
-        self.model.forward_unshare(unshare_tokens_2)
-        self.stream_answer(unshare_tokens_2, share_cache=True)
+        self.stream_answer(unshare_tokens_2)
 
 
 def main(args):

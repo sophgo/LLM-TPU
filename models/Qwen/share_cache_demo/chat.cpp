@@ -264,6 +264,10 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
     assert(BM_SUCCESS == status);
     status = bm_memset_device_ext(bm_handle, &value, 1, past_value[i]);
     assert(BM_SUCCESS == status);
+    status = bm_memset_device_ext(bm_handle, &value, 1, net_blocks_unshare[i]->stages[0].input_mems[3]);
+    assert(BM_SUCCESS == status);
+    status = bm_memset_device_ext(bm_handle, &value, 1, net_blocks_unshare[i]->stages[0].input_mems[4]);
+    assert(BM_SUCCESS == status);
   }
 }
 
@@ -427,7 +431,7 @@ int Qwen::forward_unshare(std::vector<int> &tokens) {
   int bytes =
       bm_mem_get_device_size(net_blocks_unshare[0]->stages[0].input_mems[3]) / MAX_SHARE_LENGTH;
   // int share_size = share_length * bytes;
-  int max_share_offset = MAX_SHARE_LENGTH * bytes;
+  int max_share_offset = share_length * bytes;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks_unshare[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks_unshare[idx]->stages[0].input_mems[1];
@@ -476,14 +480,19 @@ int Qwen::forward_unshare(std::vector<int> &tokens) {
 int Qwen::forward_next() {
   int cur_token = unshare_tokens[unshare_length - 1];
 
-  std::vector<uint16_t> attention_mask(SEQLEN + 1, mask_value);
-  for (int i = 0; i < share_length; i++) {
-    attention_mask[i] = 0;
+  // std::vector<uint16_t> attention_mask(SEQLEN + 1, mask_value);
+  // for (int i = 0; i < share_length; i++) {
+  //   attention_mask[i] = 0;
+  // }
+  // for (int i = MAX_SHARE_LENGTH; i < MAX_SHARE_LENGTH + unshare_length - 1; i++) {
+  //   attention_mask[i] = 0;
+  // }
+  // attention_mask[SEQLEN] = 0;
+
+  std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
+  for (int i = share_length + unshare_length; i < SEQLEN; i++) {
+    attention_mask[i] = mask_value;
   }
-  for (int i = MAX_SHARE_LENGTH; i < MAX_SHARE_LENGTH + unshare_length - 1; i++) {
-    attention_mask[i] = 0;
-  }
-  attention_mask[SEQLEN] = 0;
   int32_t position_id = share_length + unshare_length - 1;
 
   // embedding
@@ -495,7 +504,7 @@ int Qwen::forward_next() {
   // blocks
   int bytes =
       bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
-  int token_offset = (MAX_SHARE_LENGTH + unshare_length - 1) * bytes;
+  int token_offset = (share_length + unshare_length - 1) * bytes;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
