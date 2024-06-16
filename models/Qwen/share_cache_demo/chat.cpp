@@ -149,13 +149,13 @@ void Qwen::dynamic_net_launch(const bm_net_info_t *net, int token_length, int st
         &out_tensors[i], net->stages[stage_idx].output_mems[i],
         net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
   }
-  // in_tensors[0].shape.dims[1] = token_length;
-  // in_tensors[1].shape.dims[1] = token_length;
-  // in_tensors[2].shape.dims[2] = token_length;
-  // in_tensors[2].shape.dims[3] = token_length;
-  // out_tensors[0].shape.dims[1] = token_length;
-  // out_tensors[1].shape.dims[1] = token_length;
-  // out_tensors[2].shape.dims[1] = token_length;
+  in_tensors[0].shape.dims[1] = token_length;
+  in_tensors[1].shape.dims[1] = token_length;
+  in_tensors[2].shape.dims[2] = token_length;
+  in_tensors[2].shape.dims[3] = token_length;
+  out_tensors[0].shape.dims[1] = token_length;
+  out_tensors[1].shape.dims[1] = token_length;
+  out_tensors[2].shape.dims[1] = token_length;
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
