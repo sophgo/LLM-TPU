@@ -35,11 +35,11 @@ python3 ./export_onnx.py --model_path path_to/Llama2-13B-Chat/ --lmhead_with_top
 pip3 install dfss
 # int4 bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels/llama2-13b_int4_8dev.bmodel
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels/llama2-13b_int4_6dev.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels/0529/llama2-13b_int4_6dev.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels/llama2-13b_int4_4dev.bmodel
 # int8 bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels/llama2-13b_int8_8dev.bmodel
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels/llama2-13b_int8_6dev.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels/0529/llama2-13b_int8_6dev.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels/llama2-13b_int8_4dev.bmodel
 ```
 
