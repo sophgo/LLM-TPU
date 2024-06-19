@@ -5,6 +5,8 @@ pip install transformers_stream_generator einops tiktoken accelerate transformer
 
 cp files/Qwen-7B-Chat/* your_torch_model
 
+python export_onnx.py --model_path your_torch_model --device cpu --share_length 6144 --unshare_length 1536 --seq_length 8704 --num_thread 16
+
 ./compile.sh --mode int4 --name qwen-7b --share_length 6016 --addr_mode io_alone --unshare_length 1536 --dynamic 1
 ```
 
