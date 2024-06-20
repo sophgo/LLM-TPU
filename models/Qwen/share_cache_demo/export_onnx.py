@@ -29,14 +29,13 @@ parser.add_argument('-s', '--seq_length', type=int, default=512, help="sequence 
 parser.add_argument('-n', '--num_threads', type=int, default=1, help='The number of threads used for torch if device is cpu')
 parser.add_argument('--share_length', type=int, default=6144, help="share length")
 parser.add_argument('--unshare_length', type=int, default=4096, help="unshare length")
-parser.add_argument('--slice_length', type=int, default=4096, help="slice length")
 
 args = parser.parse_args()
 
 def modify_json(json_path):
     with open(json_path, 'r') as file:
         config_json = json.load(file)
-    config_json['seq_length'] = args.seq_length
+    # config_json['seq_length'] = args.seq_length
     config_json['fp16'] = False
     config_json['bf16'] = False
     config_json['fp32'] = True
@@ -48,10 +47,9 @@ model_path = args.model_path
 json_path = os.path.join(model_path, "config.json")
 folder = f"./tmp/onnx"
 
-modify_json(json_path)
-
 device = torch.device(args.device)
 if device == 'cpu':
+    modify_json(json_path) # warning!!!!!
     torch.set_num_threads(args.num_threads)
 
 origin_model = AutoModelForCausalLM.from_pretrained(
@@ -66,7 +64,6 @@ transformer = origin_model.transformer
 layers = transformer.h
 
 
-SLICE_LENGTH = args.slice_length
 SEQ_LENGTH = args.seq_length
 SHARE_LENGTH = args.share_length
 UNSHARE_LENGTH = args.unshare_length
@@ -235,28 +232,6 @@ def convert_block(layer_id):
         f'{folder}/block_{layer_id}.onnx',
         verbose=False,
         input_names=['input_states', 'position_ids', 'attention_mask'],
-        output_names=['hidden_states', 'past_k', 'past_v'],
-        do_constant_folding=True,
-        opset_version=15)
-    
-
-def convert_block_share(layer_id):
-    model = QwenBlockCache(layer_id)
-    hidden_states = torch.randn((1, SHARE_LENGTH - SLICE_LENGTH, HIDDEN_SIZE)).to(device)
-    position_ids = torch.tensor([range(SHARE_LENGTH - SLICE_LENGTH)], dtype=torch.long).to(device)
-    attention_mask = torch.ones(
-        (1, 1, SHARE_LENGTH - SLICE_LENGTH, SHARE_LENGTH)).to(device)
-    past_k = torch.randn((1, SLICE_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)).to(device)
-    past_v = torch.randn((1, SLICE_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)).to(device)
-
-    torch.onnx.export(
-        model, (hidden_states, position_ids, attention_mask, past_k, past_v),
-        f'{folder}/block_share_{layer_id}.onnx',
-        verbose=False,
-        input_names=[
-            'input_states', 'position_ids', 'attention_mask', 'history_k',
-            'history_v'
-        ],
         output_names=['hidden_states', 'past_k', 'past_v'],
         do_constant_folding=True,
         opset_version=15)

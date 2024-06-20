@@ -53,7 +53,7 @@ model_tool --info qwen1.5-4b_int4_share6144_unshare2816_seq8960_1dev_dyn.bmodel 
 >
 > 他们的weight是一致的，都是1050832896，一点偏差也不能有，如果不一致，可能是下面这步没做
 ```shell
-cp files/Qwen1.5-4B-Chat/modeling_qwen2.py /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2/
+cp files/Qwen-7B-Chat/* your_torch_model
 ```
 
 

@@ -6,7 +6,6 @@ deploy/
 *.npz
 __pycache__
 core
-*.so
 *.log
 *.zip
 *.tar.gz
