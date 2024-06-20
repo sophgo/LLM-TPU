@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(codefuse)
+project(qwen)
 
 if (NOT DEFINED TARGET_ARCH)
     set(TARGET_ARCH pcie)

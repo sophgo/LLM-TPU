@@ -48,7 +48,7 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 ## 3. 运行python demo
 ```shell
-python3 pipeline.py --model_path_list qwen1.5-4b_int4_shareseq6144_unshareseq2816_seq8960_1dev_dyn.bmodel,qwen1.5-4b_int4_shareseq6144_unshareseq2560_seq8704_1dev_dyn.bmodel --tokenizer_path ../token_config/ --devid 30 --generation_mode penalty_sample --memory_prealloc
+python3 pipeline.py --model_path_list qwen1.5-4b_int4_shareseq6144_unshareseq2816_seq8960_1dev_dyn.bmodel,qwen1.5-4b_int4_shareseq6144_unshareseq2560_seq8704_1dev_dyn.bmodel --tokenizer_path ../token_config/ --devid 0 --generation_mode penalty_sample --memory_prealloc
 ```
 * memory_prealloc：表示使用权重复用
 * model_path_list：当使用多个模型时，用逗号隔开
@@ -70,7 +70,3 @@ model_tool --info qwen1.5-4b_int4_share6144_unshare2816_seq8960_1dev_dyn.bmodel 
 ```shell
 cp files/Qwen1.5-4B-Chat/modeling_qwen2.py /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2/
 ```
-
-
-# 效果图
-![](../../../assets/Qwen1_5_share_cache_demo.png)

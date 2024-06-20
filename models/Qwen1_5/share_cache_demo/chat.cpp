@@ -444,7 +444,11 @@ void Qwen::forward_first(std::vector<int> &tokens) {
       bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     }
 
-    dynamic_net_launch(net_blocks[idx], share_length);
+    if (is_dynamic) {
+      dynamic_net_launch(net_blocks[idx], share_length);
+    } else {
+      net_launch(net_blocks[idx]);
+    }
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1], 0);
     d2d(past_value[idx], net_blocks[idx]->stages[0].output_mems[2], 0);

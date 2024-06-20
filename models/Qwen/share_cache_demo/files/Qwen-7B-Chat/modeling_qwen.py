@@ -241,6 +241,7 @@ class QWenAttention(nn.Module):
 
         self.register_buffer("masked_bias", torch.tensor(-1e4), persistent=False)
         self.seq_length = config.seq_length
+        self.max_position_embeddings = config.max_position_embeddings
 
         self.hidden_size = config.hidden_size
         self.split_size = config.hidden_size
@@ -512,7 +513,7 @@ class QWenAttention(nn.Module):
         #         query = torch.cat(query_list, dim=0)
         #         key = torch.cat(key_list, dim=0)
 
-        cos, sin = self.rotary_emb(value, seq_len=self.seq_length)
+        cos, sin = self.rotary_emb(value, seq_len=self.max_position_embeddings)
         query, key = apply_rotary_pos_emb(query, key, cos, sin, position_ids)
 
         if self.use_cache_quantization:

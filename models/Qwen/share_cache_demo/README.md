@@ -1,7 +1,9 @@
-# Command
+# 序列共享demo
+
+## 1. 编译模型
 your_torch_model是你模型的路径
 ```shell
-pip install transformers_stream_generator einops tiktoken accelerate transformers==4.32.0
+pip3 install transformers_stream_generator einops tiktoken accelerate transformers==4.32.0
 
 cp files/Qwen-7B-Chat/* your_torch_model
 
@@ -9,8 +11,6 @@ python export_onnx.py --model_path your_torch_model --device cpu --share_length 
 
 ./compile.sh --mode int4 --name qwen-7b --share_length 6016 --addr_mode io_alone --unshare_length 1536 --dynamic 1
 ```
-
-# 直接下载
 如果你不想编译模型，也可以直接下载
 ```shell
 pip3 install dfss
@@ -20,25 +20,41 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen-7b
 * 内存：9663MB（动态）
 
 # 分片方式
-|第一片                  |第二片                 |第三片              |
-|:-                     |:-                     |:-                 |
-|share                  |unshare                |decode             |
-|share_length=6016      |unshare_length=1536    |decode_length=0    |
+|第一片                  |第二片                 |第三片              |总长度              |
+|:-                     |:-                     |:-                 |:-                 |
+|share                  |unshare                |decode             |seq                |
+|share_length=6016      |unshare_length=1536    |decode_length=0    |seq_length=7552    |
 
-# 编译库文件
+## 2. 编译库文件
 ```shell
 mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..
 ```
 
-# python demo
+## 3. 运行python demo
 ```shell
-python3 pipeline.py --model_path qwen-7b_int4_shareseq6016_unshare1536_seq7552_1dev.bmodel --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample
+python3 pipeline.py --model_path qwen-7b_int4_shareseq6016_unshare1536_seq7552_1dev.bmodel,qwen-7b_int4_shareseq5888_unshare1536_seq7552_1dev.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --memory_prealloc
 ```
+* memory_prealloc：表示使用权重复用
+* model_path_list：当使用多个模型时，用逗号隔开
+* 权重复用的流程为：self.model = chat.Qwen() --> self.load_model(model_0) --> self.free_device --> self.load_model(model_1) --> self.model.deinit()
+* 如果两个模型权重不一致，比如一个Qwen-7B 一个Qwen1.5-4B，那么建议重新创建一个类，即 self.model = chat.Qwen --> self.model.deinit() --> self.model = chat.Qwen --> self.model.deinit()
 
-# 效果图
-![](../../../assets/Qwen_share_cache_demo.png)
 
+## 4. 注意事项
+如果使用权重复用的方案，在compile.sh完成后，可以使用以下指令来检查weight空间是否一致
+
+```shell
+model_tool --info qwen1.5-4b_int4_share6144_unshare2560_seq8704_1dev_dyn.bmodel | grep "weight"
+model_tool --info qwen1.5-4b_int4_share6144_unshare2816_seq8960_1dev_dyn.bmodel | grep "weight"
+```
+> device mem size: 1680323988 (weight: 1050832896, instruct: 6612372, runtime: 622878720)
+> device mem size: 1679614228 (weight: 1050832896, instruct: 5902612, runtime: 622878720)
+>
+> 他们的weight是一致的，都是1050832896，一点偏差也不能有，如果不一致，可能是下面这步没做
+```shell
+cp files/Qwen1.5-4B-Chat/modeling_qwen2.py /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2/
+```
 
 
 # 如何导出logits
@@ -50,47 +66,12 @@ mkdir third_party
 cd third_party && git clone https://github.com/rogersce/cnpy.git
 ```
 
-## 2. 修改CMakeLists.txt 
-将CMakeLists.txt替换为以下内容
-```makefile
-cmake_minimum_required(VERSION 3.10)
-project(codefuse)
-
-if (NOT DEFINED TARGET_ARCH)
-    set(TARGET_ARCH pcie)
-endif()
-
-include_directories(${PROJECT_SOURCE_DIR}/../../../support/include)
-include_directories(${PROJECT_SOURCE_DIR}/third_party/cnpy)
-
-if (${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "aarch64")
-    add_definitions(-DSOC_TARGET)
-    link_directories(${PROJECT_SOURCE_DIR}/../../../support/lib_soc)
-    message("SoC mode, starting......")
-elseif (${TARGET_ARCH} STREQUAL "pcie")
-    add_definitions(-DPCIE_TARGET)
-    link_directories(${PROJECT_SOURCE_DIR}/../../../support/lib_pcie)
-    message("PCIE mode, starting......")
-endif()
-
-# add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -Werror)
-add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -lcnpy)
-set(CMAKE_BUILD_TYPE "Debug")
-add_subdirectory(third_party/cnpy)
-
-find_package(pybind11 REQUIRED CONFIG)
-
-file(GLOB CPP_FILES ${PROJECT_SOURCE_DIR}/*.cpp)
-
-foreach(CPP_FILE ${CPP_FILES})
-    get_filename_component(MODULE_NAME ${CPP_FILE} NAME_WE)
-    pybind11_add_module(${MODULE_NAME} ${CPP_FILE})
-    target_link_libraries(${MODULE_NAME} PUBLIC bmrt bmlib cnpy)
-    install(TARGETS ${MODULE_NAME} DESTINATION python)
-endforeach()
+## 2. CMake编译时添加-DCMAKE_TYPE=DUMP
+```shell
+cd build && cmake -DCMAKE_TYPE=DUMP .. && make && cp *cpython* .. && cd ..
 ```
 
-### 3. 修改chat_debug.cpp文件
+### 3. 修改chat.cpp文件
 根据你需要查看的logits来写正确的代码，可以参考以下代码（位于chat_debug.cpp:397行）
 ```cpp
 dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[0],{1,6016,4096},"output_" + std::to_string(idx) + ".npz","hidden_states");

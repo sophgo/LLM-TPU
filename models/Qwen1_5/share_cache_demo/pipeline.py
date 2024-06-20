@@ -27,7 +27,6 @@ class Qwen1_5():
         self.history = [{"role": "system", "content": self.system_prompt}]
         self.EOS = self.tokenizer.eos_token_id
 
-        self.args = args
         self.model = chat.Qwen()
         self.model.memory_prealloc = args.memory_prealloc
         self.init_params(args)
@@ -186,7 +185,7 @@ class Qwen1_5():
         _, unshare_str_1 = self.read_json("sophgo_kv_cache_share_test_case.json", 1)
         _, unshare_str_2 = self.read_json("sophgo_kv_cache_share_test_case.json", 2)
         # share_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
-        # unshare_str_0 = "tell me a love story<|im_end|>\n<|im_start|>assistant\n"
+        # unshare_str_0 = "can you help me<|im_end|>\n<|im_start|>assistant\n"
         # unshare_str_1 = "tell me a love story<|im_end|>\n<|im_start|>assistant\n"
 
 
