@@ -57,6 +57,8 @@ static const float ATTENTION_MASK = -10000.;
 class Qwen {
 public:
   void init(const std::vector<int> &devid, std::string model_path);
+  void load_model_with_memory(std::string model_path);
+  void free_device();
   void deinit();
   void forward_first(std::vector<int> &tokens);
   int forward_unshare(std::vector<int> &tokens);
@@ -87,8 +89,11 @@ public:
   int BATCH_SIZE;
   bool io_alone;
   bool is_dynamic;
+  bool memory_prealloc;
+  std::vector<bm_device_mem_t> prealloc_mem_v;
   std::vector<int> unshare_tokens;
   uint16_t mask_value;
+  mem_info_t mem_info;
 
   // generation
   float temperature;
@@ -103,6 +108,7 @@ private:
   std::vector<bm_handle_t> handles;
   bm_handle_t bm_handle;
   void *p_bmrt;
+
   std::vector<const bm_net_info_t *> net_blocks;
   std::vector<const bm_net_info_t *> net_blocks_unshare;
   std::vector<const bm_net_info_t *> net_blocks_cache;
@@ -201,9 +207,14 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
 
   // load bmodel by file
   printf("Model[%s] loading ....\n", model_path.c_str());
-  bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
-  assert(true == ret);
-  printf("Done!\n");
+  if (memory_prealloc) {
+    load_model_with_memory(model_path);
+  } else {
+    bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
+    assert(true == ret);
+    printf("Done!\n");
+  }
+  
 
   // net embed and lm_head
   net_embed = bmrt_get_network_info(p_bmrt, "embedding");
@@ -216,6 +227,9 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   NUM_LAYERS = (num_nets - 5) / 3;
 
   // net blocks
+  net_blocks.clear();
+  net_blocks_unshare.clear();
+  net_blocks_cache.clear();
   for (int i = 0; i < NUM_LAYERS; i++) {
     auto block_name = "block_" + std::to_string(i);
     auto unshare_name = "block_unshare_" + std::to_string(i);
@@ -271,7 +285,48 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   }
 }
 
+void malloc_device_mem(bm_handle_t bm_handle, memory_t &mem, std::vector<bm_device_mem_t> &prealloc_mem_v) {
+  if (mem.size > 0) {
+    bm_device_mem_t dmem;
+    if (bm_malloc_device_byte(bm_handle, &dmem, mem.size) == BM_SUCCESS) {
+       mem.addr = bm_mem_get_device_addr(dmem);
+       prealloc_mem_v.push_back(dmem);
+    }
+  }
+}
+
+void Qwen::load_model_with_memory(std::string model_path) {
+  if (bmrt_get_bmodel_info(model_path.c_str(), &mem_info) == false) {
+    throw std::runtime_error("Load bmodel Failed");
+  }
+
+  // free all memory without coeff memory
+  if (prealloc_mem_v.size() == 0) {
+    malloc_device_mem(bm_handle, mem_info.coeff_mem, prealloc_mem_v);
+  } else {
+    mem_info.coeff_mem.addr = prealloc_mem_v[0].u.device.device_addr;
+  }
+  malloc_device_mem(bm_handle, mem_info.instruction_mem, prealloc_mem_v);
+  malloc_device_mem(bm_handle, mem_info.variable_instruction_mem, prealloc_mem_v);
+  malloc_device_mem(bm_handle, mem_info.neuron_mem, prealloc_mem_v);
+  malloc_device_mem(bm_handle, mem_info.io_mem, prealloc_mem_v);
+
+  bool ret = bmrt_load_bmodel_with_mem(p_bmrt, model_path.c_str(), &mem_info);
+  assert(true == ret);
+  printf("Done!\n");
+}
+
+void Qwen::free_device() {
+  while (prealloc_mem_v.size() > 1) {
+    bm_free_device(bm_handle, prealloc_mem_v.back());
+    prealloc_mem_v.pop_back();
+  }
+}
+
 void Qwen::deinit() {
+  for (size_t i = 0; i < prealloc_mem_v.size(); ++i) {
+    bm_free_device(bm_handle, prealloc_mem_v[i]);
+  }
   if (false == io_alone) {
     for (int i = 0; i < NUM_LAYERS; i++) {
       bm_free_device(bm_handle, past_key[i]);
@@ -586,6 +641,7 @@ PYBIND11_MODULE(chat, m) {
         .def("forward_first", &Qwen::forward_first)
         .def("forward_unshare", &Qwen::forward_unshare)
         .def("forward_next", &Qwen::forward_next)
+        .def("free_device", &Qwen::free_device)
         .def("deinit", &Qwen::deinit)
         .def_readwrite("SEQLEN", &Qwen::SEQLEN) // read SEQLEN in pipeline.py
         .def_readwrite("MAX_SHARE_LENGTH", &Qwen::MAX_SHARE_LENGTH)
@@ -598,6 +654,7 @@ PYBIND11_MODULE(chat, m) {
         .def_readwrite("repeat_last_n", &Qwen::repeat_last_n)
         .def_readwrite("max_new_tokens", &Qwen::max_new_tokens)
         .def_readwrite("generation_mode", &Qwen::generation_mode)
-        .def_readwrite("prompt_mode", &Qwen::prompt_mode);
+        .def_readwrite("prompt_mode", &Qwen::prompt_mode)
+        .def_readwrite("memory_prealloc", &Qwen::memory_prealloc);
 }
 

@@ -229,7 +229,7 @@ class Qwen2Attention(nn.Module):
         self.rope_theta = config.rope_theta
         self.is_causal = True
         self.attention_dropout = config.attention_dropout
-        self.seq_length = config.seq_length
+        self.seq_length = config.max_position_embeddings
 
         if (self.head_dim * self.num_heads) != self.hidden_size:
             raise ValueError(
