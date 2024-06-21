@@ -76,8 +76,8 @@ cd build && cmake -DCMAKE_TYPE=DUMP .. && make && cp *cpython* .. && cd ..
 根据你需要查看的logits来写正确的代码，可以参考以下代码（位于chat_debug.cpp:397行）
 ```cpp
 dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[0],{1,6016,4096},"output_" + std::to_string(idx) + ".npz","hidden_states");
-dump_tensor_to_file<int32_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[1],{1,6016},"output_" + std::to_string(idx) + ".npz","present_key");
-dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[2],{1,1,6016,6016},"output_" + std::to_string(idx) + ".npz","present_value");
+dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[1],{1,6016,32,128},"output_" + std::to_string(idx) + ".npz","present_key");
+dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[2],{1,6016,32,128},"output_" + std::to_string(idx) + ".npz","present_value");
 ```
 注意
 * shape一定要设置正确，可以通过model_tool --info xxx.bmodel来查看shape
