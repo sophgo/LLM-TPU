@@ -73,7 +73,7 @@ cd build && cmake -DCMAKE_TYPE=DUMP .. && make && cp *cpython* .. && cd ..
 ```
 
 ### 3. 修改chat.cpp文件
-根据你需要查看的logits来写正确的代码，可以参考以下代码（位于chat_debug.cpp:397行）
+根据你需要查看的logits来写正确的代码，可以参考以下代码
 ```cpp
 dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[0],{1,6016,4096},"output_" + std::to_string(idx) + ".npz","hidden_states");
 dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[1],{1,6016,32,128},"output_" + std::to_string(idx) + ".npz","present_key");
@@ -87,7 +87,7 @@ dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[2
 运行以下命令
 ```shell
 rm *.npz
-python3 pipeline.py --model_path qwen-7b_int4_shareseq6016_1dev_dyn.bmodel --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --mode debug
+python3 pipeline.py --model_path_list qwen-7b_int4_shareseq6016_1dev_dyn.bmodel --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --mode debug
 ```
 
 * 如果之前目录下有output_x.npz文件，记得提前删掉，不然会有问题
