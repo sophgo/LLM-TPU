@@ -1,16 +1,4 @@
 # 序列共享demo
-## 0. 安装驱动
-
-如果你是pcie的环境
-```shell
-pip3 install dfss
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/drivers/libsophon-0611deb.tar.gz
-tar -xzf libsophon-0611deb.tar.gz
-cd libsophon-0611deb
-sudo apt remove sophon-driver sophon-libsophon
-sudo dpkg -i *.deb
-```
-
 
 ## 1. 编译模型
 your_torch_model是你的torch模型，--dynamic 1是指prefill使用动态
