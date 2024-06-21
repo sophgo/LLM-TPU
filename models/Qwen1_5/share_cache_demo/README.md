@@ -7,7 +7,7 @@ pip3 install transformers==4.37.0
 
 cp files/Qwen1.5-4B-Chat/modeling_qwen2.py /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2/
 
-python export_onnx.py --model_path ../compile/Qwen1.5-4B-Chat --device cpu --share_length 6144 --unshare_length 2560 --seq_length 8704 --num_thread 16
+python export_onnx.py --model_path your_torch_model --device cpu --share_length 6144 --unshare_length 2560 --seq_length 8704 --num_thread 16
 
 ./compile.sh --mode int4 --name qwen1.5-4b --share_length 6144 --addr_mode io_alone --unshare_length 2560 --dynamic 1
 ```
