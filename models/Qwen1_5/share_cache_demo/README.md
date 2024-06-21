@@ -52,6 +52,7 @@ model_tool --info qwen1.5-4b_int4_share6144_unshare2560_seq8704_1dev_dyn.bmodel 
 model_tool --info qwen1.5-4b_int4_share6144_unshare2816_seq8960_1dev_dyn.bmodel | grep "weight"
 ```
 > device mem size: 1680323988 (weight: 1050832896, instruct: 6612372, runtime: 622878720)
+>
 > device mem size: 1679614228 (weight: 1050832896, instruct: 5902612, runtime: 622878720)
 >
 > 他们的weight是一致的，都是1050832896，一点偏差也不能有，如果不一致，可能是下面这步没做
