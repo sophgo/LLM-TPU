@@ -94,7 +94,7 @@ public:
   bool io_alone;
   bool is_dynamic;
   bool memory_prealloc;
-  std::vector<bm_device_mem_t> prealloc_mem_v;
+  std::vector<bm_device_mem_u64_t> prealloc_mem_v;
   std::vector<int> unshare_tokens;
   uint16_t mask_value;
   mem_info_t mem_info;
@@ -158,13 +158,13 @@ void Qwen::dynamic_net_launch(const bm_net_info_t *net, int token_length, int st
         &out_tensors[i], net->stages[stage_idx].output_mems[i],
         net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
   }
-  //in_tensors[0].shape.dims[1] = token_length;
-  //in_tensors[1].shape.dims[1] = token_length;
-  //in_tensors[2].shape.dims[2] = token_length;
-  //in_tensors[2].shape.dims[3] = token_length;
-  //out_tensors[0].shape.dims[1] = token_length;
-  //out_tensors[1].shape.dims[1] = token_length;
-  //out_tensors[2].shape.dims[1] = token_length;
+  in_tensors[0].shape.dims[1] = token_length;
+  in_tensors[1].shape.dims[1] = token_length;
+  in_tensors[2].shape.dims[2] = token_length;
+  in_tensors[2].shape.dims[3] = token_length;
+  out_tensors[0].shape.dims[1] = token_length;
+  out_tensors[1].shape.dims[1] = token_length;
+  out_tensors[2].shape.dims[1] = token_length;
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
@@ -182,6 +182,24 @@ void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset) {
 
 void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset, int size) {
   bm_memcpy_d2d_byte(bm_handle, dst, offset, src, 0, size);
+}
+
+void alloc_mem(bm_handle_t bm_handle, bm_device_mem_t &mem) {
+  assert(bm_malloc_device_byte(bm_handle, &mem, mem.size) == BM_SUCCESS);
+}
+
+void set_addr_from_mem(bm_device_mem_t &dst_mem, bm_device_mem_t &src_mem) {
+  dst_mem.u.device.device_addr = src_mem.u.device.device_addr;
+}
+
+void malloc_device_mem(bm_handle_t bm_handle, memory_t &mem, std::vector<bm_device_mem_u64_t> &prealloc_mem_v) {
+  if (mem.size > 0) {
+    bm_device_mem_u64_t dmem;
+    if (bm_malloc_device_byte_u64(bm_handle, &dmem, mem.size) == BM_SUCCESS) {
+       mem.addr = dmem.u.device.device_addr;
+       prealloc_mem_v.push_back(dmem);
+    }
+  }
 }
 
 void Qwen::init(const std::vector<int> &devices, std::string model_path) {
@@ -257,6 +275,63 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
     throw std::runtime_error("Invalid attention dtype");
   }
 
+  // // alloc memory
+  // // embedding input
+  // auto &embed_in_mem = net_embed[0]->stages[0].input_mems[0];
+  // alloc_mem(bm_handle, embed_in_mem);
+  // net_embed_unshare[0]->stages[0].input_mems[0].addr = embed_in_mem.u.device.device_addr;
+  // net_embed_cache[0]->stages[0].input_mems[0].addr = embed_in_mem.u.device.device_addr;
+  // // embedding output
+  // auto &embed_out_mem = net_embed[0]->stages[0].output_mems[0];
+  // alloc_mem(bm_handle, embed_out_mem);
+  // net_embed_unshare[0]->stages[0].output_mems[0].addr = embed_out_mem.u.device.device_addr;
+  // net_embed_cache[0]->stages[0].output_mems[0].addr = embed_out_mem.u.device.device_addr;
+
+  // // LmHead input
+  // auto &lm_in_mem = net_lm[0]->stages[0].input_mems[0];
+  // alloc_mem(bm_handle, lm_in_mem);
+  // // LmHead output
+  // auto &lm_out_mem = net_lm[0]->stages[0].output_mems[0];
+  // alloc_mem(bm_handle, lm_out_mem);
+
+  // // Head input
+  // auto &head_in_mem = net_penalty_sample_head[0]->stages[0].input_mems[0];
+  // alloc_mem(bm_handle, head_in_mem);
+  // alloc_mem(bm_handle, net_penalty_sample_head[0]->stages[0].input_mems[1]);
+  // alloc_mem(bm_handle, net_penalty_sample_head[0]->stages[0].input_mems[2]);
+  // alloc_mem(bm_handle, net_penalty_sample_head[0]->stages[0].input_mems[3]);
+  // alloc_mem(bm_handle, net_penalty_sample_head[0]->stages[0].input_mems[4]);
+  // net_greedy_head[0]->stages[0].input_mems[0].addr = head_in_mem.u.device.device_addr;
+  // // Head output
+  // auto &head_out_mem = net_penalty_sample_head[0]->stages[0].output_mems[0];
+  // alloc_mem(bm_handle, head_out_mem);
+  // alloc_mem(bm_handle, net_penalty_sample_head[0]->stages[0].output_mems[1]);
+  // net_greedy_head[0]->stages[0].input_mems[0].addr = head_in_mem.u.device.device_addr;
+
+  // for (int i = 0; i < NUM_LAYERS; i++) {
+  //   // block cache input
+  //   // set_addr_from_mem(net_blocks_cache[i]->stages[0].input_mems[0], net_blocks[0]->stages[0].input_mems[0]);
+  //   // set_addr_from_mem(net_blocks_cache[i]->stages[0].input_mems[1], net_blocks[0]->stages[0].input_mems[1]);
+  //   // set_addr_from_mem(net_blocks_cache[i]->stages[0].input_mems[2], net_blocks[0]->stages[0].input_mems[2]);
+  //   // alloc_mem(bm_handle, net_blocks_cache[i]->stages[0].input_mems[3]);
+  //   // alloc_mem(bm_handle, net_blocks_cache[i]->stages[0].input_mems[4]);
+    
+  //   // // block cache output
+  //   // set_addr_from_mem(net_blocks_cache[i]->stages[0].output_mems[0], net_blocks[0]->stages[0].output_mems[0]);
+  //   // set_addr_from_mem(net_blocks_cache[i]->stages[0].output_mems[1], net_blocks[0]->stages[0].output_mems[1]);
+  //   // set_addr_from_mem(net_blocks_cache[i]->stages[0].output_mems[2], net_blocks[0]->stages[0].output_mems[2]);
+  //   alloc_mem(bm_handle, net_blocks_cache[i]->stages[0].input_mems[0]);
+  //   alloc_mem(bm_handle, net_blocks_cache[i]->stages[0].input_mems[1]);
+  //   alloc_mem(bm_handle, net_blocks_cache[i]->stages[0].input_mems[2]);
+  //   alloc_mem(bm_handle, net_blocks_cache[i]->stages[0].input_mems[3]);
+  //   alloc_mem(bm_handle, net_blocks_cache[i]->stages[0].input_mems[4]);
+    
+  //   // block cache output
+  //   alloc_mem(bm_handle, net_blocks_cache[i]->stages[0].output_mems[0]);
+  //   alloc_mem(bm_handle, net_blocks_cache[i]->stages[0].output_mems[1]);
+  //   alloc_mem(bm_handle, net_blocks_cache[i]->stages[0].output_mems[2]);
+  // }
+
   // kv cache
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
@@ -287,17 +362,6 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   }
 }
 
-void malloc_device_mem(bm_handle_t bm_handle, memory_t &mem, std::vector<bm_device_mem_t> &prealloc_mem_v) {
-  if (mem.size > 0) {
-    bm_device_mem_t dmem;
-    if (bm_malloc_device_byte(bm_handle, &dmem, mem.size) == BM_SUCCESS) {
-       mem.addr = bm_mem_get_device_addr(dmem);
-       prealloc_mem_v.push_back(dmem);
-    }
-  }
-}
-
-
 void Qwen::load_model_with_memory(std::string model_path) {
   if (bmrt_get_bmodel_info(model_path.c_str(), &mem_info) == false) {
     throw std::runtime_error("Load bmodel Failed");
@@ -313,6 +377,7 @@ void Qwen::load_model_with_memory(std::string model_path) {
   malloc_device_mem(bm_handle, mem_info.variable_instruction_mem, prealloc_mem_v);
   malloc_device_mem(bm_handle, mem_info.neuron_mem, prealloc_mem_v);
   malloc_device_mem(bm_handle, mem_info.io_mem, prealloc_mem_v);
+  // malloc_device_mem(bm_handle, mem_info.io_mem, prealloc_mem_v); 
 
   bool ret = bmrt_load_bmodel_with_mem(p_bmrt, model_path.c_str(), &mem_info);
   assert(true == ret);
@@ -321,14 +386,14 @@ void Qwen::load_model_with_memory(std::string model_path) {
 
 void Qwen::free_device() {
   while (prealloc_mem_v.size() > 1) {
-    bm_free_device(bm_handle, prealloc_mem_v.back());
+    bm_free_device_u64(bm_handle, prealloc_mem_v.back());
     prealloc_mem_v.pop_back();
   }
 }
 
 void Qwen::deinit() {
   for (size_t i = 0; i < prealloc_mem_v.size(); ++i) {
-    bm_free_device(bm_handle, prealloc_mem_v[i]);
+    bm_free_device_u64(bm_handle, prealloc_mem_v[i]);
   }
   if (false == io_alone) {
     for (int i = 0; i < NUM_LAYERS; i++) {
