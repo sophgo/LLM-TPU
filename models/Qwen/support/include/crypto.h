@@ -27,11 +27,13 @@ public:
         CryptoPP::OFB_Mode<CryptoPP::AES>::Encryption encryption;
         encryption.SetKeyWithIV(key, key.size(), iv);
 
+        std::string cipher;
         CryptoPP::ArraySource(plaintext.data(), plaintext.size(), true,
             new CryptoPP::StreamTransformationFilter(encryption,
-                new CryptoPP::VectorSink(ciphertext)
+                new CryptoPP::StringSink(cipher)
             )
         );
+        ciphertext.assign(cipher.begin(), cipher.end());
     }
 
     // Decrypt
@@ -40,10 +42,12 @@ public:
         CryptoPP::OFB_Mode<CryptoPP::AES>::Decryption decryption;
         decryption.SetKeyWithIV(key, key.size(), iv);
 
+        std::string plain;
         CryptoPP::ArraySource(ciphertext.data(), ciphertext.size(), true,
             new CryptoPP::StreamTransformationFilter(decryption,
-                new CryptoPP::VectorSink(plaintext)
+                new CryptoPP::StringSink(plain)
             )
         );
+        plaintext.assign(plain.begin(), plain.end());
     }
 };
