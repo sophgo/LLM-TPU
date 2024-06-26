@@ -6,12 +6,10 @@ if (NOT DEFINED TARGET_ARCH)
 endif()
 
 include_directories(${PROJECT_SOURCE_DIR}/../support/include)
-# include_directories(/workspace/libsophon/install_pcie/libsophon-0.5.1/include)
 
 if (${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "aarch64")
     add_definitions(-DSOC_TARGET)
     link_directories(${PROJECT_SOURCE_DIR}/../support/lib_soc)
-    # link_directoried(/workspace/libsophon/install_pcie/libsophson-0.5.1/lib/)
     message("SoC mode, starting......")
 elseif (${TARGET_ARCH} STREQUAL "pcie")
     add_definitions(-DPCIE_TARGET)
