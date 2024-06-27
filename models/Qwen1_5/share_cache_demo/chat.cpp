@@ -112,12 +112,7 @@ public:
   bool is_dynamic;
   bool memory_prealloc;
   bool is_decrypt;
-  std::vector<bm_device_mem_u64_t> prealloc_mem_v;
-  bm_device_mem_t io_mem_v[100];
   std::vector<int> unshare_tokens;
-  uint16_t mask_value;
-  mem_info_t mem_info;
-  AESOFBCipher cipher;
 
   // generation
   float temperature;
@@ -141,6 +136,12 @@ private:
   const bm_net_info_t *net_lm, *net_greedy_head, *net_penalty_sample_head;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
+
+  std::vector<bm_device_mem_u64_t> prealloc_mem_v;
+  bm_device_mem_t io_mem_v[100];
+  uint16_t mask_value;
+  mem_info_t mem_info;
+  AESOFBCipher cipher;
 };
 
 void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
@@ -331,7 +332,6 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
     assert(BM_SUCCESS == status);
   }
 }
-
 
 std::vector<uint8_t> Qwen::read_file(std::string model_path, size_t size, size_t offset) {
   std::ifstream file(model_path, std::ios::binary);
