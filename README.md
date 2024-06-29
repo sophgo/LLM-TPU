@@ -1,10 +1,15 @@
 ![](./assets/sophgo_chip.png)
 
+# 目录
+  - [介绍](#介绍)
+  - [快速开始](#快速开始)
+  - [常见问题](#常见问题)
+
 # 介绍
 
 本项目实现算能BM1684X芯片部署各类开源`生成式AI模型`，其中以LLM为主。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到PCIE环境或者SoC环境。在知乎上写了一篇解读，以`ChatGLM2-6B`为例，方便大家理解源码：[ChatGLM2流程解析与TPU-MLIR部署](https://zhuanlan.zhihu.com/p/641975976)
 
-我们已经部署过的开源模型如下（按照首字母顺序排列）：
+已部署过的模型如下（按照首字母顺序排列）：
 
 |Model                |INT4                |INT8                |FP16/BF16           |Huggingface Link                                                          |
 |:-                   |:-                  |:-                  |:-                  |:-                                                                        |
@@ -31,11 +36,9 @@
 
 如果您想要知道转换细节和源码，可以到本项目[models](./models)子目录查看各类模型部署细节。
 
-如果您想看看演示效果，可以根据`Quick Start`内容操作即可。
-
 如果您对我们的芯片感兴趣，也可以通过官网[SOPHGO](https://www.sophgo.com/)联系我们。
 
-# Quick Start
+# 快速开始
 
 如果您手上有1684X芯片的SoC板卡或者PCIE板卡，例如Airbox（SoC），那么可以参考以下步骤跑通大语言模型，这里以Llama2-7B为例。
 
@@ -163,3 +166,11 @@ echo "setr vpll_clock 100000000"> /sys/kernel/debug/top/clock
 ### Q4：执行python_demo时报这个错 ValueError: vector::_M_default_append
 
 A：CMakeLists.txt版本的问题，修改CMakeLists.txt，将第一行改为cmake_minimum_required(VERSION 3.10)
+
+
+# 资料链接
+
+* ChatGLM2流程解析与TPU-MLIR部署：https://zhuanlan.zhihu.com/p/641975976
+* 模型转换工具链 TPU-MLIR：https://github.com/sophgo/tpu-mlir
+* TPU-MLIR快速入门手册：https://tpumlir.org/docs/quick_start/index.html
+* TPU-MLIR论文、整体工程讲解：https://www.bilibili.com/video/BV1My4y1o73Q
