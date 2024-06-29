@@ -170,6 +170,7 @@ class Qwen():
 
         # load model 0
         self.load_model(self.model_list[0])
+        self.model.empty_kvcache()
 
         # share prefill
         share_start = time.time()
@@ -203,7 +204,7 @@ class Qwen():
         # share prefill
         share_start = time.time()
         share_tokens = self.tokenizer.encode(share_str)
-        self.model.forward_first(share_tokens)
+        #self.model.forward_first(share_tokens)
         share_end = time.time()
         print(f"\nShare FTL Time: {(share_end - share_start):.3f} s")
 

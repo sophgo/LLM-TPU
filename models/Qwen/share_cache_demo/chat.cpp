@@ -79,6 +79,7 @@ public:
   void deinit();
   void free_device();
   void malloc_bmodel_mem();
+  void empty_kvcache();
   void forward_first(std::vector<int> &tokens);
   int forward_unshare(std::vector<int> &tokens);
   int forward_next();
@@ -143,7 +144,7 @@ private:
   std::vector<bm_device_mem_t> past_value;
 
   std::vector<bm_device_mem_u64_t> prealloc_mem_v;
-  bm_device_mem_t io_mem_v[100];
+  std::vector<bm_device_mem_t> io_mem_v;
   uint16_t mask_value;
   mem_info_t mem_info;
   AESOFBCipher cipher;
@@ -324,7 +325,9 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
       throw std::runtime_error("Only support io_alone");
     }
   }
+}
 
+void Qwen::empty_kvcache() {
   int value = 0;
   for (int i = 0; i < NUM_LAYERS; i++) {
     bool status = bm_memset_device_ext(bm_handle, &value, 1, past_key[i]);
@@ -336,6 +339,7 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
     status = bm_memset_device_ext(bm_handle, &value, 1, net_blocks_unshare[i]->stages[0].input_mems[4]);
     assert(BM_SUCCESS == status);
   }
+  return;
 }
 
 std::vector<uint8_t> Qwen::read_file(std::string model_path, size_t size, size_t offset) {
@@ -435,15 +439,18 @@ void Qwen::free_device() {
     bm_free_device_u64(bm_handle, prealloc_mem_v.back());
     prealloc_mem_v.pop_back();
   }
-  for (int i = 0; i < NUM_LAYERS; i++) {
-    bm_free_device(bm_handle, io_mem_v[i]);
-  }
+  // for (int i = 0; i < NUM_LAYERS; i++) {
+  //   bm_free_device(bm_handle, io_mem_v[i]);
+  // }
 }
 
 void Qwen::deinit() {
   for (size_t i = 0; i < prealloc_mem_v.size(); ++i) {
     bm_free_device_u64(bm_handle, prealloc_mem_v[i]);
   }
+  // for (size_t i = 0; i < io_mem_v.size(); i++) {
+  //   bm_free_device(bm_handle, io_mem_v[i]);
+  // }
   if (false == io_alone) {
     for (int i = 0; i < NUM_LAYERS; i++) {
       bm_free_device(bm_handle, past_key[i]);
@@ -770,6 +777,7 @@ PYBIND11_MODULE(chat, m) {
         .def("forward_next", &Qwen::forward_next)
         .def("free_device", &Qwen::free_device)
         .def("deinit", &Qwen::deinit)
+        .def("empty_kvcache", &Qwen::empty_kvcache)
         .def_readwrite("SEQLEN", &Qwen::SEQLEN) // read SEQLEN in pipeline.py
         .def_readwrite("MAX_SHARE_LENGTH", &Qwen::MAX_SHARE_LENGTH)
         .def_readwrite("share_length", &Qwen::share_length)
