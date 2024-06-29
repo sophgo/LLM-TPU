@@ -47,6 +47,22 @@ python3 pipeline.py --model_path_list qwen1.5-4b_int4_shareseq6144_unshareseq281
 
 ## 4. 注意事项
 
+建议在进行权重复用、公共序列复用时，先加载最大长度的bmodel，否则容易报以下错误
+```
+[bmlib_memory][error] bm_alloc_gmem failed, dev_id = 0, size = 0x3060e078
+[BM_CHECK][error] BM_CHECK_RET fail /workspace/libsophon/bmlib/src/bmlib_memory.cpp: bm_malloc_device_byte_u64: 1054
+[BMRT][alloc_device_mem_u64:3028] FATAL:Error: device memory: neuron_mem don't alloc
+```
+即**建议**
+```python
+python3 pipeline.py --model_path_list qwen-7b_int4_share6016_unshare1536_seq8704_1dev_dyn.bmodel,qwen-7b_int4_share5888_unshare1024_seq8704_1dev_dyn.bmodel  ...
+```
+**强烈不建议**
+```python
+python3 pipeline.py --model_path_list qwen-7b_int4_share5888_unshare1024_seq8704_1dev_dyn.bmodel,qwen-7b_int4_share6016_unshare1536_seq8704_1dev_dyn.bmodel  ...
+```
+这样做的目的是为了先分配最大的runtime空间（neuron空间）
+
 ### 权重复用
 * 如果使用权重复用的方案，在compile.sh完成后，可以使用以下指令来检查weight空间是否一致
 

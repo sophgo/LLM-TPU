@@ -33,33 +33,6 @@
 
 
 static const float ATTENTION_MASK = -10000.;
-
-// template <typename T>
-// void dump_tensor_to_file(
-//         bm_handle_t&          handle,
-//         bm_device_mem_t&          t,
-//         std::vector<size_t>&& shape,
-//         const std::string&    filename,
-//         const std::string&    tensor_name) {
-//     int  cnt = bm_mem_get_device_size(t) / sizeof(T);
-//     auto buffer = std::make_unique<T[]>(cnt);
-//     bm_memcpy_d2s(handle, buffer.get(), t);
-    
-//     if constexpr (std::is_same_v<T, uint16_t>) {
-//       std::vector<float> data(cnt);
-//       for (int i = 0; i < cnt; i++)
-//         data[i] = fp16_ieee_to_fp32_value(buffer[i]);
-//       cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
-//     } else if constexpr (std::is_same_v<T, int32_t>){
-//       std::vector<int> data(cnt);
-//       memcpy(data.data(), buffer.get(), sizeof(int) * cnt);
-//       cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
-//     } else {
-//       std::vector<float> data(cnt);
-//       memcpy(data.data(), buffer.get(), sizeof(float) * cnt);
-//       cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
-//     }
-// }
 typedef struct {
   uint32_t magic;
   uint32_t header_size;
@@ -74,6 +47,7 @@ public:
   void deinit();
   void free_device();
   void malloc_bmodel_mem();
+  void empty_kvcache();
   void forward_first(std::vector<int> &tokens);
   int forward_unshare(std::vector<int> &tokens);
   int forward_next();
@@ -138,7 +112,7 @@ private:
   std::vector<bm_device_mem_t> past_value;
 
   std::vector<bm_device_mem_u64_t> prealloc_mem_v;
-  bm_device_mem_t io_mem_v[100];
+  std::vector<bm_device_mem_t> io_mem_v;
   uint16_t mask_value;
   mem_info_t mem_info;
   AESOFBCipher cipher;
@@ -319,7 +293,9 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
       throw std::runtime_error("Only support io_alone");
     }
   }
+}
 
+void Qwen::empty_kvcache() {
   int value = 0;
   for (int i = 0; i < NUM_LAYERS; i++) {
     bool status = bm_memset_device_ext(bm_handle, &value, 1, past_key[i]);
@@ -331,6 +307,7 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
     status = bm_memset_device_ext(bm_handle, &value, 1, net_blocks_unshare[i]->stages[0].input_mems[4]);
     assert(BM_SUCCESS == status);
   }
+  return;
 }
 
 std::vector<uint8_t> Qwen::read_file(std::string model_path, size_t size, size_t offset) {
@@ -430,15 +407,15 @@ void Qwen::free_device() {
     bm_free_device_u64(bm_handle, prealloc_mem_v.back());
     prealloc_mem_v.pop_back();
   }
-  for (int i = 0; i < NUM_LAYERS; i++) {
-    bm_free_device(bm_handle, io_mem_v[i]);
-  }
 }
 
 void Qwen::deinit() {
   for (size_t i = 0; i < prealloc_mem_v.size(); ++i) {
     bm_free_device_u64(bm_handle, prealloc_mem_v[i]);
   }
+  // for (size_t i = 0; i < io_mem_v.size(); i++) {
+  //   bm_free_device(bm_handle, io_mem_v[i]);
+  // }
   if (false == io_alone) {
     for (int i = 0; i < NUM_LAYERS; i++) {
       bm_free_device(bm_handle, past_key[i]);
@@ -520,10 +497,10 @@ int Qwen::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
 }
 
 void Qwen::forward_first(std::vector<int> &tokens) {
-  std::vector<int> visited_tokens(MAX_SHARE_LENGTH, 0);
+  std::vector<int> share_tokens(MAX_SHARE_LENGTH, 0);
   std::vector<int> position_id(MAX_SHARE_LENGTH, 0);
   std::vector<uint16_t> attention_mask(MAX_SHARE_LENGTH * MAX_SHARE_LENGTH, mask_value);
-  std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
+  std::copy(tokens.begin(), tokens.end(), share_tokens.data());
   
   share_length = tokens.size();
 
@@ -541,7 +518,7 @@ void Qwen::forward_first(std::vector<int> &tokens) {
   // forward embeding
   auto &in_mem = net_embed->stages[0].input_mems[0];
   auto &out_mem = net_embed->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)visited_tokens.data());
+  bm_memcpy_s2d(bm_handle, in_mem, (void *)share_tokens.data());
   net_launch(net_embed); // prefil embedding
 
   // forward blocks
@@ -569,13 +546,11 @@ void Qwen::forward_first(std::vector<int> &tokens) {
 }
 
 int Qwen::forward_unshare(std::vector<int> &tokens) {
-  std::vector<int> visited_tokens(MAX_UNSHARE_LENGTH, 0);
   std::vector<int> position_id(MAX_UNSHARE_LENGTH, 0);
   std::vector<uint16_t> attention_mask(MAX_UNSHARE_LENGTH * (MAX_SHARE_LENGTH + MAX_UNSHARE_LENGTH), mask_value);
   unshare_tokens.clear();
   unshare_tokens.resize(SEQLEN - MAX_SHARE_LENGTH);
   std::copy(tokens.begin(), tokens.end(), unshare_tokens.data());
-  std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
   
   unshare_length = tokens.size();
 
@@ -596,7 +571,7 @@ int Qwen::forward_unshare(std::vector<int> &tokens) {
   // forward embeding
   auto &in_mem = net_embed_unshare->stages[0].input_mems[0];
   auto &out_mem = net_embed_unshare->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)visited_tokens.data());
+  bm_memcpy_s2d(bm_handle, in_mem, (void *)unshare_tokens.data());
   net_launch(net_embed_unshare); // prefil embedding
 
   // forward blocks
@@ -760,6 +735,7 @@ PYBIND11_MODULE(chat, m) {
         .def("forward_next", &Qwen::forward_next)
         .def("free_device", &Qwen::free_device)
         .def("deinit", &Qwen::deinit)
+        .def("empty_kvcache", &Qwen::empty_kvcache)
         .def_readwrite("SEQLEN", &Qwen::SEQLEN) // read SEQLEN in pipeline.py
         .def_readwrite("MAX_SHARE_LENGTH", &Qwen::MAX_SHARE_LENGTH)
         .def_readwrite("share_length", &Qwen::share_length)
