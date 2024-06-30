@@ -4,10 +4,10 @@ if [ ! -d "../../bmodels" ]; then
   mkdir ../../bmodels
 fi
 
-if [ ! -f "../../bmodels/wizardcoder-15b_int4_1dev.bmodel" ]; then
+if [ ! -f "../../bmodels/wizardcoder-15b_int4_1dev_seq512.bmodel" ]; then
   pip3 install dfss
-  python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/wizardcoder-15b_int4_1dev.bmodel
-  mv wizardcoder-15b_int4_1dev.bmodel ../../bmodels
+  python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/wizardcoder-15b_int4_1dev_seq512.bmodel
+  mv wizardcoder-15b_int4_1dev_seq512.bmodel ../../bmodels
 else
   echo "Bmodel Exists!"
 fi
@@ -23,4 +23,4 @@ fi
 
 # run demo
 echo $PWD
-./demo/wizardcoder --model ../../bmodels/wizardcoder-15b_int4_1dev.bmodel --vocab ./vocab/vocab.json --devid 0
+./demo/wizardcoder --model ../../bmodels/wizardcoder-15b_int4_1dev_seq512.bmodel --vocab ./vocab/vocab.json --devid 0

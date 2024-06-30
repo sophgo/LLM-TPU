@@ -4,10 +4,10 @@ if [ ! -d "../../bmodels" ]; then
   mkdir ../../bmodels
 fi
 
-if [ ! -f "../../bmodels/llama2-7b_int4_1dev.bmodel" ]; then
+if [ ! -f "../../bmodels/llama2-7b_int4_1dev_seq512.bmodel" ]; then
   pip3 install dfss
-  python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/llama2-7b_int4_1dev.bmodel
-  mv llama2-7b_int4_1dev.bmodel ../../bmodels
+  python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/llama2-7b_int4_1dev_seq512.bmodel
+  mv llama2-7b_int4_1dev_seq512.bmodel ../../bmodels
 else
   echo "Bmodel Exists!"
 fi
@@ -23,4 +23,4 @@ fi
 
 # run demo
 echo $PWD
-python3 python_demo/pipeline.py --model ../../bmodels/llama2-7b_int4_1dev.bmodel --tokenizer ./support/token_config --devid 0
+python3 python_demo/pipeline.py --model ../../bmodels/llama2-7b_int4_1dev_seq512.bmodel --tokenizer ./support/token_config --devid 0

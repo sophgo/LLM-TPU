@@ -118,7 +118,7 @@ pushd $outdir
 
 model_transform.py \
     --model_name embedding \
-    --model_def ../../onnx/embedding.pt \
+    --model_def /workspace/LLM-TPU/models/Qwen1_5/compile/tmp/onnx-Qwen1_5-7b-int4-seqlen=8192/embedding.pt \
     --input_shapes [[1,${seq_length}]] \
     --input_types "int32" \
     --mlir embedding.mlir
@@ -135,7 +135,7 @@ model_deploy.py \
 
 model_transform.py \
     --model_name embedding_cache \
-    --model_def ../../onnx/embedding.pt \
+    --model_def /workspace/LLM-TPU/models/Qwen1_5/compile/tmp/onnx-Qwen1_5-7b-int4-seqlen=8192/embedding.pt \
     --input_shapes [[1,1]] \
     --input_types "int32" \
     --mlir embedding_cache.mlir
@@ -163,7 +163,7 @@ pushd $outdir
 if [[ $num_device -gt 1 ]]; then
     model_transform.py \
         --model_name lm_head \
-        --model_def ../../onnx/lm_head_with_topk.pt \
+        --model_def /workspace/LLM-TPU/models/Qwen1_5/compile/tmp/onnx-Qwen1_5-7b-int4-seqlen=8192/lm_head_with_topk.pt \
         --input_shapes [[1,1,${hidden_size}]] \
         --mlir lm_head.mlir
 
@@ -179,7 +179,7 @@ if [[ $num_device -gt 1 ]]; then
 else
     model_transform.py \
         --model_name lm_head \
-        --model_def ../../onnx/lm_head.pt \
+        --model_def /workspace/LLM-TPU/models/Qwen1_5/compile/tmp/onnx-Qwen1_5-7b-int4-seqlen=8192/lm_head.pt \
         --input_shapes [[1,${hidden_size}]] \
         --mlir lm_head.mlir
     
@@ -194,7 +194,7 @@ else
     
     model_transform.py \
         --model_name greedy_head \
-        --model_def ../../onnx/greedy_head.onnx \
+        --model_def /workspace/LLM-TPU/models/Qwen1_5/compile/tmp/onnx-Qwen1_5-7b-int4-seqlen=8192/greedy_head.onnx \
         --mlir greedy_head.mlir
     
     model_deploy.py \
@@ -205,7 +205,7 @@ else
     
     model_transform.py \
         --model_name penalty_sample_head \
-        --model_def ../../onnx/penalty_sample_head.onnx \
+        --model_def /workspace/LLM-TPU/models/Qwen1_5/compile/tmp/onnx-Qwen1_5-7b-int4-seqlen=8192/penalty_sample_head.onnx \
         --mlir penalty_sample_head.mlir
     
     model_deploy.py \
@@ -229,7 +229,7 @@ for ((i=0; i<$num_layers; i++)); do
 
     model_transform.py \
         --model_name block_$i \
-        --model_def ../../onnx/block_$i.onnx \
+        --model_def /workspace/LLM-TPU/models/Qwen1_5/compile/tmp/onnx-Qwen1_5-7b-int4-seqlen=8192/block_$i.onnx \
         --mlir block_$i.mlir
 
     model_deploy.py \
@@ -244,7 +244,7 @@ for ((i=0; i<$num_layers; i++)); do
 
     model_transform.py \
         --model_name block_cache_$i \
-        --model_def ../../onnx/block_cache_$i.onnx \
+        --model_def /workspace/LLM-TPU/models/Qwen1_5/compile/tmp/onnx-Qwen1_5-7b-int4-seqlen=8192/block_cache_$i.onnx \
         --mlir block_cache_$i.mlir
 
     model_deploy.py \
