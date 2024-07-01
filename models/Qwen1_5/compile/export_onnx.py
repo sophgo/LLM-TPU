@@ -25,8 +25,7 @@ parser.add_argument('--lmhead_with_topk', type=int, default=0, help="only trace 
 args = parser.parse_args()
 
 model_path = args.model_path
-# folder = f"./tmp/onnx-qwen1.5-32b/"
-folder = f"./tmp/onnx-Qwen1_5-4b-seq=8192/"
+folder = f"./tmp/onnx/"
 
 device = torch.device(args.device)
 if device == 'cpu':
