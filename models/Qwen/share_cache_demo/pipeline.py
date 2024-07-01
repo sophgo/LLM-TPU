@@ -169,6 +169,7 @@ class Qwen():
         self.model.encrypt_bmodel(self.model_list[0])
 
         # load model 0
+        self.model.io_alone_reuse = False
         self.load_model(self.model_list[0])
         self.model.empty_kvcache()
 
@@ -198,13 +199,14 @@ class Qwen():
         # Model 1
         #===------------------------------------------------------------===
         # load model 1
+        self.model.io_alone_reuse = True
         self.model.encrypt_bmodel(self.model_list[1])
         self.load_model(self.model_list[1])
 
         # share prefill
         share_start = time.time()
-        share_tokens = self.tokenizer.encode(share_str)
-        #self.model.forward_first(share_tokens)
+        # share_tokens = self.tokenizer.encode(share_str)
+        # self.model.forward_first(share_tokens)
         share_end = time.time()
         print(f"\nShare FTL Time: {(share_end - share_start):.3f} s")
 
@@ -241,7 +243,6 @@ if __name__ == "__main__":
     parser.add_argument('--max_new_tokens', type=int, default=1024, help='max new token length to generate')
     parser.add_argument('--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
     parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
-    parser.add_argument('--mode', type=str, choices=["debug", "default"], default="default", help='use debug to dump logits')
     parser.add_argument('--memory_prealloc', action='store_true', help="if set, prealloc weight memory for weight reuse")
     parser.add_argument('--is_decrypt', action='store_true', help="if set, will to decrypt bmodel before load")
     args = parser.parse_args()

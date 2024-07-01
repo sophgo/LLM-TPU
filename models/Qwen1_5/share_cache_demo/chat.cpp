@@ -86,6 +86,7 @@ public:
   bool is_dynamic;
   bool memory_prealloc;
   bool is_decrypt;
+  bool io_alone_reuse;
   std::vector<int> unshare_tokens;
 
   // generation
@@ -110,6 +111,10 @@ private:
   const bm_net_info_t *net_lm, *net_greedy_head, *net_penalty_sample_head;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
+  std::vector<bm_device_mem_t> prev_past_key;
+  std::vector<bm_device_mem_t> prev_past_value;
+  bm_device_mem_t tmp_key_cache;
+  bm_device_mem_t tmp_value_cache;
 
   std::vector<bm_device_mem_u64_t> prealloc_mem_v;
   std::vector<bm_device_mem_t> io_mem_v;
@@ -280,17 +285,40 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   // kv cache
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
+  prev_past_key.resize(NUM_LAYERS);
+  prev_past_value.resize(NUM_LAYERS);
 
   is_dynamic = net_blocks[0]->is_dynamic;
   auto addr_mode = net_blocks_cache[0]->addr_mode;
   io_alone = addr_mode == 1;
+  assert(io_alone == 1);
+  
+  if (io_alone_reuse) {
+    ret = bm_malloc_device_byte(bm_handle, &tmp_key_cache, past_key[0].size);
+    assert(BM_SUCCESS == ret);
+    ret = bm_malloc_device_byte(bm_handle, &tmp_value_cache, past_value[0].size);
+    assert(BM_SUCCESS == ret);
+  }
   for (int i = 0; i < NUM_LAYERS; i++) {
     assert(addr_mode == net_blocks_cache[i]->addr_mode);
-    if (io_alone) {
-      past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
-      past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
-    } else {
-      throw std::runtime_error("Only support io_alone");
+    if (io_alone_reuse) {
+      prev_past_key[i] = past_key[i];
+      prev_past_value[i] = past_value[i];
+    }
+    past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
+    past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
+    if (io_alone_reuse) {
+      if (i != NUM_LAYERS - 1) {
+        assert(prev_past_key[i].u.device.device_addr + prev_past_key[i].size < past_key[i + 1].u.device.device_addr);
+        assert(prev_past_value[i].u.device.device_addr + prev_past_value[i].size < past_value[i + 1].u.device.device_addr);
+
+        assert(prev_past_key[i].u.device.device_addr + prev_past_key[i].size < past_value[i + 1].u.device.device_addr);
+        assert(prev_past_value[i].u.device.device_addr + prev_past_value[i].size < past_key[i + 1].u.device.device_addr);
+      }
+      d2d(tmp_key_cache, prev_past_key[i]);
+      d2d(tmp_value_cache, prev_past_value[i]);
+      d2d(past_key[i], tmp_key_cache);
+      d2d(past_value[i], tmp_value_cache);
     }
   }
 }
@@ -532,7 +560,6 @@ void Qwen::forward_first(std::vector<int> &tokens) {
       bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
       bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     }
-
     if (is_dynamic) {
       dynamic_net_launch(net_blocks[idx], share_length);
     } else {
@@ -749,5 +776,6 @@ PYBIND11_MODULE(chat, m) {
         .def_readwrite("generation_mode", &Qwen::generation_mode)
         .def_readwrite("prompt_mode", &Qwen::prompt_mode)
         .def_readwrite("memory_prealloc", &Qwen::memory_prealloc)
+        .def_readwrite("io_alone_reuse", &Qwen::io_alone_reuse)
         .def_readwrite("is_decrypt", &Qwen::is_decrypt);
 }
