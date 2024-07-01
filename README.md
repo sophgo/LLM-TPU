@@ -172,6 +172,18 @@ echo "setr vpll_clock 100000000"> /sys/kernel/debug/top/clock
 
 A：CMakeLists.txt版本的问题，修改CMakeLists.txt，将第一行改为cmake_minimum_required(VERSION 3.10)
 
+### Q5：跑Qwen1_5的时候遇到，RuntimeError: The size of tensor a (16) must match the size of tensor b (512)at non-singleton dimension 1 
+A：可能是torch版本不对，torch版本最好是2.0.1，不然会走spda的attention，解决方法是
+
+``` pip install torch==2.0.1+cpu torchvision==0.15.2 -f https://download.pytorch.org/whl/cpu/torch_stable.html```
+
+### Q6：跑Qwen1_5、Qwen2的时候遇到，ValueError: Tokenizer class Qwen2Tokenizer does not exist or is not currently imported.
+V：transsformers版本不对，需要重新安装。
+
+```
+pip3 install transformers==4.37.0
+```
+
 
 # 资料链接
 
