@@ -178,7 +178,7 @@ A：可能是torch版本不对，torch版本最好是2.0.1，不然会走spda的
 ``` pip install torch==2.0.1+cpu torchvision==0.15.2 -f https://download.pytorch.org/whl/cpu/torch_stable.html```
 
 ### Q6：跑Qwen1_5、Qwen2的时候遇到，ValueError: Tokenizer class Qwen2Tokenizer does not exist or is not currently imported.
-V：transsformers版本不对，需要重新安装。
+A：transsformers版本不对，需要重新安装。
 
 ```
 pip3 install transformers==4.37.0
