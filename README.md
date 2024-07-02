@@ -158,7 +158,7 @@ A：
 解决方式一：
 
 可能是由于板子的tpu电压太低了，tpu降频就好了，降频命令如下
-```
+```shell
 echo "setr tpll_clock 750000000" > /sys/kernel/debug/top/clock
 echo "setr mpll_clock 1800000000" > /sys/kernel/debug/top/clock
 echo "setr vpll_clock 100000000"> /sys/kernel/debug/top/clock
@@ -175,12 +175,14 @@ A：CMakeLists.txt版本的问题，修改CMakeLists.txt，将第一行改为cma
 ### Q5：跑Qwen1_5的时候遇到，RuntimeError: The size of tensor a (16) must match the size of tensor b (512)at non-singleton dimension 1 
 A：可能是torch版本不对，torch版本最好是2.0.1，不然会走spda的attention，解决方法是
 
-``` pip install torch==2.0.1+cpu torchvision==0.15.2 -f https://download.pytorch.org/whl/cpu/torch_stable.html```
+```shell
+pip3 install torch==2.0.1+cpu torchvision==0.15.2 -f https://download.pytorch.org/whl/cpu/torch_stable.html
+```
 
 ### Q6：跑Qwen1_5、Qwen2的时候遇到，ValueError: Tokenizer class Qwen2Tokenizer does not exist or is not currently imported.
-A：transsformers版本不对，需要重新安装。
+A：transformers版本不对，需要重新安装。
 
-```
+```shell
 pip3 install transformers==4.37.0
 ```
 
