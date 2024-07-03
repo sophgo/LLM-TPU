@@ -39,8 +39,9 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 ## 3. 运行python demo
 ```shell
-python3 pipeline.py --model_path qwen-7b_int4_shareseq5888_unshare1536_seq8704_1dev.bmodel,qwen-7b_int4_shareseq6016_unshare1024_seq7552_1dev.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --memory_prealloc --is_decrypt
+python3 pipeline.py --model_path qwen-7b_int4_share5888_unshare1536_1dev_dyn.bmodel,qwen-7b_int4_share6016_unshare1024_1dev_dyn.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --memory_prealloc --is_decrypt
 ```
+* io_alone_reuse：使用io_alone_reuse时，表示上次的past_kv与io空间会复用，如果想要复用prefill，必须要io_alone_reuse=True
 * memory_prealloc：表示使用权重复用
 * is_decrypt：表明使用模型解密，**目前仅支持memory_prealloc和is_decrypt同时使用**
 * model_path_list：当使用多个模型时，用逗号隔开

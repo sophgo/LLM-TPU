@@ -166,7 +166,8 @@ class Qwen():
         #===------------------------------------------------------------===
         # Model 0
         #===------------------------------------------------------------===
-        self.model.encrypt_bmodel(self.model_list[0])
+        if self.model.is_decrypt:        
+            self.model.encrypt_bmodel(self.model_list[0])
 
         # load model 0
         self.model.io_alone_reuse = False
@@ -200,7 +201,8 @@ class Qwen():
         #===------------------------------------------------------------===
         # load model 1
         self.model.io_alone_reuse = True
-        self.model.encrypt_bmodel(self.model_list[1])
+        if self.model.is_decrypt:
+            self.model.encrypt_bmodel(self.model_list[1])
         self.load_model(self.model_list[1])
 
         # share prefill
