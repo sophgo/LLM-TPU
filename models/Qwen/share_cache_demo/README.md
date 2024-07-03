@@ -2,12 +2,14 @@
 
 ## 1. 编译模型
 your_torch_model是你模型的路径
+
+在编译的时候需要注意：**max_pos_len需要设置为所有模型中最大的total_seq**
 ```shell
 pip3 install transformers_stream_generator einops tiktoken accelerate transformers==4.32.0
 
 cp files/Qwen-7B-Chat/* your_torch_model
 
-python export_onnx.py --model_path your_torch_model --device cpu --share_length 5888 --unshare_length 1536 --seq_length 8704 --num_thread 16
+python export_onnx.py --model_path your_torch_model --device cpu --share_length 5888 --unshare_length 1536 --seq_length 8704 --max_pos_len 8704 --num_thread 16
 
 python export_onnx.py --model_path your_torch_model --device cpu --share_length 6016 --unshare_length 1024 --seq_length 7552 --max_pos_len 8704 --num_thread 16
 
@@ -41,6 +43,7 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 ```shell
 python3 pipeline.py --model_path qwen-7b_int4_share5888_unshare1536_1dev_dyn.bmodel,qwen-7b_int4_share6016_unshare1024_1dev_dyn.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --memory_prealloc --is_decrypt
 ```
+* **必须将total_seq比较大的模型放到model_path_list的前面**,也就是seq最大的那个先跑
 * io_alone_reuse：使用io_alone_reuse时，表示上次的past_kv与io空间会复用，如果想要复用prefill，必须要io_alone_reuse=True
 * memory_prealloc：表示使用权重复用
 * is_decrypt：表明使用模型解密，**目前仅支持memory_prealloc和is_decrypt同时使用**
