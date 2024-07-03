@@ -3,7 +3,7 @@
 ## Export onnx
 
 ```shell
-pip install transformers_stream_generator einops tiktoken accelerate transformers==4.41.2
+pip install transformers_stream_generator einops tiktoken accelerate torch==2.0.1+cpu torchvision==0.15.2 transformers==4.41.2
 cp files/Qwen2-7B-Instruct/modeling_qwen2.py /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2/
 ```
 your_torch_model是你模型的位置
