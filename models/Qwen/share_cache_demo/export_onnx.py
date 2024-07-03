@@ -29,6 +29,7 @@ parser.add_argument('-s', '--seq_length', type=int, default=512, help="sequence 
 parser.add_argument('-n', '--num_threads', type=int, default=1, help='The number of threads used for torch if device is cpu')
 parser.add_argument('--share_length', type=int, default=6144, help="share length")
 parser.add_argument('--unshare_length', type=int, default=4096, help="unshare length")
+parser.add_argument('--max_pos_len', type=int, default=8704, help="max position length")
 
 args = parser.parse_args()
 
@@ -103,7 +104,8 @@ class QwenBlock(torch.nn.Module):
             hidden_states,
             attention_mask=attention_mask,
             position_ids=position_ids,
-            use_cache=True)
+            use_cache=True,
+            max_pos_len=args.max_pos_len)
         present_k, present_v = past_kv
         return hidden_states.float(), present_k.float(), present_v.float()
 
@@ -127,7 +129,8 @@ class QwenBlockCache(torch.nn.Module):
             layer_past=(past_k, past_v),
             attention_mask=attention_mask,
             position_ids=position_ids,
-            use_cache=True)
+            use_cache=True,
+            max_pos_len=args.max_pos_len)
         present_k, present_v = past_kv
         return hidden_states.float(), present_k.float(), present_v.float()
 

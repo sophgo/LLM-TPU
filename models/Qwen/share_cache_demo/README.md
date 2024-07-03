@@ -7,9 +7,13 @@ pip3 install transformers_stream_generator einops tiktoken accelerate transforme
 
 cp files/Qwen-7B-Chat/* your_torch_model
 
-python export_onnx.py --model_path your_torch_model --device cpu --share_length 6144 --unshare_length 1536 --seq_length 8704 --num_thread 16
+python export_onnx.py --model_path your_torch_model --device cpu --share_length 5888 --unshare_length 1536 --seq_length 8704 --num_thread 16
 
-./compile.sh --mode int4 --name qwen-7b --share_length 6016 --addr_mode io_alone --unshare_length 1536 --dynamic 1
+python export_onnx.py --model_path your_torch_model --device cpu --share_length 6016 --unshare_length 1024 --seq_length 7552 --max_pos_len 8704 --num_thread 16
+
+./compile.sh --mode int4 --name qwen-7b --share_length 5888 --addr_mode io_alone --unshare_length 1536 --dynamic 1
+
+./compile.sh --mode int4 --name qwen-7b --share_length 6016 --addr_mode io_alone --unshare_length 1024 --dynamic 1
 ```
 如果你不想编译模型，也可以直接下载
 ```shell
@@ -35,7 +39,7 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 ## 3. 运行python demo
 ```shell
-python3 pipeline.py --model_path qwen-7b_int4_shareseq6016_unshare1536_seq7552_1dev.bmodel,qwen-7b_int4_shareseq5888_unshare1536_seq7552_1dev.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --memory_prealloc --is_decrypt
+python3 pipeline.py --model_path qwen-7b_int4_shareseq5888_unshare1536_seq8704_1dev.bmodel,qwen-7b_int4_shareseq6016_unshare1024_seq7552_1dev.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --memory_prealloc --is_decrypt
 ```
 * memory_prealloc：表示使用权重复用
 * is_decrypt：表明使用模型解密，**目前仅支持memory_prealloc和is_decrypt同时使用**
@@ -45,6 +49,13 @@ python3 pipeline.py --model_path qwen-7b_int4_shareseq6016_unshare1536_seq7552_1
 
 
 ## 4. 注意事项
+
+### 内存设置
+
+使用如下方式来设定内存，目前内存占用为10483MB，设定的内存为10512MB
+```shell
+./memory_edit.sh -c -npu 6462 -vpu 0 -vpp 4050
+```
 
 ### 权重复用
 * 如果使用权重复用的方案，在compile.sh完成后，可以使用以下指令来检查weight空间是否一致

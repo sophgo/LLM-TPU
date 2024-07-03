@@ -482,6 +482,7 @@ class QWenAttention(nn.Module):
         encoder_attention_mask: Optional[torch.FloatTensor] = None,
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
+        max_pos_len: Optional[int] = 0,
     ):
         mixed_x_layer = self.c_attn(hidden_states)
         query, key, value = mixed_x_layer.split(self.split_size, dim=2)
@@ -513,7 +514,7 @@ class QWenAttention(nn.Module):
         #         query = torch.cat(query_list, dim=0)
         #         key = torch.cat(key_list, dim=0)
 
-        cos, sin = self.rotary_emb(value, seq_len=self.max_position_embeddings)
+        cos, sin = self.rotary_emb(value, seq_len=max_pos_len)
         query, key = apply_rotary_pos_emb(query, key, cos, sin, position_ids)
 
         if self.use_cache_quantization:
@@ -667,6 +668,7 @@ class QWenBlock(nn.Module):
         encoder_attention_mask: Optional[torch.FloatTensor] = None,
         use_cache: Optional[bool] = False,
         output_attentions: Optional[bool] = False,
+        max_pos_len: Optional[int] = 0,
     ):
         layernorm_output = self.ln_1(hidden_states)
 
@@ -679,6 +681,7 @@ class QWenBlock(nn.Module):
             head_mask=head_mask,
             use_cache=use_cache,
             output_attentions=output_attentions,
+            max_pos_len=max_pos_len
         )
         attn_output = attn_outputs[0]
 
