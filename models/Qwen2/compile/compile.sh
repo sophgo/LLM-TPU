@@ -58,8 +58,12 @@ if [ "$name" = "qwen2-7b" ]; then
   num_layers=28
   hidden_size=3584
   echo "Compile Qwen2-7B"
+elif [ "$name" = "qwen2-1.5b" ]; then
+  num_layers=28
+  hidden_size=1536
+  echo "Compile Qwen2-1.5B"
 else
-  >&2 echo -e "Error: Invalid name $name, the input name must be \033[31mqwen2-7b\033[0m"
+  >&2 echo -e "Error: Invalid name $name, the input name must be \033[31mqwen2-7b|qwen1.5b\033[0m"
   exit 1
 fi
 
