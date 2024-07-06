@@ -19,10 +19,16 @@ python3 export_onnx.py --model_path your_torch_model --seq_length 8192 --device 
 ./compile.sh --mode int4 --name qwen2-7b --addr_mode io_alone --seq_length 8192
 ```
 
+编译Qwen2-1.5B
+```
+./compile.sh --mode int4 --name qwen2-1.5b --addr_mode io_alone --seq_length 8192
+```
+
 ### 下载迁移好的模型
 也可以直接下载编译好的模型，不用自己编译
 ```shell
 pip3 install dfss
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2-1.5b_int4_seq8192_1dev.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2-7b_int4_seq8192_1dev.bmodel
 ```
 
