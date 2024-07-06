@@ -207,6 +207,7 @@ process_block() {
         --quant_output \
         --chip bm1684x \
         $device_args \
+	--disable_layer_group \
         --model block_$i.bmodel
 
     model_transform.py \
