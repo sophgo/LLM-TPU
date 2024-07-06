@@ -14,10 +14,10 @@ else
   echo "Bmodel Exists!"
 fi
 
-if [ ! -f "./python_demo/chat.cpython-310-x86_64-linux-gnu.so" ]; then
+if [ ! -f "./python_demo/*cpython*" ]; then
   cd python_demo && rm -rf build && mkdir build && cd build
   cmake .. && make -j
-  cp chat.cpython-310-x86_64-linux-gnu.so ..
+  cp *cpython* ..
   cd ../..
 else
   echo "chat.so exists!"
