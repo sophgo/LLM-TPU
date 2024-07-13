@@ -88,7 +88,7 @@ git clone https://github.com/sophgo/LLM-TPU.git
 ## 进阶功能
 进阶功能说明：
 
-| 目录        | 模块                                                                       | 功能说明              |
+| 功能        | 目录                                                                       | 功能说明              |
 | ----------- | -------------------------------------------------------------------------- | --------------------- |
 | 多芯        | [ChatGLM3/parallel_demo](./models/ChatGLM3/parallel_demo)                   | 支持ChatGLM3 2芯      |
 |             | [Llama2/demo_parallel](./models/Llama2/demo_parallel)                       | 支持Llama2 4/6/8芯    |
