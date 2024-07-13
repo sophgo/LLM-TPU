@@ -9,6 +9,8 @@
  *    without the express written permission of Sophgo Technologies Inc.
  *
  *****************************************************************************/
+#include <algorithm>
+#include <climits>
 
 inline uint16_t fp32_to_fp16_bits(float f) {
   uint32_t x = *((uint32_t *)&f);
@@ -154,11 +156,16 @@ float fp16_ieee_to_fp32_value(uint16_t d) {
 
 void dump_bf16_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
                       int size) {
-  std::vector<uint16_t> data(size);
+  auto mem_size = bm_mem_get_device_size(mem);
+  size = std::min(size, static_cast<int>(mem_size));
+  int ele_count = size / sizeof(uint16_t);
+  assert(mem_size < INT_MAX);
+  
+  std::vector<uint16_t> data(ele_count);
   bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, size, offset);
   std::cout << "-------------------------------------" << std::endl;
   fp32 t;
-  for (int i = 0; i < size; i++) {
+  for (int i = 0; i < ele_count; i++) {
     t.bits = bf16_to_fp32_bits(data[i]);
     std::cout << t.fval << std::endl;
   }
@@ -167,11 +174,16 @@ void dump_bf16_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
 
 void dump_fp16_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
                       int size) {
-  std::vector<uint16_t> data(size);
+  auto mem_size = bm_mem_get_device_size(mem);
+  size = std::min(size, static_cast<int>(mem_size));
+  int ele_count = size / sizeof(uint16_t);
+  assert(mem_size < INT_MAX);
+  
+  std::vector<uint16_t> data(ele_count);
   bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, size, offset);
   std::cout << "-------------------------------------" << std::endl;
   fp32 t;
-  for (int i = 0; i < size; i++) {
+  for (int i = 0; i < ele_count; i++) {
     t.bits = fp16_ieee_to_fp32_bits(data[i]);
     std::cout << t.fval << std::endl;
   }
@@ -180,26 +192,32 @@ void dump_fp16_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
 
 void dump_fp32_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
                       int size) {
-  std::vector<float> data(size);
+  auto mem_size = bm_mem_get_device_size(mem);
+  size = std::min(size, static_cast<int>(mem_size));
+  int ele_count = size / sizeof(float);
+  assert(mem_size < INT_MAX);
+
+  std::vector<float> data(ele_count);
   bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, size, offset);
   std::cout << "-------------------------------------" << std::endl;
-  for (int i = 0; i < size; i++) {
+  for (int i = 0; i < ele_count; i++) {
     std::cout << data[i] << std::endl;
   }
   std::cout << "-------------------------------------" << std::endl;
-  auto ptr = data.data();
-  ptr[0] = ptr[0];
 }
 
 void dump_int_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
                      int size) {
-  std::vector<int> data(size);
+  auto mem_size = bm_mem_get_device_size(mem);
+  size = std::min(size, static_cast<int>(mem_size));
+  int ele_count = size / sizeof(int);
+  assert(mem_size < INT_MAX);
+
+  std::vector<int> data(ele_count);
   bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, size, offset);
   std::cout << "-------------------------------------" << std::endl;
-  for (int i = 0; i < size; i++) {
+  for (int i = 0; i < ele_count; i++) {
     std::cout << data[i] << std::endl;
   }
   std::cout << "-------------------------------------" << std::endl;
-  auto ptr = data.data();
-  ptr[0] = ptr[0];
 }
