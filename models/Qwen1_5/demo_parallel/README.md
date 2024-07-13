@@ -47,6 +47,8 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels
 
 ## 3. 运行
 ```shell
+git submodule update --init
+
 cd demo_parallel
 ./link_third_party.sh
 mkdir build && cd build
