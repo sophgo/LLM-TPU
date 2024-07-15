@@ -32,14 +32,18 @@ public:
   void deinit();
   int forward_first(std::vector<int> &tokens);
   int forward_next();
+  void empty_kvcache();
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
   std::mt19937 sgen;
   Qwen() : sgen(std::random_device()()){};
 
 private:
+  void empty(bm_device_mem_t &mem);
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
+  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset);
+  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset, int size);
 
   void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   int greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
@@ -97,6 +101,14 @@ void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
 
 void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
+}
+
+void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset) {
+  bm_memcpy_d2d_byte(bm_handle, dst, offset, src, 0, bm_mem_get_device_size(src));
+}
+
+void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset, int size) {
+  bm_memcpy_d2d_byte(bm_handle, dst, offset, src, 0, size);
 }
 
 void Qwen::init(const std::vector<int> &devices, std::string model_path) {
@@ -186,6 +198,23 @@ void Qwen::deinit() {
 }
 
 
+void Qwen::empty(bm_device_mem_t &mem) {
+  int value = 0;
+  auto ret = bm_memset_device_ext(bm_handle, &value, 1, mem);
+  assert(BM_SUCCESS == ret);
+}
+
+
+void Qwen::empty_kvcache() {
+  for (int i = 0; i < NUM_LAYERS; i++) {
+    empty(past_key[i]);
+    empty(past_value[i]);
+    empty(net_blocks[i]->stages[0].input_mems[0]);
+  }
+  return;
+}
+
+
 void Qwen::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
   std::vector<bm_tensor_t> out_tensors(net->output_num);
@@ -254,6 +283,7 @@ int Qwen::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem) 
 }
 
 int Qwen::forward_first(std::vector<int> &tokens) {
+  empty_kvcache();
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
@@ -278,11 +308,12 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   net_launch(net_embed); // prefil embedding
 
   // forward blocks
+  int bytes = out_mem.size / SEQLEN;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
     auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
-    d2d(in0_mem, out_mem);
+    d2d(in0_mem, out_mem, 0, token_length * bytes);
     if (idx == 0) {
       // only first time need copy
       bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
@@ -295,7 +326,6 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   }
 
   // forward lmhead
-  int bytes = out_mem.size / SEQLEN;
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
   auto &lm_out_mem = net_lm->stages[0].output_mems[0];
   bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
@@ -414,6 +444,7 @@ PYBIND11_MODULE(chat, m) {
       .def("init", &Qwen::init)
       .def("forward_first", &Qwen::forward_first)
       .def("forward_next", &Qwen::forward_next)
+      .def("empty_kvcache", &Qwen::empty_kvcache)
       .def("generate", &Qwen::generate)
       .def("deinit", &Qwen::deinit)
       .def_readwrite("SEQLEN", &Qwen::SEQLEN) // read SEQLEN in pipeline.py
