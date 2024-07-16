@@ -120,7 +120,7 @@ public:
   bool memory_prealloc;
   bool is_decrypt;
   bool io_alone_reuse;
-  std::vector<int> unshare_tokens;
+  std::vector<int> total_tokens;
 
   // generation
   float temperature;
@@ -320,6 +320,7 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   past_value.resize(NUM_LAYERS);
   prev_past_key.resize(NUM_LAYERS);
   prev_past_value.resize(NUM_LAYERS);
+  total_tokens.resize(SEQLEN);
 
   is_dynamic = net_blocks[0]->is_dynamic;
   auto addr_mode = net_blocks_cache[0]->addr_mode;
@@ -567,12 +568,13 @@ int Qwen::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
 }
 
 void Qwen::forward_first(std::vector<int> &tokens) {
-  std::vector<int> share_tokens(MAX_SHARE_LENGTH, 0);
   std::vector<int> position_id(MAX_SHARE_LENGTH, 0);
   std::vector<uint16_t> attention_mask(MAX_SHARE_LENGTH * MAX_SHARE_LENGTH, mask_value);
-  std::copy(tokens.begin(), tokens.end(), share_tokens.data());
+  std::fill(total_tokens.begin(), total_tokens.end(), 0);
+  std::copy(tokens.begin(), tokens.end(), total_tokens.data());
   
   share_length = tokens.size();
+  unshare_length = 0;
 
   for (int i = 0; i < share_length; i++) {
     position_id[i] = i;
@@ -588,7 +590,7 @@ void Qwen::forward_first(std::vector<int> &tokens) {
   // forward embeding
   auto &in_mem = net_embed->stages[0].input_mems[0];
   auto &out_mem = net_embed->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)share_tokens.data());
+  bm_memcpy_s2d(bm_handle, in_mem, (void *)tokens.data());
   net_launch(net_embed); // prefil embedding
 
   // forward blocks
@@ -612,6 +614,14 @@ void Qwen::forward_first(std::vector<int> &tokens) {
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1], 0, share_length * bytes);
     d2d(past_value[idx], net_blocks[idx]->stages[0].output_mems[2], 0, share_length * bytes);
+#ifdef DUMP_TENSOR
+    dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].input_mems[0],{1,6144,3584},"input_p_" + std::to_string(idx) + ".npz","input_states");
+    dump_tensor_to_file<int32_t>(bm_handle,net_blocks[idx]->stages[0].input_mems[1],{1,6144},"input_p_" + std::to_string(idx) + ".npz","position_ids");
+
+    dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[0],{1,6144,3584},"output_p_" + std::to_string(idx) + ".npz","hidden_states");
+    dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[1],{1,6144,4,128},"output_p_" + std::to_string(idx) + ".npz","present_key");
+    dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[2],{1,6144,4,128},"output_p_" + std::to_string(idx) + ".npz","present_value");
+#endif
   }
   return;
 }
@@ -619,10 +629,8 @@ void Qwen::forward_first(std::vector<int> &tokens) {
 int Qwen::forward_unshare(std::vector<int> &tokens) {
   std::vector<int> position_id(MAX_UNSHARE_LENGTH, 0);
   std::vector<uint16_t> attention_mask(MAX_UNSHARE_LENGTH * (MAX_SHARE_LENGTH + MAX_UNSHARE_LENGTH), mask_value);
-  unshare_tokens.clear();
-  unshare_tokens.resize(SEQLEN - MAX_SHARE_LENGTH);
-  std::copy(tokens.begin(), tokens.end(), unshare_tokens.data());
-  
+  std::fill(total_tokens.begin() + share_length, total_tokens.end(), 0);
+  total_tokens.insert(total_tokens.begin() + share_length, tokens.begin(), tokens.end());
   unshare_length = tokens.size();
 
   for (int i = 0; i < unshare_length; i++) {
@@ -642,7 +650,7 @@ int Qwen::forward_unshare(std::vector<int> &tokens) {
   // forward embeding
   auto &in_mem = net_embed_unshare->stages[0].input_mems[0];
   auto &out_mem = net_embed_unshare->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)unshare_tokens.data());
+  bm_memcpy_s2d(bm_handle, in_mem, (void *)tokens.data());
   net_launch(net_embed_unshare); // prefil embedding
 
   // forward blocks
@@ -674,6 +682,14 @@ int Qwen::forward_unshare(std::vector<int> &tokens) {
     out_mem = net_blocks_unshare[idx]->stages[0].output_mems[0];
     d2d(past_key[idx], net_blocks_unshare[idx]->stages[0].output_mems[1], max_share_offset, unshare_length * bytes);
     d2d(past_value[idx], net_blocks_unshare[idx]->stages[0].output_mems[2], max_share_offset, unshare_length * bytes);
+#ifdef DUMP_TENSOR
+    dump_tensor_to_file<uint16_t>(bm_handle,net_blocks_unshare[idx]->stages[0].input_mems[0],{1,1024,3584},"input_p_with_kvcache_" + std::to_string(idx) + ".npz","input_states");
+    dump_tensor_to_file<int32_t>(bm_handle,net_blocks_unshare[idx]->stages[0].input_mems[1],{1,1024},"input_p_with_kvcache_" + std::to_string(idx) + ".npz","position_ids");
+
+    dump_tensor_to_file<uint16_t>(bm_handle,net_blocks_unshare[idx]->stages[0].output_mems[0],{1,1024,3584},"output_p_with_kvcache_" + std::to_string(idx) + ".npz","hidden_states");
+    dump_tensor_to_file<uint16_t>(bm_handle,net_blocks_unshare[idx]->stages[0].output_mems[1],{1,1024,4,128},"output_p_with_kvcache_" + std::to_string(idx) + ".npz","present_key");
+    dump_tensor_to_file<uint16_t>(bm_handle,net_blocks_unshare[idx]->stages[0].output_mems[2],{1,1024,4,128},"output_p_with_kvcache_" + std::to_string(idx) + ".npz","present_value");
+#endif
   }
 
   // forward lmhead
@@ -687,16 +703,16 @@ int Qwen::forward_unshare(std::vector<int> &tokens) {
   if (generation_mode == "greedy") {
     token = greedy_search(net_greedy_head, lm_out_mem);
   } else if (generation_mode == "penalty_sample") {
-    token = penalty_sample(net_penalty_sample_head, lm_out_mem, unshare_tokens, unshare_length);
+    token = penalty_sample(net_penalty_sample_head, lm_out_mem, tokens, unshare_length);
   }
 
-  unshare_tokens[unshare_length] = token;
+  total_tokens[share_length + unshare_length] = token;
   unshare_length += 1;
   return token;
 }
 
 int Qwen::forward_next() {
-  int cur_token = unshare_tokens[unshare_length - 1];
+  int cur_token = total_tokens[share_length + unshare_length - 1];
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = share_length + unshare_length; i < SEQLEN; i++) {
@@ -751,10 +767,11 @@ int Qwen::forward_next() {
   if (generation_mode == "greedy") {
     token = greedy_search(net_greedy_head, lm_out_mem);
   } else if (generation_mode == "penalty_sample") {
-    token = penalty_sample(net_penalty_sample_head, lm_out_mem, unshare_tokens, unshare_length);
+    int total_length = share_length + unshare_length;
+    token = penalty_sample(net_penalty_sample_head, lm_out_mem, total_tokens, total_length);
   }
 
-  unshare_tokens[unshare_length] = token;
+  total_tokens[share_length + unshare_length] = token;
   unshare_length += 1;
   return token;
 }
@@ -799,7 +816,6 @@ PYBIND11_MODULE(chat, m) {
         .def_readwrite("MAX_SHARE_LENGTH", &Qwen::MAX_SHARE_LENGTH)
         .def_readwrite("share_length", &Qwen::share_length)
         .def_readwrite("unshare_length", &Qwen::unshare_length)
-        .def_readwrite("unshare_tokens", &Qwen::unshare_tokens)
         .def_readwrite("temperature", &Qwen::temperature)
         .def_readwrite("top_p", &Qwen::top_p)
         .def_readwrite("repeat_penalty", &Qwen::repeat_penalty)
