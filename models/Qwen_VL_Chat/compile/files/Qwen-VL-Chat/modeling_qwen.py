@@ -126,7 +126,7 @@ class QWenAttention(nn.Module):
             self.projection_size // config.num_attention_heads
         )
 
-        self.c_attn = nn.Linear(config.hidden_size, 3 * self.projection_size)att
+        self.c_attn = nn.Linear(config.hidden_size, 3 * self.projection_size)
 
         self.c_proj = nn.Linear(
             config.hidden_size, self.projection_size, bias=not config.no_bias
