@@ -32,7 +32,6 @@ python export_onnx.py --model_path your_torch_path --device cuda --lmhead_with_t
 PS：
 1. 最好使用cuda导出，cpu导出block的时候，会卡在第一个block，只能kill
 2. your_torch_path：从官网下载的或者自己训练的模型的路径，例如./Qwen-7B-Chat
-3. 对于长回答，可以使用export_onnx_jacobi.py来导出加速（refs：https://github.com/hao-ai-lab/LookaheadDecoding）
 
 ## Compile bmodel
 
