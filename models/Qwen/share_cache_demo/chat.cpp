@@ -632,8 +632,8 @@ int Qwen::forward_unshare(std::vector<int> &tokens) {
     for (int j = 0; j < share_length; j++) {
       attention_mask[i * (MAX_SHARE_LENGTH + MAX_UNSHARE_LENGTH) + j] = 0;
     }
-    for (int j = MAX_SHARE_LENGTH; j < MAX_SHARE_LENGTH + MAX_UNSHARE_LENGTH; j++) {
-      if (j - MAX_SHARE_LENGTH <= i) {
+    for (int j = share_length; j < share_length + unshare_length; j++) {
+      if (j - share_length <= i) {
         attention_mask[i * (MAX_SHARE_LENGTH + MAX_UNSHARE_LENGTH) + j] = 0;
       }
     }

@@ -51,9 +51,22 @@ def bmodel_infer(model, tokenizer, prompt, history):
     return answer_cur
 
 def bmodel_infer_fast(model, tokenizer, prompt, history):
-    tokens = tokenizer.build_chat_input(prompt, history=history)['input_ids'].tolist()[0]
-    answer_token = model.forward_first(tokens)
-    answer_cur = tokenizer.decode(answer_token)
+    messages = [
+            {"role": "system", "content": "You will provide correct answer to the question."},
+            {"role": "user", "content": prompt}
+        ]
+    text = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True
+    )
+    model_inputs = tokenizer([text])
+    generated_ids = model.forward_first(model_inputs.input_ids[0])
+    # answer_token = model.forward_first(tokens)
+    # answer_cur = tokenizer.decode(answer_token)
+    answer_cur = tokenizer.decode(generated_ids)
+    print(answer_cur)
+    answer_cur = extract_cot_answer(answer_cur)
     return answer_cur
 
 def bmodel_generate_option(model, tokenizer, prompt, history):
@@ -66,14 +79,13 @@ def bmodel_generate_option(model, tokenizer, prompt, history):
 def extract_cot_answer(gen_ans):
     choices = ["A", "B", "C", "D"]
     answer_patterns = [
-        r'([ABCD])是正确的',
-        r'选项([ABCD])正确',
-        r'答案为([ABCD])',
-        r'答案是([ABCD])',
+        r'([ABCD])是正确',
+        r'([ABCD])正确',
+        r'答案.([ABCD])',
         r'答案([ABCD])',
-        r'选择([ABCD])',
-        r'答案：([ABCD])',
-        r'选择答案([ABCD])',
+        r'选(?:选项)?([ABCD])',
+        r'选择(?:选项)?([ABCD])',
+        r'([ABCD])是对的',
     ]
     # RE extraction
     for answer_pattern in answer_patterns:
@@ -81,13 +93,15 @@ def extract_cot_answer(gen_ans):
         if m:
             answer = m.group(1)
             return answer
-    # only containing one choice-character
+        
     m = re.findall(r'[ABCD]', gen_ans, re.M)
     if len(m) == 1:
         answer = m[0]
         return answer
-    if gen_ans[0] in choices:
+    elif gen_ans[0] in choices:
         return gen_ans[0]
+    elif len(m) > 1:
+        return m[-1]
     return '-'
 
 
@@ -162,6 +176,7 @@ def main(args):
             print("prediction:", pred)
             subject_dict[str(i)] = pred
         res[subject] = subject_dict
+        break
 
     # 4. deinit & save
     
