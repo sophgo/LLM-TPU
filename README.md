@@ -49,6 +49,7 @@
 |WizardCoder-15B      |:white\_check\_mark:|                    |                    |[LINK](https://huggingface.co/WizardLM/WizardCoder-15B-V1.0)              |
 |Yi-6B-chat           |:white\_check\_mark:|:white\_check\_mark:|                    |[LINK](https://huggingface.co/01-ai/Yi-6B-Chat)                           |
 |Yi-34B-chat          |:white\_check\_mark:|:white\_check\_mark:|                    |[LINK](https://huggingface.co/01-ai/Yi-34B-Chat)                          |
+|Qwen-VL-Chat         |:white\_check\_mark:|:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen-VL-Chat)                          |
 
 
 如果您想要知道转换细节和源码，可以到本项目[models](./models)子目录查看各类模型部署细节。
