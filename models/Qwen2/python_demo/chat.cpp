@@ -207,9 +207,12 @@ void Qwen::empty(bm_device_mem_t &mem) {
 
 void Qwen::empty_kvcache() {
   for (int i = 0; i < NUM_LAYERS; i++) {
+    
     empty(past_key[i]);
     empty(past_value[i]);
     empty(net_blocks[i]->stages[0].input_mems[0]);
+    empty(net_blocks[i]->stages[0].input_mems[1]);
+    empty(net_blocks[i]->stages[0].input_mems[2]);
   }
   return;
 }
@@ -283,6 +286,7 @@ int Qwen::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem) 
 }
 
 int Qwen::forward_first(std::vector<int> &tokens) {
+  empty_kvcache()
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
   std::fill(visited_tokens.begin(), visited_tokens.end(), 0);
