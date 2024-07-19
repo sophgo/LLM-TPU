@@ -156,13 +156,13 @@ class Qwen():
 
     def test_share_cache(self):
         json_path = "../../../assets/sophgo_kv_cache_share_test_case.json"
-        # share_str, unshare_str_0 = self.read_json(json_path, 0)
-        # _, unshare_str_1 = self.read_json(json_path, 1)
-        # _, unshare_str_2 = self.read_json(json_path, 2)
-        share_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
-        unshare_str_0 = "can you help me<|im_end|>\n<|im_start|>assistant\n"
-        unshare_str_1 = "tell me a love story<|im_end|>\n<|im_start|>assistant\n"
-        unshare_str_2 = "tell me a love story<|im_end|>\n<|im_start|>assistant\n"
+        share_str, unshare_str_0 = self.read_json(json_path, 0)
+        _, unshare_str_1 = self.read_json(json_path, 1)
+        _, unshare_str_2 = self.read_json(json_path, 2)
+        #share_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
+        #unshare_str_0 = "can you help me<|im_end|>\n<|im_start|>assistant\n"
+        #unshare_str_1 = "tell me a love story<|im_end|>\n<|im_start|>assistant\n"
+        #unshare_str_2 = "tell me a love story<|im_end|>\n<|im_start|>assistant\n"
 
         #===------------------------------------------------------------===
         # Model 0
