@@ -287,12 +287,75 @@ def convert_penalty_sample_head():
         do_constant_folding=True,
         opset_version=15)
 
+def cos_sim(a, b):
+  a = np.array(a)
+  b = np.array(b)
+
+  inner_product = np.dot(a, b)
+  # 内积
+  norm_a = np.linalg.norm(a)
+  norm_b = np.linalg.norm(b)
+  # 模长
+  cos_sim = inner_product / (norm_a * norm_b)
+
+  return cos_sim
+
+def test_net_with_dump():
+    import numpy as np
+    for i in range(0, 28):
+        file_path = f"input_kvcache_{i}.npz"
+        if not os.path.exists(file_path): continue
+        data = np.load(file_path)
+        input_states = data["input_states"]
+        position_ids = data["position_ids"]
+        attention_mask = data["attention_mask"]
+        history_k = data["history_k"]
+        history_v = data["history_v"]
+
+        block_unshare = BlockCache(i)
+        hidden_states = torch.tensor(input_states).float()
+        position_ids = torch.tensor(position_ids).long()
+        attention_mask = torch.tensor(attention_mask).float()
+        past_k = torch.tensor(history_k).float()
+        past_v = torch.tensor(history_v).float()
+        # 执行推理
+        output_cach, present_k, present_v = block_unshare(hidden_states, position_ids, attention_mask, past_k, past_v)
+        # breakpoint()
+
+        output_ref = np.load(file_path.replace("input", "output"))["hidden_states"]
+
+        print(f"Layer {i}", cos_sim(output_cach.numpy().flatten(), output_ref.flatten()))
+
+    for i in range(0, 28):
+        file_path = f"input_p_with_kvcache_{i}.npz"
+        if not os.path.exists(file_path): continue
+        data = np.load(file_path)
+        input_states = data["input_states"]
+        position_ids = data["position_ids"]
+        attention_mask = data["attention_mask"]
+        history_k = data["history_k"]
+        history_v = data["history_v"]
+
+        block_unshare = BlockCache(i)
+        hidden_states = torch.tensor(input_states).float()
+        position_ids = torch.tensor(position_ids).long()
+        attention_mask = torch.tensor(attention_mask).float()
+        past_k = torch.tensor(history_k).float()
+        past_v = torch.tensor(history_v).float()
+        # 执行推理
+        output_cach, present_k, present_v = block_unshare(hidden_states, position_ids, attention_mask, past_k, past_v)
+        # breakpoint()
+
+        output_ref = np.load(file_path.replace("input", "output"))["hidden_states"]
+
+        print(f"Layer {i}", cos_sim(output_cach.numpy().flatten(), output_ref.flatten()))
+
 
 # create folder to store onnx
 if not os.path.exists(folder):
     os.makedirs(folder)
 
-# test_net_with_mask()
+# test_net_with_dump()
 
 # export models
 print(f'Convert block & block_cache')
