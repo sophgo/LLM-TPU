@@ -286,7 +286,7 @@ int Qwen::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem) 
 }
 
 int Qwen::forward_first(std::vector<int> &tokens) {
-  empty_kvcache()
+  empty_kvcache();
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
   std::fill(visited_tokens.begin(), visited_tokens.end(), 0);
