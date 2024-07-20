@@ -80,6 +80,7 @@ public:
   void free_device();
   void malloc_bmodel_mem();
   void empty_kvcache();
+  void empty_input();
   void forward_first(std::vector<int> &tokens);
   int forward_unshare(std::vector<int> &tokens);
   int forward_next();
@@ -370,6 +371,22 @@ void Qwen::empty(bm_device_mem_t &mem) {
   assert(BM_SUCCESS == ret);
 }
 
+void Qwen::empty_input() {
+  for (int i = 0; i < NUM_LAYERS; i++) {
+    for (int j = 0; j < net_blocks[i]->input_num; j++) {
+      empty(net_blocks[i]->stages[0].input_mems[j]);
+    }
+    for (int j = 0; j < net_blocks_unshare[i]->input_num; j++) {
+      empty(net_blocks[i]->stages[0].input_mems[j]);
+    }
+
+    empty(net_blocks_cache[i]->stages[0].input_mems[0]);
+    empty(net_blocks_cache[i]->stages[0].input_mems[1]);
+    empty(net_blocks_cache[i]->stages[0].input_mems[2]);
+  }
+  return;
+}
+
 void Qwen::empty_kvcache() {
   for (int i = 0; i < NUM_LAYERS; i++) {
     empty(past_key[i]);
@@ -632,8 +649,8 @@ int Qwen::forward_unshare(std::vector<int> &tokens) {
     for (int j = 0; j < share_length; j++) {
       attention_mask[i * (MAX_SHARE_LENGTH + MAX_UNSHARE_LENGTH) + j] = 0;
     }
-    for (int j = share_length; j < share_length + unshare_length; j++) {
-      if (j - share_length <= i) {
+    for (int j = MAX_SHARE_LENGTH; j < MAX_SHARE_LENGTH + MAX_UNSHARE_LENGTH; j++) {
+      if (j - MAX_SHARE_LENGTH <= i) {
         attention_mask[i * (MAX_SHARE_LENGTH + MAX_UNSHARE_LENGTH) + j] = 0;
       }
     }
