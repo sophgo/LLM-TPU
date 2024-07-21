@@ -107,6 +107,8 @@ DECL_EXPORT bool bmrt_get_bmodel_info(const char *bmodel_path, mem_info_t *mem_i
 /* get bmodel basic memory information from bmodel data. which is store in mem_info */
 DECL_EXPORT bool bmrt_get_bmodel_info_from_data(const void *bmodel_data, mem_info_t *mem_info, size_t size);
 
+/* get net index*/
+DECL_EXPORT int bmrt_get_network_index(void* p_bmrt, const char* net_name);
 
 /* --------------------------------------------------------------------------*/
 /**
