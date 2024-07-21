@@ -233,19 +233,21 @@ process_block() {
         $device_args \
         --model block_$i.bmodel
 
-    model_transform.py \
-        --model_name block_unshare_$i \
-        --model_def ../../onnx/block_unshare_$i.onnx \
-        --mlir block_unshare_$i.mlir
+    if [ x$unshare_length != x"0" ]; then
+        model_transform.py \
+            --model_name block_unshare_$i \
+            --model_def ../../onnx/block_unshare_$i.onnx \
+            --mlir block_unshare_$i.mlir
 
-    model_deploy.py \
-        --mlir block_unshare_$i.mlir \
-        ${quantize_args} \
-        --quant_input \
-        --quant_output \
-        --chip bm1684x \
-        $device_args \
-        --model block_unshare_$i.bmodel
+        model_deploy.py \
+            --mlir block_unshare_$i.mlir \
+            ${quantize_args} \
+            --quant_input \
+            --quant_output \
+            --chip bm1684x \
+            $device_args \
+            --model block_unshare_$i.bmodel
+    fi
 
     model_transform.py \
         --model_name block_cache_$i \
@@ -266,8 +268,12 @@ process_block() {
 # Process each block in parallel
 for ((i=0; i<$num_layers; i++)); do
     process_block $i &
-    models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_unshare_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
-    sleep 30
+    if [ x$unshare_length != x"0" ]; then
+        models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_unshare_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
+    else
+        models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
+    fi
+    sleep 40
 done
 rm -f *.npz
 popd
