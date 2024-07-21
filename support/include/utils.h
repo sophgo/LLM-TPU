@@ -12,6 +12,50 @@
 #include <algorithm>
 #include <climits>
 
+
+//===------------------------------------------------------------===//
+// Union & Struct
+//===------------------------------------------------------------===//
+typedef union {
+    uint16_t bits;
+    struct {
+        uint16_t frac : 10; // mantissa
+        uint16_t exp  : 5;  // exponent
+        uint16_t sign : 1;  // sign
+    } format;
+} fp16;
+
+typedef union {
+    uint16_t bits;
+    struct {
+        uint16_t frac : 7; // mantissa
+        uint16_t exp  : 8; // exponent
+        uint16_t sign : 1; // sign 
+    } format;
+} bf16;
+
+typedef union {
+  float fval;
+  uint32_t bits;
+  struct {
+    uint32_t frac : 23; // mantissa
+    uint32_t exp : 8;   // exponent
+    uint32_t sign : 1;  // sign
+  } format;
+} fp32;
+
+typedef struct {
+  uint32_t magic;
+  uint32_t header_size;
+  uint32_t flatbuffers_size;
+  uint32_t binary_size;
+  uint32_t reserved[12];
+} __attribute__((packed)) MODEL_HEADER_T;
+
+
+//===------------------------------------------------------------===//
+// Inline Func
+//===------------------------------------------------------------===//
 inline uint16_t fp32_to_fp16_bits(float f) {
   uint32_t x = *((uint32_t *)&f);
   uint16_t h = ((x >> 16) & 0x8000) |
@@ -27,16 +71,6 @@ inline uint16_t fp32_to_bf16_bits(float f) {
 
   return h;
 }
-
-typedef union {
-  float fval;
-  uint32_t bits;
-  struct {
-    uint32_t frac : 23; // mantissa
-    uint32_t exp : 8;   // exponent
-    uint32_t sign : 1;  // sign
-  } format;
-} fp32;
 
 static inline uint32_t bf16_to_fp32_bits(uint16_t h) {
   // BF16 的位模式是：1 位符号，8 位指数，7 位尾数
@@ -154,6 +188,10 @@ float fp16_ieee_to_fp32_value(uint16_t d) {
   return t.fval;
 }
 
+
+//===------------------------------------------------------------===//
+// Dump Func
+//===------------------------------------------------------------===//
 void dump_bf16_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
                       int size) {
   auto mem_size = bm_mem_get_device_size(mem);
@@ -220,4 +258,123 @@ void dump_int_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
     std::cout << data[i] << std::endl;
   }
   std::cout << "-------------------------------------" << std::endl;
+}
+
+
+//===------------------------------------------------------------===//
+// Dump to file
+//===------------------------------------------------------------===//
+#ifdef DUMP_TENSOR
+#include "cnpy.h"
+template <typename T>
+void dump_mem_to_file(bm_handle_t &bm_handle, bm_device_mem_t &t,
+                      std::vector<size_t> &&shape, const std::string &filename,
+                      const std::string &tensor_name) {
+  int cnt = bm_mem_get_device_size(t) / sizeof(T);
+  auto buffer = std::make_unique<T[]>(cnt);
+  bm_memcpy_d2s(bm_handle, buffer.get(), t);
+
+  if constexpr (std::is_same_v<T, uint16_t>) {
+    std::vector<float> data(cnt);
+    for (int i = 0; i < cnt; i++)
+      data[i] = bf16_to_fp32_value(buffer[i]);
+    // data[i] = fp16_ieee_to_fp32_value(buffer[i]);
+    cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
+  } else if constexpr (std::is_same_v<T, int32_t>) {
+    std::vector<int> data(cnt);
+    memcpy(data.data(), buffer.get(), sizeof(int) * cnt);
+    cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
+  } else {
+    std::vector<float> data(cnt);
+    memcpy(data.data(), buffer.get(), sizeof(float) * cnt);
+    cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
+  }
+}
+
+void dump_tensor_to_file(bm_handle_t &bm_handle, bm_tensor_t &t,
+                         bm_shape_t bm_shape, const std::string &filename,
+                         bm_data_type_t tensor_type,
+                         const std::string &tensor_name) {
+  int mem_size = bm_mem_get_device_size(t.device_mem);
+  std::vector<size_t> shape(bm_shape.dims, bm_shape.dims + bm_shape.num_dims);
+
+  if (tensor_type == BM_FLOAT16) {
+    // F16
+    int cnt = mem_size / sizeof(uint16_t);
+    std::vector<float> data(cnt);
+    std::vector<uint16_t> buffer(cnt);
+    bm_memcpy_d2s(bm_handle, buffer.data(), t.device_mem);
+    for (size_t i = 0; i < data.size(); i++) {
+      data[i] = fp16_ieee_to_fp32_value(buffer[i]);
+    }
+    cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
+  } else if (tensor_type == BM_BFLOAT16) {
+    // BF16
+    int cnt = mem_size / sizeof(uint16_t);
+    std::vector<float> data(cnt);
+    std::vector<uint16_t> buffer(cnt);
+    bm_memcpy_d2s(bm_handle, buffer.data(), t.device_mem);
+    for (size_t i = 0; i < data.size(); i++) {
+      data[i] = bf16_to_fp32_value(buffer[i]);
+    }
+    cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
+  } else if (tensor_type == BM_INT32) {
+    // INT32
+    int cnt = mem_size / sizeof(int32_t);
+    std::vector<int> data(cnt);
+    bm_memcpy_d2s(bm_handle, data.data(), t.device_mem);
+    cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
+  } else if (tensor_type == BM_FLOAT32) {
+    // FLOAT32
+    int cnt = mem_size / sizeof(float);
+    std::vector<float> data(cnt);
+    bm_memcpy_d2s(bm_handle, data.data(), t.device_mem);
+    cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
+  } else {
+    throw std::runtime_error("Not support dtype");
+  }
+}
+
+void dump_net_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
+                      const std::string &filename) {
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  for (int i = 0; i < net->input_num; i++) {
+    bmrt_tensor_with_device(&in_tensors[i], net->stages[0].input_mems[i],
+                            net->input_dtypes[i],
+                            net->stages[0].input_shapes[i]);
+
+    dump_tensor_to_file(bm_handle, in_tensors[i],
+                        net->stages[0].input_shapes[i], filename,
+                        net->input_dtypes[i], "input_" + std::to_string(i));
+  }
+}
+#endif
+
+
+//===------------------------------------------------------------===//
+// Empty Func
+//===------------------------------------------------------------===//
+void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
+  int value = 0;
+  auto ret = bm_memset_device_ext(bm_handle, &value, 1, mem);
+  assert(BM_SUCCESS == ret);
+}
+
+void empty_in_net(bm_handle_t &bm_handle, const bm_net_info_t *net) {
+  for (int i = 0; i < net->input_num; i++) {
+    empty(bm_handle, net->stages[0].input_mems[i]);
+  }
+}
+
+void empty_out_net(bm_handle_t &bm_handle, const bm_net_info_t *net) {
+  for (int i = 0; i < net->output_num; i++) {
+    empty(bm_handle, net->stages[0].output_mems[i]);
+  }
+}
+
+void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net) {
+  empty_in_net(bm_handle, net);
+  empty_out_net(bm_handle, net);
 }
