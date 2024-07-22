@@ -79,6 +79,9 @@ def gen(input, history):
 def predict(input, chatbot, max_length, top_p, temperature, history):
 
     chatbot.append((parse_text(input), ""))
+    model.SEQLEN = max_length
+    model.model.top_p = top_p
+    model.model.temperature = temperature
     for response, history in model.stream_predict(input):
         chatbot[-1] = (parse_text(input), parse_text(response))
         yield chatbot, history
@@ -89,6 +92,7 @@ def reset_user_input():
 
 
 def reset_state():
+    model.clear()
     return [], [], None
 
 gr.Chatbot.postprocess = postprocess
@@ -106,7 +110,7 @@ with gr.Blocks() as demo:
                 submitBtn = gr.Button("Submit", variant="primary")
         with gr.Column(scale=1):
             emptyBtn = gr.Button("Clear History")
-            max_length = gr.Slider(1, 20, value=1, step=1.0, label="Maximum length", interactive=True)
+            max_length = gr.Slider(1, 512, value=512, step=1.0, label="Maximum length", interactive=True)
             top_p = gr.Slider(0, 1, value=0.8, step=0.01, label="Top P", interactive=True)
             temperature = gr.Slider(0, 1, value=0.95, step=0.01, label="Temperature", interactive=True)
 

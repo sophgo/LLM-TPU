@@ -11,7 +11,6 @@ class ChatGLM():
         self.SEQLEN = None
         self.input_str = ""
         self.system_prompt = ""
-        self.history = []
 
         # devid
         self.devices = [int(d) for d in args.devid.split(",")]
@@ -25,8 +24,8 @@ class ChatGLM():
         # warm up
         self.tokenizer.decode([0])
         print("Done!")
-        self.history = list()
-        self.EOS = self.tokenizer.eos_token_id
+        self.history = []
+        self.EOS = [self.tokenizer.eos_token_id, self.tokenizer.convert_tokens_to_ids("<|user|>"), self.tokenizer.convert_tokens_to_ids("<|observation|>")]
         self.enable_history = args.enable_history
 
         # load model
@@ -90,11 +89,16 @@ class ChatGLM():
         token = self.model.forward_first(tokens)
         first_end = time.time()
         # Following tokens
-        while token != self.EOS and self.model.token_length < self.SEQLEN:
-            pre_word = self.tokenizer.decode([token], skip_special_tokens=True)
-            word = self.tokenizer.decode([token, token], skip_special_tokens=True)[len(pre_word):]
+        full_word_tokens = []
+        while token not in self.EOS and self.model.token_length < self.SEQLEN:
+            full_word_tokens.append(token)
+            word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
+            if "�" not in word:
+            # if len(word) > 0 and "�" != word[-1]:
+                print(word, flush=True, end="")
+                full_word_tokens = []
+            # print(token)
             self.answer_token += [token]
-            print(word, flush=True, end="")
             tok_num += 1
             token = self.model.forward_next()
         self.answer_cur = self.tokenizer.decode(self.answer_token)
@@ -114,6 +118,7 @@ class ChatGLM():
         print(f"FTL: {first_duration:.3f} s")
         print(f"TPS: {tps:.3f} token/s")
 
+
     ## For Web Demo
     def stream_predict(self, query):
         """
@@ -126,7 +131,6 @@ class ChatGLM():
         for answer_cur, history in self._generate_predictions(tokens):
             yield answer_cur, history
 
-
     def _generate_predictions(self, tokens):
         """
         Generate predictions for the given tokens.
@@ -138,7 +142,7 @@ class ChatGLM():
         # Following tokens
         while True:
             next_token = self.model.forward_next()
-            if next_token == self.EOS:
+            if next_token in self.EOS:
                 break
             output_tokens += [next_token]
             self.answer_cur = self.tokenizer.decode(output_tokens)
@@ -175,8 +179,8 @@ class ChatGLM():
             self.history.append({"role": "assistant", "content": self.answer_cur})
 
     def encode_tokens(self):
-        tokens = self.tokenizer.apply_chat_template([{"role": "user", "content": self.input_str}],add_generation_prompt=True)[0]
-        # self.history.append({"role": "user", "content": self.input_str})
+        self.history.append({"role": "user", "content": self.input_str})
+        tokens = self.tokenizer.apply_chat_template(self.history, add_generation_prompt=True)[0]
         return tokens
 
 
@@ -188,7 +192,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--model_path', type=str, required=True, help='path to the bmodel file')
-    parser.add_argument('-t', '--tokenizer_path', type=str, default="../support/token_config", help='path to the tokenizer file')
+    parser.add_argument('-t', '--tokenizer_path', type=str, default="../token_config", help='path to the tokenizer file')
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
     parser.add_argument('--temperature', type=float, default=1.0, help='temperature scaling factor for the likelihood distribution')
     parser.add_argument('--top_p', type=float, default=1.0, help='cumulative probability of token words to consider as a set of candidates')
