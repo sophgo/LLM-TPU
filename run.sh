@@ -32,9 +32,11 @@ declare -A model_to_demo=(
     ["chatglm2-6b"]="ChatGLM2"
     ["chatglm3-6b"]="ChatGLM3"
     ["llama2-7b"]="Llama2"
+    ["llama3-7b"]="Llama3"
     ["qwen-7b"]="Qwen"
     ["qwen1.5-1.8b"]="Qwen1_5"
     ["wizardcoder-15b"]="WizardCoder"
+    ["lwm-text-chat"]="LWM"
 )
 
 # Process Args

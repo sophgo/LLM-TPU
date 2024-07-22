@@ -3,7 +3,7 @@
 ## Export onnx
 
 ```shell
-pip install transformers_stream_generator einops tiktoken accelerate transformers==4.41.2
+pip install transformers_stream_generator einops tiktoken accelerate torch==2.0.1+cpu torchvision==0.15.2 transformers==4.41.2
 cp files/Qwen2-7B-Instruct/modeling_qwen2.py /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2/
 ```
 your_torch_model是你模型的位置
@@ -19,10 +19,16 @@ python3 export_onnx.py --model_path your_torch_model --seq_length 8192 --device 
 ./compile.sh --mode int4 --name qwen2-7b --addr_mode io_alone --seq_length 8192
 ```
 
+编译Qwen2-1.5B
+```
+./compile.sh --mode int4 --name qwen2-1.5b --addr_mode io_alone --seq_length 8192
+```
+
 ### 下载迁移好的模型
 也可以直接下载编译好的模型，不用自己编译
 ```shell
 pip3 install dfss
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2-1.5b_int4_seq8192_1dev.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2-7b_int4_seq8192_1dev.bmodel
 ```
 

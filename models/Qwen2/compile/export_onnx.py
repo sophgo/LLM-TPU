@@ -247,7 +247,7 @@ if not os.path.exists(folder):
 
 # export models
 print(f'Convert block & block_cache')
-for i in tqdm(range(1)):
+for i in tqdm(range(NUM_LAYERS)):
    convert_block(i)
    convert_block_cache(i)
 

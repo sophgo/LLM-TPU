@@ -2,14 +2,20 @@
 
 ## 1. 编译模型
 your_torch_model是你模型的路径
+
+在编译的时候需要注意：**max_pos_len需要设置为所有模型中最大的total_seq**
 ```shell
 pip3 install transformers_stream_generator einops tiktoken accelerate transformers==4.32.0
 
 cp files/Qwen-7B-Chat/* your_torch_model
 
-python export_onnx.py --model_path your_torch_model --device cpu --share_length 6144 --unshare_length 1536 --seq_length 8704 --num_thread 16
+python export_onnx.py --model_path your_torch_model --device cpu --share_length 5888 --unshare_length 1536 --seq_length 8704 --max_pos_len 8704 --num_thread 16
 
-./compile.sh --mode int4 --name qwen-7b --share_length 6016 --addr_mode io_alone --unshare_length 1536 --dynamic 1
+python export_onnx.py --model_path your_torch_model --device cpu --share_length 6016 --unshare_length 1024 --seq_length 7552 --max_pos_len 8704 --num_thread 16
+
+./compile.sh --mode int4 --name qwen-7b --share_length 5888 --addr_mode io_alone --unshare_length 1536 --dynamic 1
+
+./compile.sh --mode int4 --name qwen-7b --share_length 6016 --addr_mode io_alone --unshare_length 1024 --dynamic 1
 ```
 如果你不想编译模型，也可以直接下载
 ```shell
@@ -27,22 +33,36 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen-7b
 
 ## 2. 编译库文件
 ```shell
+sudo apt-get install libcrypto++-dev libcrypto++-doc libcrypto++-utils
+
 mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..
 ```
 
 ## 3. 运行python demo
 ```shell
-python3 pipeline.py --model_path qwen-7b_int4_shareseq6016_unshare1536_seq7552_1dev.bmodel,qwen-7b_int4_shareseq5888_unshare1536_seq7552_1dev.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --memory_prealloc
+python3 pipeline.py --model_path qwen-7b_int4_share5888_unshare1536_1dev_dyn.bmodel,qwen-7b_int4_share6016_unshare1024_1dev_dyn.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --memory_prealloc --is_decrypt
 ```
+* **必须将total_seq比较大的模型放到model_path_list的前面**,也就是seq最大的那个先跑
+* io_alone_reuse：使用io_alone_reuse时，表示上次的past_kv与io空间会复用，如果想要复用prefill，必须要io_alone_reuse=True
 * memory_prealloc：表示使用权重复用
+* is_decrypt：表明使用模型解密，**目前仅支持memory_prealloc和is_decrypt同时使用**
 * model_path_list：当使用多个模型时，用逗号隔开
 * 权重复用的流程为：self.model = chat.Qwen() --> self.load_model(model_0) --> self.free_device --> self.load_model(model_1) --> self.model.deinit()
 * 如果两个模型权重不一致，比如一个Qwen-7B 一个Qwen1.5-4B，那么建议重新创建一个类，即 self.model = chat.Qwen --> self.model.deinit() --> self.model = chat.Qwen --> self.model.deinit()
 
 
 ## 4. 注意事项
-如果使用权重复用的方案，在compile.sh完成后，可以使用以下指令来检查weight空间是否一致
+
+### 内存设置
+
+使用如下方式来设定内存，目前内存占用为10483MB，设定的内存为10512MB
+```shell
+./memory_edit.sh -c -npu 6462 -vpu 0 -vpp 4050
+```
+
+### 权重复用
+* 如果使用权重复用的方案，在compile.sh完成后，可以使用以下指令来检查weight空间是否一致
 
 ```shell
 model_tool --info qwen1.5-4b_int4_share6144_unshare2560_seq8704_1dev_dyn.bmodel | grep "weight"
@@ -57,6 +77,13 @@ model_tool --info qwen1.5-4b_int4_share6144_unshare2816_seq8960_1dev_dyn.bmodel 
 cp files/Qwen-7B-Chat/* your_torch_model
 ```
 
+### 模型加解密
+* 记得使用sudo apt-get install libcrypto++-dev libcrypto++-doc libcrypto++-utils
+* 如果使用模型解密的方案，**建议提前备份好原始模型**，因为会直接原地改写原始模型的flatbuffer
+* 模型加解密的实例如下所示，只需要传入bmodel路径即可，具体请参考pipeline.py
+```python
+self.model.encrypt_bmodel(self.model_list[1])
+```
 
 # 如何导出logits
 如果您想查看每层输出的logits，您可以按照如下步骤来导出

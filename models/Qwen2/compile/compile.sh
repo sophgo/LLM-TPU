@@ -55,11 +55,15 @@ if [[ -z "$seq_length" ]]; then
 fi
 
 if [ "$name" = "qwen2-7b" ]; then
-  num_layers=27
+  num_layers=28
   hidden_size=3584
   echo "Compile Qwen2-7B"
+elif [ "$name" = "qwen2-1.5b" ]; then
+  num_layers=28
+  hidden_size=1536
+  echo "Compile Qwen2-1.5B"
 else
-  >&2 echo -e "Error: Invalid name $name, the input name must be \033[31mqwen2-7b\033[0m"
+  >&2 echo -e "Error: Invalid name $name, the input name must be \033[31mqwen2-7b|qwen1.5b\033[0m"
   exit 1
 fi
 
@@ -179,17 +183,17 @@ model_deploy.py \
 rm *.npz
 
 models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '$outdir'/penalty_sample_head.bmodel '
-popd
 
+popd
 echo $models
 
 outdir=${folder}/$mode"_"$num_device"dev"/block
 mkdir -p $outdir
-
 pushd $outdir
-mkdir -p $outdir
 
-for ((i=0; i<=$num_layers; i++)); do
+# Function to process each block in parallel
+process_block() {
+    i=$1
 
     model_transform.py \
         --model_name block_$i \
@@ -203,6 +207,7 @@ for ((i=0; i<=$num_layers; i++)); do
         --quant_output \
         --chip bm1684x \
         $device_args \
+	--disable_layer_group \
         --model block_$i.bmodel
 
     model_transform.py \
@@ -219,13 +224,18 @@ for ((i=0; i<=$num_layers; i++)); do
         $device_args \
         $addr_args \
         --model block_cache_$i.bmodel
+}
 
-    rm *.npz
-
+# Process each block in parallel
+for ((i=0; i<$num_layers; i++)); do
+    process_block $i &
     models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
-
+    sleep 45
 done
+rm -f *.npz
 popd
 echo $models
+
+wait  # Wait for all background processes to finish
 
 model_tool --combine $models -o $out_model

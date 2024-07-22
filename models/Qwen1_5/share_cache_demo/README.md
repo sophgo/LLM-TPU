@@ -36,16 +36,35 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 ## 3. 运行python demo
 ```shell
-python3 pipeline.py --model_path_list qwen1.5-4b_int4_shareseq6144_unshareseq2816_seq8960_1dev_dyn.bmodel,qwen1.5-4b_int4_shareseq6144_unshareseq2560_seq8704_1dev_dyn.bmodel --tokenizer_path ../token_config/ --devid 0 --generation_mode penalty_sample --memory_prealloc
+python3 pipeline.py --model_path_list qwen1.5-4b_int4_shareseq6144_unshareseq2816_seq8960_1dev_dyn.bmodel,qwen1.5-4b_int4_shareseq6144_unshareseq2560_seq8704_1dev_dyn.bmodel --tokenizer_path ../token_config/ --devid 0 --generation_mode penalty_sample --memory_prealloc --is_decrypt
 ```
 * memory_prealloc：表示使用权重复用
+* is_decrypt：表明使用模型解密，**目前仅支持memory_prealloc和is_decrypt同时使用**
 * model_path_list：当使用多个模型时，用逗号隔开
 * 权重复用的流程为：self.model = chat.Qwen() --> self.load_model(model_0) --> self.free_device --> self.load_model(model_1) --> self.model.deinit()
 * 如果两个模型权重不一致，比如一个Qwen-7B 一个Qwen1.5-4B，那么建议重新创建一个类，即 self.model = chat.Qwen --> self.model.deinit() --> self.model = chat.Qwen --> self.model.deinit()
 
 
 ## 4. 注意事项
-如果使用权重复用的方案，在compile.sh完成后，可以使用以下指令来检查weight空间是否一致
+
+建议在进行权重复用、公共序列复用时，先加载最大长度的bmodel，否则容易报以下错误
+```
+[bmlib_memory][error] bm_alloc_gmem failed, dev_id = 0, size = 0x3060e078
+[BM_CHECK][error] BM_CHECK_RET fail /workspace/libsophon/bmlib/src/bmlib_memory.cpp: bm_malloc_device_byte_u64: 1054
+[BMRT][alloc_device_mem_u64:3028] FATAL:Error: device memory: neuron_mem don't alloc
+```
+即**建议**
+```python
+python3 pipeline.py --model_path_list qwen-7b_int4_share6016_unshare1536_seq8704_1dev_dyn.bmodel,qwen-7b_int4_share5888_unshare1024_seq8704_1dev_dyn.bmodel  ...
+```
+**强烈不建议**
+```python
+python3 pipeline.py --model_path_list qwen-7b_int4_share5888_unshare1024_seq8704_1dev_dyn.bmodel,qwen-7b_int4_share6016_unshare1536_seq8704_1dev_dyn.bmodel  ...
+```
+这样做的目的是为了先分配最大的runtime空间（neuron空间）
+
+### 权重复用
+* 如果使用权重复用的方案，在compile.sh完成后，可以使用以下指令来检查weight空间是否一致
 
 ```shell
 model_tool --info qwen1.5-4b_int4_share6144_unshare2560_seq8704_1dev_dyn.bmodel | grep "weight"
@@ -58,4 +77,12 @@ model_tool --info qwen1.5-4b_int4_share6144_unshare2816_seq8960_1dev_dyn.bmodel 
 > 他们的weight是一致的，都是1050832896，一点偏差也不能有，如果不一致，可能是下面这步没做
 ```shell
 cp files/Qwen1.5-4B-Chat/modeling_qwen2.py /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2/
+```
+
+### 模型加解密
+* 记得使用sudo apt-get install libcrypto++-dev libcrypto++-doc libcrypto++-utils
+* 如果使用模型解密的方案，**建议提前备份好原始模型**，因为会直接原地改写原始模型的flatbuffer
+* 模型加解密的实例如下所示，只需要传入bmodel路径即可，具体请参考pipeline.py
+```python
+self.model.encrypt_bmodel(self.model_list[1])
 ```
