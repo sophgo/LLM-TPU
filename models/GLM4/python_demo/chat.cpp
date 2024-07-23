@@ -55,7 +55,7 @@ void dump_tensor_to_file(
 
 static const float MASK = -1000.0;
 static const float MASK_CACHE = 1.0;
-uint16_t mask =  (MASK);
+uint16_t mask = fp32_to_fp16_bits(MASK);
 uint16_t mask_cache = fp32_to_fp16_bits(MASK_CACHE);
 
 class ChatGLM {
