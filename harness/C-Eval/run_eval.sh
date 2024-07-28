@@ -1,9 +1,10 @@
 #!/bin/bash
 # set -ex
 
-devid="4"
+devid="8"
 model="chatglm3"
 bmodel_dir="../../bmodels"
+tokenizer_path=""
 
 # 解析参数
 for (( i=1; i<=$#; i++ )); do
@@ -20,6 +21,10 @@ for (( i=1; i<=$#; i++ )); do
         --bmodel_dir)
             let "i++"
             eval bmodel_dir='$'{${i}}
+            ;;
+        --tokenizer_path)
+            let "i++"
+            eval tokenizer_path='$'{${i}}
             ;;
         
         *)
@@ -42,6 +47,19 @@ fi
 case $model in
     "chatglm3")
         bmodel_name="chatglm3-6b_int4_1dev.bmodel"
+        model="chatglm3"
+        eval_mode="fast"
+        if [ ! -e "/path/to/file" ]; then
+            tokenizer_path="../../models/ChatGLM3/support/token_config/"
+        fi
+        ;;
+    "qwen1.5")
+        bmodel_name="qwen1.5-1.8b_f16_seq1280_1dev.bmodel"
+        model="qwen1_5"
+        eval_mode="default"
+        if [ ! -e "/path/to/file" ]; then
+            tokenizer_path="../../models/Qwen1_5/token_config/"
+        fi
         ;;
     *)
         echo "Unknown model name!"
@@ -69,4 +87,4 @@ fi
 # run demo
 echo $PWD
 export PYTHONPATH=../../
-python evaluate_chatglm3.py --devid $devid --model_path $whole_model_path --tokenizer_path ../../models/ChatGLM3/support/token_config/ --eval_mode fast
+python evaluate_$model.py --devid $devid --model_path $whole_model_path --tokenizer_path $tokenizer_path --eval_mode $eval_mode
