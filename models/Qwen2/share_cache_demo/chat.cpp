@@ -10,10 +10,6 @@
 #include <algorithm>
 #include <assert.h>
 #include <chrono>
-#include <cryptopp/aes.h>
-#include <cryptopp/filters.h>
-#include <cryptopp/modes.h>
-#include <cryptopp/osrng.h>
 #include <cstdlib>
 #include <fstream>
 #include <getopt.h>
@@ -27,7 +23,6 @@
 #include <vector>
 
 #include "bmruntime_interface.h"
-#include "crypto.h"
 #include "memory.h"
 #include "utils.h"
 
@@ -35,7 +30,7 @@ static const float ATTENTION_MASK = -10000.;
 
 class Qwen {
 public:
-  void init(const std::vector<int> &devid, std::string model_path);
+  void init(const std::vector<int> &devid, const std::string& model_path);
   void deinit();
   void free_device();
   void malloc_bmodel_mem();
@@ -45,9 +40,6 @@ public:
   int forward_unshare(std::vector<int> &tokens);
   int forward_next();
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
-
-  void encrypt_bmodel(std::string model_path);
-  std::vector<uint8_t> decrypt_bmodel(std::string model_path);
 
   std::mt19937 sgen;
   Qwen() : sgen(std::random_device()()){};
@@ -66,13 +58,6 @@ private:
   int penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
                      std::vector<int> &input_tokens, int &token_length);
 
-  std::vector<uint8_t> read_file(std::string model_path, size_t size,
-                                 size_t offset);
-  std::vector<uint8_t> enc_file(std::string model_path, size_t size,
-                                size_t offset);
-  std::vector<uint8_t> dec_file(std::string model_path, size_t size,
-                                size_t offset);
-
 public:
   bool io_alone;
   bool is_dynamic;
@@ -80,6 +65,7 @@ public:
   bool is_decrypt;
   bool io_alone_reuse;
   std::vector<int> total_tokens;
+  std::string lib_path;
 
   // model
   int hidden_bytes;
@@ -122,10 +108,10 @@ private:
   bm_device_mem_t tmp_value_cache;
 
   std::vector<bm_device_mem_u64_t> prealloc_mem_v;
-  std::vector<bm_device_mem_t> io_mem_v;
+  bm_device_mem_t io_mem_v[100];
+  uint64_t io_size;
   uint16_t mask_value;
   mem_info_t mem_info;
-  AESOFBCipher cipher;
 };
 
 void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
@@ -206,7 +192,7 @@ void malloc_device_mem(bm_handle_t bm_handle, memory_t &mem,
   }
 }
 
-void Qwen::init(const std::vector<int> &devices, std::string model_path) {
+void Qwen::init(const std::vector<int> &devices, const std::string& model_path) {
 
   // request bm_handle
   std::cout << "Device [ ";
@@ -232,28 +218,31 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
 
   // load bmodel by file
   printf("Model[%s] loading ....\n", model_path.c_str());
-
+  io_size = 0;
   bool ret = false;
-  std::vector<uint8_t> decrypted_data;
 
   // decrypt bmodel
-  if (is_decrypt) {
-    decrypted_data = decrypt_bmodel(model_path);
-    ret = true;
-  } else {
+  if (is_decrypt && memory_prealloc) {
+    ret = bmrt_get_encrypted_bmodel_info(model_path.c_str(), lib_path.c_str(), &mem_info);
+  } else if(!is_decrypt && memory_prealloc) {
     ret = bmrt_get_bmodel_info(model_path.c_str(), &mem_info);
+  } else {
+    throw std::runtime_error("not support now");
   }
   assert(true == ret);
 
   // prealloc memory
-  if (memory_prealloc) {
+  if (is_decrypt && memory_prealloc) {
     malloc_bmodel_mem();
-    ret = bmrt_load_bmodel_with_mem_v2(p_bmrt, model_path.c_str(),
-                                       (void *)decrypted_data.data(), &mem_info,
-                                       io_mem_v);
-  } else {
+    ret = bmrt_load_encrypted_bmodel_with_io_mem(p_bmrt, model_path.c_str(), &mem_info, io_mem_v, &io_size, lib_path.c_str());
+  } else if (!is_decrypt && !memory_prealloc) {
     ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
+  } else {
+
   }
+  assert(true == ret);
+  printf("Done!\n");
+
   assert(true == ret);
   printf("Done!\n");
 
@@ -379,85 +368,6 @@ void Qwen::empty_kvcache() {
     empty(bm_handle, net_blocks_unshare[i]->stages[0].input_mems[4]);
   }
   return;
-}
-
-std::vector<uint8_t> Qwen::read_file(std::string model_path, size_t size,
-                                     size_t offset) {
-  std::ifstream file(model_path, std::ios::binary);
-
-  std::vector<uint8_t> data(size);
-  file.seekg(offset, std::ios::beg);
-  file.read(reinterpret_cast<char *>(data.data()), size);
-  file.close();
-  return data;
-}
-
-std::vector<uint8_t> Qwen::enc_file(std::string model_path, size_t size,
-                                    size_t offset) {
-  auto data = read_file(model_path, size, offset);
-
-  std::vector<uint8_t> encrypted_data(size);
-  cipher.encrypt(data, encrypted_data);
-  return encrypted_data;
-}
-
-std::vector<uint8_t> Qwen::dec_file(std::string model_path, size_t size,
-                                    size_t offset) {
-  auto data = read_file(model_path, size, offset);
-
-  std::vector<uint8_t> decrypted_data(size);
-  cipher.decrypt(data, decrypted_data);
-  return decrypted_data;
-}
-
-// encrypt flatbuffer
-void Qwen::encrypt_bmodel(std::string model_path) {
-  size_t offset = 0;
-  size_t size = 64;
-
-  auto data = read_file(model_path, size, offset);
-
-  // read header
-  MODEL_HEADER_T header;
-  memcpy(&header, data.data(), sizeof(header));
-
-  // write encrypted_data return to file
-  offset = header.header_size;
-  size = header.flatbuffers_size;
-  auto encrypted_data = enc_file(model_path, size, offset);
-  std::fstream outFile(model_path,
-                       std::ios::in | std::ios::out | std::ios::binary);
-  if (outFile) {
-    outFile.seekp(offset, std::ios::beg);
-    outFile.write(reinterpret_cast<char *>(encrypted_data.data()), size);
-    outFile.close();
-  }
-}
-
-// decrypt bmodel
-std::vector<uint8_t> Qwen::decrypt_bmodel(std::string model_path) {
-  size_t header_offset = 0;
-  size_t header_size = 64;
-
-  // read header
-  auto data = read_file(model_path, header_size, header_offset);
-
-  MODEL_HEADER_T header;
-  memcpy(&header, data.data(), sizeof(header));
-
-  // read flatbuffer
-  auto dec_offset = header.header_size;
-  auto dec_size = header.flatbuffers_size;
-  auto decrypted_data = dec_file(model_path, dec_size, dec_offset);
-  decrypted_data.insert(decrypted_data.begin(), data.begin(), data.end());
-
-  auto total_size =
-      header.header_size + header.flatbuffers_size + header.binary_size;
-  if (bmrt_get_bmodel_info_from_data((void *)decrypted_data.data(), &mem_info,
-                                     total_size) == false) {
-    throw std::runtime_error("Load bmodel Failed");
-  }
-  return decrypted_data;
 }
 
 void Qwen::malloc_bmodel_mem() {
@@ -885,7 +795,6 @@ PYBIND11_MODULE(chat, m) {
   pybind11::class_<Qwen>(m, "Qwen")
       .def(pybind11::init<>())
       .def("init", &Qwen::init)
-      .def("encrypt_bmodel", &Qwen::encrypt_bmodel)
       .def("forward_first", &Qwen::forward_first)
       .def("forward_share", &Qwen::forward_share)
       .def("forward_unshare", &Qwen::forward_unshare)
@@ -907,5 +816,6 @@ PYBIND11_MODULE(chat, m) {
       .def_readwrite("prompt_mode", &Qwen::prompt_mode)
       .def_readwrite("memory_prealloc", &Qwen::memory_prealloc)
       .def_readwrite("io_alone_reuse", &Qwen::io_alone_reuse)
+      .def_readwrite("lib_path", &Qwen::lib_path)
       .def_readwrite("is_decrypt", &Qwen::is_decrypt);
 }

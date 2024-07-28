@@ -21,10 +21,6 @@ class Qwen():
 
         # warm up
         self.tokenizer.decode([0])
-
-        # preprocess parameters, such as prompt & tokenizer
-        self.system_prompt = "You are a helpful assistant."
-        self.history = [{"role": "system", "content": self.system_prompt}]
         self.EOS = self.tokenizer.eos_token_id
 
         self.model = chat.Qwen()
@@ -47,6 +43,7 @@ class Qwen():
         self.model.repeat_last_n = args.repeat_last_n
         self.model.max_new_tokens = args.max_new_tokens
         self.model.generation_mode = args.generation_mode
+        self.model.lib_path = args.lib_path
 
 
     def stream_answer(self, tokens, inference_mode, max_tok_num):
@@ -117,8 +114,6 @@ class Qwen():
         #===------------------------------------------------------------===
         # Model 0
         #===------------------------------------------------------------===
-        if self.model.is_decrypt:        
-            self.model.encrypt_bmodel(self.model_list[0])
 
         # load model 0
         self.model.io_alone_reuse = False
@@ -152,8 +147,6 @@ class Qwen():
         #===------------------------------------------------------------===
         # load model 1
         self.model.io_alone_reuse = True
-        if self.model.is_decrypt:
-            self.model.encrypt_bmodel(self.model_list[1])
         self.load_model(self.model_list[1])
 
         # share prefill
@@ -194,8 +187,6 @@ class Qwen():
         #===------------------------------------------------------------===
         # Model 0
         #===------------------------------------------------------------===
-        if self.model.is_decrypt:        
-            self.model.encrypt_bmodel(self.model_list[0])
 
         # load model 0
         # load sophgo_V4.6016s.1600us.8192seq.8192max.1dev_dyn.bmodel
@@ -233,8 +224,6 @@ class Qwen():
         # load model 1
         # sophgo_V4.6016s.1024us.7552seq.8192max.1dev_dyn.bmodel
         self.model.io_alone_reuse = True
-        if self.model.is_decrypt:
-            self.model.encrypt_bmodel(self.model_list[1])
         self.load_model(self.model_list[1])
 
         # share prefill
@@ -308,8 +297,6 @@ class Qwen():
         #===------------------------------------------------------------===
         # load model 2
         self.model.io_alone_reuse = False
-        if self.model.is_decrypt:
-            self.model.encrypt_bmodel(self.model_list[2])
         self.load_model(self.model_list[2])
 
         # task 6
@@ -385,5 +372,6 @@ if __name__ == "__main__":
     parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
     parser.add_argument('--memory_prealloc', action='store_true', help="if set, prealloc weight memory for weight reuse")
     parser.add_argument('--is_decrypt', action='store_true', help="if set, will to decrypt bmodel before load")
+    parser.add_argument('--lib_path', type=str, default='', help='lib path by user')
     args = parser.parse_args()
     main(args)
