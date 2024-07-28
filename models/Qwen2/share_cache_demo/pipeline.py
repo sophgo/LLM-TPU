@@ -65,8 +65,8 @@ class Qwen():
             raise ValueError(f"Not support {inference_mode}")
         first_end = time.time()
         # Following tokens
-        # while token != self.EOS and self.model.total_length < self.model.SEQLEN:
-        while tok_num < max_tok_num:
+        while token != self.EOS and self.model.total_length < self.model.SEQLEN:
+        # while tok_num < max_tok_num:
             word = self.tokenizer.decode(token, skip_special_tokens=True)
             self.answer_token += [token]
             print(word, flush=True, end="")
@@ -129,15 +129,15 @@ class Qwen():
 
         # task 0
         unshare_tokens_0 = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(unshare_tokens_0)
+        self.stream_answer(unshare_tokens_0, "share", 0)
 
         # task 1
         unshare_tokens_1 = self.tokenizer.encode(unshare_str_1)
-        self.stream_answer(unshare_tokens_1)
+        self.stream_answer(unshare_tokens_1, "share", 0)
 
         # task 2
         unshare_tokens_2 = self.tokenizer.encode(unshare_str_2)
-        self.stream_answer(unshare_tokens_2)
+        self.stream_answer(unshare_tokens_2, "share", 0)
 
         # free memory
         self.model.free_device()
@@ -158,15 +158,15 @@ class Qwen():
 
         # task 0
         unshare_tokens_0 = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(unshare_tokens_0)
+        self.stream_answer(unshare_tokens_0, "share", 0)
 
         # task 1
         unshare_tokens_1 = self.tokenizer.encode(unshare_str_1)
-        self.stream_answer(unshare_tokens_1)
+        self.stream_answer(unshare_tokens_1, "share", 0)
 
         # task 2
         unshare_tokens_2 = self.tokenizer.encode(unshare_str_2)
-        self.stream_answer(unshare_tokens_2)
+        self.stream_answer(unshare_tokens_2, "share", 0)
 
         #===------------------------------------------------------------===
         # Deinit
@@ -352,7 +352,7 @@ class Qwen():
 def main(args):
     start_time = time.time()
     model = Qwen(args)
-    model.test_share_cache_1()
+    model.test_share_cache()
     end_time = time.time()
 
     print(f"\nTotal Time: {(end_time - start_time):.3f} s")

@@ -218,7 +218,9 @@ void Qwen::init(const std::vector<int> &devices, const std::string& model_path) 
 
   // load bmodel by file
   printf("Model[%s] loading ....\n", model_path.c_str());
-  io_size = 0;
+  if (!io_alone_reuse) {
+    io_size = 0;
+  }
   bool ret = false;
 
   // decrypt bmodel
@@ -238,7 +240,7 @@ void Qwen::init(const std::vector<int> &devices, const std::string& model_path) 
   } else if (!is_decrypt && !memory_prealloc) {
     ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   } else {
-
+    throw std::runtime_error("not support now");
   }
   assert(true == ret);
   printf("Done!\n");
