@@ -9,6 +9,7 @@
  *    without the express written permission of Sophgo Technologies Inc.
  *
  *****************************************************************************/
+#pragma once
 #include <algorithm>
 #include <climits>
 
