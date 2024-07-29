@@ -4,8 +4,11 @@ import argparse
 from tqdm import tqdm
 import pandas as pd
 from models.ChatGLM3.eval_demo import chat
+# from models.ChatGLM3.python_demo import chat
 from transformers import AutoTokenizer
 import re
+import time
+
 
 def load_json(json_path):
     with open(json_path, 'r') as f:
@@ -32,49 +35,43 @@ def bmodel_infer(model, tokenizer, prompt, history):
     tokens = tokenizer.build_chat_input(prompt, history=history)['input_ids'].tolist()[0]
     token = model.generate(tokens, tokenizer.eos_token_id)
     answer_cur = tokenizer.decode(token)
+    answer_cur = extract_cot_answer(answer_cur)
+    print(f'给出的答案是{answer_cur}')
     return answer_cur
 
 def bmodel_generate_option(model, tokenizer, prompt, history):
     tokens = tokenizer.build_chat_input(prompt, history=history)['input_ids'].tolist()[0]
-    # import pdb; pdb.set_trace()
     token = model.predict_option(tokens)
     # import pdb;pdb.set_trace()
     return token
 
-def extract_cot_answer(self, line, gen_ans):
-    m = re.findall(r'所以答案是(.+?)。', gen_ans, re.M)
-    if len(m) > 0 and m[-1] in self.choices:
-        return m[-1], True
+def extract_cot_answer(gen_ans):
+    choices = ["A", "B", "C", "D"]
     answer_patterns = [
-        r'([ABCD])是正确的',
-        r'选项([ABCD])正确',
-        r'答案为([ABCD])',
-        r'答案是([ABCD])',
+        r'([ABCD])是正确',
+        r'([ABCD])正确',
+        r'答案.([ABCD])',
         r'答案([ABCD])',
-        r'选择([ABCD])',
-        r'答案：([ABCD])',
-        r'选择答案([ABCD])'
+        r'选(?:选项)?([ABCD])',
+        r'选择(?:选项)?([ABCD])',
+        r'([ABCD])是对的',
     ]
     # RE extraction
     for answer_pattern in answer_patterns:
         m = re.search(answer_pattern, gen_ans, re.M)
         if m:
             answer = m.group(1)
-            return answer, False
-    # only containing one choice-character
+            return answer
+        
     m = re.findall(r'[ABCD]', gen_ans, re.M)
     if len(m) == 1:
         answer = m[0]
-        return answer, False
-    answer_word_counter = 0
-    # only containing one choice-context
-    for c in self.choices:
-        if str(line[f'{c}']) in gen_ans:
-            answer = c
-            answer_word_counter += 1
-    if answer_word_counter == 1:
-        return answer, False
-    return '-', False
+        return answer
+    elif gen_ans[0] in choices:
+        return gen_ans[0]
+    elif len(m) > 1:
+        return m[-1]
+    return '-'
 
 def main(args):
     # 1. define params
@@ -108,7 +105,9 @@ def main(args):
     subject_num = len(os.listdir(test_path))
     print(f"Subject numbers: {subject_num}")
     count = 0
+    cost_time = {}
     for dev_csv_file, test_csv_file in zip(os.listdir(dev_path), os.listdir(test_path)):
+        t_start = time.time()
         count = count + 1
         dev_csv_path = os.path.join(dev_path, dev_csv_file)
         test_csv_path = os.path.join(test_path, test_csv_file)
@@ -119,6 +118,7 @@ def main(args):
         subject_zh = subject_map[subject][1]
         dev_row = [dev_df.loc[i] for i in range(example_num)]
 
+
         subject_dict = {}
         print("======================================")
         print("======================================")
@@ -127,7 +127,9 @@ def main(args):
         print("======================================")
         print("======================================")
         for i in tqdm(range(len(test_df))):
+
             prompt = construct_prompt(subject_zh, dev_row, test_df.loc[i], example_num)
+
             print("")
             print("prompt:", prompt)
             if args.eval_mode == "fast":
@@ -135,12 +137,21 @@ def main(args):
             else:
                 pred = bmodel_infer(model, tokenizer, prompt, history = [])
             print("prediction:", pred)
+            
             subject_dict[str(i)] = pred
         res[subject] = subject_dict
+        cost_time[subject] = time.time() - t_start
 
     # 4. deinit & save
     
     dump_json(res, submit_path)
+
+    print(cost_time)
+    with open("time_chatglm3.txt", "w") as file:
+        for key, value in cost_time.items():
+            file.write(f"{key}: {value}\n")
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
