@@ -207,3 +207,30 @@ libsophon和driver太老，请更新，需要更新到2024年6月30号后的libs
 rm -rf build && mkdir build
 cd build && cmake .. && make
 ```
+
+
+### Q16：！！！感叹号问题
+
+这种问题原因是中间计算为nan，导致结果输出为！！！
+
+并且输出nan也有讲究，是全部为nan，比如说是”！！！！！“，还是第一个正常，比如说为“我！！！！“
+
+前者是forward_first就出错，后者是forward_next出错
+
+第二个看是哪个block出错，定位到出错的函数，比如举例为forward_first
+
+首先gdb到embedding前后，block前后，lmhead前后，用dump_fp16_tensor看输入输出
+
+将输入和export_onnx的test_net_with_mask（就是自己写的torch推理）对齐，一定要保证对齐，因为之前遇到过attention_mask送到position_id去了，导致为nan
+
+看哪个block输入是对的，输出是错（这里可能会存在block0~10都是对的，但就是block11错的）
+
+假如这里block11是错的
+
+之后有两种解决方式，一种是开比对：用dump_net函数把这个block11前面的输入给dump下来，然后用model_deploy开比对
+
+一种是置零：因为传进来的输入，特别是block11->input_mem[0]，它前面一部分是真实值，后面一部分其实不是真实值，需要把后面一部分给置零，用empty函数。这种可能是后面的非真实值导致计算为nan
+
+上面说的dump_fp16_tensor，dump_net，empty我都写在LLM-TPU/support/include/utils.h里面了，可以参考~~
+
+还有一些情况，就是libsophon版本、驱动、tpu-mlir版本问题
