@@ -155,20 +155,30 @@ class Qwen:
 
         # task 0
         unshare_tokens_0 = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(unshare_tokens_0, "share", 0)
+        self.stream_answer(unshare_tokens_0, "share", 10)
 
         # task 1
         unshare_tokens_1 = self.tokenizer.encode(unshare_str_1)
-        self.stream_answer(unshare_tokens_1, "share", 0)
+        self.stream_answer(unshare_tokens_1, "share", 10)
 
         # task 2
         unshare_tokens_2 = self.tokenizer.encode(unshare_str_2)
-        self.stream_answer(unshare_tokens_2, "share", 0)
+        self.stream_answer(unshare_tokens_2, "share", 10)
+
+        self.model.deinit()
 
         # ===------------------------------------------------------------===
-        # Deinit
+        # Model 2
         # ===------------------------------------------------------------===
-        self.model.deinit()
+        # load model 2
+        self.model.io_alone_mode = 0
+        self.load_model(self.model_list[2])
+
+        share_tokens = self.tokenizer.encode(
+            share_str, max_length=725, truncation=True, padding="max_length"
+        )
+        unshare_tokens = self.tokenizer.encode(unshare_str_0)
+        self.stream_answer(share_tokens + unshare_tokens, "normal", 7)
 
     def test_share_cache_1(self):
         json_path = "../../../assets/long_case.json"
@@ -333,11 +343,11 @@ class Qwen:
 def main(args):
 
     # normal test
-    # start_time = time.time()
-    # model = Qwen(args)
-    # model.test_share_cache()
-    # end_time = time.time()
-    # print(f"\nTotal Time: {(end_time - start_time):.3f} s")
+    start_time = time.time()
+    model = Qwen(args)
+    model.test_share_cache()
+    end_time = time.time()
+    print(f"\nTotal Time: {(end_time - start_time):.3f} s")
 
     # max length test
     start_time = time.time()

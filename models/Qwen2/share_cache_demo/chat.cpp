@@ -360,6 +360,7 @@ void Qwen::deinit() {
   for (auto h : handles) {
     bm_dev_free(h);
   }
+  handles.clear();
 }
 
 void Qwen::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
