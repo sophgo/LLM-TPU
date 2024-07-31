@@ -179,6 +179,7 @@ class Qwen:
         )
         unshare_tokens = self.tokenizer.encode(unshare_str_0)
         self.stream_answer(share_tokens + unshare_tokens, "normal", 7)
+        self.model.deinit()
 
     def test_share_cache_1(self):
         json_path = "../../../assets/long_case.json"
