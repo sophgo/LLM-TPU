@@ -350,12 +350,12 @@ void Qwen::deinit() {
       bm_free_device(bm_handle, past_value[i]);
     }
   }
-
-  for (int i = 0; i < NUM_LAYERS; i++) {
-    bm_free_device(bm_handle, tmp_past_key[i]);
-    bm_free_device(bm_handle, tmp_past_value[i]);
+  if (io_alone_mode == 1) {
+    for (int i = 0; i < NUM_LAYERS; i++) {
+      bm_free_device(bm_handle, tmp_past_key[i]);
+      bm_free_device(bm_handle, tmp_past_value[i]);
+    }
   }
-
   bmrt_destroy(p_bmrt);
   for (auto h : handles) {
     bm_dev_free(h);
