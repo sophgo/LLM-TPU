@@ -273,13 +273,6 @@ def convert_embedding():
     torch.jit.save(module, f"{folder}/embedding.pt")
 
 
-def convert_embedding_unshare():
-    model = Embedding()
-    input_ids = torch.tensor([range(UNSHARE_LENGTH)], dtype=torch.int32).to(device)
-    module = torch.jit.trace(model.forward, input_ids)
-    torch.jit.save(module, f"{folder}/embedding_unshare.pt")
-
-
 def convert_lm_head():
     model = LmHead()
     hidden_states = torch.randn(1, 1, HIDDEN_SIZE).to(dtype).to(device)
@@ -413,7 +406,6 @@ for i in tqdm(range(NUM_LAYERS)):
 
 print("Convert embedding")
 convert_embedding()
-convert_embedding_unshare()
 
 print("Convert lm_head")
 convert_lm_head()
