@@ -1,12 +1,15 @@
 
 
-#include <vector>
-#include <iostream>
-#include <fstream>
-#include <cryptopp/osrng.h>
-#include <cryptopp/aes.h>
-#include <cryptopp/modes.h>
-#include <cryptopp/filters.h>
+//#include <vector>
+//#include <iostream>
+//#include <fstream>
+//#include <cryptopp/osrng.h>
+//#include <cryptopp/aes.h>
+//#include <cryptopp/modes.h>
+//#include <cryptopp/filters.h>
+#include <cstdlib>
+#include <cstddef>
+#include <cstdint>
 
 // class IAESOFBCipher {
 // public:

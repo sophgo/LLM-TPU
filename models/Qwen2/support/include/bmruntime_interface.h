@@ -20,11 +20,6 @@
 #define BMRUNTIME_INTERFACE_H_
 
 #include "bmdef.h"
-#include <cryptopp/osrng.h>
-#include <cryptopp/osrng.h>
-#include <cryptopp/aes.h>
-#include <cryptopp/modes.h>
-#include <cryptopp/filters.h>
 
 #ifdef _WIN32
 #define DECL_EXPORT _declspec(dllexport)
@@ -160,6 +155,19 @@ DECL_EXPORT void bmrt_set_flags(void* p_bmrt, uint32_t flags);
 
 /* --------------------------------------------------------------------------*/
 /**
+ * @name    bmrt_set_weight_mode
+ * @brief   set runtime weight mode for different loading weight ways
+ * @ingroup bmruntime
+ *
+ * This API set runtime weight mode.
+ *
+ * @param [in]     p_bmrt        Bmruntime that had been created
+ *
+ */
+DECL_EXPORT void bmrt_set_weight_mode(void* p_bmrt, uint32_t weight_mode);
+
+/* --------------------------------------------------------------------------*/
+/**
  * @name    bmrt_get_flags
  * @brief   get runtime flags for different situations
  * @ingroup bmruntime
@@ -226,26 +234,21 @@ DECL_EXPORT bool bmrt_load_bmodel_with_mem(void* p_bmrt, const char* bmodel_path
 
 /* load encrypted bmodel with given memory. bmruntime do not alloc memory any more */
 /**
- * @name    bmrt_load_encrypted_bmodel_with_io_mem
- * @brief   Load encrypted bmodel with given memory. bmruntime only alloc io memory.
+ * @name    bmrt_load_encrypted_bmodel
+ * @brief   Load encrypted bmodel.
  * @ingroup bmruntime
  *
  * This API is to load encrypted bmodel created by BM compiler.
  * After loading encrypted bmodel, we can run the inference of neuron network.
- * Different with bmrt_load_bmodel, device memory has been set by mem_info.
  *
  * @param   [in]   p_bmrt        Bmruntime that had been created
  * @param   [in]   bmodel_path   Bmodel file directory.
- * @param   [in]   bmodel_data   Bmodel data pointer to buffer
- * @param   [in]   mem_info      memory information
- * @param   [in]   io_mem_v      io memory vector when addr_mode = 1
- * @param   [in]   io_size       io memory size when addr_mode = 1
  * @param   [in]   lib_path      lib path by user
  *
  * @retval true    Load context sucess.
  * @retval false   Load context failed.
  */
-DECL_EXPORT bool bmrt_load_encrypted_bmodel_with_io_mem(void* p_bmrt, const char* bmodel_path, mem_info_t* mem_info, bm_device_mem_t* io_mem_v, uint64_t* io_size, const char* lib_path);
+DECL_EXPORT bool bmrt_load_encrypted_bmodel(void* p_bmrt, const char* bmodel_path, const char* lib_path);
 
 /**
  * @name    bmrt_show_neuron_network

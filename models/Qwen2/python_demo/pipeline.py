@@ -1,5 +1,6 @@
 import argparse
 
+import chat
 import time
 from transformers import AutoTokenizer
 
@@ -24,30 +25,26 @@ class Qwen2():
         self.EOS = self.tokenizer.eos_token_id
         self.enable_history = args.enable_history
 
-        # load model
-        self.load_model(args)
+        self.model = chat.Qwen()
+        self.init_params(args)
+        self.load_model(args.model_path)
 
-    def load_model(self, args):
-        if len(self.devices) > 1:
-            import chat_parallel
-            self.model = chat_parallel.Qwen()
-            self.model.init(
-                self.devices,
-                self.tokenizer.im_end_id,
-                args.model_path
-            )
-        else:
-            import chat
-            self.model = chat.Qwen()
-            self.model.init(self.devices, args.model_path)
-            self.model.temperature = args.temperature
-            self.model.top_p = args.top_p
-            self.model.repeat_penalty = args.repeat_penalty
-            self.model.repeat_last_n = args.repeat_last_n
-            self.model.max_new_tokens = args.max_new_tokens
-            self.model.generation_mode = args.generation_mode
-            self.model.prompt_mode = args.prompt_mode
-        self.SEQLEN = self.model.SEQLEN
+
+    def load_model(self, model_path):
+        load_start = time.time()
+        self.model.init(self.devices, model_path)
+        load_end = time.time()
+        print(f"\nLoad Time: {(load_end - load_start):.3f} s")
+
+
+    def init_params(self, args):
+        self.model.temperature = args.temperature
+        self.model.top_p = args.top_p
+        self.model.repeat_penalty = args.repeat_penalty
+        self.model.repeat_last_n = args.repeat_last_n
+        self.model.max_new_tokens = args.max_new_tokens
+        self.model.generation_mode = args.generation_mode
+        self.model.lib_path = args.lib_path
 
 
     def clear(self):
@@ -55,7 +52,7 @@ class Qwen2():
 
 
     def update_history(self):
-        if self.model.token_length >= self.SEQLEN:
+        if self.model.token_length >= self.model.SEQLEN:
             print("... (reach the maximal length)", flush=True, end="")
             self.history = [{"role": "system", "content": self.system_prompt}]
         else:
@@ -99,10 +96,10 @@ class Qwen2():
                 if not tokens:
                     print("Sorry: your question is empty!!")
                     return
-                if len(tokens) > self.SEQLEN:
+                if len(tokens) > self.model.SEQLEN:
                     print(
                         "The maximum question length should be shorter than {} but we get {} instead.".format(
-                            self.SEQLEN, len(tokens)
+                            self.model.SEQLEN, len(tokens)
                         )
                     )
                     return
@@ -124,7 +121,7 @@ class Qwen2():
         token = self.model.forward_first(tokens)
         first_end = time.time()
         # Following tokens
-        while token != self.EOS and self.model.token_length < self.SEQLEN:
+        while token != self.EOS and self.model.token_length < self.model.SEQLEN:
             word = self.tokenizer.decode(token, skip_special_tokens=True)
             self.answer_token += [token]
             print(word, flush=True, end="")
@@ -176,7 +173,7 @@ class Qwen2():
                 break
             output_tokens += [next_token]
             self.answer_cur = self.tokenizer.decode(output_tokens)
-            if self.model.token_length >= self.SEQLEN:
+            if self.model.token_length >= self.model.SEQLEN:
                 self.update_history()
                 yield self.answer_cur + "\n\n\nReached the maximum length; The history context has been cleared.", self.history
                 break
@@ -203,6 +200,7 @@ if __name__ == "__main__":
     parser.add_argument('--max_new_tokens', type=int, default=1024, help='max new token length to generate')
     parser.add_argument('--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
     parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
-    parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory.") 
+    parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory")
+    parser.add_argument('--lib_path', type=str, default='', help='lib path by user')
     args = parser.parse_args()
     main(args)
