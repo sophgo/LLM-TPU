@@ -27,7 +27,6 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 ```shell
 python pipeline.py --model_path_list qwen2-7b_int4_share6144_unshare1536_1dev_encrypted.bmodel,qwen2-7b_int4_share6144_unshare1024_1dev_encrypted.bmodel,qwen2-7b_int4_share1248_unshare0_1dev_encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --lib_path build/libcipher.so
 ```
-* weight_mode：当weight_mode=0，则正常加载权重；当weight_mode=1，则使用权重复用方案，即加载一次权重，多次使用
 * io_alone_mode：当io_alone_mode=0，则正常prefill；当io_alone_mode=1，则使用kvcache复用方案
 * model_path_list：模型路径，当使用多个模型时，用逗号隔开
 * lib_path：解密库路径，当使用加密模型时，必须带上lib_path参数，因为只有带上lib_path，才会走解密的逻辑
@@ -51,6 +50,8 @@ model_tool --info qwen1.5-4b_int4_share6144_unshare2816_seq8960_1dev_dyn.bmodel 
 ```shell
 cp files/Qwen-7B-Chat/* your_torch_model
 ```
+
+* 如果你想要权重复用，那么必须要用`free_device()`函数来释放空间，而不要用deinit()
 
 ### 模型加解密
 * 建议使用定长加密，变长加密还没有经过测试

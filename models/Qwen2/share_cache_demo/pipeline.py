@@ -112,7 +112,6 @@ class Qwen:
 
         # load model 0
         self.model.io_alone_mode = 0
-        # self.model.weight_mode = 0
         self.load_model(self.model_list[0])
 
         # share prefill
@@ -143,7 +142,6 @@ class Qwen:
         # ===------------------------------------------------------------===
         # load model 1
         self.model.io_alone_mode = 1
-        # self.model.weight_mode = 1
         self.load_model(self.model_list[1])
 
         # share prefill
@@ -165,7 +163,7 @@ class Qwen:
         unshare_tokens_2 = self.tokenizer.encode(unshare_str_2)
         self.stream_answer(unshare_tokens_2, "share", 10)
 
-        self.model.deinit()
+        self.model.free_device()
 
         # ===------------------------------------------------------------===
         # Model 2
@@ -179,6 +177,10 @@ class Qwen:
         )
         unshare_tokens = self.tokenizer.encode(unshare_str_0)
         self.stream_answer(share_tokens + unshare_tokens, "normal", 7)
+
+        # ===------------------------------------------------------------===
+        # Deinit
+        # ===------------------------------------------------------------===
         self.model.deinit()
 
     def test_share_cache_1(self):
@@ -196,13 +198,9 @@ class Qwen:
         # ===------------------------------------------------------------===
 
         # load model 0
-        # load sophgo_V4.6016s.1600us.8192seq.8192max.1dev_dyn.bmodel
         # when use io_alone_mode = 0, need to forward_share to get kvcache
         # when use io_alone_mode = 1, don't need to forward_share, kvcache will be reused
-        # when use weight_mode = 0, load weight normally
-        # when use weight_mode = 1, don't need to load weight, weight will be reused
         self.model.io_alone_mode = 0
-        # self.model.weight_mode = 0
         self.load_model(self.model_list[0])
 
         # share prefill
@@ -230,11 +228,8 @@ class Qwen:
         # Model 1
         # ===------------------------------------------------------------===
         # load model 1
-        # sophgo_V4.6016s.1024us.7552seq.8192max.1dev_dyn.bmodel
         # io_alone_mode = 1, kvcache will be reused
-        # weight_mode = 1, weight will be reused
         self.model.io_alone_mode = 1
-        # self.model.weight_mode = 1
         self.load_model(self.model_list[1])
 
         # share prefill
@@ -294,7 +289,7 @@ class Qwen:
         unshare_tokens = self.tokenizer.encode(unshare_str_1)
         self.stream_answer(unshare_tokens, "share", 184)
     
-        self.model.deinit()
+        self.model.free_device()
 
         # ===------------------------------------------------------------===
         # Model 2

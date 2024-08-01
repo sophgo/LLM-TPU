@@ -129,6 +129,18 @@ DECL_EXPORT void *bmrt_create_ex(bm_handle_t *bm_handles, int num_handles);
  */
 DECL_EXPORT void bmrt_destroy(void* p_bmrt);
 
+
+/**
+ * @name    bmrt_destroy_without_coeff
+ * @brief   To free all memory without coeff memory
+ * @ingroup bmruntime
+ *
+ * This API free all memory without coeff memory.
+ *
+ * @param [in]     p_bmrt        Bmruntime that had been created
+ */
+DECL_EXPORT void bmrt_destroy_without_coeff(void* p_bmrt);
+
 /**
  * @name    bmrt_get_bm_handle
  * @brief   To get the BM runtime context.
@@ -152,19 +164,6 @@ DECL_EXPORT void * bmrt_get_bm_handle(void* p_bmrt);
  *
  */
 DECL_EXPORT void bmrt_set_flags(void* p_bmrt, uint32_t flags);
-
-/* --------------------------------------------------------------------------*/
-/**
- * @name    bmrt_set_weight_mode
- * @brief   set runtime weight mode for different loading weight ways
- * @ingroup bmruntime
- *
- * This API set runtime weight mode.
- *
- * @param [in]     p_bmrt        Bmruntime that had been created
- *
- */
-DECL_EXPORT void bmrt_set_weight_mode(void* p_bmrt, uint32_t weight_mode);
 
 /* --------------------------------------------------------------------------*/
 /**
