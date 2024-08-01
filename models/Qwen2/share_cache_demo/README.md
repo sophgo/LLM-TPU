@@ -3,7 +3,7 @@
 ## 1. 编译模型
 your_torch_model是你模型的路径
 ```shell
-pip install transformers_stream_generator einops tiktoken accelerate transformers==4.41.2
+pip3 install torch==2.0.1 transformers_stream_generator einops tiktoken accelerate transformers==4.41.2
 cp files/Qwen2-7B-Instruct/* /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2/
 
 ./t.sh
