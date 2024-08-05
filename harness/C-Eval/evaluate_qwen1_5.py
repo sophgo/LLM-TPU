@@ -8,6 +8,8 @@ from models.Qwen1_5.python_demo import chat
 from transformers import AutoTokenizer
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import re
+import time
+
 
 def load_json(json_path):
     with open(json_path, 'r') as f:
@@ -42,6 +44,7 @@ def bmodel_infer(model, tokenizer, prompt, history):
         add_generation_prompt=True
     )
     model_inputs = tokenizer([text])
+
     generated_ids = model.generate(
                 model_inputs.input_ids[0],
                 tokenizer.eos_token_id
@@ -106,6 +109,7 @@ def extract_cot_answer(gen_ans):
 
 
 def main(args):
+
     # 1. define params
     example_num = 0
     dev_path = "ceval-exam/dev"
@@ -146,7 +150,9 @@ def main(args):
     subject_num = len(os.listdir(test_path))
     print(f"Subject numbers: {subject_num}")
     count = 0
+    cost_time = {}
     for dev_csv_file, test_csv_file in zip(os.listdir(dev_path), os.listdir(test_path)):
+        t_start = time.time()
         count = count + 1
         dev_csv_path = os.path.join(dev_path, dev_csv_file)
         test_csv_path = os.path.join(test_path, test_csv_file)
@@ -165,7 +171,9 @@ def main(args):
         print("======================================")
         print("======================================")
         for i in tqdm(range(len(test_df))):
+
             prompt = construct_prompt(subject_zh, dev_row, test_df.loc[i], example_num)
+
             print("")
             print("prompt:", prompt)
             if args.eval_mode == "fast":
@@ -176,18 +184,23 @@ def main(args):
             print("prediction:", pred)
             subject_dict[str(i)] = pred
         res[subject] = subject_dict
-        break
+        cost_time[subject] = time.time() - t_start
 
     # 4. deinit & save
     
     dump_json(res, submit_path)
+
+    print(cost_time)
+    with open("time_qwen1_5.txt", "w") as file:
+        for key, value in cost_time.items():
+            file.write(f"{key}: {value}\n")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--devid', type=str, help='device ID to use')
     parser.add_argument('--model_path', type=str, help='Path to the bmodel file.')
     parser.add_argument('--device', type=str, choices=['cuda', 'tpu'], default='tpu')
-    parser.add_argument('--tokenizer_path', type=str, help='Path to the tokenizer file.')
+    parser.add_argument('--tokenizer_path', type=str, help='Path to the tokenizer file.', default="../../models/Qwen1_5/token_config/")
     parser.add_argument('--temperature', type=float, default=1.0, help='temperature scaling factor for the likelihood distribution')
     parser.add_argument('--top_p', type=float, default=1.0, help='cumulative probability of token words to consider as a set of candidates')
     parser.add_argument('--repeat_penalty', type=float, default=1.0, help='penalty for repeated tokens')

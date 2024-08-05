@@ -30,29 +30,6 @@
 #endif
 
 #if defined(__cplusplus)
-#include <vector>
-
-/* load bmodel with given memory. bmruntime do not alloc memory any more */
-/**
- * @name    bmrt_load_bmodel_with_mem
- * @brief   Load bmodel with given memory. bmruntime do not alloc memory any more.
- * @ingroup bmruntime
- *
- * This API is to load bmodel created by BM compiler.
- * After loading bmodel, we can run the inference of neuron network.
- * Different with bmrt_load_bmodel, device memory has been set by mem_info.
- *
- * @param   [in]   p_bmrt        Bmruntime that had been created
- * @param   [in]   bmodel_path   Bmodel file directory.
- * @param   [in]   bmodel_data   Bmodel data pointer to buffer
- * @param   [in]   mem_info      memory information
- * @param   [in]   io_mem_v      io memory vector when addr_mode = 1
- *
- * @retval true    Load context sucess.
- * @retval false   Load context failed.
- */
-DECL_EXPORT bool bmrt_load_bmodel_with_mem_v2(void* p_bmrt, const char* bmodel_path, const void * bmodel_data, mem_info_t* mem_info, std::vector<bm_device_mem_t> &io_mem_v);
-
 extern "C" {
 #endif
 
@@ -104,8 +81,8 @@ DECL_EXPORT void bmrt_print_network_info(const bm_net_info_t* net_info);
 /* get bmodel basic memory information. which is store in mem_info */
 DECL_EXPORT bool bmrt_get_bmodel_info(const char *bmodel_path, mem_info_t *mem_info);
 
-/* get bmodel basic memory information from bmodel data. which is store in mem_info */
-DECL_EXPORT bool bmrt_get_bmodel_info_from_data(const void *bmodel_data, mem_info_t *mem_info, size_t size);
+/* get encrypted bmodel basic memory information. which is store in mem_info */
+DECL_EXPORT bool bmrt_get_encrypted_bmodel_info(const char *bmodel_path, const char *lib_path, mem_info_t *mem_info);
 
 /* get net index*/
 DECL_EXPORT int bmrt_get_network_index(void* p_bmrt, const char* net_name);
@@ -151,6 +128,18 @@ DECL_EXPORT void *bmrt_create_ex(bm_handle_t *bm_handles, int num_handles);
  * @param [in]     p_bmrt        Bmruntime that had been created
  */
 DECL_EXPORT void bmrt_destroy(void* p_bmrt);
+
+
+/**
+ * @name    bmrt_destroy_without_coeff
+ * @brief   To free all memory without coeff memory
+ * @ingroup bmruntime
+ *
+ * This API free all memory without coeff memory.
+ *
+ * @param [in]     p_bmrt        Bmruntime that had been created
+ */
+DECL_EXPORT void bmrt_destroy_without_coeff(void* p_bmrt);
 
 /**
  * @name    bmrt_get_bm_handle
@@ -241,6 +230,24 @@ DECL_EXPORT bool bmrt_load_bmodel_data(void* p_bmrt, const void * bmodel_data, s
  * @retval false   Load context failed.
  */
 DECL_EXPORT bool bmrt_load_bmodel_with_mem(void* p_bmrt, const char* bmodel_path, mem_info_t* mem_info);
+
+/* load encrypted bmodel with given memory. bmruntime do not alloc memory any more */
+/**
+ * @name    bmrt_load_encrypted_bmodel
+ * @brief   Load encrypted bmodel.
+ * @ingroup bmruntime
+ *
+ * This API is to load encrypted bmodel created by BM compiler.
+ * After loading encrypted bmodel, we can run the inference of neuron network.
+ *
+ * @param   [in]   p_bmrt        Bmruntime that had been created
+ * @param   [in]   bmodel_path   Bmodel file directory.
+ * @param   [in]   lib_path      lib path by user
+ *
+ * @retval true    Load context sucess.
+ * @retval false   Load context failed.
+ */
+DECL_EXPORT bool bmrt_load_encrypted_bmodel(void* p_bmrt, const char* bmodel_path, const char* lib_path);
 
 /**
  * @name    bmrt_show_neuron_network

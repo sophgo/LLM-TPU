@@ -3,15 +3,10 @@
 ## 1. 编译模型
 your_torch_model是你模型的路径
 ```shell
-pip install transformers_stream_generator einops tiktoken accelerate transformers==4.41.2
+pip3 install torch==2.0.1 transformers_stream_generator einops tiktoken accelerate transformers==4.41.2
 cp files/Qwen2-7B-Instruct/* /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2/
 
-python export_onnx.py --model_path your_torch_model --device cpu --share_length 6016 --unshare_length 1536 --seq_length 8704 --num_thread 16 --max_pos_len 8704
-
-python export_onnx.py --model_path your_torch_model --device cpu --share_length 6016 --unshare_length 1024 --seq_length 7552 --max_pos_len 8704 --num_thread 16
-
-./compile.sh --mode int4 --name qwen2-7b --share_length 5888 --addr_mode io_alone --unshare_length 1536
-./compile.sh --mode int4 --name qwen-7b --share_length 6016 --addr_mode io_alone --unshare_length 1024
+./t.sh
 ```
 如果你不想编译模型，也可以直接下载
 ```shell
@@ -30,23 +25,15 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 ## 3. 运行python demo
 ```shell
-python3 pipeline_test.py --model_path_list qwen2-7b_int4_share6144_unshare1024_1dev_test.bmodel,qwen2-7b_int4_share6144_unshare1024_1dev_test.bmodel  --tokenizer_path ../support/token_config/ --devid 18 --generation_mode greedy --memory_prealloc --is_decrypt
+python pipeline.py --model_path_list qwen2-7b_int4_share6144_unshare1536_1dev_encrypted.bmodel,qwen2-7b_int4_share6144_unshare1024_1dev_encrypted.bmodel,qwen2-7b_int4_share1248_unshare0_1dev_encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --lib_path build/libcipher.so
 ```
-* memory_prealloc：表示使用权重复用
-* is_decrypt：表明使用模型解密，**目前仅支持memory_prealloc和is_decrypt同时使用**
-* model_path_list：当使用多个模型时，用逗号隔开
-* 权重复用的流程为：self.model = chat.Qwen() --> self.load_model(model_0) --> self.free_device --> self.load_model(model_1) --> self.model.deinit()
-* 如果两个模型权重不一致，比如一个Qwen-7B 一个Qwen1.5-4B，那么建议重新创建一个类，即 self.model = chat.Qwen --> self.model.deinit() --> self.model = chat.Qwen --> self.model.deinit()
+* io_alone_mode：当io_alone_mode=0，则正常prefill；当io_alone_mode=1，则使用kvcache复用方案
+* model_path_list：模型路径，当使用多个模型时，用逗号隔开
+* lib_path：解密库路径，当使用加密模型时，必须带上lib_path参数，因为只有带上lib_path，才会走解密的逻辑
 
 
 ## 4. 注意事项
 
-### 内存设置
-
-使用如下方式来设定内存，目前内存占用为10483MB，设定的内存为10512MB
-```shell
-./memory_edit.sh -c -npu 6462 -vpu 0 -vpp 4050
-```
 
 ### 权重复用
 * 如果使用权重复用的方案，在compile.sh完成后，可以使用以下指令来检查weight空间是否一致
@@ -64,11 +51,11 @@ model_tool --info qwen1.5-4b_int4_share6144_unshare2816_seq8960_1dev_dyn.bmodel 
 cp files/Qwen-7B-Chat/* your_torch_model
 ```
 
-### 模型加解密
-* 记得使用sudo apt-get install libcrypto++-dev libcrypto++-doc libcrypto++-utils
-* 如果使用模型解密的方案，**建议提前备份好原始模型**，因为会直接原地改写原始模型的flatbuffer
-* 模型加解密的实例如下所示，只需要传入bmodel路径即可，具体请参考pipeline.py
-```python
-self.model.encrypt_bmodel(self.model_list[1])
-```
+* 如果你想要权重复用，那么必须要用`free_device()`函数来释放空间，而不要用deinit()
 
+### 模型加解密
+* 建议使用定长加密，变长加密还没有经过测试
+* 如果跑demo送入的是加密后的模型，必须要带上--lib_path参数，因为只有带上lib_path，才会走解密的逻辑
+```shell
+model_tool --encrypt -model origin.bmodel -net_name block_0 -lib ./build/libcipher.so -o encrypted.bmodel
+```

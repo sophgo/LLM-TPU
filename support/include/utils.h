@@ -9,6 +9,7 @@
  *    without the express written permission of Sophgo Technologies Inc.
  *
  *****************************************************************************/
+#pragma once
 #include <algorithm>
 #include <climits>
 
@@ -335,10 +336,9 @@ void dump_tensor_to_file(bm_handle_t &bm_handle, bm_tensor_t &t,
   }
 }
 
-void dump_net_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
+void dump_net_input_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
                       const std::string &filename) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
-  std::vector<bm_tensor_t> out_tensors(net->output_num);
 
   for (int i = 0; i < net->input_num; i++) {
     bmrt_tensor_with_device(&in_tensors[i], net->stages[0].input_mems[i],
@@ -349,6 +349,27 @@ void dump_net_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
                         net->stages[0].input_shapes[i], filename,
                         net->input_dtypes[i], "input_" + std::to_string(i));
   }
+}
+
+void dump_net_output_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
+                      const std::string &filename) {
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(&out_tensors[i], net->stages[0].output_mems[i],
+                            net->output_dtypes[i],
+                            net->stages[0].output_shapes[i]);
+
+    dump_tensor_to_file(bm_handle, out_tensors[i],
+                        net->stages[0].output_shapes[i], filename,
+                        net->output_dtypes[i], "output_" + std::to_string(i));
+  }
+}
+
+void dump_net_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
+                      const std::string &filename) {
+  dump_net_input_to_file(bm_handle, net, filename);
+  dump_net_output_to_file(bm_handle, net, filename);
 }
 #endif
 

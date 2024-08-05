@@ -273,7 +273,7 @@ for ((i=0; i<$num_layers; i++)); do
     else
         models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
     fi
-    sleep 40
+    sleep 45
 done
 rm -f *.npz
 popd
