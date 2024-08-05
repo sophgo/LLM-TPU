@@ -1,5 +1,8 @@
 #!/bin/bash
 set -ex
+model_dir=$(dirname $(readlink -f "$0"))
+pushd $model_dir
+
 models=
 mode="int4"
 folder="tmp"

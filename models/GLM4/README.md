@@ -36,6 +36,7 @@
 如果不打算自己编译模型，可以直接下载编译好的模型：
 ```bash
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/glm4-9b_int4_1dev.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/glm4-9b_int8_1dev.bmodel
 ```
 ## 注意点
 * 模型编译必须要在docker内完成，无法在docker外操作。
@@ -50,24 +51,24 @@ docker pull sophgo/tpuc_dev:latest
 # myname1234 is just an example, you can set your own name
 docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev:latest
 ```
-* PS：下载的官网ChatGLM4模型`glm-4-9b-chat-torch`需在当前目录内
+* PS：本repo `LLM-TPU`需在当前目录内
 
-### 步骤二：下载TPU-MLIR代码并编译
+### 步骤二：下载TPU-MLIR代码并安装
 
 ``` shell
+pip3 install dfss  --upgrade -i https://pypi.tuna.tsinghua.edu.cn/simple
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/tpu-mlir.tar.gz
 tar zxvf tpu-mlir.tar.gz
-cd tpu-mlir
+cd tpu-mlir_v1.8.beta.0-134-g859a6f517-20240801
 source ./envsetup.sh
-./build.sh
+cd ..
 ```
-* PS：重新进入docker环境并且需要编译模型时，必须在此路径下执行上述`source ./envsetup.sh` 和 `./build.sh`才能完成后续模型编译。
+* PS：重新进入docker环境并且需要编译模型时，必须在此路径下执行上述`source ./envsetup.sh`才能完成后续模型编译。
 
 ### 步骤三：模型下载
 ChatGLM4模型允许商业开源，可以通过Huggingface官网下载[glm-4-9b-chat](https://huggingface.co/THUDM/glm-4-9b-chat)。
 如果无法从官网下载，这里也提供一个下载好的压缩包。
 ```bash
-pip3 install dfss  --upgrade -i https://pypi.tuna.tsinghua.edu.cn/simple
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/glm-4-9b-chat-torch.zip
 unzip glm-4-9b-chat-torch.zip
 ```

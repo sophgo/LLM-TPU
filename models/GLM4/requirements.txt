@@ -1,5 +1,4 @@
-torch>=2.3.0
-torchvision>=0.18.0
+torch==2.3.1
 transformers==4.42.4
 huggingface-hub>=0.23.1
 sentencepiece>=0.2.0
