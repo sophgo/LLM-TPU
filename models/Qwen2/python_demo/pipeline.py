@@ -85,6 +85,7 @@ class Qwen2():
             self.input_str = input("\nQuestion: ")
             # Quit
             if self.input_str in ["exit", "q", "quit"]:
+                self.model.deinit_decrypt()
                 break
             # New Chat
             elif self.input_str in ["clear", "new"]:

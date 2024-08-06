@@ -32,7 +32,8 @@ class Qwen {
 public:
   void init(const std::vector<int> &devid, std::string model_path);
   void deinit();
-  int init_decrypt();
+  void init_decrypt();
+  void deinit_decrypt();
   int forward_first(std::vector<int> &tokens);
   int forward_next();
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
@@ -118,25 +119,38 @@ void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset, int size)
   bm_memcpy_d2d_byte(bm_handle, dst, offset, src, 0, size);
 }
 
-int Qwen::init_decrypt() {
+void Qwen::init_decrypt() {
   // init decrypt
   if (lib_path.empty()) {
-    return -1;
+    return;
   }
   decrypt_handle_ = dlopen(lib_path.c_str(), RTLD_LAZY);
   if (!decrypt_handle_) {
     std::cout << "Error:" << "Decrypt lib [" << lib_path << "] load failed."
                       << std::endl;
-    return -1;
+    return;
   }
   decrypt_func_ = (decrypt_func)dlsym(decrypt_handle_, "decrypt");
   auto error = dlerror();
   if (error) {
+    dlclose(decrypt_handle_);
     std::cout << "Error:" << "Decrypt lib [" << lib_path
                       << "] symbol find failed." << std::endl;
-    return -1;
+    return;
   }
-  return 0;
+  return;
+}
+
+void Qwen::deinit_decrypt() {
+  // Step 1: Close the dynamic library handle if it's open.
+  if (decrypt_handle_) {
+    dlclose(decrypt_handle_);
+    decrypt_handle_ = nullptr; // Avoid dangling pointer by resetting to nullptr.
+  }
+
+  // Step 2: Reset the function pointer to nullptr. 
+  // No need to free or close anything specific for it.
+  decrypt_func_ = nullptr;
 }
 
 void Qwen::init(const std::vector<int> &devices, std::string model_path) {
@@ -477,6 +491,7 @@ PYBIND11_MODULE(chat, m) {
       .def("generate", &Qwen::generate)
       .def("deinit", &Qwen::deinit)
       .def("init_decrypt", &Qwen::init_decrypt)
+      .def("deinit_decrypt", &Qwen::deinit_decrypt)
       .def_readwrite("SEQLEN", &Qwen::SEQLEN) // read SEQLEN in pipeline.py
       .def_readwrite("token_length", &Qwen::token_length)
       .def_readwrite("temperature", &Qwen::temperature)
