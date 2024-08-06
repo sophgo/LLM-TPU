@@ -22,14 +22,17 @@
 #include <random>
 #include <stdio.h>
 #include <vector>
+#include <dlfcn.h>
 #include "utils.h"
 
 static const uint16_t ATTENTION_MASK = 0xC61C;
+typedef uint8_t *(*decrypt_func)(const uint8_t *, uint64_t, uint64_t *);
 
 class Qwen {
 public:
   void init(const std::vector<int> &devid, std::string model_path);
   void deinit();
+  int init_decrypt();
   int forward_first(std::vector<int> &tokens);
   int forward_next();
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
@@ -77,6 +80,9 @@ private:
   const bm_net_info_t *net_lm, *net_greedy_head, *net_penalty_sample_head;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
+
+  void *decrypt_handle_;    // handle of decrypt lib
+  decrypt_func decrypt_func_; // decrypt func from lib
 };
 
 void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
@@ -112,6 +118,27 @@ void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset, int size)
   bm_memcpy_d2d_byte(bm_handle, dst, offset, src, 0, size);
 }
 
+int Qwen::init_decrypt() {
+  // init decrypt
+  if (lib_path.empty()) {
+    return -1;
+  }
+  decrypt_handle_ = dlopen(lib_path.c_str(), RTLD_LAZY);
+  if (!decrypt_handle_) {
+    std::cout << "Error:" << "Decrypt lib [" << lib_path << "] load failed."
+                      << std::endl;
+    return -1;
+  }
+  decrypt_func_ = (decrypt_func)dlsym(decrypt_handle_, "decrypt");
+  auto error = dlerror();
+  if (error) {
+    std::cout << "Error:" << "Decrypt lib [" << lib_path
+                      << "] symbol find failed." << std::endl;
+    return -1;
+  }
+  return 0;
+}
+
 void Qwen::init(const std::vector<int> &devices, std::string model_path) {
 
   // request bm_handle
@@ -140,7 +167,7 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   printf("Model[%s] loading ....\n", model_path.c_str());
   bool ret = false;
   if (!lib_path.empty()) {
-    ret = bmrt_load_encrypted_bmodel(p_bmrt, model_path.c_str(), lib_path.c_str());
+    ret = bmrt_load_bmodel_with_decrypt(p_bmrt, model_path.c_str(), decrypt_func_);
   } else {
     ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   }
@@ -449,6 +476,7 @@ PYBIND11_MODULE(chat, m) {
       .def("forward_next", &Qwen::forward_next)
       .def("generate", &Qwen::generate)
       .def("deinit", &Qwen::deinit)
+      .def("init_decrypt", &Qwen::init_decrypt)
       .def_readwrite("SEQLEN", &Qwen::SEQLEN) // read SEQLEN in pipeline.py
       .def_readwrite("token_length", &Qwen::token_length)
       .def_readwrite("temperature", &Qwen::temperature)

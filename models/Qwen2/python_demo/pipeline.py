@@ -27,6 +27,7 @@ class Qwen2():
 
         self.model = chat.Qwen()
         self.init_params(args)
+        self.model.init_decrypt()
         self.load_model(args.model_path)
 
 
