@@ -86,27 +86,6 @@ private:
   decrypt_func decrypt_func_; // decrypt func from lib
 };
 
-void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
-  std::vector<bm_tensor_t> in_tensors(net->input_num);
-  std::vector<bm_tensor_t> out_tensors(net->output_num);
-
-  for (int i = 0; i < net->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net->stages[stage_idx].input_mems[i],
-        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
-  }
-  for (int i = 0; i < net->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net->stages[stage_idx].output_mems[i],
-        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
-  }
-  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
-                                   net->input_num, out_tensors.data(),
-                                   net->output_num, true, false);
-  assert(ret);
-  bm_thread_sync(bm_handle);
-}
-
 void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
 }
@@ -247,6 +226,27 @@ void Qwen::deinit() {
   for (auto h : handles) {
     bm_dev_free(h);
   }
+}
+
+void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  for (int i = 0; i < net->input_num; i++) {
+    bmrt_tensor_with_device(
+        &in_tensors[i], net->stages[stage_idx].input_mems[i],
+        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(
+        &out_tensors[i], net->stages[stage_idx].output_mems[i],
+        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
+  }
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
+                                   net->input_num, out_tensors.data(),
+                                   net->output_num, true, false);
+  assert(ret);
+  bm_thread_sync(bm_handle);
 }
 
 void Qwen::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
@@ -466,7 +466,8 @@ std::vector<int> Qwen::generate(std::vector<int> &history_tokens, int EOS) {
   }
 
   // make sure token not too large
-  if ((int)history_tokens.size() > SEQLEN - 10) {
+  int history_length = history_tokens.size();
+  if (history_length > SEQLEN - 10) {
     history_tokens.clear();
     printf("Error: your question is too large!\n");
     return {};
@@ -474,7 +475,7 @@ std::vector<int> Qwen::generate(std::vector<int> &history_tokens, int EOS) {
 
   std::vector<int> result_tokens;
   int token = forward_first(history_tokens);
-  while (token != EOS && token_length < SEQLEN) {
+  while (token != EOS && token_length < SEQLEN && token_length <= history_length + max_new_tokens) {
     result_tokens.emplace_back(token);
     token = forward_next();
   }

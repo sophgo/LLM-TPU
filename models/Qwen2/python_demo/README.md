@@ -3,8 +3,8 @@
 ### Install dependent
 ```bash
 sudo apt-get update
-sudo apt-get install pybind11-dev
 pip3 install transformers_stream_generator einops tiktoken accelerate gradio transformers==4.41.2 
+pip3 install pybind11[global]
 ```
 
 ### encrypt bmodel
@@ -41,6 +41,11 @@ python3 pipeline.py --model_path your_bmodel_path --tokenizer_path ../support/to
 ### run encrypted bmodel demo
 ```bash
 python3 pipeline.py --model_path your_bmodel_path --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy --lib_path libcipher.so
+```
+
+### test c-eval
+```bash
+python3 pipeline_checked.py --model_path ../compile/qwen2-1.5b_bf16_seq4096_1dev_encrypted.bmodel --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy --lib_path ../share_cache_demo/build/libcipher.so --max_new_tokens 50
 ```
 
 ### Gradio web demo
