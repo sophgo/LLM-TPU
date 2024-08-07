@@ -152,7 +152,7 @@ typedef struct {
 typedef struct {
   memory_t instruction_mem;             // bdc_cmd + hau_cmd + dynamic_ir
   memory_t variable_instruction_mem;    // gdma_cmd + sdma_cmd
-  memory_t neuron_mem;                  // neuron + dynamic_output
+  memory_t neuron_mem;                  // neuron + middle_buffer + dynamic_output
   memory_t coeff_mem;                   // coeff
   memory_t io_mem;                      // input + output
   memory_t reserved[4];
