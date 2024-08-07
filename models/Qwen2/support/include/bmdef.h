@@ -53,14 +53,6 @@ typedef enum bm_runtime_flag_e {
   BM_RUNTIME_CHECK_MEM = 1 << 1     /*bit1: 0,no check; 1,check sha256*/
 } bm_runtime_flag_t;
 
-/* flags for addr_mode */
-typedef enum {
-  ADDR_MODE_BASIC       = 0,    /* basic mode, io and neuron mem alloc together by runtime */
-  ADDR_MODE_IO_ALONE    = 1,    /* io alone mode, io mem and neuron mem alloc seperated by runtime */
-  ADDR_MODE_IO_TAG      = 2,    /* io tag mode, select max 5 data size io to assign mem by address tag (others in neuron mem) */
-  ADDR_MODE_IO_TAG_FUSE = 3,    /* io tag fuse mode, fuse inputs to a io tag and fuse outputs to another io tag */
-} addr_mode_t;
-
 /* bm_shape_t holds the shape info */
 #define BM_MAX_DIMS_NUM 8
 typedef struct bm_shape_s {
@@ -145,14 +137,13 @@ typedef struct {
   int64_t addr;     // -1: addr is invalid
   uint64_t size;
   int type;         // 0: device, 1: host
-  int number;
-  char reserved[124];
+  char reserved[128];
 } memory_t;
 
 typedef struct {
   memory_t instruction_mem;             // bdc_cmd + hau_cmd + dynamic_ir
   memory_t variable_instruction_mem;    // gdma_cmd + sdma_cmd
-  memory_t neuron_mem;                  // neuron + middle_buffer + dynamic_output
+  memory_t neuron_mem;                  // neuron + dynamic_output
   memory_t coeff_mem;                   // coeff
   memory_t io_mem;                      // input + output
   memory_t reserved[4];
