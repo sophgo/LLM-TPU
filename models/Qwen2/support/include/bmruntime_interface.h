@@ -59,6 +59,12 @@ it will alloc device mem to tensor->device_mem, so user should bmrt_free_device(
 tensor->device_mem) to free it.*/
 DECL_EXPORT bool bmrt_tensor(bm_tensor_t* tensor, void* p_bmrt, bm_data_type_t dtype, bm_shape_t shape);
 
+/*
+fill a tensor with data type and shape, and st_mode = 0 as default.
+tensor and p_bmrt should not be NULL, shape count should not be 0.
+it will alloc device mem to tensor->device_mem on devid-th device.*/
+DECL_EXPORT bool bmrt_tensor_ex(bm_tensor_t* tensor, void* p_bmrt, int devid, bm_data_type_t dtype, bm_shape_t shape);
+
 /* fill a tensor with device mem existed, tensor byte size should not large than device mem size */
 DECL_EXPORT void bmrt_tensor_with_device(bm_tensor_t* tensor, bm_device_mem_t device_mem,
                              bm_data_type_t dtype, bm_shape_t shape);
@@ -344,6 +350,52 @@ DECL_EXPORT bool bmrt_launch_tensor_multi_cores(
     bool user_stmode,
     const int *core_list,
     int core_num);
+
+/**
+ *  @name    bmrt_memcpy_s2d_parallel
+ *  @brief   To copy data from system memory to muti-devices memory in parallel
+ *  @ingroup bmruntime
+ *
+ *  This API only could be used when the p_bmrt is created with bmrt_create_ex on multi devices.
+ *  After calling this API, datas[:tensor_num[0]] will be copied to the first device, and
+ *  datas[tensor_num[0]:tensor_num[0]+tensor_num[1]] will be copied to the second device and so on.
+ *  The process of copying data to different devices is done in parallel and to the same device is in sequence.
+ * 
+ *  @param [in]     p_bmrt      Bmruntime that had been created with multi bm_handles
+ *  @param [in]     tensors     Array of tensors that will be copied to devices
+ *  @param [in]     datas       Array of satas allocated in system memory
+ *  @param [in]     tensor_num  Array of tensor_num that will be copied to each device
+ *  @param [in]     device_num  Device number
+*/
+DECL_EXPORT bool bmrt_memcpy_s2d_parallel(
+    void *p_bmrt,
+    bm_tensor_t tensors[],
+    void *datas[],
+    int tensor_num[],
+    int device_num);
+
+/**
+ *  @name    bmrt_memcpy_d2s_parallel
+ *  @brief   To copy data from muti-devices memory to system memory in parallel
+ *  @ingroup bmruntime
+ *
+ *  This API only could be used when the p_bmrt is created with bmrt_create_ex on multi devices.
+ *  After calling this API, tensors on the first device will be copied to datas[:tensor_num[0]] , and
+ *  tensors on the second device will be copied to datas[tensor_num[0]:tensor_num[0]+tensor_num[1]] and so on.
+ *  The process of copying data from different devices is done in parallel and from the same device is in sequence.
+ * 
+ *  @param [in]     p_bmrt      Bmruntime that had been created with multi bm_handles
+ *  @param [in]     datas       Array of satas allocated in system memory
+ *  @param [in]     tensors     Array of tensors that will be copied from devices
+ *  @param [in]     tensor_num  Array of tensor_num that will be copied from each device
+ *  @param [in]     device_num  Device number
+*/
+DECL_EXPORT bool bmrt_memcpy_d2s_parallel(
+    void *p_bmrt,
+    void *datas[],
+    bm_tensor_t tensors[],
+    int tensor_num[],
+    int device_num);
 
 #if defined (__cplusplus)
 }
