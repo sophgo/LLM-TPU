@@ -81,8 +81,6 @@ DECL_EXPORT void bmrt_print_network_info(const bm_net_info_t* net_info);
 /* get bmodel basic memory information. which is store in mem_info */
 DECL_EXPORT bool bmrt_get_bmodel_info(const char *bmodel_path, mem_info_t *mem_info);
 
-/* get bmodel basic memory information. which is store in mem_info */
-DECL_EXPORT bool bmrt_get_bmodel_data_info(const void* bmodel_data, size_t size, mem_info_t *mem_info);
 
 /* --------------------------------------------------------------------------*/
 /**
@@ -217,25 +215,6 @@ DECL_EXPORT bool bmrt_load_bmodel_data(void* p_bmrt, const void * bmodel_data, s
 DECL_EXPORT bool bmrt_load_bmodel_with_mem(void* p_bmrt, const char* bmodel_path, mem_info_t* mem_info);
 
 /**
- * @name    bmrt_load_bmodel_data_with_mem
- * @brief   To load the bmodel which is created by BM compiler from buffer
- * @ingroup bmruntime
- *
- * This API is to load bmodel created by BM compiler.
- * After loading bmodel, we can run the inference of neuron network.
- * Different with bmrt_load_bmodel_data, device memory has been set by mem_info.
- *
- * @param   [in]   p_bmrt        Bmruntime that had been created
- * @param   [in]   bmodel_data   Bmodel data pointer to buffer
- * @param   [in]   size          Bmodel data size
- * @param   [in]   mem_info      memory information
- *
- * @retval true    Load context sucess.
- * @retval false   Load context failed.
- */
-DECL_EXPORT bool bmrt_load_bmodel_data_with_mem(void* p_bmrt, const void * bmodel_data, size_t size, mem_info_t* mem_info);
-
-/**
  * @name    bmrt_show_neuron_network
  * @brief   To print the name of all neuron network
  * @ingroup bmruntime
@@ -266,18 +245,6 @@ DECL_EXPORT int bmrt_get_network_number(void* p_bmrt);
  *                                do not need it.
  */
 DECL_EXPORT void bmrt_get_network_names(void* p_bmrt, const char*** network_names);
-
-/**
- * @name    bmrt_get_network_name
- * @brief   To get the network name by index in the bmruntime
- * @ingroup bmruntime
- *
- * @param [in]     p_bmrt         Bmruntime that had been created
- * @param [in]     index          The network index. index must be less than net_name size.
- *
- * @retval   const char*          Pointer to network name.
- */
-DECL_EXPORT const char *bmrt_get_network_name(void* p_bmrt, int index);
 
 /**
  * @name    bmrt_get_network_info
