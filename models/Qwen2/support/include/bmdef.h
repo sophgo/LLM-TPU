@@ -46,13 +46,6 @@ typedef enum bm_store_mode_e {
   BM_STORE_4N = 2,
 } bm_store_mode_t;
 
-/* flags for runtime */
-typedef enum bm_runtime_flag_e {
-  BM_RUNTIME_AUTO = 0,              /* auto flag*/
-  BM_RUNTIME_SHARE_MEM = 1 << 0,    /*bit0: 0,dyn mem; 1,share mem */
-  BM_RUNTIME_CHECK_MEM = 1 << 1     /*bit1: 0,no check; 1,check sha256*/
-} bm_runtime_flag_t;
-
 /* bm_shape_t holds the shape info */
 #define BM_MAX_DIMS_NUM 8
 typedef struct bm_shape_s {
