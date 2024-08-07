@@ -220,6 +220,24 @@ DECL_EXPORT bool bmrt_load_bmodel_data(void* p_bmrt, const void * bmodel_data, s
  */
 DECL_EXPORT bool bmrt_load_bmodel_with_mem(void* p_bmrt, const char* bmodel_path, mem_info_t* mem_info);
 
+/* load encrypted bmodel with given memory. bmruntime do not alloc memory any more */
+/**
+ * @name    bmrt_load_bmodel_with_decrypt
+ * @brief   Load encrypted bmodel.
+ * @ingroup bmruntime
+ *
+ * This API is to load encrypted bmodel created by BM compiler.
+ * After loading encrypted bmodel, we can run the inference of neuron network.
+ *
+ * @param   [in]   p_bmrt        Bmruntime that had been created
+ * @param   [in]   bmodel_path   Bmodel file directory.
+ * @param   [in]   decrypt_lib   Lib path by user with decrypt function
+ *
+ * @retval true    Load context sucess.
+ * @retval false   Load context failed.
+ */
+DECL_EXPORT bool bmrt_load_bmodel_with_decrypt(void* p_bmrt, const char* bmodel_path, const char* decrypt_lib);
+
 /**
  * @name    bmrt_load_bmodel_data_with_mem
  * @brief   To load the bmodel which is created by BM compiler from buffer
