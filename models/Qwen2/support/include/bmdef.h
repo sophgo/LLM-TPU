@@ -149,9 +149,6 @@ typedef struct {
   memory_t reserved[4];
 } mem_info_t;
 
-/* define decrypt_func type for decrypt bmodel */
-typedef uint8_t *(*decrypt_func)(const uint8_t *, uint64_t, uint64_t *);
-
 #if defined(__cplusplus)
 }
 #endif
