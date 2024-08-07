@@ -101,6 +101,7 @@ typedef struct bm_net_info_s {
   int* output_zero_point;        /* output_zero_point[0] / [1] / .../ [output_num-1] */
   int *input_loc_devices;         /* input_loc_device[0] / [1] / .../ [input_num-1] */
   int *output_loc_devices;        /* output_loc_device[0] / [1] / .../ [output_num-1] */
+  int core_num;                  /* core number */
 } bm_net_info_t;
 
 typedef struct api_info_s {
