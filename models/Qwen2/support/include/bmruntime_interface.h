@@ -59,12 +59,6 @@ it will alloc device mem to tensor->device_mem, so user should bmrt_free_device(
 tensor->device_mem) to free it.*/
 DECL_EXPORT bool bmrt_tensor(bm_tensor_t* tensor, void* p_bmrt, bm_data_type_t dtype, bm_shape_t shape);
 
-/*
-fill a tensor with data type and shape, and st_mode = 0 as default.
-tensor and p_bmrt should not be NULL, shape count should not be 0.
-it will alloc device mem to tensor->device_mem on devid-th device.*/
-DECL_EXPORT bool bmrt_tensor_ex(bm_tensor_t* tensor, void* p_bmrt, int devid, bm_data_type_t dtype, bm_shape_t shape);
-
 /* fill a tensor with device mem existed, tensor byte size should not large than device mem size */
 DECL_EXPORT void bmrt_tensor_with_device(bm_tensor_t* tensor, bm_device_mem_t device_mem,
                              bm_data_type_t dtype, bm_shape_t shape);
@@ -299,42 +293,6 @@ DECL_EXPORT bool bmrt_launch_data(void* p_bmrt, const char* net_name, void* cons
                       bm_shape_t output_shapes[], int output_num, bool user_mem);
 
 /**
- * @name    bmrt_launch_data_multi_core
- * @brief   To launch the inference of the neuron network with setting input datas in system memory on the assigned cores
- * @ingroup bmruntime
- *
- * This API supports the neuron nework that is static-compiled or dynamic-compiled
- * After calling this API, inference on TPU is launched. And the CPU
- * program will be blocked.
- * This API support multiple inputs, and multi thread safety
- *
- * @param [in]    p_bmrt         Bmruntime that had been created
- * @param [in]    net_name       The name of the neuron network
- * @param [in]    input_datas    Array of input data, defined like void * input_datas[input_num]. User should
- *                               initialize each data pointer as input.
- * @param [in]    input_shapes   Array of input shape, defined like bm_shape_t input_shapes[input_num].
- *                               User should set each input shape
- * @param [in]    input_num      Input number
- * @param [out]   output_datas   Array of output data, defined like void * output_datas[output_num].
- *                               If user don't alloc each output data, set user_mem to false, and this api will alloc
- *                               output mem, user should free each output mem when output data not used. Also
- *                               user can alloc system memory for each output data by self and set user_mem = true.
- * @param [out]   output_shapes  Array of output shape, defined like bm_shape_t output_shapes[output_num].
- *                               It will store each output shape.
- * @param [in]    output_num     Output number
- * @param [in]    user_mem       whether output_datas[i] have allocated memory
- * @param [in]    core_list      the cores to launch on. If core_list = NULL, core_num must be 0
- * @param [in]    core_num       number of cores to use. If core_num=0, bmruntime will alloc the proper cores automatically to launch
- *
- * @retval true    Launch success.
- * @retval false   Launch failed.
- */
-DECL_EXPORT bool bmrt_launch_data_multi_cores(void* p_bmrt, const char* net_name, void* const input_datas[],
-                      const bm_shape_t input_shapes[], int input_num, void * output_datas[],
-                      bm_shape_t output_shapes[], int output_num, bool user_mem, const int* core_list, int core_num);
-
-
-/**
  * @name    bmrt_trace
  * @brief   To check runtime environment, and collect info for DEBUG
  * @ingroup bmruntime
@@ -386,52 +344,6 @@ DECL_EXPORT bool bmrt_launch_tensor_multi_cores(
     bool user_stmode,
     const int *core_list,
     int core_num);
-
-/**
- *  @name    bmrt_memcpy_s2d_parallel
- *  @brief   To copy data from system memory to muti-devices memory in parallel
- *  @ingroup bmruntime
- *
- *  This API only could be used when the p_bmrt is created with bmrt_create_ex on multi devices.
- *  After calling this API, datas[:tensor_num[0]] will be copied to the first device, and
- *  datas[tensor_num[0]:tensor_num[0]+tensor_num[1]] will be copied to the second device and so on.
- *  The process of copying data to different devices is done in parallel and to the same device is in sequence.
- *
- *  @param [in]     p_bmrt      Bmruntime that had been created with multi bm_handles
- *  @param [in]     tensors     Array of tensors that will be copied to devices
- *  @param [in]     datas       Array of satas allocated in system memory
- *  @param [in]     tensor_num  Array of tensor_num that will be copied to each device
- *  @param [in]     device_num  Device number
-*/
-DECL_EXPORT bool bmrt_memcpy_s2d_parallel(
-    void *p_bmrt,
-    bm_tensor_t tensors[],
-    void *datas[],
-    int tensor_num[],
-    int device_num);
-
-/**
- *  @name    bmrt_memcpy_d2s_parallel
- *  @brief   To copy data from muti-devices memory to system memory in parallel
- *  @ingroup bmruntime
- *
- *  This API only could be used when the p_bmrt is created with bmrt_create_ex on multi devices.
- *  After calling this API, tensors on the first device will be copied to datas[:tensor_num[0]] , and
- *  tensors on the second device will be copied to datas[tensor_num[0]:tensor_num[0]+tensor_num[1]] and so on.
- *  The process of copying data from different devices is done in parallel and from the same device is in sequence.
- *
- *  @param [in]     p_bmrt      Bmruntime that had been created with multi bm_handles
- *  @param [in]     datas       Array of satas allocated in system memory
- *  @param [in]     tensors     Array of tensors that will be copied from devices
- *  @param [in]     tensor_num  Array of tensor_num that will be copied from each device
- *  @param [in]     device_num  Device number
-*/
-DECL_EXPORT bool bmrt_memcpy_d2s_parallel(
-    void *p_bmrt,
-    void *datas[],
-    bm_tensor_t tensors[],
-    int tensor_num[],
-    int device_num);
 
 #if defined (__cplusplus)
 }
