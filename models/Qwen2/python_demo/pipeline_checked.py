@@ -1,7 +1,6 @@
 import os
 import time
 import argparse
-import pandas as pd
 from transformers import AutoTokenizer
 
 import chat_checked
@@ -98,6 +97,7 @@ class Qwen2():
         """
         Test c-eval
         """
+        import pandas as pd
         self.system_prompt = "You will provide correct answer to the question."
         self.load_model(args.model_path)
 
@@ -183,7 +183,11 @@ class Qwen2():
         print("\nAnswer: ", end="")
         self.stream_answer(tokens)
 
-        return 0
+        # deinit
+        self.model.deinit_decrypt()
+        self.model.deinit()
+
+        return self.model.status_code
 
 """
 -1: your input is empty or exceed the maximum length
