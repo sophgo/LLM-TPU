@@ -217,6 +217,18 @@ typedef int tpu_kernel_function_t;
 tpu_kernel_module_t tpu_kernel_load_module_file(bm_handle_t handle, const char *module_file);
 
 /**
+ * @name    tpu_kernel_load_module_file_to_core
+ * @brief   To load dyn file
+ * @ingroup bmlib_runtime
+ *
+ * @param [in]  handle          The device handle
+ * @param [in]  module_file     dyn file
+ * @param [in]  core_id
+ * @retval  dyn lib ptr
+ */
+tpu_kernel_module_t tpu_kernel_load_module_file_to_core(bm_handle_t handle, const char *module_file, int core_id);
+
+/**
  * @name    tpu_kernel_load_module_file_key
  * @brief   To load dyn file with key
  * @ingroup bmlib_runtime
@@ -373,6 +385,40 @@ bm_status_t tpu_kernel_launch_async(bm_handle_t handle, tpu_kernel_function_t fu
  *          Other code  Fails.
  */
 bm_status_t tpu_kernel_launch_async_from_core(bm_handle_t handle, tpu_kernel_function_t function, void *args, size_t size, int core_id);
+
+/**
+ * @name    tpu_kernel_launch_async_multi_cores
+ * @brief   To launch function with async for multi cores
+ * @ingroup bmlib_runtime
+ *
+ * @param [in]  handle          The device handle
+ * @param [in]  func_name       function name
+ * @param [in]  api_param       funtion params
+ * @param [in]  api_size        params size
+ * @param [in]  core_list       list of core ids
+ * @param [in]  core_num        number of cores
+ * @retval  BM_SUCCESS  Succeeds.
+ *          Other code  Fails.
+ */
+bm_status_t tpu_kernel_launch_async_multi_cores(bm_handle_t handle, const char *func_name, const void *api_param,
+                                                size_t api_size, const int* core_list, const int core_num);
+
+/**
+ * @name    tpu_kernel_launch_sync_multi_cores
+ * @brief   To launch function with sync for multi cores
+ * @ingroup bmlib_runtime
+ *
+ * @param [in]  handle          The device handle
+ * @param [in]  func_name       function name
+ * @param [in]  api_param       funtion params
+ * @param [in]  api_size        params size
+ * @param [in]  core_list       list of core ids
+ * @param [in]  core_num        number of cores
+ * @retval  BM_SUCCESS  Succeeds.
+ *          Other code  Fails.
+ */
+bm_status_t tpu_kernel_launch_sync_multi_cores(bm_handle_t handle, const char *func_name, const void *api_param,
+                                              size_t api_size, const int* core_list, const int core_num);
 
 /**
  * @name    tpu_kernel_sync
@@ -887,6 +933,20 @@ DECL_EXPORT bm_status_t bm_malloc_device_byte(bm_handle_t handle, bm_device_mem_
  */
 DECL_EXPORT bm_status_t bm_malloc_device_mem(bm_handle_t handle, unsigned long long *paddr,
                                               int heap_id, unsigned long long size);
+
+/**
+ * @name    bm_malloc_device_mem_mask
+ * @brief   To malloc device memory in size of byte within the specified heaps and output paddr
+ * @ingroup bmlib_runtime
+ *
+ * @param [in]  handle  The device handle
+ * @param [out]  paddr  The result malloc device memory addr
+ * @param [in]  heap_id_mask The mask which heaps allocate from. each bit indicate one heap
+ * @param [in]  size    The number of bytes to allocate
+ * @retval  paddr
+ */
+DECL_EXPORT bm_status_t bm_malloc_device_mem_mask(bm_handle_t handle, unsigned long long *paddr,
+                                              int heap_id_mask, unsigned long long size);
 
 /**
  * @name    sg_malloc_device_byte
@@ -1428,6 +1488,28 @@ DECL_EXPORT bm_status_t bm_memcpy_d2d(bm_handle_t handle, bm_device_mem_t dst,
                           int len);
 
 /**
+ * @name    bm_memcpy_d2d_with_core
+ * @brief   To copy specified dwords of data from one piece of device memory
+ *          to another piece of device memory within one device. Both source
+ *          and destination offsets can be specified.
+ * @ingroup bmlib_runtime
+ *
+ * @param [in] handle     The device handle
+ * @param [in]  dst       The destination device memory
+ * @param [in] dst_offset The offset of destination device memory address
+ * @param [in]  src       The source device memory
+ * @param [in] src_offset The offset of source device memory address
+ * @param [in]  len       Length of data to copy (in DWORD 4 bytes)
+ * @param [in] core_id    The core id to copy
+ *
+ * @retval  BM_SUCCESS  Succeeds.
+ *          Other code  Fails.
+ */
+DECL_EXPORT bm_status_t bm_memcpy_d2d_with_core(bm_handle_t handle, bm_device_mem_t dst,
+                          int dst_offset, bm_device_mem_t src, int src_offset,
+                          int len, int core_id);
+
+/**
  * @name    bm_memcpy_d2d_byte
  * @brief   To copy specified bytes of data from one piece of device memory
  *          to another piece of device memory within one device. Both source
@@ -1447,6 +1529,28 @@ DECL_EXPORT bm_status_t bm_memcpy_d2d(bm_handle_t handle, bm_device_mem_t dst,
 DECL_EXPORT bm_status_t bm_memcpy_d2d_byte(bm_handle_t handle, bm_device_mem_t dst,
                                size_t dst_offset, bm_device_mem_t src,
                                size_t src_offset, size_t size);
+
+/**
+ * @name    bm_memcpy_d2d_byte_with_core
+ * @brief   To copy specified bytes of data from one piece of device memory
+ *          to another piece of device memory within one device. Both source
+ *          and destination offsets can be specified.
+ * @ingroup bmlib_runtime
+ *
+ * @param [in] handle     The device handle
+ * @param [in]  dst       The destination device memory
+ * @param [in] dst_offset The offset of destination device memory address (in bytes)
+ * @param [in]  src       The source device memory
+ * @param [in] src_offset The offset of source device memory address (in bytes)
+ * @param [in]  size      Size of data to copy (in bytes)
+ * @param [in] core_id    The core id to copy
+ *
+ * @retval  BM_SUCCESS  Succeeds.
+ *          Other code  Fails.
+ */
+DECL_EXPORT bm_status_t bm_memcpy_d2d_byte_with_core(bm_handle_t handle, bm_device_mem_t dst,
+                               size_t dst_offset, bm_device_mem_t src,
+                               size_t src_offset, size_t size, int core_id);
 
 /**
  * @name    bm_memcpy_d2d_stride
@@ -1476,6 +1580,114 @@ DECL_EXPORT bm_status_t bm_memcpy_d2d_stride(bm_handle_t     handle,
                                  int             src_stride,
                                  int             count,
                                  int             format_size);
+
+/**
+ * @name    bm_memcpy_d2d_stride
+ * @brief   To copy specified data from one piece of device memory
+ *          to another piece of device memory within one device. Both source
+ *          and destination offsets can be specified.
+ * @ingroup bmlib_runtime
+ *
+ * @param [in] handle      The device handle
+ * @param [in] dst         The destination device memory
+ * @param [in] dst_stride  The data stride of destination data
+ * @param [in] src         The source device memory
+ * @param [in] src_stride  The data stride of source data
+ * @param [in] count       Count of data to copy
+ * @param [in] format_size Data format byte size, such as sizeof(uint8_t), sizeof(float), etc.
+ *                         format_size only support 1/2/4.
+ * @param [in] core_id     The core id to copy.
+ *
+ * dst_stride MUST be 1, EXCEPT: dst_stride == 4 && src_stride == 1 && format_size ==1
+ *
+ * @retval  BM_SUCCESS  Succeeds.
+ *          Other code  Fails.
+ */
+DECL_EXPORT bm_status_t bm_memcpy_d2d_stride_with_core(bm_handle_t     handle,
+                                 bm_device_mem_t dst,
+                                 int             dst_stride,
+                                 bm_device_mem_t src,
+                                 int             src_stride,
+                                 int             count,
+                                 int             format_size,
+                                 int             core_id);
+
+/**
+ * @name    bm_memcpy_d2d_u64
+ * @brief   To copy specified dwords of data from one piece of device memory
+ *          to another piece of device memory within one device. Both source
+ *          and destination offsets can be specified.
+ * @ingroup bmlib_runtime
+ *
+ * @param [in] handle     The device handle
+ * @param [in] dst        The destination device memory
+ * @param [in] dst_offset The offset of destination device memory address
+ * @param [in] src        The source device memory
+ * @param [in] src_offset The offset of source device memory address
+ * @param [in] len        Length of data to copy (in DWORD 4 bytes)
+ *
+ * @retval  BM_SUCCESS  Succeeds.
+ *          Other code  Fails.
+ */
+DECL_EXPORT bm_status_t bm_memcpy_d2d_u64(bm_handle_t handle,
+                                 bm_device_mem_u64_t  dst,
+                                 unsigned long long   dst_offset,
+                                 bm_device_mem_u64_t  src,
+                                 unsigned long long   src_offset,
+                                 unsigned long long   len);
+
+/**
+ * @name    bm_memcpy_d2d_byte_u64
+ * @brief   To copy specified bytes of data from one piece of device memory
+ *          to another piece of device memory within one device. Both source
+ *          and destination offsets can be specified.
+ * @ingroup bmlib_runtime
+ *
+ * @param [in] handle     The device handle
+ * @param [in] dst        The destination device memory
+ * @param [in] dst_offset The offset of destination device memory address (in bytes)
+ * @param [in] src        The source device memory
+ * @param [in] src_offset The offset of source device memory address (in bytes)
+ * @param [in] size       Size of data to copy (in bytes)
+ *
+ * @retval  BM_SUCCESS  Succeeds.
+ *          Other code  Fails.
+ */
+DECL_EXPORT bm_status_t bm_memcpy_d2d_byte_u64(bm_handle_t handle,
+                                    bm_device_mem_u64_t dst,
+                                    unsigned long long  dst_offset,
+                                    bm_device_mem_u64_t src,
+                                    unsigned long long  src_offset,
+                                    unsigned long long  size);
+
+/**
+ * @name    bm_memcpy_d2d_stride_u64
+ * @brief   To copy specified data from one piece of device memory
+ *          to another piece of device memory within one device. Both source
+ *          and destination offsets can be specified.
+ * @ingroup bmlib_runtime
+ *
+ * @param [in] handle      The device handle
+ * @param [in] dst         The destination device memory
+ * @param [in] dst_stride  The data stride of destination data
+ * @param [in] src         The source device memory
+ * @param [in] src_stride  The data stride of source data
+ * @param [in] count       Count of data to copy
+ * @param [in] format_size Data format byte size, such as sizeof(uint8_t), sizeof(float), etc.
+ *                         format_size only support 1/2/4.
+ *
+ * dst_stride MUST be 1, EXCEPT: dst_stride == 4 && src_stride == 1 && format_size ==1
+ *
+ * @retval  BM_SUCCESS  Succeeds.
+ *          Other code  Fails.
+ */
+bm_status_t bm_memcpy_d2d_stride_u64(bm_handle_t          handle,
+                                      bm_device_mem_u64_t dst,
+                                      unsigned long long  dst_stride,
+                                      bm_device_mem_u64_t src,
+                                      unsigned long long  src_stride,
+                                      unsigned long long  count,
+                                      int                 format_size);
 
 /**
  * @name    bm_memcpy_c2c
@@ -1523,6 +1735,21 @@ DECL_EXPORT bm_status_t bm_memset_device(bm_handle_t handle, const int value,
  */
 DECL_EXPORT bm_status_t bm_memset_device_ext(bm_handle_t handle, void* value, int mode,
                              bm_device_mem_t mem);
+
+/**
+ * @name    bm_memset_device_ext_u64
+ * @brief   To fill in specified device memory with the given value and mode
+ * @ingroup bmlib_runtime
+ *
+ * @param [in]  handle  The device handle
+ * @param [in]  value   The pointer of value used to fill
+ * @param [in]  mode    The valid bytes of *value
+ * @param [in]  mem     The device memory which will be filled in
+ * @retval  BM_SUCCESS  Succeeds.
+ *          Other code  Fails.
+ */
+DECL_EXPORT bm_status_t bm_memset_device_ext_u64(bm_handle_t handle, void* value, int mode,
+                             bm_device_mem_u64_t mem);
 
 /**
  * @name    bm_mem_convert_system_to_device_neuron
@@ -2019,6 +2246,19 @@ DECL_EXPORT bm_status_t bm_device_sync(bm_handle_t handle);
 DECL_EXPORT bm_status_t bm_handle_sync(bm_handle_t handle);
 
 /**
+ * @name    bm_handle_sync_from_core
+ * @brief   To synchronize APIs of the handle. The thread will block
+ *          until all the outstanding APIs of the handle are finished.
+ * @ingroup bmlib_runtime
+ *
+ * @param [in] handle   The device handle
+ * @param [in] core_id  The core id
+ * @retval  BM_SUCCESS  Succeeds.
+ *          Other code  Fails.
+ */
+DECL_EXPORT bm_status_t bm_handle_sync_from_core(bm_handle_t handle, int core_id);
+
+/**
  * @name    bm_thread_sync
  * @brief   To synchronize APIs of the current thread. The thread will block
  *          until all the outstanding APIs of the current thread are finished.
@@ -2044,12 +2284,12 @@ DECL_EXPORT bm_status_t bm_set_sync_timeout(bm_handle_t handle, int timeout);
 
 /**
  * @name    bm_thread_sync_from_core
- * @brief   To synchronize APIs of the current thread on the specified core. The thread will block
+ * @brief   To synchronize APIs of the current thread. The thread will block
  *          until all the outstanding APIs of the current thread are finished.
  * @ingroup bmlib_runtime
  *
  * @param [in] handle  The device handle
- * @param [in] core_id The device core id
+ * @param [in] core_id The core id
  * @retval  BM_SUCCESS Succeeds.
  *          Other code Fails.
  */
@@ -2706,6 +2946,7 @@ DECL_EXPORT bm_status_t tpu_kernel_launch_sync(
         const char   *func_name,
         const void   *args,
         unsigned int  size);
+
 
 DECL_EXPORT bm_status_t okkernel_sync(bm_handle_t handle);
 
