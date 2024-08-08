@@ -40,3 +40,6 @@ find_package(pybind11 REQUIRED CONFIG)
 
 add_library(cipher SHARED crypto.cpp)
 target_link_libraries(cipher cryptopp)
+
+add_library(cipher_varlen SHARED crypto_varlen.cpp)
+target_link_libraries(cipher_varlen cryptopp)
