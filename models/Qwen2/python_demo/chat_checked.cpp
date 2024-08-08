@@ -148,31 +148,31 @@ void Qwen::deinit_decrypt() {
 //===------------------------------------------------------------===//
 // Exception
 //===------------------------------------------------------------===//
-// -1 : can not to create bmrt
+// can not to create handle
 void Qwen::handle_error() {
-  status_code = -1;
-}
-
-// -2 : can not to create bmrt
-void Qwen::bmrt_error() {
-  for (auto h : handles) {
-    bm_dev_free(h);
-  }
   status_code = -2;
 }
 
-// -3 : can not to load bmodel
-void Qwen::bmodel_error() {
-  bmrt_destroy(p_bmrt);
+// can not to create bmrt
+void Qwen::bmrt_error() {
   for (auto h : handles) {
     bm_dev_free(h);
   }
   status_code = -3;
 }
 
-// -4 : can not to inference bmodel
-void Qwen::launch_error() {
+// can not to load bmodel
+void Qwen::bmodel_error() {
+  bmrt_destroy(p_bmrt);
+  for (auto h : handles) {
+    bm_dev_free(h);
+  }
   status_code = -4;
+}
+
+// can not to inference bmodel
+void Qwen::launch_error() {
+  status_code = -5;
 }
 
 void Qwen::init(const std::vector<int> &devices, std::string model_path) {

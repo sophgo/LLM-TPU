@@ -16,8 +16,8 @@ model_tool --encrypt -model qwen2-1.5b_bf16_seq4096_1dev.bmodel -net_name block_
 * 可以实现将模型的权重、flatbuffer结构化数据、header都进行加密。
 * 加解密接口必须按照C风格来实现，不能使用C++，接口规定如下：
 ```c
-extern "C" uint8_t* encrypt(uint8_t* input, uint64_t input_bytes, uint64_t* output_bytes);
-extern "C" uint8_t* decrypt(uint8_t* input, uint64_t input_bytes, uint64_t* output_bytes);
+extern "C" uint8_t* encrypt(const uint8_t* input, uint64_t input_bytes, uint64_t* output_bytes);
+extern "C" uint8_t* decrypt(const uint8_t* input, uint64_t input_bytes, uint64_t* output_bytes);
 ```
 
 ### Compile chat.cpp

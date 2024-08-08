@@ -26,16 +26,12 @@ class Qwen2():
         self.tokenizer.decode([0])
 
         # preprocess parameters, such as prompt & tokenizer
-        # self.system_prompt = "You are a helpful assistant."
-        self.system_prompt = "You will provide correct answer to the question."
-        self.history = [{"role": "system", "content": self.system_prompt}]
         self.EOS = self.tokenizer.eos_token_id
         self.enable_history = args.enable_history
 
         self.model = chat_checked.Qwen()
         self.init_params(args)
         self.model.init_decrypt()
-        # self.load_model(args.model_path)
 
 
     def load_model(self, model_path):
@@ -102,7 +98,7 @@ class Qwen2():
         """
         Test c-eval
         """
-        self.input_str = "你好"
+        self.system_prompt = "You will provide correct answer to the question."
         self.load_model(args.model_path)
 
         # handle exception
@@ -160,12 +156,52 @@ class Qwen2():
         self.model.deinit()
 
         return self.model.status_code
+    
+    def test_sample(self):
 
+        self.system_prompt = "You are a helpful assistant."
+        self.load_model(args.model_path)
 
+        # handle exception
+        if self.model.status_code < 0:
+            return self.model.status_code
+        
+        self.input_str = "hello"
+        tokens = self.encode_tokens(self.input_str)
+        # check tokens
+        if not tokens:
+            print("Sorry: your question is empty!!")
+            return -1
+        if len(tokens) > self.model.SEQLEN:
+            print(
+                "The maximum question length should be shorter than {} but we get {} instead.".format(
+                    self.model.SEQLEN, len(tokens)
+                )
+            )
+            return -1
+
+        print("\nAnswer: ", end="")
+        self.stream_answer(tokens)
+
+        return 0
+
+"""
+-1: your input is empty or exceed the maximum length
+-2: can not to create handle
+-3: can not to create bmrt
+-4: can not to load bmodel, maybe your key is wrong
+-5: can not to inference bmodel
+"""
 def main(args):
-    # test c-eval
+    # # test c-eval
+    # model = Qwen2(args)
+    # status_code = model.test_ceval()
+    
+
+    # test chat
     model = Qwen2(args)
-    status_code = model.test_ceval()
+    status_code = model.test_sample()
+
     print("Status Code: ", status_code)
 
 
