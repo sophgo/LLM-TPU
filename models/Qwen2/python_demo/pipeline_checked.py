@@ -1,5 +1,6 @@
 import os
 import time
+import json
 import argparse
 from transformers import AutoTokenizer
 
@@ -10,7 +11,7 @@ sys.path.append("../../../harness/C-Eval")
 from utils import load_json, dump_json, construct_prompt, extract_cot_answer
 
 
-class Qwen2():
+class Engine():
     def __init__(self, args):
         # devid
         self.devices = [int(d) for d in args.devid.split(",")]
@@ -77,18 +78,16 @@ class Qwen2():
         token = self.model.forward_first(tokens)
 
         # Following tokens
-        while token != self.EOS and self.model.token_length < self.model.SEQLEN and self.model.status_code == 0 and tok_num < self.model.max_new_tokens:
+        while token != self.EOS and self.model.token_length < self.model.SEQLEN and tok_num < self.model.max_new_tokens:
             word = self.tokenizer.decode(token, skip_special_tokens=True)
             self.answer_token += [token]
             print(word, flush=True, end="")
             tok_num += 1
             token = self.model.forward_next()
 
-        # handle exception
-        if self.model.status_code < 0:
-            return
-
         self.answer_cur = self.tokenizer.decode(self.answer_token)
+
+        print("\n\n")
 
         return self.answer_cur
 
@@ -100,10 +99,6 @@ class Qwen2():
         import pandas as pd
         self.system_prompt = "You will provide correct answer to the question."
         self.load_model(args.model_path)
-
-        # handle exception
-        if self.model.status_code < 0:
-            return self.model.status_code
 
         test_path = "ceval-exam/test"
         subject_path = "subject_mapping.json"
@@ -135,11 +130,8 @@ class Qwen2():
                 tokens = self.encode_tokens(prompt)
                 print("token length:", len(tokens))
                 if len(tokens) >= 4096:
-                    continue
+                    raise ValueError(f"The length you input is {len(tokens)}, exceed the maximum length")
                 pred = self.stream_answer(tokens)
-                
-                if self.model.status_code < 0:
-                    return self.model.status_code
 
                 option = extract_cot_answer(pred)
                 #print("\nprediction:", pred)
@@ -154,17 +146,12 @@ class Qwen2():
         # deinit
         self.model.deinit_decrypt()
         self.model.deinit()
-
-        return self.model.status_code
+        return
     
     def test_sample(self):
 
         self.system_prompt = "You are a helpful assistant."
         self.load_model(args.model_path)
-
-        # handle exception
-        if self.model.status_code < 0:
-            return self.model.status_code
         
         self.input_str = "hello"
         tokens = self.encode_tokens(self.input_str)
@@ -186,8 +173,25 @@ class Qwen2():
         # deinit
         self.model.deinit_decrypt()
         self.model.deinit()
+        return
+    
+    def test_length(self):
+        json_path = "../../../assets/long_case.json"
+        input_str = load_json(json_path)[0]["content"]
 
-        return self.model.status_code
+        tokens = self.tokenizer.encode(input_str)
+
+        self.load_model(args.model_path)
+
+        # task 0
+        for i in range(20, self.model.SEQLEN):
+            print(f"\n----------------------Length : {i}----------------------")
+            self.stream_answer(tokens[:i])
+
+        # deinit
+        self.model.deinit_decrypt()
+        self.model.deinit()
+        return
 
 """
 -1: your input is empty or exceed the maximum length
@@ -198,15 +202,30 @@ class Qwen2():
 """
 def main(args):
     # # test c-eval
-    # model = Qwen2(args)
+    # model = Engine(args)
     # status_code = model.test_ceval()
     
 
     # test chat
-    model = Qwen2(args)
-    status_code = model.test_sample()
+    try:
+        engine = Engine(args)
 
-    print("Status Code: ", status_code)
+        # 1. test one sample
+        # engine.test_sample()
+        
+        # 2. test c-eval
+        # engine.test_ceval()
+
+        # 3. test all length
+        engine.test_length()
+
+
+        print("All Right!")
+    except RuntimeError:
+        print("RuntimeError")
+    except ValueError:
+        print("ValueError")
+    print("Status Code: ", engine.model.status_code)
 
 
 if __name__ == "__main__":
