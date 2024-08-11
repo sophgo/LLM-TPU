@@ -183,8 +183,7 @@ class Engine():
 
         self.load_model(args.model_path)
 
-        # task 0
-        for i in range(20, self.model.SEQLEN):
+        for i in range(20, self.model.SEQLEN - 1):
             print(f"\n----------------------Length : {i}----------------------")
             self.stream_answer(tokens[:i])
 
