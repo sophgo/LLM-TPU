@@ -23,17 +23,18 @@ parser.add_argument('-d', '--device', type=str, choices=["cpu", "cuda"], default
 args = parser.parse_args()
 
 model_path = args.model_path
-folder = f"./tmp/onnx"
+folder = "./tmp/onnx"
 
 device = torch.device(args.device)
 if args.device == "cpu":
     dtype = torch.float
 else:
+    os.environ['CUDA_VISIBLE_DEVICES'] = "0"
     dtype = torch.bfloat16
 
 origin_model = AutoModelForCausalLM.from_pretrained(
     model_path, trust_remote_code=True,
-    torch_dtype=dtype).eval()
+    torch_dtype=dtype, device_map="auto").eval()
 
 for param in origin_model.parameters():
     param.requires_grad = False
@@ -244,9 +245,9 @@ def build_prompt(query):
     return f'<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n{query}<|im_end|>\n<|im_start|>assistant\n'
 
 def test_net_with_mask():
-    embed = Embedding()
-    blocks = [Block(i) for i in range(NUM_LAYERS)]
-    block_kvs = [BlockCache(i) for i in range(NUM_LAYERS)]
+    embed = Embedding().to(device)
+    blocks = [Block(i).to(device) for i in range(NUM_LAYERS)]
+    block_kvs = [BlockCache(i).to(device) for i in range(NUM_LAYERS)]
     query = """tell me about sophgo in ten word"""
     print(query)
     promt = build_prompt(query)
@@ -274,17 +275,19 @@ def test_net_with_mask():
     for i in range(NUM_LAYERS):
         # breakpoint()
         out[:,token_len:] = 0
-        out, k, v = blocks[i](out, position_ids, attention_mask)
+        out, k, v = blocks[i](out.to(dtype), position_ids, attention_mask)
         # k[:, SEQ_LENGTH - token_len:] = k[:, :token_len]
         # v[:, SEQ_LENGTH - token_len:] = v[:, :token_len]
         # k[:, :SEQ_LENGTH - token_len] = 0
         # v[:, :SEQ_LENGTH - token_len] = 0
+        # np.save(f'torch_block_{i}.npy', out.float().cpu().numpy())
         k_cache.append(k)
         v_cache.append(v)
     out = out[:, token_len - 1:token_len].view(1, 1, HIDDEN_SIZE)
     lm = LmHead()
     greedy_head = GreedyHead()
-    token = greedy_head(lm(out)).view(1)
+    # np.save(f'torch_lm_head_{i}.npy', lm(out.to(dtype)).float().cpu().numpy())
+    token = greedy_head(lm(out.to(dtype))).view(1)
     out_ids = [int(token)]
     word = tokenizer.decode([int(token)])
     print(word, end="")
@@ -296,15 +299,13 @@ def test_net_with_mask():
         attention_mask = torch.zeros((1, 1, 1, SEQ_LENGTH + 1)).float().to(device)
         attention_mask[:, :, :, token_len:SEQ_LENGTH] = -10000.0
         for i in range(NUM_LAYERS):
-            out, k, v = block_kvs[i](out, position_ids, attention_mask, k_cache[i], v_cache[i])
+            out, k, v = block_kvs[i](out.to(dtype), position_ids, attention_mask, k_cache[i].to(dtype), v_cache[i].to(dtype))
             k_cache[i][:,token_len:token_len+1] = k
             v_cache[i][:,token_len:token_len+1] = v
-        print(out)
-        token = greedy_head(lm(out)).view(1)
+        token = greedy_head(lm(out.to(dtype))).view(1)
         out_ids.append(int(token))
         word = tokenizer.decode([int(token)])
         print(word, end="")
-        # np.save(f'torch_{token_len}.npy', out)
     print("\noutput_ids:{}".format(out_ids))
 
 # test_net_with_mask()
@@ -314,15 +315,15 @@ if not os.path.exists(folder):
     os.makedirs(folder)
 
 # export models
-print(f'Convert block & block_cache')
+print('Convert block & block_cache')
 for i in tqdm(range(NUM_LAYERS)):
    convert_block(i)
    convert_block_cache(i)
 
-print(f'Convert embedding')
+print('Convert embedding')
 convert_embedding()
 
-print(f'Convert lm_head')
+print('Convert lm_head')
 convert_lm_head()
 convert_greedy_head()
 convert_penalty_sample_head()
