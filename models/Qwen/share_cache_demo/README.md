@@ -9,27 +9,13 @@ pip3 install transformers_stream_generator einops tiktoken accelerate transforme
 
 cp files/Qwen-7B-Chat/* your_torch_model
 
-python export_onnx.py --model_path your_torch_model --device cpu --share_length 5888 --unshare_length 1536 --seq_length 8704 --max_pos_len 8704 --num_thread 16
-
-python export_onnx.py --model_path your_torch_model --device cpu --share_length 6016 --unshare_length 1024 --seq_length 7552 --max_pos_len 8704 --num_thread 16
-
-./compile.sh --mode int4 --name qwen-7b --share_length 5888 --addr_mode io_alone --unshare_length 1536 --dynamic 1
-
-./compile.sh --mode int4 --name qwen-7b --share_length 6016 --addr_mode io_alone --unshare_length 1024 --dynamic 1
+./t.sh
 ```
 如果你不想编译模型，也可以直接下载
 ```shell
 pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen-7b_int4_shareseq6016_unshare1536_seq7552_1dev_dyn.bmodel
 ```
-* 使用的TPU-MLIR版本： bacc66292743153ff2f16927bffee69ffacb476c
-* 内存：9663MB（动态）
-
-# 分片方式
-|第一片                  |第二片                 |第三片              |总长度              |
-|:-                     |:-                     |:-                 |:-                 |
-|share                  |unshare                |decode             |seq                |
-|share_length=6016      |unshare_length=1536    |decode_length=0    |seq_length=7552    |
 
 ## 2. 编译库文件
 ```shell
@@ -41,7 +27,7 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 ## 3. 运行python demo
 ```shell
-python3 pipeline.py --model_path qwen-7b_int4_share5888_unshare1536_1dev_dyn.bmodel,qwen-7b_int4_share6016_unshare1024_1dev_dyn.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --memory_prealloc --is_decrypt
+python3 pipeline.py --model_path qwen-7b_int4_share6016_unshare1600_1dev_encrypted.bmodel,qwen-7b_int4_share6016_unshare1024_1dev_encrypted.bmodel,qwen-7b_int4_share1248_unshare0_1dev_encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 5 --generation_mode penalty_sample --lib_path ../../Qwen2/share_cache_demo/build/libcipher.so
 ```
 * **必须将total_seq比较大的模型放到model_path_list的前面**,也就是seq最大的那个先跑
 * io_alone_reuse：使用io_alone_reuse时，表示上次的past_kv与io空间会复用，如果想要复用prefill，必须要io_alone_reuse=True
