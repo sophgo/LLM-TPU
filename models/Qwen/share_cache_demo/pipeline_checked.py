@@ -96,11 +96,11 @@ class Qwen:
         question_str = text[task_id]["question"] + "<|im_end|>\n<|im_start|>assistant\n"
         return content_str, question_str
 
-    def test_share_cache(self):
-        json_path = "../../../assets/sophgo_kv_cache_share_test_case.json"
-        share_str, unshare_str_0 = self.read_json(json_path, 0)
-        _, unshare_str_1 = self.read_json(json_path, 1)
-        _, unshare_str_2 = self.read_json(json_path, 2)
+    def test_max_length(self):
+        json_path = "../../../assets/long_case.json"
+        head_str, tail_str_0 = self.read_json(json_path, 0)
+        _, tail_str_1 = self.read_json(json_path, 1)
+        _, tail_str_2 = self.read_json(json_path, 2)
         # share_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
         # unshare_str_0 = "can you help me<|im_end|>\n<|im_start|>assistant\n"
         # unshare_str_1 = "tell me a love story<|im_end|>\n<|im_start|>assistant\n"
@@ -117,24 +117,15 @@ class Qwen:
         self.model.io_alone_mode = 0
         self.load_model(self.model_list[0])
 
-        # share prefill
-        share_start = time.time()
-        share_tokens = self.tokenizer.encode(share_str)
-        self.model.forward_share(share_tokens)
-        share_end = time.time()
-        print(f"\nShare FTL Time: {(share_end - share_start):.3f} s")
-
         # task 0
-        unshare_tokens_0 = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(unshare_tokens_0, "share", 10)
+        tail_tokens_0 = self.tokenizer.encode(tail_str_0)
+        head_tokens_0 = self.tokenizer.encode(head_str)[:6272 - len(tail_tokens_0)]
+        self.stream_answer(head_tokens_0 + tail_tokens_0, "normal", 512)
 
         # task 1
-        unshare_tokens_1 = self.tokenizer.encode(unshare_str_1)
-        self.stream_answer(unshare_tokens_1, "share", 10)
-
-        # task 2
-        unshare_tokens_2 = self.tokenizer.encode(unshare_str_2)
-        self.stream_answer(unshare_tokens_2, "share", 10)
+        tail_tokens_1 = self.tokenizer.encode(tail_str_1)
+        head_tokens_1 = self.tokenizer.encode(head_str)[:6272 - len(tail_tokens_1)]
+        self.stream_answer(head_tokens_1 + tail_tokens_1, "normal", 512)
 
         self.model.free_device()
 
@@ -144,11 +135,16 @@ class Qwen:
         # load model 1
         self.model.io_alone_mode = 0
         self.load_model(self.model_list[1])
-        share_tokens = self.tokenizer.encode(
-            share_str, max_length=725, truncation=True
-        )
-        unshare_tokens = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(share_tokens + unshare_tokens, "normal", 7)
+
+        # task 0
+        tail_tokens_0 = self.tokenizer.encode(tail_str_0)
+        head_tokens_0 = self.tokenizer.encode(head_str)[:3096 - len(tail_tokens_0)]
+        self.stream_answer(head_tokens_0 + tail_tokens_0, "normal", 512)
+
+        # task 1
+        tail_tokens_1 = self.tokenizer.encode(tail_str_1)
+        head_tokens_1 = self.tokenizer.encode(head_str)[:3096 - len(tail_tokens_1)]
+        self.stream_answer(head_tokens_1 + tail_tokens_1, "normal", 512)
 
         # ===------------------------------------------------------------===
         # Deinit
@@ -158,13 +154,30 @@ class Qwen:
 
 
 def main(args):
-
-    # normal test
+    # test chat
     start_time = time.time()
-    model = Qwen(args)
-    model.test_share_cache()
+    try:
+        engine = Qwen(args)
+
+        # 1. test one sample
+        # engine.test_sample()
+        
+        # 2. test c-eval
+        # engine.test_ceval()
+
+        # 3. test all length
+        engine.test_max_length()
+
+
+        print("All Right!")
+    except RuntimeError:
+        print("RuntimeError")
+    except ValueError:
+        print("ValueError")
+
     end_time = time.time()
     print(f"\nTotal Time: {(end_time - start_time):.3f} s")
+    print("Status Code: ", engine.model.status_code)
 
 
 if __name__ == "__main__":
