@@ -23,22 +23,35 @@ docker run --privileged --name myname1234 -v /dev:/dev -v /opt/sophon:/opt/sopho
 docker exec -it myname1234 bash
 ```
 
-按如下操作编译模型：
+按如下操作编译72b模型：
 ```shell
-cd Qwen/compile/
+cd ../Qwen2/compile/
 pushd files/Qwen2-72B-Instruct/
 ./replace_file.sh
 popd
-python3 ./export_onnx_72b.py -m path_to/Qwen2-72B-Instruct/ --num_threads 72 --lmhead_with_topk 1
+python3 ./export_onnx_parallel.py -m path_to/Qwen2-72B-Instruct/ --num_threads 72 --lmhead_with_topk 1
 # 静态编译
-./compile_onnx.sh --mode int4 --num_device 8 --name qwen2-72b --addr_mode io_alone --seq_length 8192 --dynamic 0
+./compile_onnx_parallel.sh --mode int4 --num_device 8 --name qwen2-72b --addr_mode io_alone --seq_length 8192 --dynamic 0
+```
+
+按如下操作编译7b模型：
+```shell
+cd ../Qwen2/compile/
+pushd files/Qwen2-7B-Instruct/
+./replace_file.sh
+popd
+python3 ./export_onnx_parallel.py -m path_to/Qwen2-7B-Instruct/ --num_threads 72 --lmhead_with_topk 1
+# 静态编译
+./compile_onnx_parallel.sh --mode int4 --num_device 8 --name qwen2-7b --addr_mode io_alone --seq_length 8192 --dynamic 0
 ```
 
 如果不打算编译模型，可以通过以下命令下载已编译好的模型，目前有如下模型已经预编译好，**注意最新版本的驱动需要重新下载下方的模型**：
 ```shell
 pip3 install dfss
-# 静态
+# 72b 静态
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels/qwen2-72b_int4_seq8192_8dev_static.bmodel
+# 7b 静态
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels/qwen2-7b_int4_seq8192_8dev_static.bmodel
 ```
 
 ## 3. 运行
