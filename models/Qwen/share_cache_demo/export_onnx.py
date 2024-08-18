@@ -392,7 +392,7 @@ if not os.path.exists(folder):
 print(f'Convert block & block_cache')
 for i in tqdm(range(NUM_LAYERS)):
     convert_block(i) # prefill
-    convert_block_unshare(i)
+    if args.unshare_length!=0:convert_block_unshare(i)
     convert_block_cache(i) # decode
 
 print(f'Convert embedding')
