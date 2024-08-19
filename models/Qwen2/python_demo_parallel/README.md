@@ -64,6 +64,12 @@ cmake .. && make -j8
 python3 pipeline.py --model_path ../compile/qwen2-7b_int4_seq8192_8dev.bmodel --tokenizer_path ../support/token_config/ --devid 0,1,2,3,4,5,6,7
 ```
 
+运行web demo
+```shell
+pip3 install gradio==3.39.0 mdtex2html==1.2.0 dfss
+python3 web_demo.py --model_path ../compile/qwen2-7b_int4_seq8192_8dev.bmodel --tokenizer_path ../support/token_config/ --devid 0,1,2,3,4,5,6,7
+```
+
 ## 4. 常见问题
 
 1) 模型加载过程中无缘无故突然中断，可以运行`ulimit -HSn 65536`增加系统资源

@@ -157,7 +157,7 @@ class Qwen2():
 
         # Following tokens
         while True:
-            next_token = self.model.forward_next()
+            next_token = self.model.forward_next(next_token)
             if next_token == self.EOS:
                 break
             output_tokens += [next_token]
