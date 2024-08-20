@@ -27,15 +27,11 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 ## 3. 运行python demo
 ```shell
-python3 pipeline.py --model_path qwen-7b_int4_share6016_unshare1600_1dev_encrypted.bmodel,qwen-7b_int4_share6016_unshare1024_1dev_encrypted.bmodel,qwen-7b_int4_share1248_unshare0_1dev_encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 5 --generation_mode penalty_sample --lib_path ../../Qwen2/share_cache_demo/build/libcipher.so
+python3 pipeline.py --model_path qwen-7b_int4_share6400_unshare0_seq6912_1dev_encrypted.bmodel,qwen-7b_int4_share3200_unshare0_seq3712_1dev_encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 23 --generation_mode penalty_sample --lib_path ../../Qwen2/share_cache_demo/build/libcipher.so
 ```
 * **必须将total_seq比较大的模型放到model_path_list的前面**,也就是seq最大的那个先跑
-* io_alone_reuse：使用io_alone_reuse时，表示上次的past_kv与io空间会复用，如果想要复用prefill，必须要io_alone_reuse=True
-* memory_prealloc：表示使用权重复用
-* is_decrypt：表明使用模型解密，**目前仅支持memory_prealloc和is_decrypt同时使用**
 * model_path_list：当使用多个模型时，用逗号隔开
 * 权重复用的流程为：self.model = chat.Qwen() --> self.load_model(model_0) --> self.free_device --> self.load_model(model_1) --> self.model.deinit()
-* 如果两个模型权重不一致，比如一个Qwen-7B 一个Qwen1.5-4B，那么建议重新创建一个类，即 self.model = chat.Qwen --> self.model.deinit() --> self.model = chat.Qwen --> self.model.deinit()
 
 
 ## 4. 注意事项
