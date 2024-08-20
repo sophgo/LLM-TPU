@@ -45,8 +45,16 @@ while [[ $# -gt 0 ]]; do
         unshare_length="$2"
         shift 2
         ;;
+    --seq_length)
+        seq_length="$2"
+        shift 2
+        ;;
     --dynamic)
         dynamic="$2"
+        shift 2
+        ;;
+    --generation_mode)
+        generation_mode="$2"
         shift 2
         ;;
     *)
@@ -99,14 +107,14 @@ fi
 
 if [ x$num_device != x1 ]; then
     device_args="--num_device $num_device"
-    out_model=${name}_${mode}_share${share_length}_unshare${unshare_length}_${num_device}dev.bmodel
+    out_model=${name}_${mode}_share${share_length}_unshare${unshare_length}_seq{$seq_length}_${num_device}dev.bmodel
 else
-    out_model=${name}_${mode}_share${share_length}_unshare${unshare_length}_1dev.bmodel
+    out_model=${name}_${mode}_share${share_length}_unshare${unshare_length}_seq{$seq_length}_1dev.bmodel
 fi
 
 if [ x$dynamic == x1 ]; then
     dyn_args="--dynamic"
-    out_model=${name}_${mode}_share${share_length}_unshare${unshare_length}_${num_device}dev_dyn.bmodel
+    out_model=${name}_${mode}_share${share_length}_unshare${unshare_length}_seq{$seq_length}_${num_device}dev_dyn.bmodel
 fi
 
 if [ x$addr_mode == x"io_alone" ]; then
@@ -133,21 +141,23 @@ model_deploy.py \
     $device_args \
     --model embedding.bmodel
 
-model_transform.py \
-    --model_name embedding_unshare \
-    --model_def ../../onnx/embedding.pt \
-    --input_shapes [[1,${unshare_length}]] \
-    --input_types "int32" \
-    --mlir embedding_unshare.mlir
+if [ x$unshare_length != x"0" ]; then
+    model_transform.py \
+        --model_name embedding_unshare \
+        --model_def ../../onnx/embedding.pt \
+        --input_shapes [[1,${unshare_length}]] \
+        --input_types "int32" \
+        --mlir embedding_unshare.mlir
 
-model_deploy.py \
-    --mlir embedding_unshare.mlir \
-    --quantize BF16 \
-    --quant_input \
-    --quant_output \
-    --chip bm1684x \
-    $device_args \
-    --model embedding_unshare.bmodel
+    model_deploy.py \
+        --mlir embedding_unshare.mlir \
+        --quantize BF16 \
+        --quant_input \
+        --quant_output \
+        --chip bm1684x \
+        $device_args \
+        --model embedding_unshare.bmodel
+fi
 
 model_transform.py \
     --model_name embedding_cache \
@@ -167,8 +177,11 @@ model_deploy.py \
 
 rm -f *.npz
 
-models=$models' '$outdir'/embedding.bmodel '$outdir'/embedding_unshare.bmodel '$outdir'/embedding_cache.bmodel '
-
+if [ x$unshare_length != x"0" ]; then
+    models=$models' '$outdir'/embedding.bmodel '$outdir'/embedding_unshare.bmodel '$outdir'/embedding_cache.bmodel '
+else
+    models=$models' '$outdir'/embedding.bmodel '$outdir'/embedding_cache.bmodel '
+fi
 popd
 
 echo $models
@@ -177,45 +190,102 @@ outdir=${folder}/$mode"_"$num_device"dev"/lm_head
 mkdir -p $outdir
 pushd $outdir
 
-model_transform.py \
-    --model_name lm_head \
-    --model_def ../../onnx/lm_head.pt \
-    --input_shapes [[1,${hidden_size}]] \
-    --mlir lm_head.mlir
+if [ x$generation_mode == x"default" ]; then
+    model_transform.py \
+        --model_name lm_head \
+        --model_def ../../onnx/lm_head.pt \
+        --input_shapes [[1,${hidden_size}]] \
+        --mlir lm_head.mlir
 
-model_deploy.py \
-    --mlir lm_head.mlir \
-    $quantize_args \
-    --quant_input \
-    --chip bm1684x \
-    $device_args \
-    --model lm_head.bmodel
-
-
-model_transform.py \
-    --model_name greedy_head \
-    --model_def ../../onnx/greedy_head.onnx \
-    --mlir greedy_head.mlir
-
-model_deploy.py \
-    --mlir greedy_head.mlir \
-    --chip bm1684x \
-    --model greedy_head.bmodel
+    model_deploy.py \
+        --mlir lm_head.mlir \
+        $quantize_args \
+        --quant_input \
+        --chip bm1684x \
+        $device_args \
+        --model lm_head.bmodel
 
 
-model_transform.py \
-    --model_name penalty_sample_head \
-    --model_def ../../onnx/penalty_sample_head.onnx \
-    --mlir penalty_sample_head.mlir
+    model_transform.py \
+        --model_name greedy_head \
+        --model_def ../../onnx/greedy_head.onnx \
+        --mlir greedy_head.mlir
 
-model_deploy.py \
-    --mlir penalty_sample_head.mlir \
-    --chip bm1684x \
-    --model penalty_sample_head.bmodel
+    model_deploy.py \
+        --mlir greedy_head.mlir \
+        --chip bm1684x \
+        --model greedy_head.bmodel
 
-rm *.npz
 
-models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '$outdir'/penalty_sample_head.bmodel '
+    model_transform.py \
+        --model_name penalty_sample_head \
+        --model_def ../../onnx/penalty_sample_head.onnx \
+        --mlir penalty_sample_head.mlir
+
+    model_deploy.py \
+        --mlir penalty_sample_head.mlir \
+        --chip bm1684x \
+        --model penalty_sample_head.bmodel
+
+    rm *.npz
+
+    models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '$outdir'/penalty_sample_head.bmodel '
+elif [ x$generation_mode == x"lmhead_with_penalty" ]; then
+    model_transform.py \
+        --model_name lm_head \
+        --model_def ../../onnx/lm_head.pt \
+        --input_shapes [[1,${hidden_size}],[1,${seq_length}],[1],[1],[1]] \
+        --mlir lm_head.mlir
+
+    model_deploy.py \
+        --mlir lm_head.mlir \
+        $quantize_args \
+        --quant_input \
+        --chip bm1684x \
+        $device_args \
+        --model lm_head.bmodel
+
+    rm *.npz
+
+    models=${models}${outdir}'/lm_head.bmodel '
+elif [ x$generation_mode == x"lmhead_with_sample" ]; then
+    model_transform.py \
+        --model_name lm_head \
+        --model_def ../../onnx/lm_head.pt \
+        --input_shapes [[1,${hidden_size}],[1],[1]] \
+        --mlir lm_head.mlir
+
+    model_deploy.py \
+        --mlir lm_head.mlir \
+        $quantize_args \
+        --quant_input \
+        --chip bm1684x \
+        $device_args \
+        --model lm_head.bmodel
+
+    rm *.npz
+
+    models=${models}${outdir}'/lm_head.bmodel '
+elif [ x$generation_mode == x"lmhead_with_top1" ]; then
+    model_transform.py \
+        --model_name lm_head \
+        --model_def ../../onnx/lm_head.pt \
+        --input_shapes [[1,1,${hidden_size}]] \
+        --mlir lm_head.mlir
+
+    model_deploy.py \
+        --mlir lm_head.mlir \
+        $quantize_args \
+        --quant_input \
+        --chip bm1684x \
+        $device_args \
+        --model lm_head.bmodel
+
+    rm *.npz
+
+    models=${models}${outdir}'/lm_head.bmodel '
+fi
+
 
 popd
 echo $models

@@ -21,7 +21,7 @@ class Qwen:
 
         # warm up
         self.tokenizer.decode([0])
-        self.EOS = self.tokenizer.eos_token_id
+        self.EOS = self.tokenizer.im_end_id
 
         self.model = chat.Qwen()
         self.init_params(args)
@@ -96,105 +96,17 @@ class Qwen:
         question_str = text[task_id]["question"] + "<|im_end|>\n<|im_start|>assistant\n"
         return content_str, question_str
 
-    def test_share_cache(self):
-        json_path = "../../../assets/sophgo_kv_cache_share_test_case.json"
-        share_str, unshare_str_0 = self.read_json(json_path, 0)
-        _, unshare_str_1 = self.read_json(json_path, 1)
-        _, unshare_str_2 = self.read_json(json_path, 2)
-        # share_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
-        # unshare_str_0 = "can you help me<|im_end|>\n<|im_start|>assistant\n"
-        # unshare_str_1 = "tell me a love story<|im_end|>\n<|im_start|>assistant\n"
-        # unshare_str_2 = "tell me a love story<|im_end|>\n<|im_start|>assistant\n"
-
-
-        self.model.init_decrypt()
-
-        # ===------------------------------------------------------------===
-        # Model 0
-        # ===------------------------------------------------------------===
-
-        # load model 0
-        self.model.io_alone_mode = 0
-        self.load_model(self.model_list[0])
-
-        # share prefill
-        share_start = time.time()
-        share_tokens = self.tokenizer.encode(share_str)
-        self.model.forward_share(share_tokens)
-        share_end = time.time()
-        print(f"\nShare FTL Time: {(share_end - share_start):.3f} s")
-
-        # task 0
-        unshare_tokens_0 = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(unshare_tokens_0, "share", 10)
-
-        # task 1
-        unshare_tokens_1 = self.tokenizer.encode(unshare_str_1)
-        self.stream_answer(unshare_tokens_1, "share", 10)
-
-        # task 2
-        unshare_tokens_2 = self.tokenizer.encode(unshare_str_2)
-        self.stream_answer(unshare_tokens_2, "share", 10)
-
-        # only save kvcache once
-        self.model.save_kvcache()
-        self.model.deinit()
-
-        # ===------------------------------------------------------------===
-        # Model 1
-        # ===------------------------------------------------------------===
-        # load model 1
-        self.model.io_alone_mode = 1
-        self.load_model(self.model_list[1])
-
-        # share prefill
-        share_start = time.time()
-        # share_tokens = self.tokenizer.encode(share_str)
-        # self.model.forward_share(share_tokens)
-        share_end = time.time()
-        print(f"\nShare FTL Time: {(share_end - share_start):.3f} s")
-
-        # task 0
-        unshare_tokens_0 = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(unshare_tokens_0, "share", 10)
-
-        # task 1
-        unshare_tokens_1 = self.tokenizer.encode(unshare_str_1)
-        self.stream_answer(unshare_tokens_1, "share", 10)
-
-        # task 2
-        unshare_tokens_2 = self.tokenizer.encode(unshare_str_2)
-        self.stream_answer(unshare_tokens_2, "share", 10)
-
-        self.model.deinit()
-
-        # ===------------------------------------------------------------===
-        # Model 2
-        # ===------------------------------------------------------------===
-        # load model 2
-        self.model.io_alone_mode = 0
-        self.load_model(self.model_list[2])
-        share_tokens = self.tokenizer.encode(
-            share_str, max_length=725, truncation=True
-        )
-        unshare_tokens = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(share_tokens + unshare_tokens, "normal", 7)
-
-        # ===------------------------------------------------------------===
-        # Deinit
-        # ===------------------------------------------------------------===
-        self.model.deinit()
-        self.model.deinit_decrypt()
-
-    def test_share_cache_1(self):
+    def test_max_length(self):
         json_path = "../../../assets/long_case.json"
-        share_str, unshare_str_0 = self.read_json(json_path, 0)
-        _, unshare_str_1 = self.read_json(json_path, 1)
-        _, unshare_str_2 = self.read_json(json_path, 2)
+        head_str, tail_str_0 = self.read_json(json_path, 0)
+        _, tail_str_1 = self.read_json(json_path, 1)
+        _, tail_str_2 = self.read_json(json_path, 2)
+        head_str = head_str[:10000]
         # share_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
         # unshare_str_0 = "can you help me<|im_end|>\n<|im_start|>assistant\n"
         # unshare_str_1 = "tell me a love story<|im_end|>\n<|im_start|>assistant\n"
         # unshare_str_2 = "tell me a love story<|im_end|>\n<|im_start|>assistant\n"
+
 
         self.model.init_decrypt()
 
@@ -203,137 +115,37 @@ class Qwen:
         # ===------------------------------------------------------------===
 
         # load model 0
-        # when use io_alone_mode = 0, need to forward_share to get kvcache
-        # when use io_alone_mode = 1, don't need to forward_share, kvcache will be reused
         self.model.io_alone_mode = 0
         self.load_model(self.model_list[0])
 
-        # share prefill
-        share_start = time.time()
-        share_tokens = self.tokenizer.encode(
-            share_str, max_length=6016, truncation=True
-        )
+        # task 0
+        tail_tokens_0 = self.tokenizer.encode(tail_str_0)
+        head_tokens_0 = self.tokenizer.encode(head_str)[:6272 - len(tail_tokens_0)]
+        self.stream_answer(head_tokens_0 + tail_tokens_0, "normal", 512)
 
-        self.model.forward_share(share_tokens)
-        share_end = time.time()
-        print(f"\nShare FTL Time: {(share_end - share_start):.3f} s")
+        # task 1
+        tail_tokens_1 = self.tokenizer.encode(tail_str_1)
+        head_tokens_1 = self.tokenizer.encode(head_str)[:6272 - len(tail_tokens_1)]
+        self.stream_answer(head_tokens_1 + tail_tokens_1, "normal", 512)
 
-        # task 15
-        unshare_tokens = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(unshare_tokens, "share", 422)
-
-        # task 16
-        unshare_tokens = self.tokenizer.encode(unshare_str_1)
-        self.stream_answer(unshare_tokens, "share", 438)
-
-        self.model.save_kvcache() # important
-        self.model.deinit()
+        self.model.free_device()
 
         # ===------------------------------------------------------------===
         # Model 1
         # ===------------------------------------------------------------===
         # load model 1
-        # io_alone_mode = 1, kvcache will be reused
-        self.model.io_alone_mode = 1
+        self.model.io_alone_mode = 0
         self.load_model(self.model_list[1])
 
-        # share prefill
-        share_start = time.time()
-        # share_tokens = self.tokenizer.encode(share_str)
-        # self.model.forward_share(share_tokens)
-        share_end = time.time()
-        print(f"\nShare FTL Time: {(share_end - share_start):.3f} s")
-
-        # task 3
-        unshare_tokens = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(unshare_tokens, "share", 139)
-
-        # task 5
-        unshare_tokens = self.tokenizer.encode(unshare_str_1)
-        self.stream_answer(unshare_tokens, "share", 160)
-
-        # task 12
-        unshare_tokens = self.tokenizer.encode(unshare_str_2)
-        self.stream_answer(unshare_tokens, "share", 281)
-
-        # task 13
-        unshare_tokens = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(unshare_tokens, "share", 281)
-
-        # task 9
-        unshare_tokens = self.tokenizer.encode(unshare_str_1)
-        self.stream_answer(unshare_tokens, "share", 755)
-
-        # task 11
-        unshare_tokens = self.tokenizer.encode(unshare_str_2)
-        self.stream_answer(unshare_tokens, "share", 713)
-
-        # task 4
-        unshare_tokens = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(unshare_tokens, "share", 322)
-
-        # task 10
-        unshare_tokens = self.tokenizer.encode(unshare_str_1)
-        self.stream_answer(unshare_tokens, "share", 441)
-
-        # share prefill
-        share_start = time.time()
-        share_tokens = self.tokenizer.encode(
-            share_str, max_length=6000, truncation=True
-        )
-
-        self.model.forward_share(share_tokens)
-        share_end = time.time()
-        print(f"\nShare FTL Time: {(share_end - share_start):.3f} s")
+        # task 0
+        tail_tokens_0 = self.tokenizer.encode(tail_str_0)
+        head_tokens_0 = self.tokenizer.encode(head_str)[:3096 - len(tail_tokens_0)]
+        self.stream_answer(head_tokens_0 + tail_tokens_0, "normal", 512)
 
         # task 1
-        unshare_tokens = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(unshare_tokens, "share", 106)
-
-        # task 2
-        unshare_tokens = self.tokenizer.encode(unshare_str_1)
-        self.stream_answer(unshare_tokens, "share", 184)
-    
-        self.model.deinit()
-
-        # ===------------------------------------------------------------===
-        # Model 2
-        # ===------------------------------------------------------------===
-        # load model 2
-        self.model.io_alone_mode = 0
-        self.load_model(self.model_list[2])
-
-        # task 6
-        for _ in range(6):
-            share_tokens = self.tokenizer.encode(
-                share_str, max_length=908, truncation=True
-            )
-            unshare_tokens = self.tokenizer.encode(unshare_str_0)
-            self.stream_answer(share_tokens + unshare_tokens, "normal", 7)
-
-        # task 7
-        for _ in range(5):
-            share_tokens = self.tokenizer.encode(
-                share_str, max_length=898, truncation=True
-            )
-            unshare_tokens = self.tokenizer.encode(unshare_str_1)
-            self.stream_answer(share_tokens + unshare_tokens, "normal", 324)
-
-        # task 8
-        for _ in range(5):
-            share_tokens = self.tokenizer.encode(
-                share_str, max_length=162, truncation=True
-            )
-            unshare_tokens = self.tokenizer.encode(unshare_str_2)
-            self.stream_answer(share_tokens + unshare_tokens, "normal", 106)
-
-        # task 14
-        for _ in range(1):
-            share_tokens = self.tokenizer.encode(
-                share_str, max_length=725, truncation=True
-            )
-            unshare_tokens = self.tokenizer.encode(unshare_str_0)
-            self.stream_answer(share_tokens + unshare_tokens, "normal", 101)
+        tail_tokens_1 = self.tokenizer.encode(tail_str_1)
+        head_tokens_1 = self.tokenizer.encode(head_str)[:3096 - len(tail_tokens_1)]
+        self.stream_answer(head_tokens_1 + tail_tokens_1, "normal", 512)
 
         # ===------------------------------------------------------------===
         # Deinit
@@ -343,20 +155,30 @@ class Qwen:
 
 
 def main(args):
-
-    # normal test
+    # test chat
     start_time = time.time()
-    model = Qwen(args)
-    model.test_share_cache()
+    try:
+        engine = Qwen(args)
+
+        # 1. test one sample
+        # engine.test_sample()
+        
+        # 2. test c-eval
+        # engine.test_ceval()
+
+        # 3. test all length
+        engine.test_max_length()
+
+
+        print("All Right!")
+    except RuntimeError:
+        print("RuntimeError")
+    except ValueError:
+        print("ValueError")
+
     end_time = time.time()
     print(f"\nTotal Time: {(end_time - start_time):.3f} s")
-
-    # max length test
-    start_time = time.time()
-    model = Qwen(args)
-    model.test_share_cache_1()
-    end_time = time.time()
-    print(f"\nTotal Time: {(end_time - start_time):.3f} s")
+    print("Status Code: ", engine.model.status_code)
 
 
 if __name__ == "__main__":

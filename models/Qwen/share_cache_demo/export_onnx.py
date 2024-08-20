@@ -24,12 +24,13 @@ np.random.seed(seed)
 parser = argparse.ArgumentParser(description='export onnx')
 parser.add_argument('-m', '--model_path', type=str, help='path to the torch model')
 parser.add_argument('-d', '--device', type=str, choices=["cpu", "cuda"], default="cpu")
-parser.add_argument('-b', '--batch_size', type=int, default=2, help='batch size')
+parser.add_argument('-b', '--batch_size', type=int, default=1, help='batch size')
 parser.add_argument('-s', '--seq_length', type=int, default=512, help="sequence length")
 parser.add_argument('-n', '--num_threads', type=int, default=1, help='The number of threads used for torch if device is cpu')
 parser.add_argument('--share_length', type=int, default=6144, help="share length")
 parser.add_argument('--unshare_length', type=int, default=4096, help="unshare length")
 parser.add_argument('--max_pos_len', type=int, default=8704, help="max position length")
+parser.add_argument('--generation_mode', type=str, default="default", choices=["default", "lmhead_with_penalty", "lmhead_with_sample", "lmhead_with_top1"], help="generation mode")
 
 args = parser.parse_args()
 
@@ -219,6 +220,79 @@ class PenaltySampleHead(torch.nn.Module):
         filtered_logits = torch.where(mask, logits, torch.FloatTensor([-1000.]))
         probs = filtered_logits.softmax(dim=1)
         return probs, token
+
+
+class LmHeadWithTop1Head(torch.nn.Module):
+
+    def __init__(self, top_k = 50, min_tokens_to_keep = 5):
+        super().__init__()
+
+    def forward(self, hidden_states):
+        hidden_states = transformer.ln_f(hidden_states)
+        m_logits = origin_model.lm_head(hidden_states)
+        _, token = torch.topk(m_logits.float(), 1)
+        return token
+
+
+class LmHeadWithSampleHead(torch.nn.Module):
+
+    def __init__(self, top_k = 50, min_tokens_to_keep = 5):
+        super().__init__()
+        self.top_k = top_k
+        self.min_tokens_to_keep = min_tokens_to_keep
+        self.keep_matrix = torch.zeros((1, self.top_k), dtype=torch.bool)
+        self.keep_matrix[0, :self.min_tokens_to_keep] = True
+
+    def forward(self, hidden_states, top_p, temperature):
+        hidden_states = transformer.ln_f(hidden_states)
+        m_logits = origin_model.lm_head(hidden_states)
+
+        # top_k
+        logits, token = torch.topk(m_logits.float(), self.top_k)
+
+        # temperature
+        logits = logits / temperature
+
+        # top_p
+        cumulative_probs = logits.softmax(dim=1).cumsum(dim=1)
+        mask = cumulative_probs < top_p
+        mask = mask + self.keep_matrix
+        filtered_logits = torch.where(mask, logits, torch.FloatTensor([-1000.]))
+        probs = filtered_logits.softmax(dim=1)
+        return probs, token
+
+
+class LmHeadWithPenaltySampleHead(torch.nn.Module):
+
+    def __init__(self, top_k = 50, min_tokens_to_keep = 5):
+        super().__init__()
+        self.top_k = top_k
+        self.min_tokens_to_keep = min_tokens_to_keep
+        self.keep_matrix = torch.zeros((1, self.top_k), dtype=torch.bool)
+        self.keep_matrix[0, :self.min_tokens_to_keep] = True
+
+    def forward(self, hidden_states, input_ids, top_p, temperature, penalty):
+        hidden_states = transformer.ln_f(hidden_states)
+        m_logits = origin_model.lm_head(hidden_states)
+
+        # repeat penalty
+        logits = torch.gather(m_logits, 1, input_ids)
+        logits = torch.where(logits < 0, logits * penalty, logits / penalty)
+        m_logits.scatter_(1, input_ids, logits)
+
+        # top_k
+        logits, token = torch.topk(m_logits.float(), self.top_k)
+
+        # temperature
+        logits = logits / temperature
+
+        # top_p
+        cumulative_probs = logits.softmax(dim=1).cumsum(dim=1)
+        mask = cumulative_probs < top_p
+        mask = mask + self.keep_matrix
+        filtered_logits = torch.where(mask, logits, torch.FloatTensor([-1000.]))
+        probs = filtered_logits.softmax(dim=1)
+        return probs, token
     
 
 def convert_block(layer_id):
@@ -284,30 +358,6 @@ def convert_block_unshare(layer_id):
         opset_version=15)
 
 
-def convert_block_share_cache(layer_id):
-    model = QwenBlockShareCache(layer_id)
-    hidden_states = torch.randn((BATCH_SIZE, 1, HIDDEN_SIZE)).to(device)
-    position_ids = torch.tensor(BATCH_SIZE * [range(1)], dtype=torch.long).to(device)
-    share_attention_mask = torch.ones((1, 1, 1, SHARE_LENGTH)).to(device)
-    unshare_attention_mask = torch.ones((BATCH_SIZE, 1, 1, UNSHARE_LENGTH)).to(device)
-    share_past_k = torch.randn((1, SHARE_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)).to(device)
-    share_past_v = torch.randn((1, SHARE_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)).to(device)    
-    unshare_past_k = torch.randn((BATCH_SIZE, UNSHARE_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)).to(device)
-    unshare_past_v = torch.randn((BATCH_SIZE, UNSHARE_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)).to(device)
-
-    torch.onnx.export(
-        model, (hidden_states, position_ids, share_attention_mask, unshare_attention_mask, share_past_k, share_past_v, unshare_past_k, unshare_past_v),
-        f'{folder}/block_share_cache_{layer_id}.onnx',
-        verbose=False,
-        input_names=[
-            'input_states', 'position_ids', 'share_attention_mask', 'unshare_attention_mask', 'share_past_k',
-            'share_past_v', 'unshare_past_k', 'unshare_past_v'
-        ],
-        output_names=['hidden_states', 'unshare_present_k', 'unshare_present_v'],
-        do_constant_folding=True,
-        opset_version=15)
-
-
 def convert_embedding():
     model = Embedding()
     input_ids = torch.tensor([range(SHARE_LENGTH)], dtype=torch.int32).to(device)
@@ -328,7 +378,7 @@ def convert_lm_head():
     torch.jit.save(module, f'{folder}/lm_head.pt')
 
 
-def convert_greedy_head():   
+def convert_greedy_head():
     model = GreedyHead()
     m_logits = torch.randn(1, VOCAB_SIZE)
 
@@ -342,7 +392,7 @@ def convert_greedy_head():
         opset_version=15)
 
 
-def convert_penalty_sample_head():   
+def convert_penalty_sample_head():
     model = PenaltySampleHead()
     m_logits = torch.randn(1, VOCAB_SIZE)
     input_ids = torch.tensor([range(SEQ_LENGTH)])
@@ -361,6 +411,37 @@ def convert_penalty_sample_head():
         output_names=['probs', 'token'],
         do_constant_folding=True,
         opset_version=15)
+    
+
+def convert_lmhead_with_top1_head():
+    model = LmHeadWithTop1Head()
+
+    hidden_states = torch.randn(1, 1, HIDDEN_SIZE).to(device)
+    module = torch.jit.trace(model.forward, (hidden_states))
+    torch.jit.save(module, f'{folder}/lm_head.pt')
+
+
+def convert_lmhead_with_sample_head():
+    model = LmHeadWithSampleHead()
+
+    hidden_states = torch.randn(1, HIDDEN_SIZE).to(device)
+    top_p = torch.tensor([0.8])
+    temperature = torch.tensor([0.98])
+    module = torch.jit.trace(model.forward, (hidden_states, top_p, temperature))
+    torch.jit.save(module, f'{folder}/lm_head.pt')
+
+
+def convert_lmhead_with_penalty_sample_head():
+    model = LmHeadWithPenaltySampleHead()
+
+    hidden_states = torch.randn(1, HIDDEN_SIZE).to(device)
+    input_ids = torch.tensor([range(SEQ_LENGTH)])
+    top_p = torch.tensor([0.8])
+    temperature = torch.tensor([0.98])
+    penalty = torch.tensor([0.98])
+    module = torch.jit.trace(model.forward, (hidden_states, input_ids, top_p, temperature, penalty))
+    torch.jit.save(module, f'{folder}/lm_head.pt')
+
 
 def test_net_with_mask():
     import numpy as np
@@ -389,19 +470,27 @@ if not os.path.exists(folder):
 # test_net_with_mask()
 
 # export models
-print(f'Convert block & block_cache')
+print('Convert block & block_cache')
 for i in tqdm(range(NUM_LAYERS)):
     convert_block(i) # prefill
-    if args.unshare_length!=0:convert_block_unshare(i)
+    if args.unshare_length!=0:
+        convert_block_unshare(i)
     convert_block_cache(i) # decode
 
-print(f'Convert embedding')
+print('Convert embedding')
 convert_embedding()
 
-print(f'Convert lm_head')
-convert_lm_head()
-convert_greedy_head()
-convert_penalty_sample_head()
+print('Convert lm_head')
+if args.generation_mode == "default":
+    convert_lm_head()
+    convert_greedy_head()
+    convert_penalty_sample_head()
+elif args.generation_mode == "lmhead_with_penalty":
+    convert_lmhead_with_penalty_sample_head()
+elif args.generation_mode == "lmhead_with_sample":
+    convert_lmhead_with_sample_head()
+elif args.generation_mode == "lmhead_with_top1":
+    convert_lmhead_with_top1_head()
 
 print("Done")
 
