@@ -3,7 +3,7 @@ set -ex
 max_pos_len=6912
 generation_mode=default
 
-seq_length=3840
+seq_length=3712
 share_length=3200
 unshare_length=0
 python export_onnx.py --model_path /workspace/models/Qwen-7B-Chat/ --device cpu --share_length $share_length --unshare_length $unshare_length --seq_length $seq_length --num_thread 16 --max_pos_len $max_pos_len --generation_mode $generation_mode

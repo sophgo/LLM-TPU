@@ -107,14 +107,14 @@ fi
 
 if [ x$num_device != x1 ]; then
     device_args="--num_device $num_device"
-    out_model=${name}_${mode}_share${share_length}_unshare${unshare_length}_seq{$seq_length}_${num_device}dev.bmodel
+    out_model=${name}_${mode}_share${share_length}_unshare${unshare_length}_seq${seq_length}_${num_device}dev.bmodel
 else
-    out_model=${name}_${mode}_share${share_length}_unshare${unshare_length}_seq{$seq_length}_1dev.bmodel
+    out_model=${name}_${mode}_share${share_length}_unshare${unshare_length}_seq${seq_length}_1dev.bmodel
 fi
 
 if [ x$dynamic == x1 ]; then
     dyn_args="--dynamic"
-    out_model=${name}_${mode}_share${share_length}_unshare${unshare_length}_seq{$seq_length}_${num_device}dev_dyn.bmodel
+    out_model=${name}_${mode}_share${share_length}_unshare${unshare_length}_seq${seq_length}_${num_device}dev_dyn.bmodel
 fi
 
 if [ x$addr_mode == x"io_alone" ]; then
