@@ -121,12 +121,12 @@ class Qwen:
         # task 0
         tail_tokens_0 = self.tokenizer.encode(tail_str_0)
         head_tokens_0 = self.tokenizer.encode(head_str)[:6272 - len(tail_tokens_0)]
-        self.stream_answer(head_tokens_0 + tail_tokens_0, "normal", 512)
+        self.stream_answer(head_tokens_0 + tail_tokens_0, "normal", 0)
 
         # task 1
         tail_tokens_1 = self.tokenizer.encode(tail_str_1)
         head_tokens_1 = self.tokenizer.encode(head_str)[:6272 - len(tail_tokens_1)]
-        self.stream_answer(head_tokens_1 + tail_tokens_1, "normal", 512)
+        self.stream_answer(head_tokens_1 + tail_tokens_1, "normal", 0)
 
         self.model.free_device()
 
@@ -140,12 +140,12 @@ class Qwen:
         # task 0
         tail_tokens_0 = self.tokenizer.encode(tail_str_0)
         head_tokens_0 = self.tokenizer.encode(head_str)[:3096 - len(tail_tokens_0)]
-        self.stream_answer(head_tokens_0 + tail_tokens_0, "normal", 512)
+        self.stream_answer(head_tokens_0 + tail_tokens_0, "normal", 0)
 
         # task 1
         tail_tokens_1 = self.tokenizer.encode(tail_str_1)
         head_tokens_1 = self.tokenizer.encode(head_str)[:3096 - len(tail_tokens_1)]
-        self.stream_answer(head_tokens_1 + tail_tokens_1, "normal", 512)
+        self.stream_answer(head_tokens_1 + tail_tokens_1, "normal", 0)
 
         # ===------------------------------------------------------------===
         # Deinit
@@ -188,7 +188,7 @@ if __name__ == "__main__":
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
     parser.add_argument('--temperature', type=float, default=1.0, help='temperature scaling factor for the likelihood distribution')
     parser.add_argument('--top_p', type=float, default=1.0, help='cumulative probability of token words to consider as a set of candidates')
-    parser.add_argument('--repeat_penalty', type=float, default=1.0, help='penalty for repeated tokens')
+    parser.add_argument('--repeat_penalty', type=float, default=1.2, help='penalty for repeated tokens')
     parser.add_argument('--repeat_last_n', type=int, default=32, help='repeat penalty for recent n tokens')
     parser.add_argument('--max_new_tokens', type=int, default=1024, help='max new token length to generate')
     parser.add_argument('--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
