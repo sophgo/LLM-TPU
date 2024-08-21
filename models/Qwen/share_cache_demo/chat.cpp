@@ -44,7 +44,9 @@ public:
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
   std::mt19937 sgen;
-  Qwen() : sgen(std::random_device()()){};
+  Qwen() : sgen(std::random_device()()),
+      decrypt_handle_(nullptr),
+      decrypt_func_(nullptr) {}
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
