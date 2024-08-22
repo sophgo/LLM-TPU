@@ -283,10 +283,11 @@ for ((i=0; i<$num_layers; i++)); do
     models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_unshare_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
     sleep 45
 done
-rm *.npz
-popd
-echo $models
 
 wait  # Wait for all background processes to finish
+
+rm -f *.npz
+popd
+echo $models
 
 model_tool --combine $models -o $out_model

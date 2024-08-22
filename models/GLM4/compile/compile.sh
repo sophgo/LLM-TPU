@@ -214,12 +214,13 @@ process_block() {
 for ((i=0; i<$num_layers; i++)); do
     process_block $i
     models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
-    # sleep 45
+    sleep 45
 done
+
+wait  # Wait for all background processes to finish
+
 rm -f *.npz
 popd
 echo $models
-
-wait  # Wait for all background processes to finish
 
 model_tool --combine $models -o $out_model

@@ -94,6 +94,8 @@ else
   exit 1
 fi
 
+folder="tmp_share${share_length}_unshare${unshare_length}_seq${seq_length}"
+
 if [ x$mode == x"int8" ]; then
     quantize_args="--quantize W8BF16"
 elif [ x$mode == x"f16" ]; then
@@ -355,10 +357,11 @@ for ((i=0; i<$num_layers; i++)); do
     fi
     sleep 45
 done
+
+wait  # Wait for all background processes to finish
+
 rm -f *.npz
 popd
 echo $models
-
-wait  # Wait for all background processes to finish
 
 model_tool --combine $models -o $out_model
