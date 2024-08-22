@@ -326,6 +326,7 @@ process_block() {
             ${quantize_args} \
             --quant_input \
             --quant_output \
+            $dyn_args \
             --chip bm1684x \
             $device_args \
             --model block_unshare_$i.bmodel

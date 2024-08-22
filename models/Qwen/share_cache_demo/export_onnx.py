@@ -47,7 +47,7 @@ def modify_json(json_path):
 
 model_path = args.model_path
 json_path = os.path.join(model_path, "config.json")
-folder = f"./tmp/onnx"
+folder = f"./tmp_share{args.share_length}_unshare{args.unshare_length}_seq{args.seq_length}/onnx"
 
 device = torch.device(args.device)
 if device == 'cpu':

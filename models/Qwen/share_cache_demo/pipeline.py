@@ -1,9 +1,13 @@
-import argparse
-
-import chat
+import os
 import json
 import time
+import argparse
 from transformers import AutoTokenizer
+
+import sys
+import chat
+sys.path.append("../../../harness/C-Eval")
+from utils import load_json, dump_json, construct_prompt, extract_cot_answer
 
 
 class Qwen:
@@ -40,6 +44,20 @@ class Qwen:
         self.model.max_new_tokens = args.max_new_tokens
         self.model.generation_mode = args.generation_mode
         self.model.lib_path = args.lib_path
+
+    def encode_tokens(self, prompt):
+        messages = [
+            {
+                "role": "system",
+                "content": self.system_prompt,
+            },
+            {"role": "user", "content": prompt},
+        ]
+        text = self.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        tokens = self.tokenizer(text).input_ids
+        return tokens
 
     def stream_answer(self, tokens, inference_mode, max_tok_num):
         """
@@ -98,10 +116,9 @@ class Qwen:
 
     def test_max_length(self):
         json_path = "../../../assets/long_case.json"
-        head_str, tail_str_0 = self.read_json(json_path, 0)
-        _, tail_str_1 = self.read_json(json_path, 1)
-        _, tail_str_2 = self.read_json(json_path, 2)
-        head_str = head_str[:10000]
+        share_str, unshare_str_0 = self.read_json(json_path, 0)
+        _, unshare_str_1 = self.read_json(json_path, 1)
+        _, unshare_str_2 = self.read_json(json_path, 2)
         # share_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
         # unshare_str_0 = "can you help me<|im_end|>\n<|im_start|>assistant\n"
         # unshare_str_1 = "tell me a love story<|im_end|>\n<|im_start|>assistant\n"
@@ -118,15 +135,31 @@ class Qwen:
         self.model.io_alone_mode = 0
         self.load_model(self.model_list[0])
 
+        # share prefill
+        share_start = time.time()
+        share_tokens = self.tokenizer.encode(
+            share_str, max_length=8000, truncation=True
+        )
+
         # task 0
-        tail_tokens_0 = self.tokenizer.encode(tail_str_0)
-        head_tokens_0 = self.tokenizer.encode(head_str)[:6272 - len(tail_tokens_0)]
-        self.stream_answer(head_tokens_0 + tail_tokens_0, "normal", 0)
+        self.model.forward_share(share_tokens[:4000])
+        share_end = time.time()
+        print(f"\nShare FTL Time: {(share_end - share_start):.3f} s")
+
+        # unshare + decode
+        unshare_tokens = self.tokenizer.encode(unshare_str_0)
+        self.stream_answer(share_tokens[5000:] + unshare_tokens, "share", 0)
+
 
         # task 1
-        tail_tokens_1 = self.tokenizer.encode(tail_str_1)
-        head_tokens_1 = self.tokenizer.encode(head_str)[:6272 - len(tail_tokens_1)]
-        self.stream_answer(head_tokens_1 + tail_tokens_1, "normal", 0)
+        share_start = time.time()
+        self.model.forward_share(share_tokens[:4000])
+        share_end = time.time()
+        print(f"\nShare FTL Time: {(share_end - share_start):.3f} s")
+
+        # unshare + decode
+        unshare_tokens = self.tokenizer.encode(unshare_str_1)
+        self.stream_answer(share_tokens[5000:] + unshare_tokens, "share", 0)
 
         self.model.free_device()
 
@@ -137,15 +170,13 @@ class Qwen:
         self.model.io_alone_mode = 0
         self.load_model(self.model_list[1])
 
-        # task 0
-        tail_tokens_0 = self.tokenizer.encode(tail_str_0)
-        head_tokens_0 = self.tokenizer.encode(head_str)[:3096 - len(tail_tokens_0)]
-        self.stream_answer(head_tokens_0 + tail_tokens_0, "normal", 0)
+        # first + decode
+        unshare_tokens = self.tokenizer.encode(unshare_str_0)
+        self.stream_answer(share_tokens[:3000] + unshare_tokens, "normal", 0)
 
-        # task 1
-        tail_tokens_1 = self.tokenizer.encode(tail_str_1)
-        head_tokens_1 = self.tokenizer.encode(head_str)[:3096 - len(tail_tokens_1)]
-        self.stream_answer(head_tokens_1 + tail_tokens_1, "normal", 0)
+        # first + decode
+        unshare_tokens = self.tokenizer.encode(unshare_str_1)
+        self.stream_answer(share_tokens[:3000] + unshare_tokens, "normal", 0)
 
         # ===------------------------------------------------------------===
         # Deinit
@@ -153,7 +184,72 @@ class Qwen:
         self.model.deinit()
         self.model.deinit_decrypt()
 
+    def test_ceval(self):
+        """
+        Test c-eval
+        """
+        import pandas as pd
+        self.system_prompt = "You will provide correct answer to the question."
 
+        test_path = "ceval-exam/test"
+        subject_path = "subject_mapping.json"
+        subject_map = load_json(subject_path)
+
+        # 3. inference
+        submit_path = "Qwen_submit.csv"
+
+        res = {}
+        subject_num = len(os.listdir(test_path))
+        print(f"Subject numbers: {subject_num}")
+        for idx, test_csv_file in enumerate(os.listdir(test_path)):
+            breakpoint()
+            self.load_model(self.model_list[idx % 2])
+            test_csv_path = os.path.join(test_path, test_csv_file)
+            test_df = pd.read_csv(test_csv_path)
+
+            subject = test_csv_file.replace("_test.csv", "")
+            subject_zh = subject_map[subject][1]
+
+            subject_dict = {}
+            print("======================================")
+            print("======================================")
+            print("Current subject:", subject)
+            print("======================================")
+            print("======================================")
+            # if subject != "middle_school_physics":continue
+            for i in range(len(test_df)):
+                print(f"\n================={i}/{len(test_df)}====================")
+                prompt = construct_prompt(subject_zh, [], test_df.loc[i], 0)
+                tokens = self.encode_tokens(prompt)
+                print("token length:", len(tokens))
+                if len(tokens) >= 3200:
+                    raise ValueError(f"The length you input is {len(tokens)}, exceed the maximum length")
+                pred = self.stream_answer(tokens)
+
+                option = extract_cot_answer(pred)
+                #print("\nprediction:", pred)
+                print("\noption:", option)
+
+                subject_dict[str(i)] = option
+            res[subject] = subject_dict
+            self.model.free_device()
+        self.model.deinit()
+
+        # 4. deinit & save
+        dump_json(res, submit_path)
+
+        # deinit
+        self.model.deinit_decrypt()
+        self.model.deinit()
+
+
+"""
+-1: your input is empty or exceed the maximum length
+-2: can not to create handle
+-3: can not to create bmrt
+-4: can not to load bmodel, maybe your key is wrong
+-5: can not to inference bmodel
+"""
 def main(args):
     # test chat
     start_time = time.time()
@@ -166,7 +262,7 @@ def main(args):
         # 2. test c-eval
         # engine.test_ceval()
 
-        # 3. test all length
+        # 3. test max length
         engine.test_max_length()
 
 
