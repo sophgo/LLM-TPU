@@ -11,15 +11,13 @@
 import os
 import json
 import torch
+import ctypes
+import pickle
 import argparse
 import numpy as np
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM
 torch.set_grad_enabled(False)
-
-seed = 42
-torch.manual_seed(seed)
-np.random.seed(seed)
 
 parser = argparse.ArgumentParser(description='export onnx')
 parser.add_argument('-m', '--model_path', type=str, help='path to the torch model')
@@ -31,28 +29,20 @@ parser.add_argument('--share_length', type=int, default=6144, help="share length
 parser.add_argument('--unshare_length', type=int, default=4096, help="unshare length")
 parser.add_argument('--max_pos_len', type=int, default=8704, help="max position length")
 parser.add_argument('--generation_mode', type=str, default="default", choices=["default", "lmhead_with_penalty", "lmhead_with_sample", "lmhead_with_top1"], help="generation mode")
+parser.add_argument('--embedding_mode', type=str, default="default", choices=["default", "binary"], help="if set embedding_mode=binary, will save embedding.bin and infer without tpu")
 
 args = parser.parse_args()
 
-def modify_json(json_path):
-    with open(json_path, 'r') as file:
-        config_json = json.load(file)
-    # config_json['seq_length'] = args.seq_length
-    config_json['fp16'] = False
-    config_json['bf16'] = False
-    config_json['fp32'] = True
-    config_json['use_dynamic_ntk'] = False
-    with open(json_path, 'w') as file:
-        json.dump(config_json, file, indent=4)
+seed = 42
+torch.manual_seed(seed)
+np.random.seed(seed)
+torch.set_num_threads(args.num_threads)
 
 model_path = args.model_path
 json_path = os.path.join(model_path, "config.json")
 folder = f"./tmp_share{args.share_length}_unshare{args.unshare_length}_seq{args.seq_length}/onnx"
 
 device = torch.device(args.device)
-if device == 'cpu':
-    modify_json(json_path) # warning!!!!!
-    torch.set_num_threads(args.num_threads)
 
 origin_model = AutoModelForCausalLM.from_pretrained(
     model_path, trust_remote_code=True,
@@ -442,6 +432,22 @@ def convert_lmhead_with_penalty_sample_head():
     module = torch.jit.trace(model.forward, (hidden_states, input_ids, top_p, temperature, penalty))
     torch.jit.save(module, f'{folder}/lm_head.pt')
 
+def fp32_string(data):
+    return bin(ctypes.c_uint32.from_buffer(ctypes.c_float(data)).value)[2:]
+
+def convert_embedding_to_bit():
+    print("\033[31m请注意！！如果embedding_mode=binary，目前convert_embedding_to_bit只支持embedding为float32格式，并且导出格式为bfloat16！！！\033[0m")
+    print("\033[31m如果想导出float16的embedding，请修改此函数！！！\033[0m")
+    embedding_weights = transformer.wte.weight.data
+    embedding_weights_fp32 = embedding_weights.numpy().astype(np.float32).flatten()
+    embedding_weights_uint32 = embedding_weights_fp32.view(np.uint32)
+    embedding_weights_uint16 = (embedding_weights_uint32 >> 16).astype(np.uint16) # torch的格式必须是bfloat16才行
+    if embedding_weights_uint16.dtype.byteorder == '>':
+        embedding_weights_uint16 = embedding_weights_uint16.byteswap()
+    embedding_weights_uint16 = embedding_weights_uint16.newbyteorder('little') # 确保数据以小端序存储
+
+    with open('embedding.bin', 'wb') as f:
+        embedding_weights_uint16.tofile(f)
 
 def test_net_with_mask():
     import numpy as np
@@ -470,6 +476,7 @@ if not os.path.exists(folder):
 # test_net_with_mask()
 
 # export models
+convert_embedding_to_bit()
 print('Convert block & block_cache')
 for i in tqdm(range(NUM_LAYERS)):
     convert_block(i) # prefill
@@ -478,7 +485,10 @@ for i in tqdm(range(NUM_LAYERS)):
     convert_block_cache(i) # decode
 
 print('Convert embedding')
-convert_embedding()
+if args.embedding_mode == "default":
+    convert_embedding()
+elif args.embedding_mode == "binary":
+    convert_embedding_to_bit()
 
 print('Convert lm_head')
 if args.generation_mode == "default":

@@ -44,6 +44,7 @@ class Qwen:
         self.model.max_new_tokens = args.max_new_tokens
         self.model.generation_mode = args.generation_mode
         self.model.lib_path = args.lib_path
+        self.model.embedding_path = args.embedding_path
 
     def encode_tokens(self, prompt):
         messages = [
@@ -142,24 +143,15 @@ class Qwen:
         )
 
         # task 0
-        self.model.forward_share(share_tokens[:4000])
-        share_end = time.time()
-        print(f"\nShare FTL Time: {(share_end - share_start):.3f} s")
-
-        # unshare + decode
+        # first + decode
         unshare_tokens = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(share_tokens[5000:] + unshare_tokens, "share", 0)
+        self.stream_answer(share_tokens + unshare_tokens, "normal", 0)
 
 
         # task 1
-        share_start = time.time()
-        self.model.forward_share(share_tokens[:4000])
-        share_end = time.time()
-        print(f"\nShare FTL Time: {(share_end - share_start):.3f} s")
-
-        # unshare + decode
+        # first + decode
         unshare_tokens = self.tokenizer.encode(unshare_str_1)
-        self.stream_answer(share_tokens[5000:] + unshare_tokens, "share", 0)
+        self.stream_answer(share_tokens + unshare_tokens, "normal", 0)
 
         self.model.free_device()
 
@@ -291,5 +283,6 @@ if __name__ == "__main__":
     parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
     parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory")
     parser.add_argument('--lib_path', type=str, default='', help='lib path by user')
+    parser.add_argument('--embedding_path', type=str, default='', help='binary embedding path')
     args = parser.parse_args()
     main(args)

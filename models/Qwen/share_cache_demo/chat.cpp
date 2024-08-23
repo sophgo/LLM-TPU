@@ -59,7 +59,9 @@ private:
 
   void make_in_tensors();
   void free_in_tensors();
+  std::vector<uint16_t> load_and_infer_embedding(const std::vector<int> &tokens);
 
+  bm_device_mem_t embedding_launch(const bm_net_info_t *net0, const bm_net_info_t *net1, const std::vector<int> &tokens);
   void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   int greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   int penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
@@ -77,6 +79,7 @@ public:
   uint32_t io_alone_mode;
   std::vector<int> total_tokens;
   std::string lib_path;
+  std::string embedding_path;
   int status_code;
 
   // model
@@ -126,57 +129,6 @@ private:
 static inline void ASSERT(bool ret) {
   if (!ret) {
     throw std::runtime_error("runtime error");
-  }
-}
-
-void Qwen::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
-  std::vector<bm_tensor_t> in_tensors(net->input_num);
-  std::vector<bm_tensor_t> out_tensors(net->output_num);
-
-  bmrt_tensor_with_device(&in_tensors[0], logits_mem, net->input_dtypes[0],
-                          net->stages[0].input_shapes[0]);
-
-  for (int i = 1; i < net->input_num; i++) {
-    bmrt_tensor_with_device(&in_tensors[i], net->stages[0].input_mems[i],
-                            net->input_dtypes[i],
-                            net->stages[0].input_shapes[i]);
-  }
-  for (int i = 0; i < net->output_num; i++) {
-    bmrt_tensor_with_device(&out_tensors[i], net->stages[0].output_mems[i],
-                            net->output_dtypes[i],
-                            net->stages[0].output_shapes[i]);
-  }
-  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
-                                   net->input_num, out_tensors.data(),
-                                   net->output_num, true, false);
-  if (!ret) {
-    launch_error();
-  } else {
-    bm_thread_sync(bm_handle);
-  }
-}
-
-void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
-  std::vector<bm_tensor_t> in_tensors(net->input_num);
-  std::vector<bm_tensor_t> out_tensors(net->output_num);
-
-  for (int i = 0; i < net->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net->stages[stage_idx].input_mems[i],
-        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
-  }
-  for (int i = 0; i < net->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net->stages[stage_idx].output_mems[i],
-        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
-  }
-  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
-                                   net->input_num, out_tensors.data(),
-                                   net->output_num, true, false);
-  if (!ret) {
-    launch_error();
-  } else {
-    bm_thread_sync(bm_handle);
   }
 }
 
@@ -309,6 +261,88 @@ void Qwen::launch_error() {
 void Qwen::ioalone_error() {
   status_code = -6;
   throw std::runtime_error("addr_mode = 0 in your bmodel, but must set addr_mode = 1");
+}
+
+void Qwen::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  bmrt_tensor_with_device(&in_tensors[0], logits_mem, net->input_dtypes[0],
+                          net->stages[0].input_shapes[0]);
+
+  for (int i = 1; i < net->input_num; i++) {
+    bmrt_tensor_with_device(&in_tensors[i], net->stages[0].input_mems[i],
+                            net->input_dtypes[i],
+                            net->stages[0].input_shapes[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(&out_tensors[i], net->stages[0].output_mems[i],
+                            net->output_dtypes[i],
+                            net->stages[0].output_shapes[i]);
+  }
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
+                                   net->input_num, out_tensors.data(),
+                                   net->output_num, true, false);
+  if (!ret) {
+    launch_error();
+  } else {
+    bm_thread_sync(bm_handle);
+  }
+}
+
+void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  for (int i = 0; i < net->input_num; i++) {
+    bmrt_tensor_with_device(
+        &in_tensors[i], net->stages[stage_idx].input_mems[i],
+        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(
+        &out_tensors[i], net->stages[stage_idx].output_mems[i],
+        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
+  }
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
+                                   net->input_num, out_tensors.data(),
+                                   net->output_num, true, false);
+  if (!ret) {
+    launch_error();
+  } else {
+    bm_thread_sync(bm_handle);
+  }
+}
+
+void Qwen::dynamic_net_launch(const bm_net_info_t *net, int token_length, int stage_idx) {
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  for (int i = 0; i < net->input_num; i++) {
+    bmrt_tensor_with_device(
+        &in_tensors[i], net->stages[stage_idx].input_mems[i],
+        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(
+        &out_tensors[i], net->stages[stage_idx].output_mems[i],
+        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
+  }
+  in_tensors[0].shape.dims[1] = token_length;
+  in_tensors[1].shape.dims[1] = token_length;
+  in_tensors[2].shape.dims[2] = token_length;
+  in_tensors[2].shape.dims[3] = token_length;
+  out_tensors[0].shape.dims[1] = token_length;
+  out_tensors[1].shape.dims[1] = token_length;
+  out_tensors[2].shape.dims[1] = token_length;
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
+                                   net->input_num, out_tensors.data(),
+                                   net->output_num, true, false);
+  if (!ret) {
+    launch_error();
+  } else {
+    bm_thread_sync(bm_handle);
+  }
 }
 
 void Qwen::init(const std::vector<int> &devices,
@@ -539,6 +573,41 @@ int Qwen::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
   return tokens[dist(sgen)];
 }
 
+std::vector<uint16_t> Qwen::load_and_infer_embedding(const std::vector<int> &tokens) {
+  std::ifstream file(embedding_path, std::ios::binary);
+  if (!file) {
+      throw std::runtime_error("Unable to open file\n");
+  }
+
+  size_t embedding_bytes = hidden_bytes;
+  size_t embedding_dim = embedding_bytes / sizeof(uint16_t);
+  size_t size = tokens.size();
+
+  std::vector<uint16_t> buffer(size * embedding_dim);
+  for (size_t i = 0; i < size; i++) {
+    long long start_position = (long long)tokens[i] * embedding_bytes;
+    file.seekg(start_position, std::ios::beg);
+    file.read(reinterpret_cast<char*>(&buffer[i * embedding_dim]), embedding_bytes);
+  }
+  return buffer;
+}
+
+bm_device_mem_t Qwen::embedding_launch(const bm_net_info_t *net0, const bm_net_info_t *net1, const std::vector<int> &tokens) {
+  bm_device_mem_t out_mem;
+  if (embedding_path.empty()) {
+    auto &in_mem = net0->stages[0].input_mems[0];
+    out_mem = net0->stages[0].output_mems[0];
+    bm_memcpy_s2d(bm_handle, in_mem, (void *)tokens.data());
+    net_launch(net0); // prefil embedding
+  } else {
+    out_mem = net1->stages[0].input_mems[0];
+    empty(bm_handle, out_mem);
+    auto buffer = load_and_infer_embedding(tokens);
+    bm_memcpy_s2d(bm_handle, out_mem, (void *)buffer.data());
+  }
+  return out_mem;
+}
+
 int Qwen::forward_first(std::vector<int> &tokens) {
   std::vector<int> first_tokens(MAX_SHARE_LENGTH, 0);
   std::vector<int> position_id(MAX_SHARE_LENGTH, 0);
@@ -570,10 +639,7 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   }
 
   // forward embeding
-  auto &in_mem = net_embed->stages[0].input_mems[0];
-  auto &out_mem = net_embed->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)first_tokens.data());
-  net_launch(net_embed); // prefil embedding
+  auto out_mem = embedding_launch(net_embed, net_blocks[0], first_tokens);
 
   // forward blocks
   // make in tensors
@@ -592,6 +658,11 @@ int Qwen::forward_first(std::vector<int> &tokens) {
     in2_mem = inputs_attention.device_mem;
 
     // net forward
+    // if (net_blocks[idx]->is_dynamic) {
+    //   dynamic_net_launch(net_blocks[idx], share_length);
+    // } else {
+    //   net_launch(net_blocks[idx]);
+    // }
     net_launch(net_blocks[idx]);
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1], 0,
@@ -651,10 +722,7 @@ void Qwen::forward_share(std::vector<int> &tokens) {
   }
 
   // forward embeding
-  auto &in_mem = net_embed->stages[0].input_mems[0];
-  auto &out_mem = net_embed->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)share_tokens.data());
-  net_launch(net_embed); // prefil embedding
+  auto out_mem = embedding_launch(net_embed, net_blocks[0], share_tokens);
 
   // forward blocks
   // move psition_id & attention_mask to device
@@ -673,6 +741,11 @@ void Qwen::forward_share(std::vector<int> &tokens) {
     in2_mem = inputs_attention.device_mem;
 
     // net forward
+    // if (net_blocks[idx]->is_dynamic) {
+    //   dynamic_net_launch(net_blocks[idx], share_length);
+    // } else {
+    //   net_launch(net_blocks[idx]);
+    // }
     net_launch(net_blocks[idx]);
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1], 0,
@@ -710,10 +783,7 @@ int Qwen::forward_unshare(std::vector<int> &tokens) {
   }
 
   // forward embeding
-  auto &in_mem = net_embed_unshare->stages[0].input_mems[0];
-  auto &out_mem = net_embed_unshare->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)unshare_tokens.data());
-  net_launch(net_embed_unshare); // prefil embedding
+  auto out_mem = embedding_launch(net_embed_unshare, net_blocks_unshare[0], unshare_tokens);
 
   // forward blocks
   // move psition_id & attention_mask to device
@@ -731,7 +801,6 @@ int Qwen::forward_unshare(std::vector<int> &tokens) {
     auto &in4_mem = net_blocks_unshare[idx]->stages[0].input_mems[4];
 
     // move to device
-    empty(bm_handle, in0_mem);
     d2d(in0_mem, out_mem, 0, unshare_length * hidden_bytes);
     in1_mem = unshare_pid.device_mem;
     in2_mem = unshare_attention.device_mem;
@@ -739,6 +808,11 @@ int Qwen::forward_unshare(std::vector<int> &tokens) {
     d2d(in4_mem, past_value[idx], 0, MAX_SHARE_LENGTH * kv_bytes);
 
     // net forward
+    // if (net_blocks[idx]->is_dynamic) {
+    //   dynamic_net_launch(net_blocks_unshare[idx], share_length);
+    // } else {
+    //   net_launch(net_blocks_unshare[idx]);
+    // }
     net_launch(net_blocks_unshare[idx]);
     out_mem = net_blocks_unshare[idx]->stages[0].output_mems[0];
     d2d(past_key[idx], net_blocks_unshare[idx]->stages[0].output_mems[1],
@@ -778,10 +852,8 @@ int Qwen::forward_next() {
   int32_t position_id = total_length - 1;
 
   // embedding
-  auto &in_mem = net_embed_cache->stages[0].input_mems[0];
-  auto &out_mem = net_embed_cache->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)&cur_token);
-  net_launch(net_embed_cache);
+  std::vector<int> cur_tokens = {cur_token};
+  auto out_mem = embedding_launch(net_embed_cache, net_blocks_cache[0], cur_tokens);
 
   // blocks
   // move psition_id & attention_mask to device
@@ -799,7 +871,7 @@ int Qwen::forward_next() {
     auto &out2_mem = net_blocks_cache[idx]->stages[0].output_mems[2];
 
     // move to device
-    empty(bm_handle, in0_mem);
+    // empty(bm_handle, in0_mem);
     d2d(in0_mem, out_mem);
     in1_mem = next_pid.device_mem;
     in2_mem = next_attention.device_mem;
@@ -882,5 +954,6 @@ PYBIND11_MODULE(chat, m) {
       .def_readwrite("generation_mode", &Qwen::generation_mode)
       .def_readwrite("io_alone_mode", &Qwen::io_alone_mode)
       .def_readwrite("status_code", &Qwen::status_code)
-      .def_readwrite("lib_path", &Qwen::lib_path);
+      .def_readwrite("lib_path", &Qwen::lib_path)
+      .def_readwrite("embedding_path", &Qwen::embedding_path);
 }
