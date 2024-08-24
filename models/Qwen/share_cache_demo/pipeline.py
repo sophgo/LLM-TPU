@@ -137,7 +137,6 @@ class Qwen:
         self.load_model(self.model_list[0])
 
         # share prefill
-        share_start = time.time()
         share_tokens = self.tokenizer.encode(
             share_str, max_length=8000, truncation=True
         )

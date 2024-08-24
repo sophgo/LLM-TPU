@@ -390,19 +390,23 @@ void Qwen::init(const std::vector<int> &devices,
   printf("Done!\n");
 
   // net embed and lm_head
-  net_embed = bmrt_get_network_info(p_bmrt, "embedding");
-  net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
+  ASSERT(bmrt_get_network_index(p_bmrt, "embedding") != -1 || !embedding_path.empty());
+  if (embedding_path.empty()) {
+    net_embed = bmrt_get_network_info(p_bmrt, "embedding");
+    net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
+  }
   net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
   net_greedy_head = bmrt_get_network_info(p_bmrt, "greedy_head");
   net_penalty_sample_head =
       bmrt_get_network_info(p_bmrt, "penalty_sample_head");
 
-  auto unshare_name_0 = "block_unshare_" + std::to_string(0);
-  unshare_flag = bmrt_get_network_index(p_bmrt, unshare_name_0.c_str());
+  unshare_flag = bmrt_get_network_index(p_bmrt, "block_unshare_0");
   auto num_nets = bmrt_get_network_number(p_bmrt);
-  if (unshare_flag != -1) {
+  if (unshare_flag != -1 && embedding_path.empty()) {
     net_embed_unshare = bmrt_get_network_info(p_bmrt, "embedding_unshare");
     NUM_LAYERS = (num_nets - 5) / 3;
+  } else if (unshare_flag == -1 && !embedding_path.empty()) {
+    NUM_LAYERS = (num_nets - 3) / 2;
   } else {
     NUM_LAYERS = (num_nets - 5) / 2;
   }
@@ -658,12 +662,12 @@ int Qwen::forward_first(std::vector<int> &tokens) {
     in2_mem = inputs_attention.device_mem;
 
     // net forward
-    // if (net_blocks[idx]->is_dynamic) {
-    //   dynamic_net_launch(net_blocks[idx], share_length);
-    // } else {
-    //   net_launch(net_blocks[idx]);
-    // }
-    net_launch(net_blocks[idx]);
+    if (net_blocks[idx]->is_dynamic) {
+      dynamic_net_launch(net_blocks[idx], total_length);
+    } else {
+      net_launch(net_blocks[idx]);
+    }
+    // net_launch(net_blocks[idx]);
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1], 0,
         total_length * kv_bytes);
@@ -741,12 +745,12 @@ void Qwen::forward_share(std::vector<int> &tokens) {
     in2_mem = inputs_attention.device_mem;
 
     // net forward
-    // if (net_blocks[idx]->is_dynamic) {
-    //   dynamic_net_launch(net_blocks[idx], share_length);
-    // } else {
-    //   net_launch(net_blocks[idx]);
-    // }
-    net_launch(net_blocks[idx]);
+    if (net_blocks[idx]->is_dynamic) {
+      dynamic_net_launch(net_blocks[idx], share_length);
+    } else {
+      net_launch(net_blocks[idx]);
+    }
+    // net_launch(net_blocks[idx]);
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1], 0,
         share_length * kv_bytes);
@@ -808,12 +812,12 @@ int Qwen::forward_unshare(std::vector<int> &tokens) {
     d2d(in4_mem, past_value[idx], 0, MAX_SHARE_LENGTH * kv_bytes);
 
     // net forward
-    // if (net_blocks[idx]->is_dynamic) {
-    //   dynamic_net_launch(net_blocks_unshare[idx], share_length);
-    // } else {
-    //   net_launch(net_blocks_unshare[idx]);
-    // }
-    net_launch(net_blocks_unshare[idx]);
+    if (net_blocks[idx]->is_dynamic) {
+      dynamic_net_launch(net_blocks_unshare[idx], unshare_length);
+    } else {
+      net_launch(net_blocks_unshare[idx]);
+    }
+    // net_launch(net_blocks_unshare[idx]);
     out_mem = net_blocks_unshare[idx]->stages[0].output_mems[0];
     d2d(past_key[idx], net_blocks_unshare[idx]->stages[0].output_mems[1],
         share_size, unshare_size);
