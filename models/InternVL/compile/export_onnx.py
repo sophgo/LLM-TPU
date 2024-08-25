@@ -185,9 +185,7 @@ class VisionTransformer(torch.nn.Module):
 
 def convert_vision_transformer():
     model = VisionTransformer()
-    pixel_values = np.load("../files/vit_input.npz") # Real data path
-    pixel_values = pixel_values['pixel_values']
-    pixel_values = torch.from_numpy(pixel_values)
+    pixel_values = torch.randn((1, CHANNELS, IMAGE_SIZE, IMAGE_SIZE))
     torch.onnx.export(model, pixel_values,
                       f'{vit_folder}/vision_transformer.onnx',
                       verbose=False,

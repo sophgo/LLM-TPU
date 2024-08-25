@@ -266,4 +266,20 @@ done
 popd
 echo $models
 
-model_tool --combine $models -o $out_model
+# Compile VIT model
+
+model_transform.py \
+  --model_name qwen_vit \
+  --model_def ../tmp/onnx/vision_transformer.onnx \
+  --input_shapes [[1,3,448,448]] \
+  --input_types "int32" \
+  --mlir qwen_vit.mlir 
+
+model_deploy \
+  --mlir qwen_vit.mlir \
+  --quantize F16 \
+  --quant_output \
+  --chip bm1684x \
+  --model qwen_vit_1684x_f16.bmodel
+
+model_tool --combine $models qwen_vit_1684x_f16.bmodel -o $out_model

@@ -1,15 +1,15 @@
 import streamlit as st
-from pipeline import InternVL
+from pipeline import Qwen
 from PIL import Image
 import argparse
 import configparser
 import time
 
 config = configparser.ConfigParser()
-config.read('./supports/config.ini')
-token_path = config.get('internvl', 'token_path')
-bmodel_path = config.get('internvl','bmodel_path')
-dev_id = str(config.get('internvl', 'dev_id'))
+config.read('../supports/config.ini')
+token_path = config.get('qwenvl','token_path')
+bmodel_path = config.get('qwenvl','bmodel_path')
+dev_id = str(config.get('qwenvl', 'dev_id'))
 
 args = argparse.Namespace(
     model_path = bmodel_path,
@@ -26,7 +26,7 @@ args = argparse.Namespace(
     enable_history=False,
 )
 
-st.title("InternVL-Chat")
+st.title("Qwen-VL-Chat")
 
 def display_uploaded_image(image):
     st.sidebar.image(image, caption='Uploaded Image', use_column_width=True)
@@ -43,8 +43,9 @@ if uploaded_file is not None:
         st.session_state.messages = [] 
 
     if "client" not in st.session_state:
-        st.session_state.client = InternVL(args)
-        st.success('模型初始化完成！欢迎您根据图片提出问题，我将会为您解答。', icon='🎉')
+        st.session_state.client = Qwen(args)
+        st.success('模型初始化完成！欢迎您根据图片提出问题，我将会为您解答。', icon='�')
+        st.balloons()
 
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
@@ -57,7 +58,7 @@ if uploaded_file is not None:
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            stream = st.session_state.client.stream_predict(prompt, image, history=[[m["role"], m["content"]] for m in st.session_state.messages])
+            stream = st.session_state.client.chat_stream(prompt, image, history=[[m["role"], m["content"]] for m in st.session_state.messages])
             response = st.write_stream(stream)
 
             st.session_state.messages.append({"role": "assistant", "content": response})

@@ -24,19 +24,9 @@ source envsetup.sh
 popd
 ```
 
-### Compile LLM basic bmodel
+### Compile LLM-Vision bmodel
 ```shell
 ./compile.sh --mode int4 --name phi3-4b
-```
-
-### Compile VIT bmodel
-```shell
-./compile_vit.sh
-```
-
-### Combine LLM and VIT bmodels
-```
-model_tool --combine your_llm_bmodel your_vit_bmodel -o your_combined_model
 ```
 
 PS：
@@ -44,8 +34,6 @@ PS：
 2. name：模型名称，目前phi3系列支持 phi3-4b
 3. addr_mode：地址分配方式，可以使用io_alone方式来加速
 4. seq_length：模型支持的最大token长度
-5. your_llm/vit_model:编译出的LLM/VIT的bmodel
-6. your_combined_model:将LLM和VITbmodel合并后的多模态bmodel
 
 ## Run Demo
 
