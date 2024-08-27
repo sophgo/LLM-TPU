@@ -1,5 +1,3 @@
-![image](./assets/sophgo_chip.png)
-
 # MiniCPM-V-2_6
 
 本项目实现BM1684X部署语言大模型[MiniCPM-V-2_6](https://hf-mirror.com/openbmb/MiniCPM-V-2_6)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X的PCIE环境，或者SoC环境。
@@ -16,7 +14,7 @@
 │   └── files                               #用于替换原模型的文件
 ├── python_demo
 │   ├── chat.cpp                            #主程序文件
-│   └── pipeline.py                         #Llama3.1 python_demo的执行脚本
+│   └── pipeline.py                         #python_demo的执行脚本
 ├── requirements.txt                        #环境配置所需安装的wheel包
 ├── run_demo.sh                             #自动测试脚本
 └── token_config                            #分词器
@@ -37,6 +35,11 @@
 
 ### 步骤一：模型下载
 测试模型时可以参考[ModelScope提供的模型权重](https://modelscope.cn/models/OpenBMB/MiniCPM-V-2_6)进行下载。
+
+或者使用以下命令下载
+```shell
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/MiniCPM-V-2_6.zip
+```
 
 
 ### 步骤二：下载docker
@@ -63,10 +66,9 @@ source ./envsetup.sh
 ### 步骤四：对齐模型环境
 
 ``` shell
-pip install -r requirements.txt
-cp ./compile/files/openbmb-MiniCPM-V-2_6/modeling_qwen2.py /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2/modeling_qwen2.py
+cp ./compile/files/MiniCPM-V-2_6/modeling_qwen2.py /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2/modeling_qwen2.py
 ```
-同时将`./compile/files/openbmb-MiniCPM-V-2_6/config.json` 替换下载好的`MiniCPM-V-2_6`路径下的同名文件。
+同时将`./compile/files/MiniCPM-V-2_6/config.json` 替换下载好的`MiniCPM-V-2_6`路径下的同名文件。
 
 ### 步骤五：生成onnx文件
 
