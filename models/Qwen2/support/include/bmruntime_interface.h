@@ -88,6 +88,9 @@ DECL_EXPORT bool bmrt_get_bmodel_info(const char *bmodel_path, mem_info_t *mem_i
 /* get bmodel basic memory information. which is store in mem_info */
 DECL_EXPORT bool bmrt_get_bmodel_data_info(const void* bmodel_data, size_t size, mem_info_t *mem_info);
 
+/* get net index*/
+DECL_EXPORT int bmrt_get_network_index(void* p_bmrt, const char* net_name);
+
 /* --------------------------------------------------------------------------*/
 /**
  * @name    bmrt_create
@@ -129,6 +132,17 @@ DECL_EXPORT void *bmrt_create_ex(bm_handle_t *bm_handles, int num_handles);
  * @param [in]     p_bmrt        Bmruntime that had been created
  */
 DECL_EXPORT void bmrt_destroy(void* p_bmrt);
+
+/**
+ * @name    bmrt_destroy_without_coeff
+ * @brief   To free all memory without coeff memory
+ * @ingroup bmruntime
+ *
+ * This API free all memory without coeff memory.
+ *
+ * @param [in]     p_bmrt        Bmruntime that had been created
+ */
+DECL_EXPORT void bmrt_destroy_without_coeff(void* p_bmrt);
 
 /**
  * @name    bmrt_get_bm_handle

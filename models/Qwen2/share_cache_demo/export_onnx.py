@@ -15,45 +15,28 @@ import argparse
 import numpy as np
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM
-
 torch.set_grad_enabled(False)
+
+parser = argparse.ArgumentParser(description='export onnx')
+parser.add_argument('-m', '--model_path', type=str, help='path to the torch model')
+parser.add_argument('-d', '--device', type=str, choices=["cpu", "cuda"], default="cpu")
+parser.add_argument('-b', '--batch_size', type=int, default=1, help='batch size')
+parser.add_argument('-s', '--seq_length', type=int, default=512, help="sequence length")
+parser.add_argument('-n', '--num_threads', type=int, default=1, help='The number of threads used for torch if device is cpu')
+parser.add_argument('--share_length', type=int, default=6144, help="share length")
+parser.add_argument('--unshare_length', type=int, default=4096, help="unshare length")
+parser.add_argument('--max_pos_len', type=int, default=8704, help="max position length")
+parser.add_argument('--generation_mode', type=str, default="default", choices=["default", "lmhead_with_penalty", "lmhead_with_sample", "lmhead_with_top1"], help="generation mode")
+parser.add_argument('--embedding_mode', type=str, default="default", choices=["default", "binary"], help="if set embedding_mode=binary, will save embedding.bin and infer without tpu")
+
+args = parser.parse_args()
 
 seed = 42
 torch.manual_seed(seed)
 np.random.seed(seed)
 
-parser = argparse.ArgumentParser(description="export onnx")
-parser.add_argument("-m", "--model_path", type=str, help="path to the torch model")
-parser.add_argument("-d", "--device", type=str, choices=["cpu", "cuda"], default="cpu")
-parser.add_argument("-b", "--batch_size", type=int, default=2, help="batch size")
-parser.add_argument("-s", "--seq_length", type=int, default=512, help="sequence length")
-parser.add_argument(
-    "-n",
-    "--num_threads",
-    type=int,
-    default=1,
-    help="The number of threads used for torch if device is cpu",
-)
-parser.add_argument("--share_length", type=int, default=6144, help="share length")
-parser.add_argument("--unshare_length", type=int, default=4096, help="unshare length")
-parser.add_argument("--max_pos_len", type=int, default=8704, help="max position length")
-
-args = parser.parse_args()
-
 model_path = args.model_path
-json_path = os.path.join(model_path, "config.json")
-folder = "./tmp/onnx"
-
-
-def modify_json(json_path):
-    with open(json_path, "r") as file:
-        config_json = json.load(file)
-    config_json["max_pos_len"] = args.max_pos_len
-    with open(json_path, "w") as file:
-        json.dump(config_json, file, indent=4)
-
-
-modify_json(json_path)  # warning!!!!!
+folder = f"./tmp_share{args.share_length}_unshare{args.unshare_length}_seq{args.seq_length}/onnx"
 
 device = torch.device(args.device)
 if args.device == "cpu":
