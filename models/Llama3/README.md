@@ -69,6 +69,7 @@ cp ./compile/files/Meta-Llama-3-8B-Instruct/modeling_llama.py /usr/local/lib/pyt
 同时将`./compile/files/Meta-Llama-3-8B-Instruct/config.json` 替换下载好的`Llama-3-8B-Instruct`路径下的同名文件。
 
 * PS：不一定是/usr/local/lib/python3.10/dist-packages/transformers/models/llama/modeling_llama.py这个路径，建议替换前先pip show transformers查看一下
+* 如果报`IndexError: index 512 is out of bounds for dimension 0 with size 512`错误，请修改config.json中的max_position_embeddings，将其修改大一些
 
 ### 步骤五：生成onnx文件
 

@@ -10,7 +10,7 @@
   "hidden_size": 4096,
   "initializer_range": 0.02,
   "intermediate_size": 14336,
-  "max_position_embeddings": 512,
+  "max_position_embeddings": 8192,
   "model_type": "llama",
   "num_attention_heads": 32,
   "num_hidden_layers": 32,
