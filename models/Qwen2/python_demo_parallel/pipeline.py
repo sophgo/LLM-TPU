@@ -152,16 +152,25 @@ class Qwen2():
         Generate predictions for the given tokens.
         """
         # First token
+        tok_num = 0
+        first_start = time.time()
         next_token = self.model.forward_first(tokens)
+        first_end = time.time()
         output_tokens = [next_token]
 
         # Following tokens
         while True:
             next_token = self.model.forward_next(next_token)
             if next_token == self.EOS:
+                next_end = time.time()
+                first_duration = first_end - first_start
+                next_duration = next_end - first_end
+                tps = tok_num / next_duration
+                yield self.answer_cur + f"\n\nFTL: {first_duration:.3f} s\nTPS: {tps:.3f} token/s", self.history
                 break
             output_tokens += [next_token]
             self.answer_cur = self.tokenizer.decode(output_tokens)
+            tok_num += 1
             if self.model.token_length >= self.model.SEQLEN:
                 self.update_history()
                 yield self.answer_cur + "\n\n\nReached the maximum length; The history context has been cleared.", self.history
@@ -169,8 +178,10 @@ class Qwen2():
             else:
                 yield self.answer_cur, self.history
 
-        self.update_history()
-
+        if self.enable_history:
+            self.update_history()
+        else:
+            self.clear()
 
 def main(args):
     model = Qwen2(args)

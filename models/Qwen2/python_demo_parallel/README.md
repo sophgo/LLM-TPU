@@ -59,15 +59,15 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels
 git submodule update --init
 
 cd python_demo_parallel
-mkdir build && cd build
-cmake .. && make -j8
-python3 pipeline.py --model_path ../compile/qwen2-7b_int4_seq8192_8dev.bmodel --tokenizer_path ../support/token_config/ --devid 0,1,2,3,4,5,6,7
+mkdir build 
+cd build && cmake .. && make -j8 && cp *cpython* .. && cd ..
+python3 pipeline.py --model_path ./qwen2-7b_int4_seq8192_8dev_static.bmodel --tokenizer_path ../support/token_config/ --devid 0,1,2,3,4,5,6,7
 ```
 
 运行web demo
 ```shell
 pip3 install gradio==3.39.0 mdtex2html==1.2.0 dfss
-python3 web_demo.py --model_path ../compile/qwen2-7b_int4_seq8192_8dev.bmodel --tokenizer_path ../support/token_config/ --devid 0,1,2,3,4,5,6,7
+python3 web_demo.py --model_path ./qwen2-7b_int4_seq8192_8dev_static.bmodel --tokenizer_path ../support/token_config/ --devid 0,1,2,3,4,5,6,7
 ```
 
 ## 4. 常见问题
