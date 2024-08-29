@@ -11,7 +11,7 @@ class Qwen:
         # preprocess parameters, such as prompt & tokenizer
         # devid
         self.devices = [int(d) for d in args.devid.split(",")]
-        self.model_list = [d for d in args.model_path_list.split(",")]
+        self.model_path = args.model_path
 
         # load tokenizer
         print("Load " + args.tokenizer_path + " ...")
@@ -26,9 +26,9 @@ class Qwen:
         self.model = chat.Qwen()
         self.init_params(args)
 
-    def load_model(self, model_path):
+    def load_model(self, model_path, read_bmodel):
         load_start = time.time()
-        self.model.init(self.devices, model_path)
+        self.model.init(self.devices, model_path, read_bmodel) # when read_bmodel = false, not to load weight, reuse weight
         load_end = time.time()
         print(f"\nLoad Time: {(load_end - load_start):.3f} s")
 
@@ -112,40 +112,40 @@ class Qwen:
         # ===------------------------------------------------------------===
         # load model 0
         self.model.io_alone_mode = 0
-        self.load_model(self.model_list[0])
+        self.model.stage_idx = 0
+        self.load_model(self.model_path, read_bmodel=True)
 
         # share prefill
         share_tokens = self.tokenizer.encode(
-            share_str, max_length=8000, truncation=True
+            share_str, max_length=1000, truncation=True
         )
 
         # task 0
         # first + decode
         unshare_tokens = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(share_tokens + unshare_tokens, "normal", 0)
+        self.stream_answer(share_tokens + unshare_tokens, "normal", 10)
 
 
         # task 1
         # first + decode
         unshare_tokens = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(share_tokens + unshare_tokens, "normal", 0)
-
-        self.model.free_device()
+        self.stream_answer(share_tokens + unshare_tokens, "normal", 10)
 
         # ===------------------------------------------------------------===
         # Model 1
         # ===------------------------------------------------------------===
         # load model 1
         self.model.io_alone_mode = 0
-        self.load_model(self.model_list[1])
+        self.model.stage_idx = 1
+        self.load_model(self.model_path, read_bmodel=False)
 
         # first + decode
         unshare_tokens = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(share_tokens[:3000] + unshare_tokens, "normal", 0)
+        self.stream_answer(share_tokens[:1000] + unshare_tokens, "normal", 10)
 
         # first + decode
         unshare_tokens = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(share_tokens[:3000] + unshare_tokens, "normal", 0)
+        self.stream_answer(share_tokens[:1000] + unshare_tokens, "normal", 10)
 
         # ===------------------------------------------------------------===
         # Deinit
@@ -161,6 +161,7 @@ class Qwen:
 -3: can not to create bmrt
 -4: can not to load bmodel, maybe your key is wrong
 -5: can not to inference bmodel
+-6: addr_mode = 0, but must set addr_mode =1
 """
 def main(args):
 
@@ -174,7 +175,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-m", "--model_path_list", type=str, required=True, help="path to the bmodel files")
+    parser.add_argument("-m", "--model_path", type=str, required=True, help="path to the bmodel")
     parser.add_argument('-t', '--tokenizer_path', type=str, default="../support/token_config", help='path to the tokenizer file')
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
     parser.add_argument('--temperature', type=float, default=1.0, help='temperature scaling factor for the likelihood distribution')
