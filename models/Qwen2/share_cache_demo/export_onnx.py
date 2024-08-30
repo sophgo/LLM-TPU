@@ -11,6 +11,7 @@
 import os
 import json
 import torch
+import ctypes
 import argparse
 import numpy as np
 from tqdm import tqdm
@@ -298,6 +299,23 @@ def convert_penalty_sample_head():
         opset_version=15,
     )
 
+def fp32_string(data):
+    return bin(ctypes.c_uint32.from_buffer(ctypes.c_float(data)).value)[2:]
+
+def convert_embedding_to_bit():
+    print("\033[31m请注意！！如果embedding_mode=binary，目前convert_embedding_to_bit只支持embedding为float32格式，并且导出格式为bfloat16！！！\033[0m")
+    print("\033[31m如果想导出float16的embedding，请修改此函数！！！\033[0m")
+    embedding_weights = transformer.embed_tokens.weight.data
+    embedding_weights_fp32 = embedding_weights.numpy().astype(np.float32).flatten()
+    embedding_weights_uint32 = embedding_weights_fp32.view(np.uint32)
+    embedding_weights_uint16 = (embedding_weights_uint32 >> 16).astype(np.uint16) # torch的格式必须是bfloat16才行
+    if embedding_weights_uint16.dtype.byteorder == '>':
+        embedding_weights_uint16 = embedding_weights_uint16.byteswap()
+    embedding_weights_uint16 = embedding_weights_uint16.newbyteorder('little') # 确保数据以小端序存储
+
+    with open('embedding.bin', 'wb') as f:
+        embedding_weights_uint16.tofile(f)
+
 
 def cos_sim(a, b):
     a = np.array(a)
@@ -387,8 +405,11 @@ for i in tqdm(range(NUM_LAYERS)):
         convert_block_unshare(i)
     convert_block_cache(i)
 
-print("Convert embedding")
-convert_embedding()
+print('Convert embedding')
+if args.embedding_mode == "default":
+    convert_embedding()
+elif args.embedding_mode == "binary":
+    convert_embedding_to_bit()
 
 print("Convert lm_head")
 convert_lm_head()

@@ -476,7 +476,6 @@ if not os.path.exists(folder):
 # test_net_with_mask()
 
 # export models
-convert_embedding_to_bit()
 print('Convert block & block_cache')
 for i in tqdm(range(NUM_LAYERS)):
     convert_block(i) # prefill

@@ -17,6 +17,8 @@ unshare_length=
 hidden_size=
 dynamic=0
 
+echo "必须把seq_length长的放在前面，这一点尤其要注意"
+
 while [[ $# -gt 0 ]]; do
     key="$1"
 
@@ -131,7 +133,7 @@ for index in "${!share_lengths[@]}"; do
         cur_model=${name}_${mode}_${folder_suffix}_${num_device}dev_dyn
     fi
 
-    out_model=${cur_model}_${out_model}
+    # out_model=${out_model}${cur_model}_
 
     if [ x$addr_mode == x"io_alone" ]; then
         addr_args="--addr_mode io_alone"
@@ -328,4 +330,4 @@ for index in "${!share_lengths[@]}"; do
     echo $models
 done
 
-model_tool --combine $models -o ${out_model}.bmodel
+model_tool --combine $models -o ${name}.bmodel

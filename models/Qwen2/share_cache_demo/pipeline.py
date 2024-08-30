@@ -40,6 +40,7 @@ class Qwen:
         self.model.max_new_tokens = args.max_new_tokens
         self.model.generation_mode = args.generation_mode
         self.model.lib_path = args.lib_path
+        self.model.embedding_path = args.embedding_path
 
     def stream_answer(self, tokens, inference_mode, max_tok_num):
         """
