@@ -36,17 +36,20 @@ args = parser.parse_args()
 seed = 42
 torch.manual_seed(seed)
 np.random.seed(seed)
-torch.set_num_threads(args.num_threads)
 
 model_path = args.model_path
-json_path = os.path.join(model_path, "config.json")
 folder = f"./tmp_share{args.share_length}_unshare{args.unshare_length}_seq{args.seq_length}/onnx"
 
 device = torch.device(args.device)
+if args.device == "cpu":
+    dtype = torch.float
+    torch.set_num_threads(args.num_threads)
+else:
+    dtype = torch.bfloat16
 
 origin_model = AutoModelForCausalLM.from_pretrained(
-    model_path, trust_remote_code=True,
-    torch_dtype=torch.float, device_map="auto").eval()
+    model_path, trust_remote_code=True, torch_dtype=dtype, device_map="auto"
+).eval()
 
 for param in origin_model.parameters():
     param.requires_grad = False
@@ -78,19 +81,13 @@ class Embedding(torch.nn.Module):
         return out.float()
 
 
-class QwenBlock(torch.nn.Module):
-
+class Block(torch.nn.Module):
     def __init__(self, layer_id):
         super().__init__()
         self.layer_id = layer_id
         self.layer = layers[layer_id]
-        # self.rotary_emb = transformer.rotary_emb(SEQ_LENGTH)
-        # self.cos_emb = self.rotary_emb[0].view(SEQ_LENGTH, HEAD_DIM)
-        # self.sin_emb = self.rotary_emb[1].view(SEQ_LENGTH, HEAD_DIM)
 
     def forward(self, hidden_states, position_ids, attention_mask):
-        # cos_pos = self.cos_emb[position_ids].unsqueeze(2)
-        # sin_pos = self.sin_emb[position_ids].unsqueeze(2)
         hidden_states, past_kv = self.layer(
             hidden_states,
             attention_mask=attention_mask,
@@ -101,20 +98,14 @@ class QwenBlock(torch.nn.Module):
         return hidden_states.float(), present_k.float(), present_v.float()
 
 
-class QwenBlockCache(torch.nn.Module):
-
+class BlockCache(torch.nn.Module):
     def __init__(self, layer_id):
         super().__init__()
         self.layer_id = layer_id
         self.layer = layers[layer_id]
-        # self.rotary_emb = transformer.rotary_emb(SEQ_LENGTH)
-        # self.cos_emb = self.rotary_emb[0].view(SEQ_LENGTH, HEAD_DIM)
-        # self.sin_emb = self.rotary_emb[1].view(SEQ_LENGTH, HEAD_DIM)
 
     def forward(self, hidden_states, position_ids, attention_mask, past_k,
                 past_v):
-        # cos_pos = self.cos_emb[position_ids].unsqueeze(2)
-        # sin_pos = self.sin_emb[position_ids].unsqueeze(2)
         hidden_states, past_kv = self.layer(
             hidden_states,
             layer_past=(past_k, past_v),
@@ -122,29 +113,6 @@ class QwenBlockCache(torch.nn.Module):
             position_ids=position_ids,
             use_cache=True,
             max_pos_len=args.max_pos_len)
-        present_k, present_v = past_kv
-        return hidden_states.float(), present_k.float(), present_v.float()
-
-class QwenBlockShareCache(torch.nn.Module):
-
-    def __init__(self, layer_id):
-        super().__init__()
-        self.layer_id = layer_id
-        self.layer = layers[layer_id]
-        self.rotary_emb = transformer.rotary_emb(SEQ_LENGTH)
-        self.cos_emb = self.rotary_emb[0].view(SEQ_LENGTH, HEAD_DIM)
-        self.sin_emb = self.rotary_emb[1].view(SEQ_LENGTH, HEAD_DIM)
-
-    def forward(self, hidden_states, position_ids, share_attention_mask, unshare_attention_mask, 
-                share_past_k, share_past_v, unshare_past_k, unshare_past_v):
-        cos_pos = self.cos_emb[position_ids].unsqueeze(2)
-        sin_pos = self.sin_emb[position_ids].unsqueeze(2)
-        hidden_states, past_kv = self.layer(
-            hidden_states,
-            layer_past=(share_past_k, share_past_v, unshare_past_k, unshare_past_v),
-            attention_mask=(share_attention_mask, unshare_attention_mask),
-            rotary_pos_emb_list=[[cos_pos, sin_pos]],
-            use_cache=True)
         present_k, present_v = past_kv
         return hidden_states.float(), present_k.float(), present_v.float()
 
@@ -161,7 +129,6 @@ class LmHeadWithTopK(torch.nn.Module):
         return token
 
 class LmHead(torch.nn.Module):
-
     def __init__(self):
         super().__init__()
 
@@ -172,7 +139,6 @@ class LmHead(torch.nn.Module):
 
 
 class GreedyHead(torch.nn.Module):
-
     def __init__(self):
         super().__init__()
 
@@ -180,10 +146,9 @@ class GreedyHead(torch.nn.Module):
         _, token = torch.topk(m_logits.float(), 1)
         return token
 
-    
+
 # refs:https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py
 class PenaltySampleHead(torch.nn.Module):
-
     def __init__(self, top_k = 50, min_tokens_to_keep = 5):
         super().__init__()
         self.top_k = top_k
@@ -283,10 +248,10 @@ class LmHeadWithPenaltySampleHead(torch.nn.Module):
         filtered_logits = torch.where(mask, logits, torch.FloatTensor([-1000.]))
         probs = filtered_logits.softmax(dim=1)
         return probs, token
-    
+
 
 def convert_block(layer_id):
-    model = QwenBlock(layer_id)
+    model = Block(layer_id)
     hidden_states = torch.randn(
         (1, SHARE_LENGTH, HIDDEN_SIZE)).to(device)
     position_ids = torch.tensor(
@@ -305,7 +270,7 @@ def convert_block(layer_id):
 
 
 def convert_block_cache(layer_id):
-    model = QwenBlockCache(layer_id)
+    model = BlockCache(layer_id)
     hidden_states = torch.randn((1, 1, HIDDEN_SIZE)).to(device)
     position_ids = torch.tensor([range(1)], dtype=torch.long).to(device)
     attention_mask = torch.ones(
@@ -327,7 +292,7 @@ def convert_block_cache(layer_id):
 
 
 def convert_block_unshare(layer_id):
-    model = QwenBlockCache(layer_id)
+    model = BlockCache(layer_id)
     hidden_states = torch.randn((1, UNSHARE_LENGTH, HIDDEN_SIZE)).to(device)
     position_ids = torch.tensor([range(UNSHARE_LENGTH)], dtype=torch.long).to(device)
     attention_mask = torch.ones(
@@ -448,25 +413,6 @@ def convert_embedding_to_bit():
 
     with open('embedding.bin', 'wb') as f:
         embedding_weights_uint16.tofile(f)
-
-def test_net_with_mask():
-    import numpy as np
-    block_cache = QwenBlockCache(0)
-    block_share_cache = QwenBlockShareCache(0)
-    hidden_states = torch.randn((BATCH_SIZE, 1, HIDDEN_SIZE)).to(device)
-    position_ids = torch.tensor(BATCH_SIZE * [range(1)], dtype=torch.long).to(device)
-    share_attention_mask = torch.zeros((1, 1, 1, SHARE_LENGTH)).to(device)
-    unshare_attention_mask = torch.zeros((BATCH_SIZE, 1, 1, UNSHARE_LENGTH)).to(device)
-    share_past_k = torch.randn((1, SHARE_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)).to(device)
-    share_past_v = torch.randn((1, SHARE_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)).to(device)    
-    unshare_past_k = torch.randn((BATCH_SIZE, UNSHARE_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)).to(device)
-    unshare_past_v = torch.randn((BATCH_SIZE, UNSHARE_LENGTH, NUM_ATTENTION_HEADS, HEAD_DIM)).to(device)
-    output, unshare_present_k, unshare_present_v = block_share_cache(hidden_states, position_ids, share_attention_mask, unshare_attention_mask, share_past_k, share_past_v, unshare_past_k, unshare_past_v)
-
-    attention_mask = torch.zeros((1, 1, 1, SHARE_LENGTH + UNSHARE_LENGTH + 1)).to(device)
-    past_k = torch.cat([share_past_k, unshare_past_k[:1]], dim=1)
-    past_v = torch.cat([share_past_v, unshare_past_v[:1]], dim=1)
-    output_cach, present_k, present_v = block_cache(hidden_states[:1], position_ids[:1], attention_mask, past_k, past_v)
 
 
 # create folder to store onnx
