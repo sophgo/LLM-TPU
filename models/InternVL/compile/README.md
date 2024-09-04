@@ -3,7 +3,7 @@
 ## Export onnx
 
 ```shell
-cp files/Phi-3-mini-128k-instruct/* your_torch_path
+cp files/Phi-3-mini-128k-instruct/modeling_phi3.py your_torch_path
 export PYTHONPATH=your_torch_path:$PYTHONPATH
 pip install transformers_stream_generator einops tiktoken accelerate transformers==4.37.2
 ```
