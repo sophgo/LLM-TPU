@@ -1,9 +1,13 @@
-import argparse
-
-import chat
+import os
 import json
 import time
+import argparse
 from transformers import AutoTokenizer
+
+import sys
+import chat
+sys.path.append("../../../harness/C-Eval")
+from utils import load_json, dump_json, construct_prompt, extract_cot_answer
 
 
 class Qwen:
@@ -41,6 +45,20 @@ class Qwen:
         self.model.generation_mode = args.generation_mode
         self.model.lib_path = args.lib_path
         self.model.embedding_path = args.embedding_path
+
+    def encode_tokens(self, prompt):
+        messages = [
+            {
+                "role": "system",
+                "content": self.system_prompt,
+            },
+            {"role": "user", "content": prompt},
+        ]
+        text = self.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        tokens = self.tokenizer(text).input_ids
+        return tokens
 
     def stream_answer(self, tokens, inference_mode, max_tok_num):
         """
@@ -112,7 +130,7 @@ class Qwen:
         # Model 0
         # ===------------------------------------------------------------===
         # load model 0
-        self.model.io_alone_mode = 0
+        self.model.prefill_reuse = 0
         self.model.stage_idx = 0
         self.load_model(self.model_path, read_bmodel=True)
 
@@ -136,7 +154,7 @@ class Qwen:
         # Model 1
         # ===------------------------------------------------------------===
         # load model 1
-        self.model.io_alone_mode = 0
+        self.model.prefill_reuse = 0
         self.model.stage_idx = 1
         self.load_model(self.model_path, read_bmodel=False)
 
@@ -154,6 +172,62 @@ class Qwen:
         self.model.deinit_decrypt()
         self.model.deinit()
 
+    def test_ceval(self):
+        """
+        Test c-eval
+        """
+        import pandas as pd
+        self.system_prompt = "You will provide correct answer to the question."
+
+        test_path = "ceval-exam/test"
+        subject_path = "subject_mapping.json"
+        subject_map = load_json(subject_path)
+
+        # 3. inference
+        self.model.init_decrypt()
+        submit_path = "Qwen_submit.csv"
+
+        res = {}
+        subject_num = len(os.listdir(test_path))
+        print(f"Subject numbers: {subject_num}")
+        for idx, test_csv_file in enumerate(os.listdir(test_path)):
+            self.model.stage_idx = idx % 2
+            self.load_model(self.model_path, read_bmodel=True if idx == 0 else False)
+            test_csv_path = os.path.join(test_path, test_csv_file)
+            test_df = pd.read_csv(test_csv_path)
+
+            subject = test_csv_file.replace("_test.csv", "")
+            subject_zh = subject_map[subject][1]
+
+            subject_dict = {}
+            print("======================================")
+            print("======================================")
+            print("Current subject:", subject)
+            print("======================================")
+            print("======================================")
+            # if subject != "middle_school_physics":continue
+            for i in range(len(test_df)):
+                print(f"\n================={i}/{len(test_df)}====================")
+                prompt = construct_prompt(subject_zh, [], test_df.loc[i], 0)
+                tokens = self.encode_tokens(prompt)
+                print("token length:", len(tokens))
+                if len(tokens) >= 3200:
+                    raise ValueError(f"The length you input is {len(tokens)}, exceed the maximum length")
+                self.stream_answer(tokens, "normal", self.model.max_new_tokens)
+
+                option = extract_cot_answer(self.answer_cur)
+                #print("\nprediction:", pred)
+                print("\noption:", option)
+
+                subject_dict[str(i)] = option
+            res[subject] = subject_dict
+
+        # 4. deinit & save
+        dump_json(res, submit_path)
+
+        # deinit
+        self.model.deinit_decrypt()
+        self.model.deinit()
 
 
 """
@@ -165,14 +239,30 @@ class Qwen:
 -6: addr_mode = 0, but must set addr_mode =1
 """
 def main(args):
-
-    # normal test
+    # test chat
     start_time = time.time()
-    model = Qwen(args)
-    model.test_share_cache()
+    try:
+        engine = Qwen(args)
+
+        # 1. test one sample
+        # engine.test_sample()
+        
+        # 2. test c-eval
+        engine.test_ceval()
+
+        # 3. test max length
+        # engine.test_max_length()
+
+
+        print("All Right!")
+    except RuntimeError:
+        print("RuntimeError")
+    except ValueError:
+        print("ValueError")
+
     end_time = time.time()
     print(f"\nTotal Time: {(end_time - start_time):.3f} s")
-
+    print("Status Code: ", engine.model.status_code)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

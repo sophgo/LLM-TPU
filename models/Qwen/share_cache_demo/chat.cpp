@@ -95,7 +95,7 @@ private:
 public:
   bool io_alone;
   bool is_dynamic;
-  uint32_t io_alone_mode;
+  uint32_t prefill_reuse;
   std::vector<int> total_tokens;
   std::string lib_path;
   std::string embedding_path;
@@ -148,10 +148,16 @@ private:
 
 // init
 Qwen::Qwen() {
+  prefill_reuse = 0;
+  stage_idx = 0;
   status_code = 0;
   total_tokens.clear();
+
+  // path
   lib_path = "";
   embedding_path = "";
+
+  // length
   share_length = 0;
   unshare_length = 0;
   total_length = 0;
@@ -159,6 +165,8 @@ Qwen::Qwen() {
   NUM_LAYERS = 0;
   MAX_SHARE_LENGTH = 0;
   MAX_UNSHARE_LENGTH = 0;
+
+  // 
   sgen = std::mt19937(std::random_device()());
   bm_handle = nullptr;
   p_bmrt = nullptr;
@@ -476,7 +484,7 @@ void Qwen::init_params() {
     ASSERT(net_blocks_cache[i]->addr_mode == 1);
     past_key[i] = net_blocks_cache[i]->stages[stage_idx].input_mems[3];
     past_value[i] = net_blocks_cache[i]->stages[stage_idx].input_mems[4];
-    if (io_alone_mode == 1) {
+    if (prefill_reuse == 1) {
       empty(bm_handle, past_key[i]);
       empty(bm_handle, past_value[i]);
       d2d(past_key[i], tmp_past_key[i], 0, share_length * kv_bytes);
@@ -578,7 +586,7 @@ void Qwen::deinit() {
   free_in_tensors();
 
   // step2: free tmp_past_key and tmp_past_value
-  if (io_alone_mode == 1) {
+  if (prefill_reuse == 1) {
     for (int i = 0; i < NUM_LAYERS; i++) {
       bm_free_device(bm_handle, tmp_past_key[i]);
       bm_free_device(bm_handle, tmp_past_value[i]);
@@ -1033,7 +1041,7 @@ PYBIND11_MODULE(chat, m) {
       .def_readwrite("repeat_last_n", &Qwen::repeat_last_n)
       .def_readwrite("max_new_tokens", &Qwen::max_new_tokens)
       .def_readwrite("generation_mode", &Qwen::generation_mode)
-      .def_readwrite("io_alone_mode", &Qwen::io_alone_mode)
+      .def_readwrite("prefill_reuse", &Qwen::prefill_reuse)
       .def_readwrite("status_code", &Qwen::status_code)
       .def_readwrite("lib_path", &Qwen::lib_path)
       .def_readwrite("stage_idx", &Qwen::stage_idx)

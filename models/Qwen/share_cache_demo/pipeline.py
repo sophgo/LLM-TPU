@@ -130,7 +130,7 @@ class Qwen:
         # Model 0
         # ===------------------------------------------------------------===
         # load model 0
-        self.model.io_alone_mode = 0
+        self.model.prefill_reuse = 0
         self.model.stage_idx = 0
         self.load_model(self.model_path, read_bmodel=True)
 
@@ -154,7 +154,7 @@ class Qwen:
         # Model 1
         # ===------------------------------------------------------------===
         # load model 1
-        self.model.io_alone_mode = 0
+        self.model.prefill_reuse = 0
         self.model.stage_idx = 1
         self.load_model(self.model_path, read_bmodel=False)
 
@@ -237,6 +237,7 @@ class Qwen:
 -3: can not to create bmrt
 -4: can not to load bmodel, maybe your key is wrong
 -5: can not to inference bmodel
+-6: addr_mode = 0, but must set addr_mode =1
 """
 def main(args):
     # test chat

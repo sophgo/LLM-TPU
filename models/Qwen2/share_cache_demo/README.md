@@ -31,9 +31,13 @@ python pipeline.py --model_path_list qwen2-7b_int4_share6144_unshare1536_1dev_en
 * model_path_list：模型路径，当使用多个模型时，用逗号隔开
 * lib_path：解密库路径，当使用加密模型时，必须带上lib_path参数，因为只有带上lib_path，才会走解密的逻辑
 
+## 4. 运行c-eval测试
+在pipeline.py中将test_ceval函数的注释删掉，之后运行
+```
+python3 pipeline.py --model_path encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy --lib_path build/libcipher.so --embedding_path embedding.bin --max_new_tokens 50
+```
 
-## 4. 注意事项
-
+## 5. 注意事项
 
 ### 权重复用
 * 如果使用权重复用的方案，在compile.sh完成后，可以使用以下指令来检查weight空间是否一致
