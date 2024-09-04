@@ -3,7 +3,7 @@ set -ex
 max_pos_len=10240
 generation_mode=default
 embedding_mode=binary
-dynamic=0
+dynamic=1
 
 # seq_length=10240
 # share_length=8192

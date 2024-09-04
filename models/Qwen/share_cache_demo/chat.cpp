@@ -51,9 +51,7 @@ public:
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
   std::mt19937 sgen;
-  Qwen()
-      : sgen(std::random_device()()), decrypt_handle_(nullptr),
-        decrypt_func_(nullptr) {}
+  Qwen();
 
 private:
   // d2d
@@ -147,6 +145,26 @@ private:
   void *decrypt_handle_;      // handle of decrypt lib
   decrypt_func decrypt_func_; // decrypt func from lib
 };
+
+// init
+Qwen::Qwen() {
+  status_code = 0;
+  total_tokens.clear();
+  lib_path = "";
+  embedding_path = "";
+  share_length = 0;
+  unshare_length = 0;
+  total_length = 0;
+  SEQLEN = 0;
+  NUM_LAYERS = 0;
+  MAX_SHARE_LENGTH = 0;
+  MAX_UNSHARE_LENGTH = 0;
+  sgen = std::mt19937(std::random_device()());
+  bm_handle = nullptr;
+  p_bmrt = nullptr;
+  decrypt_handle_ = nullptr;
+  decrypt_func_ = nullptr;
+}
 
 static inline void ASSERT(bool ret) {
   if (!ret) {
@@ -334,9 +352,6 @@ void Qwen::dynamic_net_launch(const bm_net_info_t *net, int token_length,
 
 void Qwen::load_bmodel(const std::vector<int> &devices,
                        const std::string &model_path) {
-  // set status_code
-  status_code = 0;
-
   // request bm_handle
   std::cout << "Device [ ";
   for (auto d : devices) {
