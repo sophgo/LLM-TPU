@@ -32,9 +32,16 @@ python pipeline.py --model_path_list qwen2-7b_int4_share6144_unshare1536_1dev_en
 * lib_path：解密库路径，当使用加密模型时，必须带上lib_path参数，因为只有带上lib_path，才会走解密的逻辑
 
 ## 4. 运行c-eval测试
-在pipeline.py中将test_ceval函数的注释删掉，之后运行
+在pipeline.py中将engine.test_ceval()函数的注释删掉，之后运行
 ```
-python3 pipeline.py --model_path encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy --lib_path build/libcipher.so --embedding_path embedding.bin --max_new_tokens 50
+mkdir ceval-exam 
+cd ceval-exam
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/ceval-exam.zip
+unzip ceval-exam
+
+cp /path_to/LLM-TPU/harness/C-Eval/subject_mapping.json
+
+python3 pipeline.py --model_path encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy --lib_path build/libcipher.so --embedding_path embedding.bin --max_new_tokens 50 | tee test_
 ```
 
 ## 5. 注意事项
