@@ -494,6 +494,10 @@ void Qwen::init_params() {
 }
 
 void Qwen::make_in_tensors() {
+  if (inputs_pid.device_mem.u.device.device_addr > 0x100000000 && inputs_pid.device_mem.u.device.device_addr < 0x500000000){
+    free_in_tensors();
+  }
+
   bool ret = false;
   ret = bmrt_tensor_ex(&inputs_pid, p_bmrt, net_blocks[0]->input_loc_devices[1],
                        net_blocks[0]->input_dtypes[1],
