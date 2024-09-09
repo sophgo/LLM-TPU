@@ -234,3 +234,11 @@ cd build && cmake .. && make
 上面说的dump_fp16_tensor，dump_net，empty我都写在LLM-TPU/support/include/utils.h里面了，可以参考~~
 
 还有一些情况，就是libsophon版本、驱动、tpu-mlir版本问题
+
+### Q17 `AttributeError: 'LlamaTokenizerFast' object has no attribute 'apply_chat_template'`
+
+这个是transformers的版本低导致的，可以更新如下：
+
+``` shell
+pip3 install git+https://github.com/huggingface/transformers
+```
