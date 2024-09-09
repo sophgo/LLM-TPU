@@ -203,13 +203,15 @@ class Qwen:
         # 3. inference
         self.model.init_decrypt()
         submit_path = "Qwen_submit.csv"
+        self.model.stage_idx = 0
+        self.load_model(self.model_path, read_bmodel=True)
 
         res = {}
         subject_num = len(os.listdir(test_path))
         print(f"Subject numbers: {subject_num}")
         for idx, test_csv_file in enumerate(os.listdir(test_path)):
-            self.model.stage_idx = idx % 2
-            self.load_model(self.model_path, read_bmodel=True if idx == 0 else False)
+            self.model.stage_idx = 1
+            self.load_model(self.model_path, read_bmodel=False)
             test_csv_path = os.path.join(test_path, test_csv_file)
             test_df = pd.read_csv(test_csv_path)
 
@@ -262,10 +264,10 @@ def main(args):
 
     try:
         # 1. test one sample
-        engine.test_sample()
+        # engine.test_sample()
         
         # 2. test c-eval
-        # engine.test_ceval()
+        engine.test_ceval()
 
         # 3. test length
         # engine.test_length()

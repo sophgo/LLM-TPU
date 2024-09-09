@@ -41,7 +41,7 @@ unzip ceval-exam
 
 cp /path_to/LLM-TPU/harness/C-Eval/subject_mapping.json
 
-python3 pipeline.py --model_path encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy --lib_path build/libcipher.so --embedding_path embedding.bin --max_new_tokens 50 | tee test_
+python3 pipeline.py --model_path encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy --lib_path build/libcipher.so --embedding_path embedding.bin --max_new_tokens 50 | tee test_ceval.log
 ```
 
 ## 5. 注意事项
