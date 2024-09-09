@@ -264,10 +264,10 @@ def main(args):
 
     try:
         # 1. test one sample
-        # engine.test_sample()
+        engine.test_sample()
         
         # 2. test c-eval
-        engine.test_ceval()
+        # engine.test_ceval()
 
         # 3. test length
         # engine.test_length()
