@@ -180,12 +180,6 @@ python web_demo.py --dev 0 --bmodel_path your_bmodel_path
 
 PS：尽量下载gradio==3.39.0版本，不然会出现各种问题！！
 
-## 运行效果
-
-以下为单芯片下INT8量化模式的运行效果：
-
-![](./assets/chatglm.jpg)
-
 ## 常见问题
 
 #### sentencepiece是怎么来的
