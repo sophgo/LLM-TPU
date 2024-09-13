@@ -180,6 +180,12 @@ static inline void ASSERT(bool ret) {
   }
 }
 
+static inline void ASSERT(bool ret, std::string message) {
+  if (!ret) {
+    throw std::runtime_error(message);
+  }
+}
+
 void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(dst));
 }
@@ -404,7 +410,7 @@ void Qwen::load_bmodel(const std::vector<int> &devices,
 void Qwen::init_nets() {
   // net embed and lm_head
   ASSERT(bmrt_get_network_index(p_bmrt, "embedding") != -1 ||
-         !embedding_path.empty());
+         !embedding_path.empty(), "bmodel is lack of embedding or embedding_path is empty");
   if (embedding_path.empty()) {
     net_embed = bmrt_get_network_info(p_bmrt, "embedding");
     net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");

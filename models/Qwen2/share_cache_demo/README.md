@@ -25,7 +25,7 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 ## 3. 运行python demo
 ```shell
-python pipeline.py --model_path_list qwen2-7b_int4_share6144_unshare1536_1dev_encrypted.bmodel,qwen2-7b_int4_share6144_unshare1024_1dev_encrypted.bmodel,qwen2-7b_int4_share1248_unshare0_1dev_encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --lib_path build/libcipher.so
+python pipeline.py --model_path encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --lib_path build/libcipher.so --embedding_path embedding.bin
 ```
 * io_alone_mode：当io_alone_mode=0，则正常prefill；当io_alone_mode=1，则使用kvcache复用方案
 * model_path_list：模型路径，当使用多个模型时，用逗号隔开

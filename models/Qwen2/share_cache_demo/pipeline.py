@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import random
 import argparse
 from transformers import AutoTokenizer
 
@@ -189,6 +190,50 @@ class Qwen:
         self.model.deinit_decrypt()
         self.model.deinit()
 
+    def test_random(self):
+        json_path = "../../../assets/long_case.json"
+        share_str, unshare_str_0 = self.read_json(json_path, 0)
+        _, unshare_str_1 = self.read_json(json_path, 1)
+        _, unshare_str_2 = self.read_json(json_path, 2)
+
+        self.model.init_decrypt()
+        # ===------------------------------------------------------------===
+        # Model 0
+        # ===------------------------------------------------------------===
+        # load model 0
+        self.model.prefill_reuse = 0
+        self.model.stage_idx = 0
+        self.load_model(self.model_path, read_bmodel=True)
+        seq_length_list = [10240,8192,7168,6144,5120,4096,3072,2048,1024]
+        share_length_list = [8192,7680,7168,6144,5120,4096,3072,2048,1024]
+
+        # share prefill
+        for i in range(10):
+            in_length = random.randint(500, 8192)
+            out_length = random.randint(200, 512)
+            in_tokens = self.tokenizer.encode(
+                share_str, max_length=in_length, truncation=True
+            )
+            unshare_tokens = self.tokenizer.encode(unshare_str_0)
+
+            in_length = in_length + len(unshare_tokens)
+            total_length = in_length + out_length
+
+            seq_index = []
+            for index, length in enumerate(seq_length_list):
+                if length >= total_length:
+                    seq_index.append(index)
+
+            self.model.stage_idx = seq_index[-1]
+            self.load_model(self.model_path, read_bmodel=False)
+            self.stream_answer(in_tokens + unshare_tokens, "normal", out_length)
+
+        # ===------------------------------------------------------------===
+        # Deinit
+        # ===------------------------------------------------------------===
+        self.model.deinit_decrypt()
+        self.model.deinit()
+
     def test_ceval(self):
         """
         Test c-eval
@@ -260,11 +305,15 @@ class Qwen:
 def main(args):
     # test chat
     start_time = time.time()
-    engine = Qwen(args)
 
     try:
+        engine = Qwen(args)
+
         # 1. test one sample
         engine.test_sample()
+
+        # 2. test random
+        # engine.test_random()
         
         # 2. test c-eval
         # engine.test_ceval()

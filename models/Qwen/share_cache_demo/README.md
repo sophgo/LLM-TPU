@@ -27,7 +27,7 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 ## 3. 运行python demo
 ```shell
-python3 pipeline.py --model_path qwen-7b_int4_share6400_unshare0_seq6912_1dev_encrypted.bmodel,qwen-7b_int4_share3200_unshare0_seq3712_1dev_encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 23 --generation_mode penalty_sample --lib_path ../../Qwen2/share_cache_demo/build/libcipher.so
+python3 pipeline.py --model_path encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 23 --generation_mode penalty_sample --lib_path ../../Qwen2/share_cache_demo/build/libcipher.so
 ```
 * **必须将total_seq比较大的模型放到model_path_list的前面**,也就是seq最大的那个先跑
 * model_path_list：当使用多个模型时，用逗号隔开
