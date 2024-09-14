@@ -75,7 +75,7 @@ private:
                             size_t size);
 
   // tensors
-  void make_in_tensors();
+  void make_in_tensors(bool read_bmodel);
   void free_in_tensors();
 
   // sample
@@ -499,8 +499,8 @@ void Qwen::init_params() {
   }
 }
 
-void Qwen::make_in_tensors() {
-  if (inputs_pid.device_mem.u.device.device_addr > 0x100000000 && inputs_pid.device_mem.u.device.device_addr < 0x500000000){
+void Qwen::make_in_tensors(bool read_bmodel) {
+  if (!read_bmodel && inputs_pid.device_mem.u.device.device_addr > 0x100000000 && inputs_pid.device_mem.u.device.device_addr < 0x500000000){
     free_in_tensors();
   }
 
@@ -557,7 +557,7 @@ void Qwen::init(const std::vector<int> &devices, const std::string &model_path,
   init_params();
 
   // step4 : make in tensors
-  make_in_tensors();
+  make_in_tensors(read_bmodel);
 }
 
 void Qwen::free_in_tensors() {

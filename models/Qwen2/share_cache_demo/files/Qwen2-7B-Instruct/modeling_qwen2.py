@@ -239,7 +239,6 @@ class Qwen2Attention(nn.Module):
         self.rope_theta = config.rope_theta
         self.is_causal = True
         self.attention_dropout = config.attention_dropout
-        self.max_pos_len = config.max_pos_len
 
         if (self.head_dim * self.num_heads) != self.hidden_size:
             raise ValueError(
@@ -265,6 +264,7 @@ class Qwen2Attention(nn.Module):
         past_key_value: Optional[Cache] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
+        max_pos_len: Optional[int] = 0,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         bsz, q_len, _ = hidden_states.size()
 
@@ -294,7 +294,7 @@ class Qwen2Attention(nn.Module):
                 )
             # kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
 
-        cos, sin = self.rotary_emb(value_states, seq_len=self.max_pos_len)
+        cos, sin = self.rotary_emb(value_states, seq_len=max_pos_len)
         # if past_key_value is not None:
         #   cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len-1)
         # else:
@@ -764,6 +764,7 @@ class Qwen2DecoderLayer(nn.Module):
         past_key_value: Optional[Tuple[torch.Tensor]] = None,
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
+        max_pos_len: Optional[int] = 0,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         """
         Args:
@@ -791,6 +792,7 @@ class Qwen2DecoderLayer(nn.Module):
             past_key_value=past_key_value,
             output_attentions=output_attentions,
             use_cache=use_cache,
+            max_pos_len=max_pos_len
         )
         hidden_states = residual + hidden_states
 

@@ -23,6 +23,5 @@
   "transformers_version": "4.41.2",
   "use_cache": true,
   "use_sliding_window": false,
-  "vocab_size": 152064,
-  "max_pos_len": 8704
+  "vocab_size": 152064
 }

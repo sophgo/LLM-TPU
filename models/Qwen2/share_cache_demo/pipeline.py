@@ -310,10 +310,10 @@ def main(args):
         engine = Qwen(args)
 
         # 1. test one sample
-        engine.test_sample()
+        # engine.test_sample()
 
         # 2. test random
-        # engine.test_random()
+        engine.test_random()
         
         # 2. test c-eval
         # engine.test_ceval()

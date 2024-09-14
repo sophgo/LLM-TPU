@@ -25,7 +25,7 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 ## 3. 运行python demo
 ```shell
-python pipeline.py --model_path encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --lib_path build/libcipher.so --embedding_path embedding.bin
+python3 pipeline.py --model_path encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --lib_path build/libcipher.so --embedding_path embedding.bin
 ```
 * io_alone_mode：当io_alone_mode=0，则正常prefill；当io_alone_mode=1，则使用kvcache复用方案
 * model_path_list：模型路径，当使用多个模型时，用逗号隔开
@@ -69,4 +69,10 @@ cp files/Qwen-7B-Chat/* your_torch_model
 * 如果跑demo送入的是加密后的模型，必须要带上--lib_path参数，因为只有带上lib_path，才会走解密的逻辑
 ```shell
 model_tool --encrypt -model origin.bmodel -net_name block_0 -lib ./build/libcipher.so -o encrypted.bmodel
+```
+
+### 减少日志打印
+* 如果想要减少类似`Can't find network name`这种日志打印，可以执行如下命令
+```shell
+export BMRT_LOG_VERSION=3
 ```

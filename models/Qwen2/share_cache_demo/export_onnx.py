@@ -92,6 +92,7 @@ class Block(torch.nn.Module):
             attention_mask=attention_mask,
             position_ids=position_ids,
             use_cache=True,
+            max_pos_len=args.max_pos_len
         )
         present_k, present_v = past_kv
         return hidden_states.float(), present_k.float(), present_v.float()
@@ -110,6 +111,7 @@ class BlockCache(torch.nn.Module):
             position_ids=position_ids,
             attention_mask=attention_mask,
             use_cache=True,
+            max_pos_len=args.max_pos_len
         )
         present_k, present_v = past_kv
         return hidden_states.float(), present_k.float(), present_v.float()
