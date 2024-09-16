@@ -52,6 +52,7 @@
 |Yi-34B-chat          |:white\_check\_mark:|:white\_check\_mark:|                    |[LINK](https://huggingface.co/01-ai/Yi-34B-Chat)                          |
 |Qwen-VL-Chat         |:white\_check\_mark:|:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen-VL-Chat)                          |
 |InternVL2-4B         |:white\_check\_mark:|:white\_check\_mark:|                    |[LINK](https://huggingface.co/OpenGVLab/InternVL2-4B)                     |
+|InternVL2-2B         |:white\_check\_mark:|:white\_check\_mark:|                    |[LINK](https://huggingface.co/OpenGVLab/InternVL2-2B)                     |
 
 
 如果您想要知道转换细节和源码，可以到本项目[models](./models)子目录查看各类模型部署细节。
@@ -86,7 +87,7 @@ git clone https://github.com/sophgo/LLM-TPU.git
 | Qwen1.5-1.8B    | ./run.sh --model qwen1.5-1.8b --arch soc    | ./run.sh --model qwen1.5-1.8b  --arch pcie   |
 | LWM-Text-Chat   | ./run.sh --model lwm-text-chat --arch soc   | ./run.sh --model lwm-text-chat  --arch pcie  |
 | WizardCoder-15B | ./run.sh --model wizardcoder-15b --arch soc | ./run.sh --model wizardcoder-15b --arch pcie |
-
+| InternVL2-4B    | ./run.sh --model internvl2-4b --arch soc    | ./run.sh --model internvl2-4b --arch pcie    |
 
 ## 进阶功能
 进阶功能说明：

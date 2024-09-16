@@ -29,6 +29,7 @@ parser.add_argument('--model_path', type=str,
 args = parser.parse_args()
 
 model_path = args.model_path
+is_4B = "InternVL2-4B" in model_path
 folder = f"./tmp/onnx"
 
 origin_model = AutoModelForCausalLM.from_pretrained(
@@ -48,7 +49,7 @@ NUM_ATTENTION_HEADS = config.llm_config.num_attention_heads
 HEAD_DIM = HIDDEN_SIZE // NUM_ATTENTION_HEADS
 VOCAB_SIZE = config.llm_config.vocab_size
 DOWNSAMPLE_RATIO = config.downsample_ratio
-EOS_TOKEN_ID = config.llm_config.eos_token_id
+ID_EOS = config.llm_config.eos_token_id
 print(f'Layers: {NUM_LAYERS}\nHidden size: {HIDDEN_SIZE}\n')
 
 vit = origin_model.vision_model
@@ -63,9 +64,10 @@ class Embedding(torch.nn.Module):
 
     def __init__(self):
         super().__init__()
+        self.embed = transformer.get_input_embeddings()
 
     def forward(self, input_ids):
-        hidden_states = transformer.embed_tokens(input_ids)
+        hidden_states = self.embed(input_ids)
         return hidden_states
 
 
@@ -75,13 +77,18 @@ class Block(torch.nn.Module):
         super().__init__()
         self.layer_id = layer_id
         self.layer = layers[layer_id]
-        self.rotary_emb = self.layer.self_attn.rotary_emb
+
         position_ids = torch.tensor(
             [range(SEQ_LENGTH)], dtype=torch.long).cuda()
         value_states = torch.randn(
             (1, SEQ_LENGTH, config.llm_config.num_key_value_heads, HEAD_DIM)).bfloat16().cuda()
-        self.cos, self.sin = self.rotary_emb(
-            value_states, position_ids, SEQ_LENGTH)
+        if is_4B:
+            self.rotary_emb = self.layer.self_attn.rotary_emb
+            self.cos, self.sin = self.rotary_emb(
+                value_states, position_ids, SEQ_LENGTH)
+        else:
+            self.rotary_emb = self.layer.attention.rotary_emb
+            self.cos, self.sin = self.rotary_emb(value_states, SEQ_LENGTH)
         self.cos = self.cos.view(SEQ_LENGTH, HEAD_DIM)
         self.sin = self.sin.view(SEQ_LENGTH, HEAD_DIM)
 
@@ -105,13 +112,17 @@ class BlockCache(torch.nn.Module):
         super().__init__()
         self.layer_id = layer_id
         self.layer = layers[layer_id]
-        self.rotary_emb = self.layer.self_attn.rotary_emb
         position_ids = torch.tensor(
             [range(SEQ_LENGTH)], dtype=torch.long).cuda()
         value_states = torch.randn(
             (1, SEQ_LENGTH, config.llm_config.num_key_value_heads, HEAD_DIM)).bfloat16().cuda()
-        self.cos, self.sin = self.rotary_emb(
-            value_states, position_ids, SEQ_LENGTH)
+        if is_4B:
+            self.rotary_emb = self.layer.self_attn.rotary_emb
+            self.cos, self.sin = self.rotary_emb(
+                value_states, position_ids, SEQ_LENGTH)
+        else:
+            self.rotary_emb = self.layer.attention.rotary_emb
+            self.cos, self.sin = self.rotary_emb(value_states, SEQ_LENGTH)
         self.cos = self.cos.view(SEQ_LENGTH, HEAD_DIM)
         self.sin = self.sin.view(SEQ_LENGTH, HEAD_DIM)
 
@@ -134,10 +145,11 @@ class LmHead(torch.nn.Module):
 
     def __init__(self):
         super().__init__()
+        self.lm_head = origin_model.language_model.get_output_embeddings()
 
     def forward(self, hidden_states):
         hidden_states = transformer.norm(hidden_states)
-        m_logits = origin_model.language_model.lm_head(hidden_states)
+        m_logits = self.lm_head(hidden_states)
         _, token = torch.topk(m_logits.float(), 1)
         return token
 
@@ -251,68 +263,10 @@ def build_transform(input_size):
     return transform
 
 
-def find_closest_aspect_ratio(aspect_ratio, target_ratios, width, height, image_size):
-    best_ratio_diff = float('inf')
-    best_ratio = (1, 1)
-    area = width * height
-    for ratio in target_ratios:
-        target_aspect_ratio = ratio[0] / ratio[1]
-        ratio_diff = abs(aspect_ratio - target_aspect_ratio)
-        if ratio_diff < best_ratio_diff:
-            best_ratio_diff = ratio_diff
-            best_ratio = ratio
-        elif ratio_diff == best_ratio_diff:
-            if area > 0.5 * image_size * image_size * ratio[0] * ratio[1]:
-                best_ratio = ratio
-    return best_ratio
-
-
-def dynamic_preprocess(image, min_num=1, max_num=12, image_size=448, use_thumbnail=False):
-    orig_width, orig_height = image.size
-    aspect_ratio = orig_width / orig_height
-
-    # calculate the existing image aspect ratio
-    target_ratios = set(
-        (i, j) for n in range(min_num, max_num + 1) for i in range(1, n + 1) for j in range(1, n + 1) if
-        i * j <= max_num and i * j >= min_num)
-    target_ratios = sorted(target_ratios, key=lambda x: x[0] * x[1])
-
-    # find the closest aspect ratio to the target
-    target_aspect_ratio = find_closest_aspect_ratio(
-        aspect_ratio, target_ratios, orig_width, orig_height, image_size)
-
-    # calculate the target width and height
-    target_width = image_size * target_aspect_ratio[0]
-    target_height = image_size * target_aspect_ratio[1]
-    blocks = target_aspect_ratio[0] * target_aspect_ratio[1]
-
-    # resize the image
-    resized_img = image.resize((target_width, target_height))
-    processed_images = []
-    for i in range(blocks):
-        box = (
-            (i % (target_width // image_size)) * image_size,
-            (i // (target_width // image_size)) * image_size,
-            ((i % (target_width // image_size)) + 1) * image_size,
-            ((i // (target_width // image_size)) + 1) * image_size
-        )
-        # split the image
-        split_img = resized_img.crop(box)
-        processed_images.append(split_img)
-    assert len(processed_images) == blocks
-    if use_thumbnail and len(processed_images) != 1:
-        thumbnail_img = image.resize((image_size, image_size))
-        processed_images.append(thumbnail_img)
-    return processed_images
-
-
 def load_image(image_file, input_size=448, max_num=12):
     image = Image.open(image_file).convert('RGB')
     transform = build_transform(input_size=input_size)
-    images = dynamic_preprocess(
-        image, image_size=input_size, use_thumbnail=True, max_num=max_num)
-    pixel_values = [transform(image) for image in images]
-    pixel_values = torch.stack(pixel_values)
+    pixel_values = transform(image)
     return pixel_values
 
 
@@ -332,7 +286,8 @@ def test_net_with_mask():
     pixel_values = load_image(jpg, max_num=1).to(
         torch.bfloat16).cuda()  # [1, 3, 448, 448]
     vit_embeds = vit_infer(pixel_values)  # [1, 256, 3072]
-
+    ID_IM_END = tokenizer.convert_tokens_to_ids("<|im_end|>")
+    ID_END = tokenizer.convert_tokens_to_ids("<|end|>")
     token_len = len(ids)
     ids = ids + (SEQ_LENGTH - token_len) * [0]
     input_ids = torch.tensor(ids).view(SEQ_LENGTH).cuda()
@@ -362,7 +317,7 @@ def test_net_with_mask():
     lm = LmHead()
     token = lm(out.bfloat16()).view(1)
     out_ids = [int(token)]
-    while int(token) < EOS_TOKEN_ID and token_len < SEQ_LENGTH:
+    while int(token) not in [ID_EOS, ID_IM_END, ID_END] and token_len < SEQ_LENGTH:
         token_len += 1
         input_ids = torch.tensor([token]).cuda()
         out = embed(input_ids).view(1, 1, HIDDEN_SIZE)

@@ -83,10 +83,20 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 * python demo
 
 ```
-python3 pipeline.py --model_path internvl2-4b_bm1684x_int4.bmodel --tokenizer ../support/token_config/ --devid 0
+python3 pipeline.py --model_path internvl2-4b_bm1684x_int4.bmodel --tokenizer ../support/token_config_4b --devid 0
 ```
 model为实际的model储存路径；tokenizer_path为实际的tokenizer配置的储存路径
 
 * 运行效果
 
 ![](../../assets/internvl2-4b.png)
+
+## 常见问题
+
+#### 是否支持InternVL2-2B ?
+
+是支持的，步骤基本一致。
+1. 将`files/InternVL2-2B`里面的文件替换到`InternVL2-2B`中；
+2. 执行`export_onnx.py`导出onnx；
+3. 执行`./compile.sh --name internvl2-2b`生成模型`internvl2-2b_bm1684x_int4.bmodel`
+4. 运行程序是一致的，但是需要指定`token_config_2b`，执行命令：`python3 pipeline.py --model_path internvl2-4b_bm1684x_int4.bmodel --tokenizer ../support/token_config_2b --devid 0`

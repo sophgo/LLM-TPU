@@ -25,68 +25,10 @@ def build_transform(input_size):
     return transform
 
 
-def find_closest_aspect_ratio(aspect_ratio, target_ratios, width, height, image_size):
-    best_ratio_diff = float('inf')
-    best_ratio = (1, 1)
-    area = width * height
-    for ratio in target_ratios:
-        target_aspect_ratio = ratio[0] / ratio[1]
-        ratio_diff = abs(aspect_ratio - target_aspect_ratio)
-        if ratio_diff < best_ratio_diff:
-            best_ratio_diff = ratio_diff
-            best_ratio = ratio
-        elif ratio_diff == best_ratio_diff:
-            if area > 0.5 * image_size * image_size * ratio[0] * ratio[1]:
-                best_ratio = ratio
-    return best_ratio
-
-
-def dynamic_preprocess(image, min_num=1, max_num=12, image_size=448, use_thumbnail=False):
-    orig_width, orig_height = image.size
-    aspect_ratio = orig_width / orig_height
-
-    # calculate the existing image aspect ratio
-    target_ratios = set(
-        (i, j) for n in range(min_num, max_num + 1) for i in range(1, n + 1) for j in range(1, n + 1) if
-        i * j <= max_num and i * j >= min_num)
-    target_ratios = sorted(target_ratios, key=lambda x: x[0] * x[1])
-
-    # find the closest aspect ratio to the target
-    target_aspect_ratio = find_closest_aspect_ratio(
-        aspect_ratio, target_ratios, orig_width, orig_height, image_size)
-
-    # calculate the target width and height
-    target_width = image_size * target_aspect_ratio[0]
-    target_height = image_size * target_aspect_ratio[1]
-    blocks = target_aspect_ratio[0] * target_aspect_ratio[1]
-
-    # resize the image
-    resized_img = image.resize((target_width, target_height))
-    processed_images = []
-    for i in range(blocks):
-        box = (
-            (i % (target_width // image_size)) * image_size,
-            (i // (target_width // image_size)) * image_size,
-            ((i % (target_width // image_size)) + 1) * image_size,
-            ((i // (target_width // image_size)) + 1) * image_size
-        )
-        # split the image
-        split_img = resized_img.crop(box)
-        processed_images.append(split_img)
-    assert len(processed_images) == blocks
-    if use_thumbnail and len(processed_images) != 1:
-        thumbnail_img = image.resize((image_size, image_size))
-        processed_images.append(thumbnail_img)
-    return processed_images
-
-
 def load_image(image_file, input_size=448, max_num=12):
     image = Image.open(image_file).convert('RGB')
     transform = build_transform(input_size=input_size)
-    images = dynamic_preprocess(
-        image, image_size=input_size, use_thumbnail=True, max_num=max_num)
-    pixel_values = [transform(image) for image in images]
-    pixel_values = torch.stack(pixel_values)
+    pixel_values = transform(image)
     return pixel_values
 
 
@@ -100,7 +42,7 @@ class InternVL2():
         self.tokenizer = AutoTokenizer.from_pretrained(
             args.tokenizer, trust_remote_code=True
         )
-        self.tokenizer.decode([0]) # warm up
+        self.tokenizer.decode([0])  # warm up
 
         # preprocess parameters, such as prompt & tokenizer
         self.system_prompt = '<|system|>\n你是由上海人工智能实验室联合商汤科技开发的书生多模态大模型，英文名叫InternVL, 是一个有用无害的人工智能助手。<|end|><|user|>\n'
@@ -110,7 +52,9 @@ class InternVL2():
         self.model = chat.InternVL2()
         self.model.init(self.device, args.model_path)
         self.SEQLEN = self.model.SEQLEN
-        self.EOS = [32000, 32007]
+        self.ID_EOS = self.tokenizer.eos_token_id
+        self.ID_IM_END = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
+        self.ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
 
     def encode(self):
         if not self.image_str:
@@ -145,10 +89,11 @@ class InternVL2():
             if self.input_str in ["exit", "q", "quit"]:
                 break
             self.image_str = input("\nImage Path: ")
-
+            print("\nAnswer:")
             if self.image_str:
                 if not os.path.exists(self.image_str):
-                    raise RuntimeError('Image [{self.image_str}] is not exist')
+                    print("Can't find image: {}".format(self.image_str))
+                    continue
             self.encode()
             # Chat
             first_start = time.time()
@@ -158,13 +103,15 @@ class InternVL2():
             tok_num = 1
             # Following tokens
             full_word_tokens = []
-            while token not in self.EOS and self.model.token_length < self.SEQLEN:
+            while token not in [self.ID_EOS, self.ID_END, self.ID_IM_END] and self.model.token_length < self.SEQLEN:
                 full_word_tokens.append(token)
-                word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
+                word = self.tokenizer.decode(
+                    full_word_tokens, skip_special_tokens=True)
                 if "�" not in word:
                     if len(full_word_tokens) == 1:
                         pre_word = word
-                        word = self.tokenizer.decode([token, token], skip_special_tokens=True)[len(pre_word):]
+                        word = self.tokenizer.decode([token, token], skip_special_tokens=True)[
+                            len(pre_word):]
                     print(word, flush=True, end="")
                     full_word_tokens = []
                 tok_num += 1

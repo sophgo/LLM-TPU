@@ -54,7 +54,7 @@ fi
 
 if [ x$mode == x"int8" ]; then
     quantize_args="--quantize W8BF16"
-elif [ x$mode == x"f16" ]; then
+elif [ x$mode == x"bf16" ]; then
     quantize_args="--quantize BF16"
 elif [ x$mode == x"int4" ]; then
     quantize_args="--quantize W4BF16 --q_group_size 64"

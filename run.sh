@@ -37,6 +37,7 @@ declare -A model_to_demo=(
     ["qwen1.5-1.8b"]="Qwen1_5"
     ["wizardcoder-15b"]="WizardCoder"
     ["lwm-text-chat"]="LWM"
+    ["internvl2-4b"]="InternVL2"
 )
 
 # Process Args
@@ -47,7 +48,7 @@ compare_date="20240110"
 if [ $arch == "pcie" ]; then
     extracted_date=$(cat /proc/bmsophon/driver_version | grep -o 'release date: [0-9]\{8\}' | grep -o '[0-9]\{8\}')
 
-elif [ $arch = "soc" ]; then 
+elif [ $arch = "soc" ]; then
     extracted_date_str=$(uname -a | grep -oP 'SMP \K[A-Za-z]+\s[A-Za-z]+\s\d+\s\d+:\d+:\d+\s[A-Za-z]+\s\d+' | sed 's/HKT //')
     extracted_date=$(date -d "$extracted_date_str" '+%Y%m%d')
 fi
@@ -60,7 +61,7 @@ fi
 
 # Check Model Name
 if [[ ! ${model_to_demo[$model]} ]]; then
-    >&2 echo -e "Error: Invalid name $model, the input name must be \033[31mchatglm3-6b|chatglm2-6b|llama2-7b|qwen-7b|qwen1.5-1.8b|wizardcoder-15b\033[0m"
+    >&2 echo -e "Error: Invalid name $model, the input name must be \033[31mchatglm3-6b|chatglm2-6b|llama2-7b|qwen-7b|qwen1.5-1.8b|wizardcoder-15b|internvl2-4b\033[0m"
     exit 1
 fi
 
