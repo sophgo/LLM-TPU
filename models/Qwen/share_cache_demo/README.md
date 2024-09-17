@@ -27,12 +27,16 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 ## 3. 运行python demo
 ```shell
-python3 pipeline.py --model_path encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 23 --generation_mode penalty_sample --lib_path ../../Qwen2/share_cache_demo/build/libcipher.so
+python3 pipeline.py --model_path encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 23 --generation_mode penalty_sample --lib_path ../../Qwen2/share_cache_demo/build/libcipher.so --embedding_path embedding.bin
 ```
 * **必须将total_seq比较大的模型放到model_path_list的前面**,也就是seq最大的那个先跑
 * model_path_list：当使用多个模型时，用逗号隔开
 * 权重复用的流程为：self.model = chat.Qwen() --> self.load_model(model_0) --> self.free_device --> self.load_model(model_1) --> self.model.deinit()
 
+## 运行c-eval数据集
+```shell
+python3 pipeline.py --model_path encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 61 --generation_mode penalty_sample --lib_path ../../Qwen2/share_cache_demo/build/libcipher.so --max_new_tokens 50 --embedding_path embedding.bin
+```
 
 ## 4. 注意事项
 

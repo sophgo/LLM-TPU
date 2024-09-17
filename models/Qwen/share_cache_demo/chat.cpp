@@ -75,7 +75,7 @@ private:
                             size_t size);
 
   // tensors
-  void make_in_tensors();
+  void make_in_tensors(bool read_bmodel);
   void free_in_tensors();
 
   // sample
@@ -177,6 +177,12 @@ Qwen::Qwen() {
 static inline void ASSERT(bool ret) {
   if (!ret) {
     throw std::runtime_error("runtime error");
+  }
+}
+
+static inline void ASSERT(bool ret, std::string message) {
+  if (!ret) {
+    throw std::runtime_error(message);
   }
 }
 
@@ -404,7 +410,7 @@ void Qwen::load_bmodel(const std::vector<int> &devices,
 void Qwen::init_nets() {
   // net embed and lm_head
   ASSERT(bmrt_get_network_index(p_bmrt, "embedding") != -1 ||
-         !embedding_path.empty());
+         !embedding_path.empty(), "bmodel is lack of embedding or embedding_path is empty");
   if (embedding_path.empty()) {
     net_embed = bmrt_get_network_info(p_bmrt, "embedding");
     net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
@@ -473,6 +479,12 @@ void Qwen::init_params() {
   SEQLEN = net_blocks_cache[0]->stages[stage_idx].input_shapes[3].dims[1];
 
   // resize
+  past_key.clear();
+  past_value.clear();
+  tmp_past_key.clear();
+  tmp_past_value.clear();
+  total_tokens.clear();
+
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
   tmp_past_key.resize(NUM_LAYERS);
@@ -493,8 +505,8 @@ void Qwen::init_params() {
   }
 }
 
-void Qwen::make_in_tensors() {
-  if (inputs_pid.device_mem.u.device.device_addr > 0x100000000 && inputs_pid.device_mem.u.device.device_addr < 0x500000000){
+void Qwen::make_in_tensors(bool read_bmodel) {
+  if (!read_bmodel){
     free_in_tensors();
   }
 
@@ -551,7 +563,7 @@ void Qwen::init(const std::vector<int> &devices, const std::string &model_path,
   init_params();
 
   // step4 : make in tensors
-  make_in_tensors();
+  make_in_tensors(read_bmodel);
 }
 
 void Qwen::free_in_tensors() {

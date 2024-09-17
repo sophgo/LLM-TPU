@@ -31,6 +31,19 @@ class Qwen:
         self.model = chat.Qwen()
         self.init_params(args)
 
+        self.system_prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
+        self.prompt = (
+            "<|im_start|>user\n{}<|im_end|>\n"
+            "<|im_start|>assistant\n"
+        )
+        self.EOS = self.tokenizer.im_end_id # tokenizer.encode("<|im_end|>")
+        self.history = [self.system_prompt]
+        self.enable_history = args.enable_history
+
+
+        self.seq_length_list = [8192,7168,6144,5120,4096,3072,2048,1024]
+        self.share_length_list = [8192,7168,6144,5120,4096,3072,2048,1024]
+
     def load_model(self, model_path, read_bmodel):
         load_start = time.time()
         self.model.init(self.devices, model_path, read_bmodel) # when read_bmodel = false, not to load weight, reuse weight
@@ -47,17 +60,10 @@ class Qwen:
         self.model.lib_path = args.lib_path
         self.model.embedding_path = args.embedding_path
 
-    def encode_tokens(self, prompt):
-        messages = [
-            {
-                "role": "system",
-                "content": self.system_prompt,
-            },
-            {"role": "user", "content": prompt},
-        ]
-        text = self.tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
+    def encode_tokens(self, input_str):
+        self.history = [self.system_prompt]
+        self.history.append(self.prompt.format(input_str))
+        text = "".join(self.history)
         tokens = self.tokenizer(text).input_ids
         return tokens
 
@@ -115,6 +121,13 @@ class Qwen:
             content_str = system_str + text[task_id]["content"]
         question_str = text[task_id]["question"] + "<|im_end|>\n<|im_start|>assistant\n"
         return content_str, question_str
+
+    def get_seq_index(self, total_length, in_length):
+        seq_index = []
+        for index, (t_length, i_length) in enumerate(zip(self.seq_length_list, self.share_length_list)):
+            if t_length >= total_length and i_length >= in_length:
+                seq_index.append(index)
+        return seq_index
 
     def test_sample(self):
         json_path = "../../../assets/long_case.json"
@@ -187,8 +200,6 @@ class Qwen:
         self.model.prefill_reuse = 0
         self.model.stage_idx = 0
         self.load_model(self.model_path, read_bmodel=True)
-        seq_length_list = [8192,7168,6144,5120,4096,3072,2048,1024]
-        share_length_list = [8192,7168,6144,5120,4096,3072,2048,1024]
 
         # share prefill
         for i in range(10):
@@ -202,11 +213,7 @@ class Qwen:
             in_length = in_length + len(unshare_tokens)
             total_length = in_length + out_length
 
-            seq_index = []
-            for index, length in enumerate(seq_length_list):
-                if length >= total_length:
-                    seq_index.append(index)
-
+            seq_index = self.get_seq_index(total_length, in_length)
             self.model.stage_idx = seq_index[-1]
             self.load_model(self.model_path, read_bmodel=False)
             self.stream_answer(in_tokens[:in_length - len(unshare_tokens)] + unshare_tokens, "normal", out_length)
@@ -229,13 +236,15 @@ class Qwen:
         subject_map = load_json(subject_path)
 
         # 3. inference
-        submit_path = "Qwen_submit.csv"
+        self.model.init_decrypt()
+        submit_path = "Qwen_submit.json"
+        self.model.stage_idx = 0
+        self.load_model(self.model_path, read_bmodel=True)
 
         res = {}
         subject_num = len(os.listdir(test_path))
         print(f"Subject numbers: {subject_num}")
         for idx, test_csv_file in enumerate(os.listdir(test_path)):
-            self.load_model(self.model_list[idx % 2])
             test_csv_path = os.path.join(test_path, test_csv_file)
             test_df = pd.read_csv(test_csv_path)
 
@@ -253,19 +262,21 @@ class Qwen:
                 print(f"\n================={i}/{len(test_df)}====================")
                 prompt = construct_prompt(subject_zh, [], test_df.loc[i], 0)
                 tokens = self.encode_tokens(prompt)
-                print("token length:", len(tokens))
-                if len(tokens) >= 3200:
-                    raise ValueError(f"The length you input is {len(tokens)}, exceed the maximum length")
-                pred = self.stream_answer(tokens)
+                in_length = len(tokens)
+                print("token length:", in_length)
+                if in_length >= 3200:
+                    raise ValueError(f"The length you input is {in_length}, exceed the maximum length")
 
-                option = extract_cot_answer(pred)
-                #print("\nprediction:", pred)
+                seq_index = self.get_seq_index(in_length + self.model.max_new_tokens, in_length)
+                self.model.stage_idx = seq_index[-1]
+                self.load_model(self.model_path, read_bmodel=False)
+                self.stream_answer(tokens, "normal", self.model.max_new_tokens)
+
+                option = extract_cot_answer(self.answer_cur)
                 print("\noption:", option)
 
                 subject_dict[str(i)] = option
             res[subject] = subject_dict
-            self.model.free_device()
-        self.model.deinit()
 
         # 4. deinit & save
         dump_json(res, submit_path)
@@ -284,7 +295,6 @@ class Qwen:
 -6: addr_mode = 0, but must set addr_mode =1
 """
 def main(args):
-    # test chat
     start_time = time.time()
 
     try:
@@ -294,10 +304,10 @@ def main(args):
         # engine.test_sample()
 
         # 2. test random
-        engine.test_random()
+        # engine.test_random()
         
         # 2. test c-eval
-        # engine.test_ceval()
+        engine.test_ceval()
 
         # 3. test max length
         # engine.test_max_length()
@@ -308,11 +318,12 @@ def main(args):
         print("RuntimeError")
     except ValueError:
         print("ValueError")
+    except:
+        print("Error")
 
     end_time = time.time()
     print(f"\nTotal Time: {(end_time - start_time):.3f} s")
     print("Status Code: ", engine.model.status_code)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

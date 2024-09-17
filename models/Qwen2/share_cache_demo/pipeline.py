@@ -31,6 +31,10 @@ class Qwen:
         self.model = chat.Qwen()
         self.init_params(args)
 
+
+        self.seq_length_list = [10240,8192,7168,6144,5120,4096,3072,2048,1024]
+        self.share_length_list = [8192,7680,7168,6144,5120,4096,3072,2048,1024]
+
     def load_model(self, model_path, read_bmodel):
         load_start = time.time()
         self.model.init(self.devices, model_path, read_bmodel) # when read_bmodel = false, not to load weight, reuse weight
@@ -115,7 +119,14 @@ class Qwen:
             content_str = system_str + text[task_id]["content"]
         question_str = text[task_id]["question"] + "<|im_end|>\n<|im_start|>assistant\n"
         return content_str, question_str
-    
+
+    def get_seq_index(self, total_length, in_length):
+        seq_index = []
+        for index, (t_length, i_length) in enumerate(zip(self.seq_length_list, self.share_length_list)):
+            if t_length >= total_length and i_length >= in_length:
+                seq_index.append(index)
+        return seq_index
+
     def test_length(self):
         json_path = "../../../assets/long_case.json"
         input_str = load_json(json_path)[0]["content"]
@@ -204,8 +215,6 @@ class Qwen:
         self.model.prefill_reuse = 0
         self.model.stage_idx = 0
         self.load_model(self.model_path, read_bmodel=True)
-        seq_length_list = [10240,8192,7168,6144,5120,4096,3072,2048,1024]
-        share_length_list = [8192,7680,7168,6144,5120,4096,3072,2048,1024]
 
         # share prefill
         for i in range(10):
@@ -219,14 +228,10 @@ class Qwen:
             in_length = in_length + len(unshare_tokens)
             total_length = in_length + out_length
 
-            seq_index = []
-            for index, length in enumerate(seq_length_list):
-                if length >= total_length:
-                    seq_index.append(index)
-
+            seq_index = self.get_seq_index(total_length, in_length)
             self.model.stage_idx = seq_index[-1]
             self.load_model(self.model_path, read_bmodel=False)
-            self.stream_answer(in_tokens + unshare_tokens, "normal", out_length)
+            self.stream_answer(in_tokens[:in_length - len(unshare_tokens)] + unshare_tokens, "normal", out_length)
 
         # ===------------------------------------------------------------===
         # Deinit
@@ -247,7 +252,7 @@ class Qwen:
 
         # 3. inference
         self.model.init_decrypt()
-        submit_path = "Qwen_submit.csv"
+        submit_path = "Qwen2_submit.json"
         self.model.stage_idx = 0
         self.load_model(self.model_path, read_bmodel=True)
 
@@ -255,8 +260,6 @@ class Qwen:
         subject_num = len(os.listdir(test_path))
         print(f"Subject numbers: {subject_num}")
         for idx, test_csv_file in enumerate(os.listdir(test_path)):
-            self.model.stage_idx = 1
-            self.load_model(self.model_path, read_bmodel=False)
             test_csv_path = os.path.join(test_path, test_csv_file)
             test_df = pd.read_csv(test_csv_path)
 
@@ -274,9 +277,14 @@ class Qwen:
                 print(f"\n================={i}/{len(test_df)}====================")
                 prompt = construct_prompt(subject_zh, [], test_df.loc[i], 0)
                 tokens = self.encode_tokens(prompt)
-                print("token length:", len(tokens))
-                if len(tokens) >= 3200:
-                    raise ValueError(f"The length you input is {len(tokens)}, exceed the maximum length")
+                in_length = len(tokens)
+                print("token length:", in_length)
+                if in_length >= 3200:
+                    raise ValueError(f"The length you input is {in_length}, exceed the maximum length")
+
+                seq_index = self.get_seq_index(in_length + self.model.max_new_tokens, in_length)
+                self.model.stage_idx = seq_index[-1]
+                self.load_model(self.model_path, read_bmodel=False)
                 self.stream_answer(tokens, "normal", self.model.max_new_tokens)
 
                 option = extract_cot_answer(self.answer_cur)
@@ -303,7 +311,6 @@ class Qwen:
 -6: addr_mode = 0, but must set addr_mode =1
 """
 def main(args):
-    # test chat
     start_time = time.time()
 
     try:
@@ -313,16 +320,20 @@ def main(args):
         # engine.test_sample()
 
         # 2. test random
-        engine.test_random()
+        # engine.test_random()
         
         # 2. test c-eval
-        # engine.test_ceval()
+        engine.test_ceval()
 
         # 3. test length
         # engine.test_length()
 
 
         print("All Right!")
+    except RuntimeError:
+        print("RuntimeError")
+    except ValueError:
+        print("ValueError")
     except:
         print("Error")
 

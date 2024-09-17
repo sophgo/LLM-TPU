@@ -479,6 +479,12 @@ void Qwen::init_params() {
   SEQLEN = net_blocks_cache[0]->stages[stage_idx].input_shapes[3].dims[1];
 
   // resize
+  past_key.clear();
+  past_value.clear();
+  tmp_past_key.clear();
+  tmp_past_value.clear();
+  total_tokens.clear();
+
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
   tmp_past_key.resize(NUM_LAYERS);
@@ -500,7 +506,7 @@ void Qwen::init_params() {
 }
 
 void Qwen::make_in_tensors(bool read_bmodel) {
-  if (!read_bmodel && inputs_pid.device_mem.u.device.device_addr > 0x100000000 && inputs_pid.device_mem.u.device.device_addr < 0x500000000){
+  if (!read_bmodel){
     free_in_tensors();
   }
 
