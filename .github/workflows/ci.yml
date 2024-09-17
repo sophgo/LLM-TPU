@@ -1,0 +1,25 @@
+name: Check Model References in README
+
+on:
+  push:
+    paths:
+      - 'LLM-TPU/models/**'
+      - 'LLM-TPU/README.md'
+
+jobs:
+  check-model-references:
+    runs-on: ubuntu-latest
+    name: Verify Model Listings in README
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'  # 选择 Python 版本
+
+      - name: Run the check script
+        run: |
+          python .github/workflows/check_models_in_readme.py
