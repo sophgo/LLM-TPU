@@ -38,6 +38,7 @@ declare -A model_to_demo=(
     ["wizardcoder-15b"]="WizardCoder"
     ["lwm-text-chat"]="LWM"
     ["internvl2-4b"]="InternVL2"
+    ["minicpmv2-6"]="MiniCPM-V-2_6"
 )
 
 # Process Args
@@ -61,7 +62,7 @@ fi
 
 # Check Model Name
 if [[ ! ${model_to_demo[$model]} ]]; then
-    >&2 echo -e "Error: Invalid name $model, the input name must be \033[31mchatglm3-6b|chatglm2-6b|llama2-7b|qwen-7b|qwen1.5-1.8b|wizardcoder-15b|internvl2-4b\033[0m"
+    >&2 echo -e "Error: Invalid name $model, the input name must be \033[31mchatglm3-6b|chatglm2-6b|llama2-7b|qwen-7b|qwen1.5-1.8b|wizardcoder-15b|internvl2-4b|minicpmv2-6\033[0m"
     exit 1
 fi
 

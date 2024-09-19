@@ -1,17 +1,13 @@
 #!/bin/bash
 set -ex
-models=
-mode="f16"
-folder="tmp"
-num_device=1
+models=""
+mode=int4
 mode_args=""
-device_args=""
-addr_args=""
-quantize_args="--quantize F16"
-name=""
-num_layers=
-hidden_size=
-seq_length=
+quantize_args=""
+name="minicpmv26"
+
+chip="bm1684x"
+num_layers=28
 out_model=$name.bmodel
 
 while [[ $# -gt 0 ]]; do
@@ -22,20 +18,8 @@ while [[ $# -gt 0 ]]; do
         mode="$2"
         shift 2
         ;;
-    --num_device)
-        num_device="$2"
-        shift 2
-        ;;
     --name)
         name="$2"
-        shift 2
-        ;;
-    --addr_mode)
-        addr_mode="$2"
-        shift 2
-        ;;
-    --seq_length)
-        seq_length="$2"
         shift 2
         ;;
     *)
@@ -49,76 +33,78 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$seq_length" ]]; then
-    echo "Error: --seq_length is required." >&2
-    exit 1
-fi
-
-if [ "$name" = "MiniCPM-V-2_6" ]; then
-  num_layers=28
-  hidden_size=3584
-  echo "Compile MiniCPM-V-2_6"
-else
-  >&2 echo -e "Error: Invalid name $name, the input name must be \033[31mMiniCPM-V-2_6\033[0m"
-  exit 1
-fi
-
 if [ x$mode == x"int8" ]; then
-    quantize_args="--quantize W8F16"
+    quantize_args="--quantize W8BF16"
 elif [ x$mode == x"bf16" ]; then
-    quantize_args="--quantize F16"
+    quantize_args="--quantize BF16"
 elif [ x$mode == x"int4" ]; then
-    quantize_args="--quantize W4F16 --q_group_size 64"
+    quantize_args="--quantize W4BF16 --q_group_size 64"
 else
     echo "Error, unknown quantize mode"
     exit 1
 fi
 
-if [ x$num_device != x1 ]; then
-    device_args="--num_device $num_device"
-    out_model=$name'_'$mode'_'$num_device'dev_'$seq_length'.bmodel'
-else
-    out_model=$name'_'$mode'_1dev_'$seq_length'.bmodel'
-fi
+onnx_dir=$PWD/tmp/onnx
+folder='tmp/'$name'_'$chip'_'$mode
+out_model=$name'_'$chip'_'$mode'.bmodel'
 
-if [ x$addr_mode == x"io_alone" ]; then
-    addr_args="--addr_mode io_alone"
-fi
+# Compile VIT model
+outdir=${folder}/vit
+mkdir -p $outdir
+pushd $outdir
 
+model_transform.py \
+    --model_name vision_encoder \
+    --model_def ${onnx_dir}/vision_transformer.onnx \
+    --mlir vision_encoder.mlir
+
+model_deploy.py \
+    --mlir vision_encoder.mlir \
+    --quantize BF16 \
+    --processor bm1684x \
+    --quant_output \
+    --model vision_encoder_bf16.bmodel
+
+models=${models}${outdir}'/vision_encoder_bf16.bmodel '
+
+popd
+echo $models
+
+# convert embedding
 outdir=${folder}/embedding
 mkdir -p $outdir
 pushd $outdir
 
 model_transform.py \
     --model_name embedding \
-    --model_def ../onnx/embedding.onnx \
+    --model_def ${onnx_dir}/embedding.onnx \
     --mlir embedding.mlir
 
 model_deploy.py \
     --mlir embedding.mlir \
-    --quantize F16 \
+    --quantize BF16 \
     --quant_input \
     --quant_output \
-    --chip bm1684x \
-    $device_args \
+    --chip ${chip} \
+    --addr_mode io_alone \
     --model embedding.bmodel
 
 model_transform.py \
     --model_name embedding_cache \
-    --model_def ../onnx/embedding.onnx \
+    --model_def ${onnx_dir}/embedding.onnx \
     --input_shapes [[1,1]] \
     --mlir embedding_cache.mlir
 
 model_deploy.py \
     --mlir embedding_cache.mlir \
-    --quantize F16 \
+    --quantize BF16 \
     --quant_input \
     --quant_output \
-    --chip bm1684x \
-    $device_args \
+    --chip ${chip} \
+    --addr_mode io_alone \
     --model embedding_cache.bmodel
 
-rm *.npz
+rm *.npz -f
 
 models=$models' '$outdir'/embedding.bmodel '$outdir'/embedding_cache.bmodel '
 
@@ -126,89 +112,38 @@ popd
 
 echo $models
 
-outdir=${folder}/$mode"_"$num_device"dev"/lm_head
+outdir=${folder}/lm_head
 mkdir -p $outdir
 pushd $outdir
 
 model_transform.py \
     --model_name lm_head \
-    --model_def ../../onnx/lm_head.onnx \
-    --input_shapes [[1,${hidden_size}]] \
+    --model_def ${onnx_dir}/lm_head.onnx \
     --mlir lm_head.mlir
 
 model_deploy.py \
     --mlir lm_head.mlir \
     $quantize_args \
     --quant_input \
-    --chip bm1684x \
-    $device_args \
+    --chip ${chip} \
+    --addr_mode io_alone \
     --model lm_head.bmodel
 
+rm *.npz -f
 
-model_transform.py \
-    --model_name greedy_head \
-    --model_def ../../onnx/greedy_head.onnx \
-    --mlir greedy_head.mlir
-
-model_deploy.py \
-    --mlir greedy_head.mlir \
-    --chip bm1684x \
-    --model greedy_head.bmodel
-
-
-model_transform.py \
-    --model_name penalty_sample_head \
-    --model_def ../../onnx/penalty_sample_head.onnx \
-    --mlir penalty_sample_head.mlir
-
-model_deploy.py \
-    --mlir penalty_sample_head.mlir \
-    --chip bm1684x \
-    --model penalty_sample_head.bmodel
-
-rm *.npz
-
-models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '$outdir'/penalty_sample_head.bmodel '
+models=${models}${outdir}'/lm_head.bmodel '
 popd
 
 echo $models
 
-outdir=${folder}/vision_transformer
+outdir=${folder}/block
 mkdir -p $outdir
 pushd $outdir
 
-model_transform.py \
-    --model_name vision_transformer \
-    --model_def ../onnx/vision_transformer.onnx \
-    --mlir vision_transformer.mlir
-
-model_deploy.py \
-    --mlir vision_transformer.mlir \
-    --quantize F16 \
-    --quant_input \
-    --quant_output \
-    --chip bm1684x \
-    $device_args \
-    --model vision_transformer.bmodel
-
-rm *.npz
-
-models=$models' '$outdir'/vision_transformer.bmodel '
-
-popd
-
-echo $models
-
-outdir=${folder}/$mode"_"$num_device"dev"/block
-mkdir -p $outdir
-
-pushd $outdir
-mkdir -p $outdir
-
-for ((i=0; i<=$num_layers; i++)); do
+for ((i = 0; i < $num_layers; i++)); do
     model_transform.py \
         --model_name block_$i \
-        --model_def ../../onnx/block_$i.onnx \
+        --model_def ${onnx_dir}/block_$i.onnx \
         --mlir block_$i.mlir
 
     model_deploy.py \
@@ -216,13 +151,12 @@ for ((i=0; i<=$num_layers; i++)); do
         $quantize_args \
         --quant_input \
         --quant_output \
-        --chip bm1684x \
-        $device_args \
+        --chip ${chip} \
         --model block_$i.bmodel
 
     model_transform.py \
         --model_name block_cache_$i \
-        --model_def ../../onnx/block_cache_$i.onnx \
+        --model_def ${onnx_dir}/block_cache_$i.onnx \
         --mlir block_cache_$i.mlir
 
     model_deploy.py \
@@ -230,12 +164,11 @@ for ((i=0; i<=$num_layers; i++)); do
         $quantize_args \
         --quant_input \
         --quant_output \
-        --chip bm1684x \
-        $device_args \
-        $addr_args \
+        --chip ${chip} \
+        --addr_mode io_alone \
         --model block_cache_$i.bmodel
 
-    rm *.npz
+    rm *.npz -f
 
     models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
 
@@ -244,4 +177,3 @@ popd
 echo $models
 
 model_tool --combine $models -o $out_model
-

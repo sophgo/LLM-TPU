@@ -3,7 +3,6 @@ set -ex
 models=""
 mode=int4
 mode_args=""
-device_args=""
 quantize_args=""
 name="internvl2-4b"
 addr_mode="io_alone"
@@ -106,7 +105,7 @@ model_deploy.py \
     --quant_input \
     --quant_output \
     --chip ${chip} \
-    $device_args \
+    --addr_mode io_alone \
     --model embedding.bmodel
 
 model_transform.py \
@@ -121,7 +120,7 @@ model_deploy.py \
     --quant_input \
     --quant_output \
     --chip ${chip} \
-    $device_args \
+    --addr_mode io_alone \
     --model embedding_cache.bmodel
 
 rm *.npz -f
@@ -147,7 +146,6 @@ model_deploy.py \
     $quantize_args \
     --quant_input \
     --chip ${chip} \
-    $device_args \
     --model lm_head.bmodel
 
 rm *.npz -f
@@ -174,7 +172,6 @@ for ((i=0; i<$num_layers; i++)); do
         --quant_input \
         --quant_output \
         --chip ${chip} \
-        $device_args \
         --model block_$i.bmodel
 
     model_transform.py \
@@ -188,7 +185,6 @@ for ((i=0; i<$num_layers; i++)); do
         --quant_input \
         --quant_output \
         --chip ${chip} \
-        $device_args \
         --addr_mode io_alone \
         --model block_cache_$i.bmodel
 

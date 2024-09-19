@@ -23,42 +23,47 @@
 #include <random>
 #include <numeric>
 
-static const uint16_t ATTENTION_MASK = 0xF0E2;
+static const uint16_t ATTENTION_MASK = 0xC61C; // -9984 by bfloat16
 
-class Llama3_1 {
+#if 0
+// for debug
+#include "cnpy.h"
+static cnpy::npz_t map;
+
+template <typename T>
+static void add_array(std::string name, bm_handle_t bm_handle,
+                      const bm_device_mem_t &dst) {
+  std::vector<T> data(dst.size / sizeof(T));
+  bm_memcpy_d2s(bm_handle, data.data(), dst);
+  cnpy::npz_add_array(map, name, data);
+}
+
+static void save_array(std::string filename) {
+  cnpy::npz_save_all(filename, map);
+}
+#endif
+
+class MiniCPMV {
 public:
-  void init(const std::vector<int> &devid, std::string model_path);
+  void init(int devid, std::string model_path);
   void deinit();
-  int forward_first(std::vector<int> &tokens);
+  int forward_first(std::vector<int> &tokens, std::vector<float> &pixel_values,
+                    int img_offset);
   int forward_next();
-  std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
   std::mt19937 sgen;
-  Llama3_1() : sgen(std::random_device()()){};
+  MiniCPMV() : sgen(std::random_device()()) {};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
 
-  void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
-  int greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
-  int penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
-
 public:
   int token_length;
-  int SEQLEN;     // read from bmodel
+  int SEQLEN; // read from bmodel
+  int HIDDEN_SIZE;
   int NUM_LAYERS; // read from bmodel
-  bool io_alone;
-  std::vector<int> visited_tokens;
-
-  // generation
-  float temperature;
-  float top_p;
-  float repeat_penalty;
-  int repeat_last_n;
-  int max_new_tokens;
-  std::string generation_mode;
-  std::string prompt_mode;
+  uint64_t IMAGE_BYTES;
 
 private:
   std::vector<bm_handle_t> handles;
@@ -68,12 +73,14 @@ private:
   std::vector<const bm_net_info_t *> net_blocks_cache;
   const bm_net_info_t *net_embed;
   const bm_net_info_t *net_embed_cache;
-  const bm_net_info_t *net_lm, *net_greedy_head, *net_penalty_sample_head;
+  const bm_net_info_t *net_lm;
+  const bm_net_info_t *net_vit;
+
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
 };
 
-void Llama3_1::net_launch(const bm_net_info_t *net, int stage_idx) {
+void MiniCPMV::net_launch(const bm_net_info_t *net, int stage_idx) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
   std::vector<bm_tensor_t> out_tensors(net->output_num);
 
@@ -94,32 +101,19 @@ void Llama3_1::net_launch(const bm_net_info_t *net, int stage_idx) {
   bm_thread_sync(bm_handle);
 }
 
-void Llama3_1::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
+void MiniCPMV::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
 }
 
-void Llama3_1::init(const std::vector<int> &devices, std::string model_path) {
-  
+void MiniCPMV::init(int dev_id, std::string model_path) {
+
   // request bm_handle
-  std::cout << "Device [ ";
-  for (auto d : devices) {
-    std::cout << d << " ";
-  }
-  std::cout << "] loading ....\n";
-  for (auto d : devices) {
-    bm_handle_t h;
-    bm_status_t status = bm_dev_request(&h, d);
-    assert(BM_SUCCESS == status);
-    handles.push_back(h);
-  }
-  bm_handle = handles[0];
+  std::cout << "Device [ " << dev_id << " ] loading .....\n";
+  bm_status_t status = bm_dev_request(&bm_handle, dev_id);
+  assert(BM_SUCCESS == status);
 
   // create bmruntime
-#ifdef SOC_TARGET
-  p_bmrt = bmrt_create(handles[0]);
-#else
-  p_bmrt = bmrt_create_ex(handles.data(), handles.size());
-#endif
+  p_bmrt = bmrt_create(bm_handle);
   assert(NULL != p_bmrt);
 
   // load bmodel by file
@@ -131,16 +125,13 @@ void Llama3_1::init(const std::vector<int> &devices, std::string model_path) {
   // net embed and lm_head
   net_embed = bmrt_get_network_info(p_bmrt, "embedding");
   net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
+  net_vit = bmrt_get_network_info(p_bmrt, "vision_encoder");
   net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
-  net_greedy_head = bmrt_get_network_info(p_bmrt, "greedy_head");
-  net_penalty_sample_head = bmrt_get_network_info(p_bmrt, "penalty_sample_head");
   SEQLEN = net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
+  HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[1];
   auto num_nets = bmrt_get_network_number(p_bmrt);
-  NUM_LAYERS = (num_nets - 5) / 2;
-
-  // resize
-  visited_tokens.resize(SEQLEN);
-
+  NUM_LAYERS = (num_nets - 4) / 2;
+  IMAGE_BYTES = bm_mem_get_device_size(net_vit->stages[0].input_mems[0]);
   // net blocks
   for (int i = 0; i < NUM_LAYERS; i++) {
     auto block_name = "block_" + std::to_string(i);
@@ -153,109 +144,26 @@ void Llama3_1::init(const std::vector<int> &devices, std::string model_path) {
   // kv cache
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
-  auto addr_mode = net_blocks_cache[0]->addr_mode;
-  io_alone = addr_mode == 1;
   for (int i = 0; i < NUM_LAYERS; i++) {
-    assert(addr_mode == net_blocks_cache[i]->addr_mode);
-    if (io_alone) {
-      past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
-      past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
-    } else {
-      auto ret = bm_malloc_device_byte(bm_handle, &past_key[i],
-                                       net_blocks_cache[i]->max_input_bytes[3]);
-      assert(BM_SUCCESS == ret);
-      ret = bm_malloc_device_byte(bm_handle, &past_value[i],
-                                  net_blocks_cache[i]->max_input_bytes[4]);
-      assert(BM_SUCCESS == ret);
-    }
+    past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
+    past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
   }
 }
 
-void Llama3_1::deinit() {
-  if (false == io_alone) {
-    for (int i = 0; i < NUM_LAYERS; i++) {
-      bm_free_device(bm_handle, past_key[i]);
-      bm_free_device(bm_handle, past_value[i]);
-    }
-  }
+void MiniCPMV::deinit() {
   bmrt_destroy(p_bmrt);
   for (auto h : handles) {
     bm_dev_free(h);
   }
 }
 
-void Llama3_1::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
-  std::vector<bm_tensor_t> in_tensors(net->input_num);
-  std::vector<bm_tensor_t> out_tensors(net->output_num);
-
-  bmrt_tensor_with_device(
-      &in_tensors[0], logits_mem,
-      net->input_dtypes[0], net->stages[0].input_shapes[0]);
-
-  for (int i = 1; i < net->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net->stages[0].input_mems[i],
-        net->input_dtypes[i], net->stages[0].input_shapes[i]);
-  }
-  for (int i = 0; i < net->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net->stages[0].output_mems[i],
-        net->output_dtypes[i], net->stages[0].output_shapes[i]);
-  }
-  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
-                                   net->input_num, out_tensors.data(),
-                                   net->output_num, true, false);
-  assert(ret);
-  bm_thread_sync(bm_handle);
-}
-
-int Llama3_1::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
-  auto &out_mem = net->stages[0].output_mems[0];
-  head_launch(net, logits_mem);
-  int token = 0;
-  bm_memcpy_d2s(bm_handle, (void *)&token, out_mem);
-  return token;
-}
-
-int Llama3_1::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
-  auto &in1_mem = net->stages[0].input_mems[1];
-  auto &in2_mem = net->stages[0].input_mems[2];
-  auto &in3_mem = net->stages[0].input_mems[3];
-  auto &in4_mem = net->stages[0].input_mems[4];
-  auto &out0_mem = net->stages[0].output_mems[0];
-  auto &out1_mem = net->stages[0].output_mems[1];
-
-  // repeat_penalty + top_p + top_k + temperature
-  std::vector<int> generated_tokens(SEQLEN, visited_tokens[token_length - 1]);
-  repeat_last_n = std::min(repeat_last_n, token_length);
-  std::copy(visited_tokens.begin() + token_length - repeat_last_n, 
-            visited_tokens.begin() + token_length,
-            generated_tokens.begin());
-  bm_memcpy_s2d(bm_handle, in1_mem, (void *)generated_tokens.data());
-  bm_memcpy_s2d(bm_handle, in2_mem, (void *)&top_p);
-  bm_memcpy_s2d(bm_handle, in3_mem, (void *)&temperature);
-  bm_memcpy_s2d(bm_handle, in4_mem, (void *)&repeat_penalty);
-
-  // inference
-  head_launch(net, logits_mem);
-
-  // get logit & token
-  int candidate_num = net->stages[0].output_shapes[0].dims[1];
-  std::vector<float> probs(candidate_num);
-  bm_memcpy_d2s(bm_handle, probs.data(), out0_mem);
-  std::vector<int> tokens(candidate_num);
-  bm_memcpy_d2s(bm_handle, tokens.data(), out1_mem);
-
-  // penalty_sample
-  std::discrete_distribution<> dist(probs.begin(), probs.end());
-  return tokens[dist(sgen)];
-}
-
-int Llama3_1::forward_first(std::vector<int> &tokens) {
+int MiniCPMV::forward_first(std::vector<int> &tokens,
+                             std::vector<float> &pixel_values, int img_offset) {
+  std::vector<int> input_ids(SEQLEN, 0);
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
-  std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
-  
+  std::copy(tokens.begin(), tokens.end(), input_ids.data());
+
   token_length = tokens.size();
 
   for (int i = 0; i < token_length; i++) {
@@ -272,8 +180,22 @@ int Llama3_1::forward_first(std::vector<int> &tokens) {
   // forward embeding
   auto &in_mem = net_embed->stages[0].input_mems[0];
   auto &out_mem = net_embed->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)visited_tokens.data());
+  bm_memcpy_s2d(bm_handle, in_mem, (void *)input_ids.data());
   net_launch(net_embed); // prefil embedding
+
+  if (pixel_values.size() * sizeof(float) == IMAGE_BYTES && img_offset > 0) {
+    // forward vision transformer
+    auto &vit_in_mem = net_vit->stages[0].input_mems[0];
+    auto &vit_out_mem = net_vit->stages[0].output_mems[0];
+    bm_memcpy_s2d(bm_handle, vit_in_mem, (void *)pixel_values.data());
+    net_launch(net_vit);
+
+    // concatenante texting embedding and image embedding
+    int dst_offset = img_offset * HIDDEN_SIZE * 2;
+    int vit_size = bm_mem_get_device_size(vit_out_mem);
+    bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, vit_out_mem, 0,
+                       vit_size);
+  }
 
   // forward blocks
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
@@ -299,22 +221,13 @@ int Llama3_1::forward_first(std::vector<int> &tokens) {
   bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
                      (token_length - 1) * bytes, bytes);
   net_launch(net_lm);
-
   int token = 0;
-  if (generation_mode == "greedy") {
-    token = greedy_search(net_greedy_head, lm_out_mem);
-  } else if (generation_mode == "penalty_sample") {
-    token = penalty_sample(net_penalty_sample_head, lm_out_mem);
-  }
-
-  visited_tokens[token_length] = token;
-  token_length += 1;
+  bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  token_length++;
   return token;
 }
 
-int Llama3_1::forward_next() {
-  int cur_token = visited_tokens[token_length - 1];
-
+int MiniCPMV::forward_next() {
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = token_length - 1; i < SEQLEN; i++) {
     attention_mask[i] = ATTENTION_MASK;
@@ -322,9 +235,11 @@ int Llama3_1::forward_next() {
   int32_t position_id = token_length - 1;
 
   // embedding
+  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
+  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
   auto &in_mem = net_embed_cache->stages[0].input_mems[0];
   auto &out_mem = net_embed_cache->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)&cur_token);
+  d2d(in_mem, lm_out_mem);
   net_launch(net_embed_cache);
 
   // blocks
@@ -335,28 +250,18 @@ int Llama3_1::forward_next() {
     auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
     auto &in2_mem = net_blocks_cache[idx]->stages[0].input_mems[2];
-    auto &in3_mem = net_blocks_cache[idx]->stages[0].input_mems[3];
-    auto &in4_mem = net_blocks_cache[idx]->stages[0].input_mems[4];
     auto &out0_mem = net_blocks_cache[idx]->stages[0].output_mems[0];
     auto &out1_mem = net_blocks_cache[idx]->stages[0].output_mems[1];
     auto &out2_mem = net_blocks_cache[idx]->stages[0].output_mems[2];
     d2d(in0_mem, out_mem);
-    if (io_alone) {
-      if (idx == 0) {
-        bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
-        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-      } else {
-        d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
-        d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
-      }
+    if (idx == 0) {
+      bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
+      bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     } else {
-      if (idx == 0) {
-        bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
-        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-      }
-      d2d(in3_mem, past_key[idx]);
-      d2d(in4_mem, past_value[idx]);
+      d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
+      d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
     }
+
     net_launch(net_blocks_cache[idx]);
     out_mem = out0_mem;
     bm_memcpy_d2d_byte(bm_handle, past_key[idx], token_offset, out1_mem, 0,
@@ -366,63 +271,22 @@ int Llama3_1::forward_next() {
   }
 
   // forward lmhead
-  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
-  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
   d2d(lm_in_mem, out_mem);
   net_launch(net_lm);
 
   int token = 0;
-  if (generation_mode == "greedy") {
-    token = greedy_search(net_greedy_head, lm_out_mem);
-  } else if (generation_mode == "penalty_sample") {
-    token = penalty_sample(net_penalty_sample_head, lm_out_mem);
-  }
-  
-  visited_tokens[token_length] = token;
-  token_length += 1;
+  bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  token_length++;
   return token;
 }
 
-
-std::vector<int> Llama3_1::generate(std::vector<int> &history_tokens, int EOS) {
-  if (history_tokens.empty()) {
-    printf("Sorry: your question is empty!!\n");
-    history_tokens.clear();
-    return {};
-  }
-
-  // make sure token not too large
-  if ((int)history_tokens.size() > SEQLEN - 10) {
-    history_tokens.clear();
-    printf("Error: your question is too large!\n");
-    return {};
-  }
-
-  std::vector<int> result_tokens;
-  int token = forward_first(history_tokens);
-  while (token != EOS && token_length < SEQLEN) {
-    result_tokens.emplace_back(token);
-    token = forward_next();
-  }
-
-  return result_tokens;
-}
-
 PYBIND11_MODULE(chat, m) {
-    pybind11::class_<Llama3_1>(m, "Llama3_1")
-        .def(pybind11::init<>())
-        .def("init", &Llama3_1::init)
-        .def("forward_first", &Llama3_1::forward_first)
-        .def("forward_next", &Llama3_1::forward_next)
-        .def("generate", &Llama3_1::generate)
-        .def("deinit", &Llama3_1::deinit)
-        .def_readwrite("SEQLEN", &Llama3_1::SEQLEN) // read SEQLEN in pipeline.py
-        .def_readwrite("token_length", &Llama3_1::token_length)
-        .def_readwrite("temperature", &Llama3_1::temperature)
-        .def_readwrite("top_p", &Llama3_1::top_p)
-        .def_readwrite("repeat_penalty", &Llama3_1::repeat_penalty)
-        .def_readwrite("repeat_last_n", &Llama3_1::repeat_last_n)
-        .def_readwrite("max_new_tokens", &Llama3_1::max_new_tokens)
-        .def_readwrite("generation_mode", &Llama3_1::generation_mode)
-        .def_readwrite("prompt_mode", &Llama3_1::prompt_mode);
+  pybind11::class_<MiniCPMV>(m, "MiniCPMV")
+      .def(pybind11::init<>())
+      .def("init", &MiniCPMV::init)
+      .def("forward_first", &MiniCPMV::forward_first)
+      .def("forward_next", &MiniCPMV::forward_next)
+      .def("deinit", &MiniCPMV::deinit)
+      .def_readwrite("SEQLEN", &MiniCPMV::SEQLEN) // read SEQLEN in pipeline.py
+      .def_readwrite("token_length", &MiniCPMV::token_length);
 }

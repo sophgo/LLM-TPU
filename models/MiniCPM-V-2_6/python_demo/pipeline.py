@@ -1,63 +1,73 @@
-import argparse
-
 import time
+import torch
+import argparse
+from PIL import Image
+import torchvision.transforms as T
 from transformers import AutoTokenizer
+from torchvision.transforms.functional import InterpolationMode
+import chat
+import os
 
-class Llama3_1():
+# Preprocess the images
+IMAGENET_MEAN = (0.5, 0.5, 0.5)
+IMAGENET_STD = (0.5, 0.5, 0.5)
+
+
+def build_transform(input_size):
+    MEAN, STD = IMAGENET_MEAN, IMAGENET_STD
+    transform = T.Compose([
+        T.Lambda(lambda img: img.convert('RGB') if img.mode != 'RGB' else img),
+        T.Resize((input_size, input_size),
+                 interpolation=InterpolationMode.BICUBIC),
+        T.ToTensor(),
+        T.Normalize(mean=MEAN, std=STD)
+    ])
+    return transform
+
+
+def load_image(image_file, input_size=448):
+    image = Image.open(image_file).convert('RGB')
+    transform = build_transform(input_size=input_size)
+    pixel_values = transform(image)
+    return pixel_values
+
+
+class MiniCPMV():
     def __init__(self, args):
         # devid
-        self.devices = [int(d) for d in args.devid.split(",")]
+        self.device = args.devid
 
         # load tokenizer
-        print("Load " + args.tokenizer_path + " ...")
+        print("Load " + args.tokenizer + " ...")
         self.tokenizer = AutoTokenizer.from_pretrained(
-            args.tokenizer_path, trust_remote_code=True
+            args.tokenizer, trust_remote_code=True
         )
-
-        # warm up
-        self.tokenizer.decode([0])
+        self.tokenizer.decode([0])  # warm up
 
         # preprocess parameters, such as prompt & tokenizer
-        self.system_prompt = "You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information."
-        self.EOS = [self.tokenizer.eos_token_id, self.tokenizer.convert_tokens_to_ids("<|eot_id|>")]
-        self.system = {"role":"system","content":self.system_prompt}
-        self.history = [self.system]
-        self.enable_history = args.enable_history
+        self.system_prompt = '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n'
+        self.image_ids = [0] * 64
 
         # load model
-        self.load_model(args)
-
-
-    def load_model(self, args):
-        import chat
-        self.model = chat.Llama3_1()
-        self.model.init(self.devices, args.model_path)
-        self.model.temperature = args.temperature
-        self.model.top_p = args.top_p
-        self.model.repeat_penalty = args.repeat_penalty
-        self.model.repeat_last_n = args.repeat_last_n
-        self.model.max_new_tokens = args.max_new_tokens
-        self.model.generation_mode = args.generation_mode
-        self.model.prompt_mode = args.prompt_mode
+        self.model = chat.MiniCPMV()
+        self.model.init(self.device, args.model_path)
         self.SEQLEN = self.model.SEQLEN
+        self.ID_EOS = self.tokenizer.eos_token_id
+        self.ID_IM_END = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
 
-
-    def clear(self):
-        self.history = [self.system]
-
-
-    def update_history(self):
-        if self.model.token_length >= self.SEQLEN:
-            print("... (reach the maximal length)", flush=True, end='')
-            self.history = [self.system]
-        else:
-            self.history.append({"role":"assistant","content":self.answer_cur})
-
-
-    def encode_tokens(self):
-        self.history.append({"role":"user","content":self.input_str})
-        return self.tokenizer.apply_chat_template(self.history, tokenize=True, add_generation_prompt=True)
-
+    def encode(self):
+        if not self.image_str:
+            prompt = self.system_prompt + self.input_str + "<|im_end|>\n<|im_start|>assistant\n"
+            self.input_ids = self.tokenizer.encode(prompt)
+            self.image_offset = 0
+            self.pixel_values = []
+            return
+        self.pixel_values = load_image(self.image_str).flatten().tolist()
+        system_ids = self.tokenizer.encode(self.system_prompt + "<image>")
+        self.image_offset = len(system_ids)
+        prompt_ids = self.tokenizer.encode(
+            "</image>\n{}<|im_end|>\n<|im_start|>assistant\n".format(self.input_str))
+        self.input_ids = system_ids + self.image_ids + prompt_ids
 
     def chat(self):
         """
@@ -76,129 +86,54 @@ class Llama3_1():
             # Quit
             if self.input_str in ["exit", "q", "quit"]:
                 break
-            # New Chat
-            elif self.input_str in ["clear", "new"]:
-                self.clear()
+            self.image_str = input("\nImage Path: ")
+            print("\nAnswer:")
+            if self.image_str:
+                if not os.path.exists(self.image_str):
+                    print("Can't find image: {}".format(self.image_str))
+                    continue
+            self.encode()
             # Chat
-            else:
-                tokens = self.encode_tokens()
-
-                # check tokens
-                if not tokens:
-                    print("Sorry: your question is empty!!")
-                    return
-                if len(tokens) > self.SEQLEN:
-                    print(
-                        "The maximum question length should be shorter than {} but we get {} instead.".format(
-                            self.SEQLEN, len(tokens)
-                        )
-                    )
-                    return
-
-                print("\nAnswer: ", end="")
-                self.stream_answer(tokens)
-
-
-    def stream_answer(self, tokens):
-        """
-        Stream the answer for the given tokens.
-        """
-        tok_num = 0
-        self.answer_cur = ""
-        self.answer_token = []
-
-        # First token
-        first_start = time.time()
-        token = self.model.forward_first(tokens)
-        first_end = time.time()
-
-        full_word_tokens = []
-        # Following tokens
-        while token not in self.EOS and self.model.token_length < self.SEQLEN:
-            full_word_tokens.append(token)
-            word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
-            if "�" in word:
-                token = self.model.forward_next()
-                tok_num += 1
-                continue
-
-            self.answer_token += [token]
-            print(word, flush=True, end="")
-            token = self.model.forward_next()
-            tok_num += 1
+            first_start = time.time()
+            token = self.model.forward_first(
+                self.input_ids, self.pixel_values, self.image_offset)
+            first_end = time.time()
+            tok_num = 1
+            # Following tokens
             full_word_tokens = []
+            while token not in [self.ID_EOS, self.ID_IM_END] and self.model.token_length < self.SEQLEN:
+                full_word_tokens.append(token)
+                word = self.tokenizer.decode(
+                    full_word_tokens, skip_special_tokens=True)
+                if "�" not in word:
+                    if len(full_word_tokens) == 1:
+                        pre_word = word
+                        word = self.tokenizer.decode([token, token], skip_special_tokens=True)[
+                            len(pre_word):]
+                    print(word, flush=True, end="")
+                    full_word_tokens = []
+                tok_num += 1
+                token = self.model.forward_next()
+            next_end = time.time()
+            first_duration = first_end - first_start
+            next_duration = next_end - first_end
+            tps = tok_num / next_duration
+            print(f"\nFTL: {first_duration:.3f} s")
+            print(f"TPS: {tps:.3f} token/s")
 
-        # counting time
-        next_end = time.time()
-        first_duration = first_end - first_start
-        next_duration = next_end - first_end
-        tps = tok_num / next_duration
-
-        print()
-        print(f"FTL: {first_duration:.3f} s")
-        print(f"TPS: {tps:.3f} token/s")
-
-        self.answer_cur = self.tokenizer.decode(self.answer_token)
-
-        if self.enable_history:
-            self.update_history()
-        else:
-            self.clear()
-
-
-    ## For Web Demo
-    def stream_predict(self, query):
-        """
-        Stream the prediction for the given query.
-        """
-        self.answer_cur = ""
-        self.input_str = query
-        tokens = self.encode_tokens()
-
-        for answer_cur, history in self._generate_predictions(tokens):
-            yield answer_cur, history
-
-    def _generate_predictions(self, tokens):
-        """
-        Generate predictions for the given tokens.
-        """
-        # First token
-        next_token = self.model.forward_first(tokens)
-        output_tokens = [next_token]
-
-        # Following tokens
-        while True:
-            next_token = self.model.forward_next()
-            if next_token == self.EOS:
-                break
-            output_tokens += [next_token]
-            self.answer_cur = self.tokenizer.decode(output_tokens)
-            if self.model.token_length >= self.SEQLEN:
-                self.update_history()
-                yield self.answer_cur + "\n\n\nReached the maximum length; The history context has been cleared.", self.history
-                break
-            else:
-                yield self.answer_cur, self.history
-
-        self.update_history()
 
 def main(args):
-    model = Llama3_1(args)
+    model = MiniCPMV(args)
     model.chat()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m', '--model_path', type=str, required=True, help='path to the bmodel file')
-    parser.add_argument('-t', '--tokenizer_path', type=str, default="../support/token_config", help='path to the tokenizer file')
-    parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
-    parser.add_argument('--temperature', type=float, default=1.0, help='temperature scaling factor for the likelihood distribution')
-    parser.add_argument('--top_p', type=float, default=1.0, help='cumulative probability of token words to consider as a set of candidates')
-    parser.add_argument('--repeat_penalty', type=float, default=1.0, help='penalty for repeated tokens')
-    parser.add_argument('--repeat_last_n', type=int, default=32, help='repeat penalty for recent n tokens')
-    parser.add_argument('--max_new_tokens', type=int, default=1024, help='max new token length to generate')
-    parser.add_argument('--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
-    parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
-    parser.add_argument('--enable_history', action='store_true', default=True, help="if set, enables storing of history memory.")
+    parser.add_argument('-m', '--model_path', type=str,
+                        required=True, help='path to the bmodel file')
+    parser.add_argument('-t', '--tokenizer', type=str,
+                        default="../support/token_config", help='path to the tokenizer file')
+    parser.add_argument('-d', '--devid', type=int,
+                        default=0, help='device ID to use')
     args = parser.parse_args()
     main(args)
