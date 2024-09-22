@@ -9,7 +9,7 @@ folder="tmp"
 num_device=1
 mode_args=""
 device_args=""
-quantize_args="--quantize W4F16 --q_group_size 64"
+quantize_args="--quantize W4BF16 --q_group_size 64"
 name="glm4-9b"
 num_layers=40
 out_model=$name.bmodel
@@ -61,11 +61,11 @@ else
 fi
 
 if [ x$mode == x"int8" ]; then
-    quantize_args="--quantize W8F16"
-elif [ x$mode == x"f16" ]; then
-    quantize_args="--quantize F16"
+    quantize_args="--quantize W8BF16"
+elif [ x$mode == x"bf16" ]; then
+    quantize_args="--quantize BF16"
 elif [ x$mode == x"int4" ]; then
-    quantize_args="--quantize W4F16 --q_group_size 64"
+    quantize_args="--quantize W4BF16 --q_group_size 64"
 else
     echo "Error, unknown quantize mode"
     exit 1
@@ -73,9 +73,9 @@ fi
 
 if [ x$num_device != x1 ]; then
     device_args="--num_device $num_device"
-    out_model=$name'_'$mode'_'$num_device'dev.bmodel'
+    out_model=$name'_'$mode'_seq'$seq_length'_'$num_device'dev.bmodel'
 else
-    out_model=$name'_'$mode'_1dev.bmodel'
+    out_model=$name'_'$mode'_seq'$seq_length'_1dev.bmodel'
 fi
 
 outdir=${folder}/$mode"_"$num_device"dev"/embedding
@@ -92,7 +92,7 @@ model_transform.py \
 
 model_deploy.py \
     --mlir embedding.mlir \
-    --quantize F16 \
+    --quantize BF16 \
     --quant_input \
     --quant_output \
     --chip bm1684x \
@@ -109,7 +109,7 @@ model_transform.py \
 
 model_deploy.py \
     --mlir embedding_cache.mlir \
-    --quantize F16 \
+    --quantize BF16 \
     --quant_input \
     --quant_output \
     --chip bm1684x \

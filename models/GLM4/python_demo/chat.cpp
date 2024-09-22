@@ -23,35 +23,6 @@
 #include <stdio.h>
 #include <vector>
 #include "utils.h"
-#include "cnpy.h"
-
-template <typename T>
-void dump_tensor_to_file(
-        bm_handle_t&          handle,
-        bm_device_mem_t&          t,
-        std::vector<size_t>&& shape,
-        const std::string&    filename,
-        const std::string&    tensor_name) {
-    int  cnt = bm_mem_get_device_size(t) / sizeof(T);
-    auto buffer = std::make_unique<T[]>(cnt);
-    bm_memcpy_d2s(handle, buffer.get(), t);
- 
-    if constexpr (std::is_same_v<T, uint16_t>) {
-      std::vector<float> data(cnt);
-      for (int i = 0; i < cnt; i++)
-        // data[i] = bf16_to_fp32_value(buffer[i]);
-        data[i] = fp16_ieee_to_fp32_value(buffer[i]);
-      cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
-    } else if constexpr (std::is_same_v<T, int32_t>){
-      std::vector<int> data(cnt);
-      memcpy(data.data(), buffer.get(), sizeof(int) * cnt);
-      cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
-    } else {
-      std::vector<float> data(cnt);
-      memcpy(data.data(), buffer.get(), sizeof(float) * cnt);
-      cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
-    }
-}
 
 static const float MASK = -1000.0;
 static const float MASK_CACHE = 1.0;

@@ -23,40 +23,9 @@
 #include <stdio.h>
 #include <vector>
 #include "utils.h"
-#include "cnpy.h"
 
-template <typename T>
-void dump_tensor_to_file(
-        bm_handle_t&          handle,
-        bm_device_mem_t&          t,
-        std::vector<size_t>&& shape,
-        const std::string&    filename,
-        const std::string&    tensor_name) {
-    int  cnt = bm_mem_get_device_size(t) / sizeof(T);
-    auto buffer = std::make_unique<T[]>(cnt);
-    bm_memcpy_d2s(handle, buffer.get(), t);
- 
-    if constexpr (std::is_same_v<T, uint16_t>) {
-      std::vector<float> data(cnt);
-      for (int i = 0; i < cnt; i++)
-        // data[i] = bf16_to_fp32_value(buffer[i]);
-        data[i] = fp16_ieee_to_fp32_value(buffer[i]);
-      cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
-    } else if constexpr (std::is_same_v<T, int32_t>){
-      std::vector<int> data(cnt);
-      memcpy(data.data(), buffer.get(), sizeof(int) * cnt);
-      cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
-    } else {
-      std::vector<float> data(cnt);
-      memcpy(data.data(), buffer.get(), sizeof(float) * cnt);
-      cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
-    }
-}
-
-static const float MASK = -1000.0;
-static const float MASK_CACHE = 1.0;
-uint16_t mask = fp32_to_fp16_bits(MASK);
-uint16_t mask_cache = fp32_to_fp16_bits(MASK_CACHE);
+static const float ATTENTION_MASK = -1000.;
+static const float ATTENTION_MASK_CACHE = 1.0;
 
 class ChatGLM {
 public:
@@ -98,6 +67,9 @@ private:
   std::vector<std::vector<bm_tensor_t>> past_keys, past_values;
   std::vector<bm_tensor_t> present_key_cache, present_value_cache;
   std::vector<bm_tensor_t> inputs_lm, outputs_lm;
+
+  uint16_t mask_value;
+  uint16_t mask_cache_value;
 };
 
 void ChatGLM::net_launch(const bm_net_info_t *net, 
@@ -303,6 +275,19 @@ void ChatGLM::init(const std::vector<int> &devices, std::string model_path) {
                         net_lm->stages[0].output_shapes[0]);
     assert(true == ret);
   }
+
+  // convert attention to uint16_t
+  if (net_blocks[0]->input_dtypes[0] == BM_FLOAT16) {
+    mask_value = fp32_to_fp16_bits(ATTENTION_MASK);
+    mask_cache_value = fp32_to_fp16_bits(ATTENTION_MASK_CACHE);
+  } else if (net_blocks[0]->input_dtypes[0] == BM_BFLOAT16) {
+    mask_value = fp32_to_bf16_bits(ATTENTION_MASK);
+    mask_cache_value = fp32_to_bf16_bits(ATTENTION_MASK_CACHE);
+  } else {
+    std::cerr << "\nError: Invalid attention dtype\n";
+    std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
+    throw std::runtime_error("Invalid attention dtype");
+  }
 }
 
 void ChatGLM::deinit() {
@@ -341,7 +326,7 @@ int ChatGLM::forward_first(std::vector<int> &tokens) {
     for (int j = 0; j < SEQLEN; j++) {
       if (j <= i && i < token_length) {
       } else {
-        attention_mask[i * SEQLEN + j] = mask;
+        attention_mask[i * SEQLEN + j] = mask_value;
       }
     }
   }
@@ -404,7 +389,7 @@ int ChatGLM::forward_next() {
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = 0; i <= SEQLEN - token_length; i++) {
-    attention_mask[i] = mask_cache;
+    attention_mask[i] = mask_cache_value;
   }
   int32_t position_id = token_length - 1;
 

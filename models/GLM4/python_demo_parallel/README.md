@@ -5,7 +5,12 @@
 ## 1. 编译
 
 按如下操作编译glm4-9b模型：
+在编译之前，需要更改config.json中seq_length的长度，改成符合你需要的长度
+
 ```shell
+# 如果是转公版模型，可以从huggingface上或者从以下链接下载torch模型
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/glm-4-9b-chat-torch.zip
+
 # 先将提供的模型配置文件替换至下载的权重内
 export ChatGLM4_PATH=$PWD/glm-4-9b-chat
 cd GLM4/compile/
@@ -15,7 +20,7 @@ cp ./compile/files/glm-4-9b-chat/config.json $ChatGLM4_PATH
 popd
 
 # 根据需要的sequence length导出onnx，注意多芯必须添加lmhead_with_topk参数
-python3 ./export_onnx.py -m $ChatGLM4_PATH -s 2048 --lmhead_with_topk
+python3 ./export_onnx.py -m $ChatGLM4_PATH -s 2048 --lmhead_with_topk 1
 
 # 静态编译
 ./compile.sh --mode int4 --num_device 8 --name glm4-9b --seq_length 2048
@@ -32,8 +37,6 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/glm4_se
 
 ## 3. 运行
 ```shell
-git submodule update --init
-
 cd python_demo_parallel
 mkdir build 
 cd build && cmake .. && make -j8 && cp *cpython* .. && cd ..

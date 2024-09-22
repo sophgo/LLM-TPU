@@ -20,7 +20,7 @@ parser.add_argument('-m', '--model_path', type=str, help='path to the torch mode
 parser.add_argument('-s', '--seq_length', type=int, default=512, help="sequence length")
 parser.add_argument('-d', '--device', type=str, choices=["cpu", "cuda"], default="cpu")
 parser.add_argument('-n', '--num_threads', type=int, default=1, help='The number of threads used for torch if device is cpu')
-parser.add_argument('--lmhead_with_topk', action=store_true, help="only trace the LmHeadWithTopK")
+parser.add_argument('--lmhead_with_topk', type=int, default=0, help="only trace the LmHeadWithTopK")
 
 args = parser.parse_args()
 
@@ -337,7 +337,7 @@ if not os.path.exists(folder):
 
 # export models
 print(f'Convert block & block_cache')
-for i in tqdm(range(1)):
+for i in tqdm(range(NUM_LAYERS)):
     convert_block(i)
     convert_block_cache(i)
 
@@ -345,7 +345,7 @@ print(f'Convert embedding')
 convert_embedding()
 
 print(f'Convert lm_head')
-if args.lm_head_with_topk:
+if args.lmhead_with_topk:
     convert_lm_head_with_topk()
 else:
     convert_lm_head()

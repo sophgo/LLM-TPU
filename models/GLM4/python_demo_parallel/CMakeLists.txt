@@ -6,7 +6,6 @@ if (NOT DEFINED TARGET_ARCH)
 endif()
 
 include_directories(${PROJECT_SOURCE_DIR}/../../../support/include)
-include_directories(${PROJECT_SOURCE_DIR}/third_party/cnpy)
 
 if (${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "aarch64")
 	add_definitions(-DSOC_TARGET)
@@ -26,12 +25,11 @@ elseif (${TARGET_ARCH} STREQUAL "soc")
 	message("SoC mode, starting......")
 endif()
 
-add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -lcnpy)
+add_definitions(-DDEBUG --std=c++17 -fPIC -Wall)
 set(CMAKE_BUILD_TYPE "Debug")
-add_subdirectory(third_party/cnpy)
 
 find_package(pybind11 REQUIRED CONFIG)
 pybind11_add_module(chat chat.cpp)
 
-target_link_libraries(chat PUBLIC bmrt bmlib cnpy)
+target_link_libraries(chat PUBLIC bmrt bmlib)
 install(TARGETS chat DESTINATION python)
