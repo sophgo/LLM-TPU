@@ -128,47 +128,65 @@ outdir=tmp/$mode"_"$num_device"dev"/lm_head
 mkdir -p $outdir
 pushd $outdir
 
-model_transform.py \
-    --model_name lm_head \
-    --model_def ../../onnx/lm_head.pt \
-    --input_shapes [[1,${hidden_size}]] \
-    --mlir lm_head.mlir
+if [ x$num_device != x1 ]; then
+    model_transform.py \
+        --model_name lm_head \
+        --model_def ../../onnx/lm_head_with_topk.pt \
+        --input_shapes [[1,${hidden_size}]] \
+        --mlir lm_head.mlir
 
-model_deploy.py \
-    --mlir lm_head.mlir \
-    $quantize_args \
-    --quant_input \
-    --chip bm1684x \
-    $device_args \
-    --model lm_head.bmodel
+    model_deploy.py \
+        --mlir lm_head.mlir \
+        $quantize_args \
+        --quant_input \
+        --chip bm1684x \
+        $device_args \
+        --model lm_head.bmodel
+
+    rm -f *.npz
+    models=${models}${outdir}'/lm_head.bmodel '
+else
+    model_transform.py \
+        --model_name lm_head \
+        --model_def ../../onnx/lm_head.pt \
+        --input_shapes [[1,${hidden_size}]] \
+        --mlir lm_head.mlir
+
+    model_deploy.py \
+        --mlir lm_head.mlir \
+        $quantize_args \
+        --quant_input \
+        --chip bm1684x \
+        $device_args \
+        --model lm_head.bmodel
 
 
-model_transform.py \
-    --model_name greedy_head \
-    --model_def ../../onnx/greedy_head.onnx \
-    --mlir greedy_head.mlir
+    model_transform.py \
+        --model_name greedy_head \
+        --model_def ../../onnx/greedy_head.onnx \
+        --mlir greedy_head.mlir
 
-model_deploy.py \
-    --mlir greedy_head.mlir \
-    --chip bm1684x \
-    --model greedy_head.bmodel
+    model_deploy.py \
+        --mlir greedy_head.mlir \
+        --chip bm1684x \
+        --model greedy_head.bmodel
 
 
-model_transform.py \
-    --model_name penalty_sample_head \
-    --model_def ../../onnx/penalty_sample_head.onnx \
-    --mlir penalty_sample_head.mlir
+    model_transform.py \
+        --model_name penalty_sample_head \
+        --model_def ../../onnx/penalty_sample_head.onnx \
+        --mlir penalty_sample_head.mlir
 
-model_deploy.py \
-    --mlir penalty_sample_head.mlir \
-    --chip bm1684x \
-    --model penalty_sample_head.bmodel
+    model_deploy.py \
+        --mlir penalty_sample_head.mlir \
+        --chip bm1684x \
+        --model penalty_sample_head.bmodel
 
-rm -f *.npz
+    rm -f *.npz
+    models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '$outdir'/penalty_sample_head.bmodel '
+fi
 
-models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '$outdir'/penalty_sample_head.bmodel '
 popd
-
 echo $models
 
 outdir=tmp/$mode"_"$num_device"dev"/block

@@ -20,6 +20,8 @@ parser.add_argument('-m', '--model_path', type=str, help='path to the torch mode
 parser.add_argument('-s', '--seq_length', type=int, default=512, help="sequence length")
 parser.add_argument('-d', '--device', type=str, choices=["cpu", "cuda"], default="cpu")
 parser.add_argument('-n', '--num_threads', type=int, default=1, help='The number of threads used for torch if device is cpu')
+parser.add_argument('--lmhead_with_topk', action=store_true, help="only trace the LmHeadWithTopK")
+
 args = parser.parse_args()
 
 model_path = args.model_path
@@ -105,7 +107,20 @@ class LmHead(torch.nn.Module):
         hidden_states = transformer.encoder.final_layernorm(hidden_states)
         m_logits = transformer.output_layer(hidden_states)
         return m_logits
-    
+
+
+class LmHeadWithTopK(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, hidden_states):
+        hidden_states = transformer.encoder.final_layernorm(hidden_states)
+        m_logits = transformer.output_layer(hidden_states)
+        _, token = torch.topk(m_logits.float(), 1)
+        return token
+
+
 class GreedyHead(torch.nn.Module):
 
     def __init__(self):
@@ -160,7 +175,8 @@ def convert_block(layer_id):
         input_names=['input_states', 'position_ids', 'attention_mask'],
         output_names=['hidden_states', 'past_k', 'past_v'],
         do_constant_folding=True,
-        opset_version=15)
+        opset_version=15,
+	export_params=True)
 
 
 def convert_block_cache(layer_id):
@@ -195,6 +211,13 @@ def convert_lm_head():
     hidden_states = torch.randn(1, 1, HIDDEN_SIZE).float().to(device)
     module = torch.jit.trace(model.forward, hidden_states)
     torch.jit.save(module, f'{folder}/lm_head.pt')
+
+
+def convert_lm_head_with_topk():
+    model = LmHeadWithTopK()
+    hidden_states = torch.randn(1, 1, HIDDEN_SIZE).float().to(device)
+    module = torch.jit.trace(model.forward, hidden_states)
+    torch.jit.save(module, f'{folder}/lm_head_with_topk.pt')
 
 
 def convert_greedy_head():   
@@ -314,7 +337,7 @@ if not os.path.exists(folder):
 
 # export models
 print(f'Convert block & block_cache')
-for i in tqdm(range(NUM_LAYERS)):
+for i in tqdm(range(1)):
     convert_block(i)
     convert_block_cache(i)
 
@@ -322,6 +345,9 @@ print(f'Convert embedding')
 convert_embedding()
 
 print(f'Convert lm_head')
-convert_lm_head()
-convert_greedy_head()
-convert_penalty_sample_head()
+if args.lm_head_with_topk:
+    convert_lm_head_with_topk()
+else:
+    convert_lm_head()
+    convert_greedy_head()
+    convert_penalty_sample_head()
