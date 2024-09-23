@@ -312,6 +312,7 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   std::copy(tokens.begin(), tokens.end(), input_ids.data());
 
   token_length = tokens.size();
+  TOKEN_LEN = tokens.size();
 
   for (int i = 0; i < token_length; i++) {
     position_id[i] = i;
