@@ -124,6 +124,9 @@ void Qwen::init_decrypt() {
 }
 
 void Qwen::deinit_decrypt() {
+  if (lib_path.empty()) {
+    return;
+  }
   // Step 1: Close the dynamic library handle if it's open.
   if (decrypt_handle_) {
     dlclose(decrypt_handle_);
