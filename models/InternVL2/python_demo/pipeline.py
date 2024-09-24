@@ -68,7 +68,7 @@ class InternVL2():
         system_ids = self.tokenizer.encode(self.system_prompt + "<img>")
         self.image_offset = len(system_ids)
         prompt_ids = self.tokenizer.encode(
-            "</img>{self.input_str}<|end|><|assistant|>\n")
+            "</img>{}<|end|><|assistant|>\n".format(self.input_str))
         self.input_ids = system_ids + self.image_ids + prompt_ids
 
     def chat(self):

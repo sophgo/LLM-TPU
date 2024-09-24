@@ -48,7 +48,6 @@ public:
   uint64_t IMAGE_BYTES;
 
 private:
-  std::vector<bm_handle_t> handles;
   bm_handle_t bm_handle;
   void *p_bmrt;
   std::vector<const bm_net_info_t *> net_blocks;
@@ -134,9 +133,7 @@ void InternVL2::init(int dev_id, std::string model_path) {
 
 void InternVL2::deinit() {
   bmrt_destroy(p_bmrt);
-  for (auto h : handles) {
-    bm_dev_free(h);
-  }
+  bm_dev_free(bm_handle);
 }
 
 int InternVL2::forward_first(std::vector<int> &tokens,
