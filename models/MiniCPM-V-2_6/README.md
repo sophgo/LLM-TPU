@@ -87,5 +87,5 @@ model为实际的model储存路径；tokenizer_path为实际的tokenizer配置�
 
 * 运行效果
 
-![](../../assets/minicpmv.jpg)
+![](../../assets/minicpmv.png)
 
