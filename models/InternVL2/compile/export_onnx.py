@@ -94,13 +94,11 @@ class Block(torch.nn.Module):
 
 
     def forward(self, hidden_states, position_ids, attention_mask):
-        cos_pos = self.cos[position_ids]
-        sin_pos = self.sin[position_ids]
         hidden_states, past_kv = self.layer(hidden_states,
                                             attention_mask,
                                             position_ids,
                                             use_cache=True,
-                                            rotary_pos_emb_list=(cos_pos, sin_pos),
+                                            rotary_pos_emb_list=(self.cos, self.sin),
                                             )
         present_k, present_v = past_kv
         return hidden_states.float(), present_k.float(), present_v.float()
