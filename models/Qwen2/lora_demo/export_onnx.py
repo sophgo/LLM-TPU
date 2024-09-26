@@ -114,7 +114,6 @@ class PenaltySampleHead(torch.nn.Module):
 
 
 def convert_block(layer_id):
-    breakpoint()
     model = Block(layer_id)
     hidden_states = torch.randn((1, SHARE_LENGTH, HIDDEN_SIZE)).to(device)
     position_ids = torch.tensor([range(SHARE_LENGTH)], dtype=torch.long).to(device)
@@ -321,7 +320,7 @@ def convert():
     print("Convert lora")
     convert_lora_to_bit()
 
-    export models
+    # export models
     print("Convert block & block_cache")
     for i in tqdm(range(NUM_LAYERS)):
         convert_block(i)

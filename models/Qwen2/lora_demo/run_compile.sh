@@ -11,12 +11,12 @@ embedding_mode=binary # 设置为binary时，bmodel中不包含embedding，而�
 dynamic=1 # prefill阶段开启动态
 max_rank_num=64 # 开启lora后，外挂的lora分支的秩
 
-seq_length_list=10240,8192,7168,6144,5120,4096,3072,2048,1024 # 输入长度 + 输出长度不能超过seq_length
-share_length_list=8320,8192,7168,6144,5120,4096,3072,2048,1024 # 输入长度share_length
-unshare_length_list=0,0,0,0,0,0,0,0,0
-model_path="/workspace/models/Qwen2-7B-Instruct/"
-lib_path="../share_cache_demo/build/libcipher.so"
-lora_path="saves_lora/lora_sft_qwen2_unpretrained_init/"
+seq_length_list="10240,8192,7168,6144,5120,4096,3072,2048,1024" # 输入长度 + 输出长度不能超过seq_length
+share_length_list="8320,8192,7168,6144,5120,4096,3072,2048,1024" # 输入长度share_length
+unshare_length_list="0,0,0,0,0,0,0,0,0"
+model_path="/workspace/models/Qwen2-7B-Instruct/" # 训练的pytorch基座模型的路径
+lib_path="../share_cache_demo/build/libcipher.so" # 加解密so的路径
+lora_path="saves_lora/lora_sft_qwen2_unpretrained_init/" # 微调的lora模型的路径
 device="cpu"
 num_thread=16
 
