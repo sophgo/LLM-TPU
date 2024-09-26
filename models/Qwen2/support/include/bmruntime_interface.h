@@ -290,6 +290,26 @@ DECL_EXPORT bool bmrt_load_bmodel_with_decrypt(void* p_bmrt, const char* bmodel_
 DECL_EXPORT bool bmrt_load_bmodel_data_with_mem(void* p_bmrt, const void * bmodel_data, size_t size, mem_info_t* mem_info);
 
 /**
+ * @name    bmrt_update_bmodel_weight_with_decrypt
+ * @brief   To update the weight of bmodel with binary date from update_path
+ * @ingroup bmruntime
+ *
+ * This API is to update the weight of bmodel.
+ * After loading bmodel, we can update the weight of bmodel.
+ *
+ * @param   [in]   p_bmrt        Bmruntime that had been created
+ * @param   [in]   bmodel_path   Bmodel file directory
+ * @param   [in]   update_path   Update bmodel by the binary file directory
+ * @param   [in]   net_idx       Update specified net by idx
+ * @param   [in]   weight_idx    Update specified weight by loc idx
+ * @param   [in]   f             Function pointer to decrypt func
+ *
+ * @retval true    Update bmodel weight sucess.
+ * @retval false   Update bmodel weight failed.
+ */
+DECL_EXPORT bool bmrt_update_bmodel_weight_with_decrypt(void* p_bmrt, const char* bmodel_path, const char* update_path, const char* net_idx, const char* weight_idx, decrypt_func f);
+
+/**
  * @name    bmrt_show_neuron_network
  * @brief   To print the name of all neuron network
  * @ingroup bmruntime
