@@ -229,6 +229,7 @@ def convert_embedding_to_bit():
 
 
 def convert_lora_to_bit():
+    import copy
     from peft import LoraConfig, PeftModel
     # 1. load lora
     config_file = os.path.join(args.lora_path, "adapter_config.json")
@@ -237,7 +238,7 @@ def convert_lora_to_bit():
     with open(config_file) as f:
         lora_config_dict = json.load(f)
     lora_config = LoraConfig(**lora_config_dict)
-    lora_model = PeftModel.from_pretrained(origin_model, args.lora_path)
+    lora_model = PeftModel.from_pretrained(copy.deepcopy(origin_model), args.lora_path) # 需要做deepcopy，不然会影响origin_model
 
     # 2. extract layer from model
     lora_weight_list = []
@@ -315,7 +316,6 @@ def convert():
     # create folder to store onnx
     if not os.path.exists(folder):
         os.makedirs(folder)
-
     # export lora model
     print("Convert lora")
     convert_lora_to_bit()
@@ -336,6 +336,7 @@ def convert():
     convert_lm_head()
     convert_greedy_head()
     convert_penalty_sample_head()
+
 
     print("Done")
 
