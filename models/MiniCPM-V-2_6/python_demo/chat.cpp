@@ -66,7 +66,6 @@ public:
   uint64_t IMAGE_BYTES;
 
 private:
-  std::vector<bm_handle_t> handles;
   bm_handle_t bm_handle;
   void *p_bmrt;
   std::vector<const bm_net_info_t *> net_blocks;
@@ -75,7 +74,7 @@ private:
   const bm_net_info_t *net_embed_cache;
   const bm_net_info_t *net_lm;
   const bm_net_info_t *net_vit;
-
+  bm_device_mem_t dev_buffer;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
 };
@@ -148,13 +147,16 @@ void MiniCPMV::init(int dev_id, std::string model_path) {
     past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
     past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
   }
+
+  auto buffer_size = bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
+  status = bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
+  assert(BM_SUCCESS == status);
 }
 
 void MiniCPMV::deinit() {
+  bm_free_device(bm_handle, dev_buffer);
   bmrt_destroy(p_bmrt);
-  for (auto h : handles) {
-    bm_dev_free(h);
-  }
+  bm_dev_free(bm_handle);
 }
 
 int MiniCPMV::forward_first(std::vector<int> &tokens,
@@ -184,6 +186,8 @@ int MiniCPMV::forward_first(std::vector<int> &tokens,
   net_launch(net_embed); // prefil embedding
 
   if (pixel_values.size() * sizeof(float) == IMAGE_BYTES && img_offset > 0) {
+    d2d(dev_buffer, out_mem);
+    out_mem = dev_buffer;
     // forward vision transformer
     auto &vit_in_mem = net_vit->stages[0].input_mems[0];
     auto &vit_out_mem = net_vit->stages[0].output_mems[0];

@@ -48,94 +48,7 @@ onnx_dir=$PWD/tmp/onnx
 folder='tmp/'$name'_'$chip'_'$mode
 out_model=$name'_'$chip'_'$mode'.bmodel'
 
-# Compile VIT model
-outdir=${folder}/vit
-mkdir -p $outdir
-pushd $outdir
-
-model_transform.py \
-    --model_name vision_encoder \
-    --model_def ${onnx_dir}/vision_transformer.onnx \
-    --mlir vision_encoder.mlir
-
-model_deploy.py \
-    --mlir vision_encoder.mlir \
-    --quantize BF16 \
-    --processor bm1684x \
-    --quant_output \
-    --model vision_encoder_bf16.bmodel
-
-models=${models}${outdir}'/vision_encoder_bf16.bmodel '
-
-popd
-echo $models
-
-# convert embedding
-outdir=${folder}/embedding
-mkdir -p $outdir
-pushd $outdir
-
-model_transform.py \
-    --model_name embedding \
-    --model_def ${onnx_dir}/embedding.onnx \
-    --mlir embedding.mlir
-
-model_deploy.py \
-    --mlir embedding.mlir \
-    --quantize BF16 \
-    --quant_input \
-    --quant_output \
-    --chip ${chip} \
-    --addr_mode io_alone \
-    --model embedding.bmodel
-
-model_transform.py \
-    --model_name embedding_cache \
-    --model_def ${onnx_dir}/embedding.onnx \
-    --input_shapes [[1,1]] \
-    --mlir embedding_cache.mlir
-
-model_deploy.py \
-    --mlir embedding_cache.mlir \
-    --quantize BF16 \
-    --quant_input \
-    --quant_output \
-    --chip ${chip} \
-    --addr_mode io_alone \
-    --model embedding_cache.bmodel
-
-rm *.npz -f
-
-models=$models' '$outdir'/embedding.bmodel '$outdir'/embedding_cache.bmodel '
-
-popd
-
-echo $models
-
-outdir=${folder}/lm_head
-mkdir -p $outdir
-pushd $outdir
-
-model_transform.py \
-    --model_name lm_head \
-    --model_def ${onnx_dir}/lm_head.onnx \
-    --mlir lm_head.mlir
-
-model_deploy.py \
-    --mlir lm_head.mlir \
-    $quantize_args \
-    --quant_input \
-    --chip ${chip} \
-    --addr_mode io_alone \
-    --model lm_head.bmodel
-
-rm *.npz -f
-
-models=${models}${outdir}'/lm_head.bmodel '
-popd
-
-echo $models
-
+# Convert block
 outdir=${folder}/block
 mkdir -p $outdir
 pushd $outdir
@@ -173,6 +86,91 @@ for ((i = 0; i < $num_layers; i++)); do
     models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
 
 done
+popd
+echo $models
+
+# convert embedding
+outdir=${folder}/embedding
+mkdir -p $outdir
+pushd $outdir
+
+model_transform.py \
+    --model_name embedding \
+    --model_def ${onnx_dir}/embedding.onnx \
+    --mlir embedding.mlir
+
+model_deploy.py \
+    --mlir embedding.mlir \
+    --quantize BF16 \
+    --quant_input \
+    --quant_output \
+    --chip ${chip} \
+    --model embedding.bmodel
+
+model_transform.py \
+    --model_name embedding_cache \
+    --model_def ${onnx_dir}/embedding.onnx \
+    --input_shapes [[1,1]] \
+    --mlir embedding_cache.mlir
+
+model_deploy.py \
+    --mlir embedding_cache.mlir \
+    --quantize BF16 \
+    --quant_input \
+    --quant_output \
+    --chip ${chip} \
+    --model embedding_cache.bmodel
+
+rm *.npz -f
+
+models=$models' '$outdir'/embedding.bmodel '$outdir'/embedding_cache.bmodel '
+
+popd
+echo $models
+
+# convert lm_head
+outdir=${folder}/lm_head
+mkdir -p $outdir
+pushd $outdir
+
+model_transform.py \
+    --model_name lm_head \
+    --model_def ${onnx_dir}/lm_head.onnx \
+    --mlir lm_head.mlir
+
+model_deploy.py \
+    --mlir lm_head.mlir \
+    $quantize_args \
+    --quant_input \
+    --chip ${chip} \
+    --model lm_head.bmodel
+
+rm *.npz -f
+
+models=${models}${outdir}'/lm_head.bmodel '
+popd
+
+echo $models
+
+# Compile VIT model
+outdir=${folder}/vit
+mkdir -p $outdir
+pushd $outdir
+
+model_transform.py \
+    --model_name vision_encoder \
+    --model_def ${onnx_dir}/vision_transformer.onnx \
+    --mlir vision_encoder.mlir
+
+model_deploy.py \
+    --mlir vision_encoder.mlir \
+    --quantize BF16 \
+    --processor bm1684x \
+    --quant_output \
+    --model vision_encoder_bf16.bmodel
+
+models=${models}${outdir}'/vision_encoder_bf16.bmodel '
+
 popd
 echo $models
 

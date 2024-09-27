@@ -48,6 +48,7 @@ class InternVL2():
         self.model.init(self.device, args.model_path)
         self.SEQLEN = self.model.SEQLEN
         self.ID_EOS = self.tokenizer.eos_token_id
+        self.ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
         self.ID_IM_END = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
 
     def load_image(self, image_file):
@@ -100,7 +101,7 @@ class InternVL2():
             # Following tokens
             full_word_tokens = []
             text = ""
-            while token not in [self.ID_EOS, self.ID_IM_END
+            while token not in [self.ID_EOS, self.ID_IM_END, self.ID_END
                                 ] and self.model.token_length < self.SEQLEN:
                 full_word_tokens.append(token)
                 word = self.tokenizer.decode(full_word_tokens,
