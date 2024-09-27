@@ -38,7 +38,7 @@ declare -A model_to_demo=(
     ["wizardcoder-15b"]="WizardCoder"
     ["lwm-text-chat"]="LWM"
     ["internvl2-4b"]="InternVL2"
-    ["minicpmv2-6"]="MiniCPM-V-2_6"
+    ["minicpmv2_6"]="MiniCPM-V-2_6"
 )
 
 # Process Args
@@ -60,11 +60,18 @@ else
     echo "Driver date is $extracted_date, which is up to date. Continuing..."
 fi
 
+# Function to validate model name
+validate_model() {
+    local model="$1"
+    if [[ ! ${model_to_demo[$model]} ]]; then
+        echo -e "Error: Invalid name $model, the input name must be \033[31m$(printf "%s|" "${!model_to_demo[@]}" | sed 's/|$//')\033[0m" >&2
+        return 1
+    fi
+    return 0
+}
+
 # Check Model Name
-if [[ ! ${model_to_demo[$model]} ]]; then
-    >&2 echo -e "Error: Invalid name $model, the input name must be \033[31mchatglm3-6b|chatglm2-6b|llama2-7b|qwen-7b|qwen1.5-1.8b|wizardcoder-15b|internvl2-4b|minicpmv2-6\033[0m"
-    exit 1
-fi
+validate_model "$model" || exit 1
 
 # Compile
 pushd "./models/${model_to_demo[$model]}"

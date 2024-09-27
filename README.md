@@ -89,7 +89,7 @@ git clone https://github.com/sophgo/LLM-TPU.git
 | LWM-Text-Chat   | ./run.sh --model lwm-text-chat --arch soc   | ./run.sh --model lwm-text-chat  --arch pcie  |
 | WizardCoder-15B | ./run.sh --model wizardcoder-15b --arch soc | ./run.sh --model wizardcoder-15b --arch pcie |
 | InternVL2-4B    | ./run.sh --model internvl2-4b --arch soc    | ./run.sh --model internvl2-4b --arch pcie    |
-| MiniCPM-V-2_6   | ./run.sh --model minicpmv2-6  --arch soc    | ./run.sh --model minicpmv2-6 --arch pcie     |
+| MiniCPM-V-2_6   | ./run.sh --model minicpmv2_6  --arch soc    | ./run.sh --model minicpmv2_6 --arch pcie     |
 
 ## 进阶功能
 进阶功能说明：

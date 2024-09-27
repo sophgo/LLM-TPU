@@ -12,14 +12,14 @@ else
   echo "Bmodel Exists!"
 fi
 
-if [ ! -f "./python_demo/*cpython*" ]; then
+if ls ./python_demo/*cpython*.so 1> /dev/null 2>&1; then
+  echo "cpython.so exists!"
+else
   pushd python_demo
   rm -rf build && mkdir build && cd build
   cmake .. && make
   cp *cpython* ..
   popd
-else
-  echo "chat.so exists!"
 fi
 
 # run demo
