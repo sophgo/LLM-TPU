@@ -1,6 +1,6 @@
 import os
 
-def main():
+def check_models_in_read():
     models_path = 'LLM-TPU/models'
     readme_path = 'LLM-TPU/README.md'
     
@@ -21,4 +21,4 @@ def main():
         print("All models are properly referenced in README.md.")
 
 if __name__ == '__main__':
-    main()
+    check_models_in_read()
