@@ -9,6 +9,7 @@ folder="tmp"
 num_device=1
 mode_args=""
 device_args=""
+addr_args="--addr_mode io_alone"
 quantize_args="--quantize W4BF16 --q_group_size 64"
 name="glm4-9b"
 num_layers=40
@@ -33,6 +34,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --seq_length)
             seq_length="$2"
+            shift 2
+            ;;
+        --addr_mode)
+            addr_mode="$2"
             shift 2
             ;;
         *)
@@ -76,6 +81,10 @@ if [ x$num_device != x1 ]; then
     out_model=$name'_'$mode'_seq'$seq_length'_'$num_device'dev.bmodel'
 else
     out_model=$name'_'$mode'_seq'$seq_length'_1dev.bmodel'
+fi
+
+if [ x$addr_mode == x"io_alone" ]; then
+    addr_args="--addr_mode io_alone"
 fi
 
 outdir=${folder}/$mode"_"$num_device"dev"/embedding
@@ -225,6 +234,7 @@ process_block() {
         --quant_output \
         --chip bm1684x \
         $device_args \
+        $addr_args \
         --model block_cache_$i.bmodel
 }
 

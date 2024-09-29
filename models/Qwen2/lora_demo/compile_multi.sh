@@ -17,7 +17,7 @@ share_length=
 unshare_length=
 hidden_size=
 dynamic=0
-lora_rank_num=0
+max_rank_num=0
 
 echo "必须把seq_length长的放在前面，这一点尤其要注意"
 
@@ -65,8 +65,8 @@ while [[ $# -gt 0 ]]; do
         embedding_mode="$2"
         shift 2
         ;;
-    --lora_rank_num)
-        lora_rank_num="$2"
+    --max_rank_num)
+        max_rank_num="$2"
         shift 2
         ;;
     *)
@@ -140,9 +140,12 @@ for index in "${!share_lengths[@]}"; do
         cur_model=${cur_model}_dyn
     fi
 
-    if [ x$lora_rank_num != x0 ]; then
-        future_update_args="--future_update_rank ${lora_rank_num} --disable_layer_group"
-        cur_model=${cur_model}_rank${lora_rank_num}
+    if [ x$max_rank_num != x0 ]; then
+        future_update_args="--future_update_rank ${max_rank_num} --disable_layer_group"
+        cur_model=${cur_model}_rank${max_rank_num}
+    else
+        >&2 echo -e "Error: the max_rank_num is equal to zero"
+        exit 1
     fi
 
     # out_model=${out_model}${cur_model}_

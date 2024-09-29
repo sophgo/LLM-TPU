@@ -46,6 +46,7 @@ NUM_LAYERS = config.num_layers
 HIDDEN_SIZE = config.hidden_size
 NUM_ATTENTION_HEADS = config.num_attention_heads
 HEAD_DIM = HIDDEN_SIZE // NUM_ATTENTION_HEADS
+MULTI_QUERY_GROUP_NUM = config.multi_query_group_num
 VOCAB_SIZE = config.vocab_size
 
 print(f'Layers: {NUM_LAYERS}\nHidden size: {HIDDEN_SIZE}\n')
@@ -53,6 +54,12 @@ if transformer.seq_length is not None:
     assert transformer.seq_length == args.seq_length
 if config.seq_length is not None:
     assert config.seq_length == args.seq_length
+
+def setup_environment():
+    seed = 42
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    return
 
 class Embedding(torch.nn.Module):
 
@@ -69,10 +76,10 @@ class Block(torch.nn.Module):
         super().__init__()
         self.layer_id = layer_id
         self.layer = layers[layer_id]
+        self.rotary_pos_emb = transformer.rotary_pos_emb(SEQ_LENGTH)
 
     def forward(self, hidden_states, position_ids, attention_mask):
-        rotary_pos_emb = transformer.rotary_pos_emb(SEQ_LENGTH)[position_ids]
-        rotary_pos_emb = rotary_pos_emb.transpose(0, 1).contiguous()
+        rotary_pos_emb = self.rotary_pos_emb[position_ids]
         hidden_states, past_kv = self.layer(hidden_states,
                                             attention_mask,
                                             rotary_pos_emb=rotary_pos_emb)
@@ -85,11 +92,11 @@ class BlockCache(torch.nn.Module):
         super().__init__()
         self.layer_id = layer_id
         self.layer = layers[layer_id]
+        self.rotary_pos_emb = transformer.rotary_pos_emb(SEQ_LENGTH)
 
     def forward(self, hidden_states, position_ids, attention_mask, past_k,
                 past_v):
-        rotary_pos_emb = transformer.rotary_pos_emb(SEQ_LENGTH)[position_ids]
-        rotary_pos_emb = rotary_pos_emb.transpose(0, 1).contiguous()
+        rotary_pos_emb = self.rotary_pos_emb[position_ids]
         hidden_states, past_kv = self.layer(hidden_states,
                                             attention_mask,
                                             kv_cache=(past_k, past_v),
@@ -184,8 +191,8 @@ def convert_block_cache(layer_id):
     hidden_states = torch.randn((1, 1, HIDDEN_SIZE), dtype = torch.float).to(device)
     position_ids = torch.tensor([range(1)], dtype=torch.long).to(device)
     attention_mask = torch.ones((1, 1, 1, SEQ_LENGTH + 1), dtype = torch.float).triu(diagonal=1).to(device)
-    past_k = torch.randn((1, 2, SEQ_LENGTH, HEAD_DIM), dtype = torch.float).to(device)
-    past_v = torch.randn((1, 2, SEQ_LENGTH, HEAD_DIM), dtype = torch.float).to(device)
+    past_k = torch.randn((1, SEQ_LENGTH, MULTI_QUERY_GROUP_NUM, HEAD_DIM), dtype = torch.float).to(device)
+    past_v = torch.randn((1, SEQ_LENGTH, MULTI_QUERY_GROUP_NUM, HEAD_DIM), dtype = torch.float).to(device)
     torch.onnx.export(
         model, (hidden_states, position_ids, attention_mask, past_k, past_v),
         f'{folder}/block_cache_{layer_id}.onnx',
@@ -256,6 +263,8 @@ def convert_penalty_sample_head():
 
 
 def test_net_with_mask():
+    max_new_tokens = 10
+
     embed = Embedding()
     blocks = [Block(i) for i in range(NUM_LAYERS)]
     block_kvs = [BlockCache(i) for i in range(NUM_LAYERS)]
@@ -287,14 +296,12 @@ def test_net_with_mask():
     k_cache = []
     v_cache = []
 
-    for i in range(NUM_LAYERS):
+    for i in tqdm(range(NUM_LAYERS)):
         # np.savez("block0_input.npz", input_states=out, position_ids=position_ids, attention_mask=attention_mask)
-        # import pdb; pdb.set_trace()
         out, kv_cache = blocks[i](out, position_ids, attention_mask)
         k, v = kv_cache
         k_cache.append(k)
         v_cache.append(v)
-    # import pdb; pdb.set_trace()
     out = out[0, token_len - 1:token_len].view(1, 4096)
     lm = LmHead()
     greedyhead = GreedyHead()
@@ -304,32 +311,30 @@ def test_net_with_mask():
     out_ids = [int(token)]
     word = tokenizer._convert_id_to_token(int(token[0]))
     print(word, end="")
-    while token_len < 512:
+    while token_len < token_len + max_new_tokens:
         token_len += 1
         input_ids = torch.tensor([token])
         out = embed(input_ids).view(1, 1, 4096)
         position_ids = torch.tensor([[token_len - 1]])
         attention_mask = torch.ones((1, 1, 1, SEQ_LENGTH + 1))
         attention_mask[:, :, :, SEQ_LENGTH + 1 - token_len:] = 0
-        for i in range(NUM_LAYERS):
-            # if i == 0:
-            #     import pdb; pdb.set_trace()
+        for i in tqdm(range(NUM_LAYERS)):
             out, present_k, present_v = block_kvs[i](out, position_ids,
                                                        attention_mask,
                                                        k_cache[i], v_cache[i])
-            k_cache[i][0, :, token_len:token_len+1] = present_k
-            v_cache[i][0, :, token_len:token_len+1] = present_v
-        # import pdb;pdb.set_trace()
+            k_cache[i][0, token_len:token_len+1] = present_k
+            v_cache[i][0, token_len:token_len+1] = present_v
         lm_out = lm(out)
         token = greedyhead(lm_out)
         visited_token.append(int(token))
         out_ids.append(int(token))
         word = tokenizer._convert_id_to_token(int(token[0]))
-        # print(int(token), tokenizer.decode(token[0,0], skip_special_tokens=True))
+        print(int(token), tokenizer.decode(token[0,0], skip_special_tokens=True))
     # print("\noutput_ids:{}".format(out_ids))
     print("\noutput_words:{}".format(tokenizer.decode(out_ids, skip_special_tokens=True)))
 
 # test_net_with_mask()
+setup_environment()
 
 # create folder to store onnx
 if not os.path.exists(folder):

@@ -121,16 +121,35 @@ class RotaryEmbedding(nn.Module):
         )
 
 
-@torch.jit.script
+# @torch.jit.script
+# def apply_rotary_pos_emb(x: torch.Tensor, rope_cache: torch.Tensor) -> torch.Tensor:
+#     # x: [b, np, sq, hn]
+#     b, np, sq, hn = x.size(0), x.size(1), x.size(2), x.size(3)
+#     rot_dim = rope_cache.shape[-2] * 2
+#     x, x_pass = x[..., :rot_dim], x[..., rot_dim:]
+#     # truncate to support variable sizes
+#     rope_cache = rope_cache[:, :sq]
+#     xshaped = x.reshape(b, np, sq, rot_dim // 2, 2)
+#     rope_cache = rope_cache.view(-1, 1, sq, xshaped.size(3), 2)
+#     x_out2 = torch.stack(
+#         [
+#             xshaped[..., 0] * rope_cache[..., 0] - xshaped[..., 1] * rope_cache[..., 1],
+#             xshaped[..., 1] * rope_cache[..., 0] + xshaped[..., 0] * rope_cache[..., 1],
+#         ],
+#         -1,
+#     )
+#     x_out2 = x_out2.flatten(3)
+#     return torch.cat((x_out2, x_pass), dim=-1)
+
+# @torch.jit.script
 def apply_rotary_pos_emb(x: torch.Tensor, rope_cache: torch.Tensor) -> torch.Tensor:
-    # x: [b, np, sq, hn]
-    b, np, sq, hn = x.size(0), x.size(1), x.size(2), x.size(3)
+    # x: [b, sq, nq, hn]
+    b, sq, nq, hn = x.size(0), x.size(1), x.size(2), x.size(3)
     rot_dim = rope_cache.shape[-2] * 2
     x, x_pass = x[..., :rot_dim], x[..., rot_dim:]
     # truncate to support variable sizes
-    rope_cache = rope_cache[:, :sq]
-    xshaped = x.reshape(b, np, sq, rot_dim // 2, 2)
-    rope_cache = rope_cache.view(-1, 1, sq, xshaped.size(3), 2)
+    xshaped = x.reshape(b, sq, nq, rot_dim // 2, 2)
+    rope_cache = rope_cache.view(-1, sq, 1, xshaped.size(3), 2)
     x_out2 = torch.stack(
         [
             xshaped[..., 0] * rope_cache[..., 0] - xshaped[..., 1] * rope_cache[..., 1],
@@ -199,31 +218,34 @@ class CoreAttention(torch.nn.Module):
         else:
             # Raw attention scores
 
-            # [b, np, sq, sk]
-            output_size = (query_layer.size(0), query_layer.size(1), query_layer.size(2), key_layer.size(2))
+            # # [b, np, sq, sk]
+            # output_size = (query_layer.size(0), query_layer.size(1), query_layer.size(2), key_layer.size(2))
 
-            # [b, np, sq, hn] -> [b * np, sq, hn]
-            query_layer = query_layer.view(output_size[0] * output_size[1], output_size[2], -1)
-            # [b, np, sk, hn] -> [b * np, sk, hn]
-            key_layer = key_layer.view(output_size[0] * output_size[1], output_size[3], -1)
+            # # [b, np, sq, hn] -> [b * np, sq, hn]
+            # query_layer = query_layer.view(output_size[0] * output_size[1], output_size[2], -1)
+            # # [b, np, sk, hn] -> [b * np, sk, hn]
+            # key_layer = key_layer.view(output_size[0] * output_size[1], output_size[3], -1)
 
-            # preallocting input tensor: [b * np, sq, sk]
-            matmul_input_buffer = torch.empty(
-                output_size[0] * output_size[1], output_size[2], output_size[3], dtype=query_layer.dtype,
-                device=query_layer.device
-            )
+            # # preallocting input tensor: [b * np, sq, sk]
+            # matmul_input_buffer = torch.empty(
+            #     output_size[0] * output_size[1], output_size[2], output_size[3], dtype=query_layer.dtype,
+            #     device=query_layer.device
+            # )
 
-            # Raw attention scores. [b * np, sq, sk]
-            matmul_result = torch.baddbmm(
-                matmul_input_buffer,
-                query_layer,  # [b * np, sq, hn]
-                key_layer.transpose(1, 2),  # [b * np, hn, sk]
-                beta=0.0,
-                alpha=(1.0 / self.norm_factor),
-            )
+            # # Raw attention scores. [b * np, sq, sk]
+            # matmul_result = torch.baddbmm(
+            #     matmul_input_buffer,
+            #     query_layer,  # [b * np, sq, hn]
+            #     key_layer.transpose(1, 2),  # [b * np, hn, sk]
+            #     beta=0.0,
+            #     alpha=(1.0 / self.norm_factor),
+            # )
+
+            matmul_result = torch.matmul(query_layer.transpose(1,2), key_layer.transpose(1, 2).transpose(2,3))
+            attention_scores = matmul_result * (1.0 / self.norm_factor)
 
             # change view to [b, np, sq, sk]
-            attention_scores = matmul_result.view(*output_size)
+            # attention_scores = matmul_result.view(*output_size)
 
             # ===========================
             # Attention probs and dropout
@@ -248,22 +270,27 @@ class CoreAttention(torch.nn.Module):
             # seem a bit unusual, but is taken from the original Transformer paper.
             attention_probs = self.attention_dropout(attention_probs)
 
-            # query layer shape: [b * np, sq, hn]
-            # value layer shape: [b, np, sk, hn]
-            # attention shape: [b, np, sq, sk]
-            # context layer shape: [b, np, sq, hn]
-            output_size = (value_layer.size(0), value_layer.size(1), query_layer.size(1), value_layer.size(3))
-            # change view [b * np, sk, hn]
-            value_layer = value_layer.view(output_size[0] * output_size[1], value_layer.size(2), -1)
-            # change view [b * np, sq, sk]
-            attention_probs = attention_probs.view(output_size[0] * output_size[1], output_size[2], -1)
-            # matmul: [b * np, sq, hn]
-            context_layer = torch.bmm(attention_probs, value_layer)
-            # change view [b, np, sq, hn]
-            context_layer = context_layer.view(*output_size)
-            # [b, np, sq, hn] --> [b, sq, np, hn]
+            # # query layer shape: [b * np, sq, hn]
+            # # value layer shape: [b, np, sk, hn]
+            # # attention shape: [b, np, sq, sk]
+            # # context layer shape: [b, np, sq, hn]
+            # output_size = (value_layer.size(0), value_layer.size(1), query_layer.size(1), value_layer.size(3))
+            # # change view [b * np, sk, hn]
+            # value_layer = value_layer.view(output_size[0] * output_size[1], value_layer.size(2), -1)
+            # # change view [b * np, sq, sk]
+            # attention_probs = attention_probs.view(output_size[0] * output_size[1], output_size[2], -1)
+            # # matmul: [b * np, sq, hn]
+            # context_layer = torch.bmm(attention_probs, value_layer)
+            # # change view [b, np, sq, hn]
+            # context_layer = context_layer.view(*output_size)
+            # # [b, np, sq, hn] --> [b, sq, np, hn]
+            # context_layer = context_layer.transpose(1, 2).contiguous()
+            # # [b, sq, np, hn] --> [b, sq, hp]
+            # new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
+            # context_layer = context_layer.reshape(*new_context_layer_shape)
+
+            context_layer = torch.matmul(attention_probs, value_layer.transpose(1, 2))
             context_layer = context_layer.transpose(1, 2).contiguous()
-            # [b, sq, np, hn] --> [b, sq, hp]
             new_context_layer_shape = context_layer.size()[:-2] + (self.hidden_size_per_partition,)
             context_layer = context_layer.reshape(*new_context_layer_shape)
 
@@ -364,7 +391,7 @@ class SelfAttention(torch.nn.Module):
             (query_layer, key_layer, value_layer) = split_tensor_along_last_dim(mixed_x_layer, 3)
 
         # [b, sq, np, hn] -> [b, np, sq, hn]
-        query_layer, key_layer, value_layer = [k.transpose(1, 2) for k in [query_layer, key_layer, value_layer]]
+        # query_layer, key_layer, value_layer = [k.transposes(1, 2) for k in [query_layer, key_layer, value_layer]]
 
         # apply relative positional encoding (rotary embedding)
         if rotary_pos_emb is not None:
@@ -379,23 +406,41 @@ class SelfAttention(torch.nn.Module):
         # adjust key and value for inference
         if kv_cache is not None:
             cache_k, cache_v = kv_cache
-            key_layer = torch.cat((cache_k, key_layer), dim=2)
-            value_layer = torch.cat((cache_v, value_layer), dim=2)
+            # key_layer = torch.cat((cache_k, key_layer), dim=2)
+            # value_layer = torch.cat((cache_v, value_layer), dim=2)
+            key_layer = torch.cat((cache_k, key_layer), dim=1)
+            value_layer = torch.cat((cache_v, value_layer), dim=1)
+
+        # if self.multi_query_attention:
+        #     key_layer = key_layer.unsqueeze(2)
+        #     key_layer = key_layer.expand(
+        #         -1, -1, self.num_attention_heads_per_partition // self.num_multi_query_groups_per_partition, -1, -1
+        #     )
+        #     key_layer = key_layer.contiguous().view(
+        #         key_layer.size()[:1] + (self.num_attention_heads_per_partition,) + key_layer.size()[3:]
+        #     )
+        #     value_layer = value_layer.unsqueeze(2)
+        #     value_layer = value_layer.expand(
+        #         -1, -1, self.num_attention_heads_per_partition // self.num_multi_query_groups_per_partition, -1, -1
+        #     )
+        #     value_layer = value_layer.contiguous().view(
+        #         value_layer.size()[:1] + (self.num_attention_heads_per_partition,) + value_layer.size()[3:]
+        #     )
 
         if self.multi_query_attention:
-            key_layer = key_layer.unsqueeze(2)
+            key_layer = key_layer.unsqueeze(3)
             key_layer = key_layer.expand(
-                -1, -1, self.num_attention_heads_per_partition // self.num_multi_query_groups_per_partition, -1, -1
+                -1, -1, -1, self.num_attention_heads_per_partition // self.num_multi_query_groups_per_partition, -1
             )
             key_layer = key_layer.contiguous().view(
-                key_layer.size()[:1] + (self.num_attention_heads_per_partition,) + key_layer.size()[3:]
+                key_layer.size()[:2] + (self.num_attention_heads_per_partition,) + key_layer.size()[4:]
             )
-            value_layer = value_layer.unsqueeze(2)
+            value_layer = value_layer.unsqueeze(3)
             value_layer = value_layer.expand(
-                -1, -1, self.num_attention_heads_per_partition // self.num_multi_query_groups_per_partition, -1, -1
+                -1, -1, -1, self.num_attention_heads_per_partition // self.num_multi_query_groups_per_partition, -1
             )
             value_layer = value_layer.contiguous().view(
-                value_layer.size()[:1] + (self.num_attention_heads_per_partition,) + value_layer.size()[3:]
+                value_layer.size()[:2] + (self.num_attention_heads_per_partition,) + value_layer.size()[4:]
             )
 
         # ==================================
@@ -1211,3 +1256,4 @@ class ChatGLMForSequenceClassification(ChatGLMPreTrainedModel):
             hidden_states=transformer_outputs.hidden_states,
             attentions=transformer_outputs.attentions,
         )
+

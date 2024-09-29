@@ -227,6 +227,64 @@ def convert_embedding_to_bit():
     with open('embedding.bin', 'wb') as f:
         embedding_weights_uint16.tofile(f)
 
+def file_md5(filename):
+    import hashlib
+    hash_md5 = hashlib.md5()
+    with open(filename, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
+
+def check_md5_equality(file1, file2):
+    md5_1 = file_md5(file1)
+    md5_2 = file_md5(file2)
+    if md5_1 != md5_2:
+        raise ValueError(f"MD5 checksums do not match: {file1} does not match {file2}")
+    else:
+        print("MD5 checksumsm match successfully!")
+
+def encrypt_and_save(data, save_path):
+    import ctypes
+    if not os.path.exists(args.lib_path):
+        raise FileNotFoundError(f"{args.lib_path} not found")
+    lib = ctypes.CDLL(args.lib_path)
+    lib.encrypt.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint64, ctypes.POINTER(ctypes.c_uint64)]
+    lib.encrypt.restype = ctypes.POINTER(ctypes.c_uint8)
+
+    input_data = data.astype(np.uint8)
+    input_bytes = input_data.nbytes
+    output_bytes = ctypes.c_uint64()
+
+    input_data_ctypes = input_data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+    encrypted_data_ptr = lib.encrypt(input_data_ctypes, input_bytes, ctypes.byref(output_bytes))
+    encrypted_data = np.ctypeslib.as_array(encrypted_data_ptr, shape=(output_bytes.value,))
+
+    with open(save_path, 'wb') as f:
+        f.write(encrypted_data)
+
+    lib.free_memory(encrypted_data_ptr)
+
+def decrypt_and_save(data, save_path):
+    if not os.path.exists(args.lib_path):
+        raise FileNotFoundError(f"{args.lib_path} not found")
+    lib = ctypes.CDLL(args.lib_path)
+
+    lib.decrypt.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint64, ctypes.POINTER(ctypes.c_uint64)]
+    lib.decrypt.restype = ctypes.POINTER(ctypes.c_uint8)
+    lib.free_memory.argtypes = [ctypes.POINTER(ctypes.c_uint8)]
+
+    input_data = data.astype(np.uint8)
+    input_bytes = input_data.nbytes
+    output_bytes = ctypes.c_uint64()
+
+    input_data_ctypes = input_data.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+    decrypted_data_ptr = lib.decrypt(input_data_ctypes, input_bytes, ctypes.byref(output_bytes))
+    decrypted_data = np.ctypeslib.as_array(decrypted_data_ptr, shape=(output_bytes.value,))
+
+    with open(save_path, 'wb') as f:
+        f.write(decrypted_data.tobytes())
+
+    lib.free_memory(decrypted_data_ptr)
 
 def convert_lora_to_bit():
     import copy
@@ -282,8 +340,31 @@ def convert_lora_to_bit():
         lora_weights_uint16 = lora_weights_uint16.byteswap()
     lora_weights_uint16 = lora_weights_uint16.newbyteorder('little')  # Ensure little-endian storage
 
-    with open('lora_weights.bin', 'wb') as f:
-        lora_weights_uint16.tofile(f)
+    # add zero to check after decrypt
+    zero_prefix = np.zeros(64, dtype=np.uint8)
+    lora_weights_uint8 = np.concatenate([zero_prefix, lora_weights_uint8])
+
+    # encrypt and decrypt
+    origin_path = "lora_weights.bin"
+    encrypt_path = "encrypted_lora_weights.bin"
+    decrypt_path = "decrypted_lora_weights.bin"
+    # origin
+    lora_weights_uint8_low = (lora_weights_uint16 >> 8).astype(np.uint8)
+    lora_weights_uint8_high = (lora_weights_uint16 & 0xFF).astype(np.uint8)
+    lora_weights_uint8 = np.column_stack((lora_weights_uint8_high, lora_weights_uint8_low)).reshape(-1)
+
+    with open(origin_path, 'wb') as f:
+        lora_weights_uint8.tofile(f)
+
+    # encrypt
+    encrypt_and_save(lora_weights_uint8, encrypt_path)
+
+    # decrypt
+    encrypted_data = np.fromfile(encrypt_path, dtype=np.uint8)
+    decrypt_and_save(encrypted_data, decrypt_path)
+
+    check_md5_equality(origin_path, decrypt_path)
+
 
 def setup_environment():
     seed = 42
@@ -316,6 +397,7 @@ def convert():
     # create folder to store onnx
     if not os.path.exists(folder):
         os.makedirs(folder)
+
     # export lora model
     print("Convert lora")
     convert_lora_to_bit()
@@ -352,6 +434,7 @@ if __name__ == "__main__":
     parser.add_argument('--max_pos_len', type=int, default=8704, help="max position length")
     parser.add_argument('--generation_mode', type=str, default="default", choices=["default", "lmhead_with_penalty", "lmhead_with_sample", "lmhead_with_top1"], help="generation mode")
     parser.add_argument('--embedding_mode', type=str, default="default", choices=["default", "binary"], help="if set embedding_mode=binary, will save embedding.bin and infer without tpu")
+    parser.add_argument('--lib_path', type=str, default='', help='lib path by user')
     parser.add_argument('--lora_path', type=str, default="", help="path to the lora model")
     parser.add_argument('--max_rank_num', type=int, default=0, help="the max rank for lora model")
     args = parser.parse_args()

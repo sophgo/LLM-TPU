@@ -22,8 +22,8 @@ class Qwen:
         self.seq_length_list = [10240,8192,7168,6144,5120,4096,3072,2048,1024]
         self.share_length_list = [8192,7680,7168,6144,5120,4096,3072,2048,1024]
         self.lora_path = args.lora_path
-        self.weight_idx = "1,2,3,4,5,6,9,10,13,14,16,17,19,20"
-        self.net_idx = ",".join(str(2 * i) for i in range(28))
+        self.lora_weight_idx = "1,2,3,4,5,6,9,10,13,14,16,17,19,20"
+        self.lora_net_idx = ",".join(str(2 * i) for i in range(28))
 
         # load tokenizer
         print("Load " + args.tokenizer_path + " ...")
@@ -46,7 +46,9 @@ class Qwen:
 
     def update_bmodel(self):
         start_time = time.time()
-        self.model.update_bmodel_weight(self.model_path, self.lora_path, self.net_idx, self.weight_idx)
+        self.model.update_bmodel_weight(self.model_path, self.lora_path, self.lora_net_idx, self.lora_weight_idx)
+        # lora更新后，再用全零覆盖，确保没有size越界
+        # self.model.update_bmodel_weight(self.model_path, "lora_weights_0.bin", self.lora_net_idx, self.lora_weight_idx)
         end_time = time.time()
         print(f"\nLora Update Time: {(end_time - start_time):.3f} s")
 
@@ -161,48 +163,33 @@ class Qwen:
         share_str, unshare_str_0 = self.read_json(json_path, 0)
         _, unshare_str_1 = self.read_json(json_path, 1)
         _, unshare_str_2 = self.read_json(json_path, 2)
-        # share_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
-        # unshare_str_0 = "can you help me<|im_end|>\n<|im_start|>assistant\n"
-        # unshare_str_1 = "tell me a love story<|im_end|>\n<|im_start|>assistant\n"
-        # unshare_str_2 = "tell me a love story<|im_end|>\n<|im_start|>assistant\n"
 
+        # ===------------------------------------------------------------===
+        # Model Init
+        # ===------------------------------------------------------------===
         self.model.init_decrypt()
-        # ===------------------------------------------------------------===
-        # Model 0
-        # ===------------------------------------------------------------===
-        # load model 0
         self.model.prefill_reuse = 0
         self.model.stage_idx = 0
         self.load_model(self.model_path, read_bmodel=True)
 
-        # share prefill
-        share_tokens = self.tokenizer.encode(
-            share_str, max_length=8000, truncation=True
+        # sample 0
+        in_length = 2000
+        out_length = 512
+        in_tokens = self.tokenizer.encode(
+            share_str, max_length=in_length, truncation=True
         )
-
-        # task 0
-        # first + decode
         unshare_tokens = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(share_tokens + unshare_tokens, "normal", 0)
 
+        in_length = in_length + len(unshare_tokens)
+        total_length = in_length + out_length
 
-        # task 1
-        # first + decode
-        unshare_tokens = self.tokenizer.encode(unshare_str_0)
-        self.stream_answer(share_tokens + unshare_tokens, "normal", 0)
-
-        # ===------------------------------------------------------------===
-        # Model 1
-        # ===------------------------------------------------------------===
-        # load model 1
-        self.model.prefill_reuse = 0
-        self.model.stage_idx = 1
+        seq_index = self.get_seq_index(total_length, in_length)
+        self.model.stage_idx = seq_index[-1]
         self.load_model(self.model_path, read_bmodel=False)
 
-        # first + decode
-        for i in range(9):
-            unshare_tokens = self.tokenizer.encode(unshare_str_0)
-            self.stream_answer(share_tokens[:4000] + unshare_tokens, "normal", 0)
+        # load lora
+        self.update_bmodel()
+        self.stream_answer(in_tokens[:in_length - len(unshare_tokens)] + unshare_tokens, "normal", out_length)
 
         # ===------------------------------------------------------------===
         # Deinit
@@ -216,11 +203,10 @@ class Qwen:
         _, unshare_str_1 = self.read_json(json_path, 1)
         _, unshare_str_2 = self.read_json(json_path, 2)
 
+        # ===------------------------------------------------------------===
+        # Model Init
+        # ===------------------------------------------------------------===
         self.model.init_decrypt()
-        # ===------------------------------------------------------------===
-        # Model 0
-        # ===------------------------------------------------------------===
-        # load model 0
         self.model.prefill_reuse = 0
         self.model.stage_idx = 0
         self.load_model(self.model_path, read_bmodel=True)
@@ -325,22 +311,14 @@ class Qwen:
 def main(args):
     start_time = time.time()
 
-    engine = Qwen(args)
-
-    # 1. test one sample
-    # engine.test_sample()
-
-    # 2. test random
-    engine.test_random()
-
     try:
         engine = Qwen(args)
 
         # 1. test one sample
-        # engine.test_sample()
+        engine.test_sample()
 
         # 2. test random
-        engine.test_random()
+        # engine.test_random()
         
         # 2. test c-eval
         # engine.test_ceval()

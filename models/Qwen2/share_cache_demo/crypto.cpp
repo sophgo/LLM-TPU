@@ -34,3 +34,7 @@ uint8_t* decrypt(const uint8_t* input, uint64_t input_bytes, uint64_t* output_by
     *output_bytes = input_bytes;
     return processed_data;
 }
+
+extern "C" void free_memory(uint8_t* ptr) {
+    free(ptr);
+}

@@ -29,9 +29,30 @@ for i in "${!seq_lengths[@]}"; do
   seq_length=${seq_lengths[$i]}
   share_length=${share_lengths[$i]}
   unshare_length=${unshare_lengths[$i]}
-  python export_onnx.py --model_path $model_path --device $device --share_length $share_length --unshare_length $unshare_length --seq_length $seq_length --num_thread $num_thread --max_pos_len $max_pos_len --generation_mode $generation_mode --embedding_mode $embedding_mode --lora_path $lora_path --max_rank_num $max_rank_num
+  python export_onnx.py \
+    --model_path $model_path \
+    --device $device \
+    --share_length $share_length \
+    --unshare_length $unshare_length \
+    --seq_length $seq_length \
+    --num_thread $num_thread \
+    --max_pos_len $max_pos_len \
+    --generation_mode $generation_mode \
+    --embedding_mode $embedding_mode \
+    --lora_path $lora_path \
+    --max_rank_num $max_rank_num
 done
 
-./compile_multi.sh --mode int4 --name qwen2-7b --share_length_list $share_length_list --addr_mode io_alone --unshare_length_list $unshare_length_list --seq_length_list $seq_length_list --generation_mode $generation_mode --dynamic $dynamic --embedding_mode $embedding_mode
+./compile_multi.sh \
+  --mode int4 \
+  --name qwen2-7b \
+  --share_length_list $share_length_list \
+  --addr_mode io_alone \
+  --unshare_length_list $unshare_length_list \
+  --seq_length_list $seq_length_list \
+  --generation_mode $generation_mode \
+  --dynamic $dynamic \
+  --embedding_mode $embedding_mode \
+  --max_rank_num $max_rank_num
 
 model_tool --encrypt -model qwen2-7b.bmodel -net block_0 -lib $lib_path -o encrypted.bmodel
