@@ -87,6 +87,59 @@ if [ x$addr_mode == x"io_alone" ]; then
     addr_args="--addr_mode io_alone"
 fi
 
+outdir=tmp/$mode"_"$num_device"dev"/block
+mkdir -p $outdir
+
+pushd $outdir
+mkdir -p $outdir
+
+# Function to process each block in parallel
+process_block() {
+    i=$1
+
+    model_transform.py \
+        --model_name block_$i \
+        --model_def ../../onnx/block_$i.onnx \
+        --mlir block_$i.mlir
+
+    model_deploy.py \
+        --mlir block_$i.mlir \
+        $quantize_args \
+        --quant_input \
+        --quant_output \
+        --chip bm1684x \
+        $device_args \
+        --model block_$i.bmodel
+
+    model_transform.py \
+        --model_name block_cache_$i \
+        --model_def ../../onnx/block_cache_$i.onnx \
+        --mlir block_cache_$i.mlir
+
+    model_deploy.py \
+        --mlir block_cache_$i.mlir \
+        $quantize_args \
+        --quant_input \
+        --quant_output \
+        --chip bm1684x \
+        $device_args \
+        $addr_args \
+        --model block_cache_$i.bmodel
+}
+
+# Process each block in parallel
+for ((i=0; i<$num_layers; i++)); do
+    process_block $i
+    models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
+    sleep 45
+done
+
+wait  # Wait for all background processes to finish
+
+rm -f *.npz
+popd
+
+
 outdir=${folder}/$mode"_"$num_device"dev"/embedding
 mkdir -p $outdir
 pushd $outdir
@@ -198,57 +251,7 @@ fi
 popd
 echo $models
 
-outdir=tmp/$mode"_"$num_device"dev"/block
-mkdir -p $outdir
 
-pushd $outdir
-mkdir -p $outdir
-
-# Function to process each block in parallel
-process_block() {
-    i=$1
-
-    model_transform.py \
-        --model_name block_$i \
-        --model_def ../../onnx/block_$i.onnx \
-        --mlir block_$i.mlir
-
-    model_deploy.py \
-        --mlir block_$i.mlir \
-        $quantize_args \
-        --quant_input \
-        --quant_output \
-        --chip bm1684x \
-        $device_args \
-        --model block_$i.bmodel
-
-    model_transform.py \
-        --model_name block_cache_$i \
-        --model_def ../../onnx/block_cache_$i.onnx \
-        --mlir block_cache_$i.mlir
-
-    model_deploy.py \
-        --mlir block_cache_$i.mlir \
-        $quantize_args \
-        --quant_input \
-        --quant_output \
-        --chip bm1684x \
-        $device_args \
-        $addr_args \
-        --model block_cache_$i.bmodel
-}
-
-# Process each block in parallel
-for ((i=0; i<$num_layers; i++)); do
-    process_block $i
-    models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
-    sleep 45
-done
-
-wait  # Wait for all background processes to finish
-
-rm -f *.npz
-popd
 echo $models
 
 model_tool --combine $models -o $out_model

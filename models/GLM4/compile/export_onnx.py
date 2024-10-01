@@ -270,7 +270,7 @@ def test_net_with_mask():
     block_kvs = [BlockCache(i) for i in range(NUM_LAYERS)]
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     visited_token = []
-    query = '你好'
+    query = 'hello'
     print(query)
     ids = tokenizer.apply_chat_template([{"role": "user", "content": query}],
                                         add_generation_prompt=True,
@@ -297,9 +297,10 @@ def test_net_with_mask():
     v_cache = []
 
     for i in tqdm(range(NUM_LAYERS)):
-        # np.savez("block0_input.npz", input_states=out, position_ids=position_ids, attention_mask=attention_mask)
-        out, kv_cache = blocks[i](out, position_ids, attention_mask)
-        k, v = kv_cache
+        outputs = blocks[i](out, position_ids, attention_mask)
+        # np.savez(f"block_{i}.npz", input_0=out, input_1=position_ids, input_2=attention_mask, output_0=outputs[0], output_1=outputs[1][0], output_2=outputs[1][1])
+        out, kvcache = outputs
+        k, v = kvcache
         k_cache.append(k)
         v_cache.append(v)
     out = out[0, token_len - 1:token_len].view(1, 4096)

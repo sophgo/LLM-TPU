@@ -2,6 +2,8 @@ import argparse
 import time
 from transformers import AutoTokenizer
 
+import chat
+
 
 class ChatGLM():
     def __init__(self, args):
@@ -156,7 +158,6 @@ class ChatGLM():
         self.update_history()
 
     def load_model(self, args):
-        import chat
         self.model = chat.ChatGLM()
         self.model.init(self.devices, args.model_path)
         self.model.temperature = args.temperature
@@ -165,7 +166,6 @@ class ChatGLM():
         self.model.repeat_last_n = args.repeat_last_n
         self.model.max_new_tokens = args.max_new_tokens
         self.model.generation_mode = args.generation_mode
-        self.model.prompt_mode = args.prompt_mode
         self.SEQLEN = self.model.SEQLEN
 
     def clear(self):
@@ -200,7 +200,6 @@ if __name__ == "__main__":
     parser.add_argument('--repeat_last_n', type=int, default=32, help='repeat penalty for recent n tokens')
     parser.add_argument('--max_new_tokens', type=int, default=1024, help='max new token length to generate')
     parser.add_argument('--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
-    parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
     parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory")
     args = parser.parse_args()
     main(args)

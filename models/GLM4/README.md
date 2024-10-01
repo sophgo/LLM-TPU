@@ -101,8 +101,17 @@ python export_onnx.py --model_path $ChatGLM4_PATH --seq_length 512
 生成单芯模型
 
 ```bash
-./compile.sh --mode int4 --name glm4-9b --seq_length 512 --addr_mode io_alone # same as int8
+./compile.sh --mode int4 --name glm4-9b --seq_length 512 --addr_mode io_alone
 ```
+生成W8A16量化的模型
+```bash
+./compile.sh --mode int8 --name glm4-9b --seq_length 512 --addr_mode io_alone
+```
+生成8192长度的模型
+```bash
+./compile.sh --mode int8 --name glm4-9b --seq_length 8192 --addr_mode io_alone
+```
+
 
 <!-- 生成双芯模型
 

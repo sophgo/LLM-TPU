@@ -276,18 +276,8 @@ void ChatGLM::init(const std::vector<int> &devices, std::string model_path) {
     assert(true == ret);
   }
 
-  // convert attention to uint16_t
-  if (net_blocks[0]->input_dtypes[0] == BM_FLOAT16) {
-    mask_value = fp32_to_fp16_bits(ATTENTION_MASK);
-    mask_cache_value = fp32_to_fp16_bits(ATTENTION_MASK_CACHE);
-  } else if (net_blocks[0]->input_dtypes[0] == BM_BFLOAT16) {
-    mask_value = fp32_to_bf16_bits(ATTENTION_MASK);
-    mask_cache_value = fp32_to_bf16_bits(ATTENTION_MASK_CACHE);
-  } else {
-    std::cerr << "\nError: Invalid attention dtype\n";
-    std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
-    throw std::runtime_error("Invalid attention dtype");
-  }
+  mask_value = fp32_to_uint16(ATTENTION_MASK, net_blocks[0]->input_dtypes[0]);
+  mask_cache_value = fp32_to_uint16(ATTENTION_MASK_CACHE, net_blocks[0]->input_dtypes[0]);
 }
 
 void ChatGLM::deinit() {

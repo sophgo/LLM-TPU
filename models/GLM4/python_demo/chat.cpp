@@ -24,10 +24,7 @@
 #include <vector>
 #include "utils.h"
 
-static const float MASK = -1000.0;
-static const float MASK_CACHE = 1.0;
-uint16_t mask = fp32_to_fp16_bits(MASK);
-uint16_t mask_cache = fp32_to_fp16_bits(MASK_CACHE);
+static const float ATTENTION_MASK = -10000.;
 
 class ChatGLM {
 public:
@@ -72,7 +69,6 @@ public:
   int repeat_last_n;
   int max_new_tokens;
   std::string generation_mode;
-  std::string prompt_mode;
 
 private:
   std::vector<bm_handle_t> handles;
@@ -84,6 +80,8 @@ private:
   const bm_net_info_t *net_embed_cache;
   const bm_net_info_t *net_lm, *net_greedy_head, *net_penalty_sample_head;
   std::vector<bm_tensor_t> past_key, past_value;
+
+  uint16_t mask_value;
 };
 
 void ChatGLM::net_launch(const bm_net_info_t *net, int stage_idx) {
@@ -226,6 +224,8 @@ void ChatGLM::init(const std::vector<int> &devices, std::string model_path) {
       assert(true == ret);
     }
   }
+
+  mask_value = fp32_to_uint16(ATTENTION_MASK, net_blocks[0]->input_dtypes[0]);
 }
 
 void ChatGLM::deinit() {
@@ -378,7 +378,7 @@ int ChatGLM::forward_first(std::vector<int> &tokens) {
     for (int j = 0; j < SEQLEN; j++) {
       if (j <= i && i < token_length) {
       } else {
-        attention_mask[i * SEQLEN + j] = mask;
+        attention_mask[i * SEQLEN + j] = mask_value;
       }
     }
   }
@@ -395,11 +395,16 @@ int ChatGLM::forward_first(std::vector<int> &tokens) {
     auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
     auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
     d2d(in0_mem, out_mem);
-    if (idx == 0) {
-      // only first time need copy
-      bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
-      bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-    }
+    // if (idx == 0) {
+    //   // only first time need copy
+    //   bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
+    //   bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+    // }
+
+    // only first time need copy
+    bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
+    bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+
     net_launch(net_blocks[idx]);
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
     d2d(past_key[idx].device_mem, net_blocks[idx]->stages[0].output_mems[1]);
@@ -430,8 +435,8 @@ int ChatGLM::forward_next() {
   int cur_token = visited_tokens[token_length - 1];
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
-  for (int i = 0; i <= SEQLEN - token_length; i++) {
-    attention_mask[i] = mask_cache;
+  for (int i = token_length; i < SEQLEN; i++) {
+    attention_mask[i] = mask_value;
   }
   int32_t position_id = token_length - 1;
   // embedding
@@ -443,6 +448,7 @@ int ChatGLM::forward_next() {
   // blocks
   int bytes =
       bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
+  int token_offset = (token_length - 1) * bytes;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
@@ -454,27 +460,29 @@ int ChatGLM::forward_next() {
     auto &out2_mem = net_blocks_cache[idx]->stages[0].output_mems[2];
     d2d(in0_mem, out_mem);
     if (io_alone) {
-      if (idx == 0) {
-        bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
-        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-      } else {
-        d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
-        d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
-      }
+      bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
+      bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+      // if (idx == 0) {
+      //   bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
+      //   bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+      // } else {
+      //   d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
+      //   d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
+      // }
     } else {
       if (idx == 0) {
         bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
         bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
       }
-      in3_mem = past_key[idx].device_mem;
-      in4_mem = past_value[idx].device_mem;
+      d2d(past_key[idx].device_mem, in3_mem);
+      d2d(past_value[idx].device_mem, in4_mem);
     }
-    auto tensors = tensor_launch(net_blocks_cache[idx]);
-    auto in_tensors = tensors[0];
-    auto out_tensors = tensors[1];
-    net_launch(net_blocks_cache[idx], in_tensors, out_tensors);
+    net_launch(net_blocks_cache[idx]);
     out_mem = out0_mem;
-    move_kv_cache(past_key[idx], past_value[idx], out_tensors, token_length);
+    bm_memcpy_d2d_byte(bm_handle, past_key[idx].device_mem, token_offset, out1_mem, 0,
+                       bytes);
+    bm_memcpy_d2d_byte(bm_handle, past_value[idx].device_mem, token_offset, out2_mem, 0,
+                       bytes);
 
     // if (idx == 0 && position_id < 260) {
     //   dump_tensor_to_file<uint16_t>(bm_handle,in0_mem, {1,1,4096},   "input_states.npz",    "input_cache_" + std::to_string(position_id));
@@ -546,6 +554,5 @@ PYBIND11_MODULE(chat, m) {
       .def_readwrite("repeat_penalty", &ChatGLM::repeat_penalty)
       .def_readwrite("repeat_last_n", &ChatGLM::repeat_last_n)
       .def_readwrite("max_new_tokens", &ChatGLM::max_new_tokens)
-      .def_readwrite("generation_mode", &ChatGLM::generation_mode)
-      .def_readwrite("prompt_mode", &ChatGLM::prompt_mode);
+      .def_readwrite("generation_mode", &ChatGLM::generation_mode);
 }
