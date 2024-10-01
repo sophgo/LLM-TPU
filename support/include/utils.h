@@ -55,7 +55,7 @@ typedef struct {
 
 
 //===------------------------------------------------------------===//
-// Inline Func
+// Type Convert Func
 //===------------------------------------------------------------===//
 inline uint16_t fp32_to_fp16_bits(float f) {
   uint32_t x = *((uint32_t *)&f);
@@ -189,10 +189,57 @@ float fp16_ieee_to_fp32_value(uint16_t d) {
   return t.fval;
 }
 
+uint16_t fp32_to_uint16(float value, bm_data_type_t tensor_type) {
+  uint16_t uint16_value = 0;
+  if (tensor_type == BM_FLOAT16) {
+    uint16_value = fp32_to_fp16_bits(value);
+  } else if (tensor_type == BM_BFLOAT16) {
+    uint16_value = fp32_to_bf16_bits(value);
+  } else {
+    std::cerr << "\nError: Invalid attention dtype\n";
+    std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
+    throw std::runtime_error("Invalid attention dtype");
+  }
+  return uint16_value;
+}
+
 
 //===------------------------------------------------------------===//
 // Dump Func
 //===------------------------------------------------------------===//
+float int_to_fp32(int int_val) {
+  return static_cast<float>(int_val);
+}
+
+float float_to_fp32(float float_val) {
+  return float_val;
+}
+
+template<typename T, typename ConvertFunc>
+void dump_min_and_max(bm_handle_t bm_handle, bm_device_mem_t mem, ConvertFunc converter) {
+  size_t mem_size = bm_mem_get_device_size(mem);
+  int ele_count = mem_size / sizeof(T);
+  std::vector<T> data(ele_count);
+  std::vector<float> fp32_data(ele_count);
+
+  bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, mem_size, 0);
+
+  fp32 t;
+  for (int i = 0; i < ele_count; i++) {
+    if constexpr (std::is_same_v<T, uint16_t>) {
+      t.bits = converter(data[i]);
+      fp32_data[i] = t.fval;
+    } else {
+      fp32_data[i] = converter(data[i]);
+    }
+  }
+
+  auto min_it = std::min_element(fp32_data.begin(), fp32_data.end());
+  auto max_it = std::max_element(fp32_data.begin(), fp32_data.end());
+  std::cout << "min_value: " << *min_it << std::endl;
+  std::cout << "max_value: " << *max_it << std::endl;
+}
+
 void dump_bf16_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
                       int size) {
   auto mem_size = bm_mem_get_device_size(mem);
@@ -209,6 +256,8 @@ void dump_bf16_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
     std::cout << t.fval << std::endl;
   }
   std::cout << "-------------------------------------" << std::endl;
+
+  dump_min_and_max<uint16_t>(bm_handle, mem, bf16_to_fp32_bits);
 }
 
 void dump_fp16_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
@@ -227,6 +276,8 @@ void dump_fp16_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
     std::cout << t.fval << std::endl;
   }
   std::cout << "-------------------------------------" << std::endl;
+
+  dump_min_and_max<uint16_t>(bm_handle, mem, fp16_ieee_to_fp32_bits);
 }
 
 void dump_fp32_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
@@ -243,6 +294,8 @@ void dump_fp32_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
     std::cout << data[i] << std::endl;
   }
   std::cout << "-------------------------------------" << std::endl;
+
+  dump_min_and_max<float>(bm_handle, mem, float_to_fp32);
 }
 
 void dump_int_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
@@ -259,8 +312,9 @@ void dump_int_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
     std::cout << data[i] << std::endl;
   }
   std::cout << "-------------------------------------" << std::endl;
-}
 
+  dump_min_and_max<int>(bm_handle, mem, int_to_fp32);
+}
 
 //===------------------------------------------------------------===//
 // Dump to file
