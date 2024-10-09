@@ -104,7 +104,7 @@ model_deploy.py \
     $device_args \
     --model vision_transformer.bmodel
 
-rm *.npz
+rm *.npz *.onnx -f
 
 models=$models' '$outdir'/vision_transformer.bmodel '
 

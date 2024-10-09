@@ -309,7 +309,7 @@ if [ x$generation_mode == x"default" ]; then
         --chip bm1684x \
         --model penalty_sample_head.bmodel
 
-    rm *.npz
+    rm *.npz *.onnx -f
 
     models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '$outdir'/penalty_sample_head.bmodel '
 elif [ x$generation_mode == x"lmhead_with_penalty" ]; then
@@ -327,7 +327,7 @@ elif [ x$generation_mode == x"lmhead_with_penalty" ]; then
         $device_args \
         --model lm_head.bmodel
 
-    rm *.npz
+    rm *.npz *.onnx -f
 
     models=${models}${outdir}'/lm_head.bmodel '
 elif [ x$generation_mode == x"lmhead_with_sample" ]; then
@@ -345,7 +345,7 @@ elif [ x$generation_mode == x"lmhead_with_sample" ]; then
         $device_args \
         --model lm_head.bmodel
 
-    rm *.npz
+    rm *.npz *.onnx -f
 
     models=${models}${outdir}'/lm_head.bmodel '
 elif [ x$generation_mode == x"lmhead_with_top1" ]; then
@@ -363,7 +363,7 @@ elif [ x$generation_mode == x"lmhead_with_top1" ]; then
         $device_args \
         --model lm_head.bmodel
 
-    rm *.npz
+    rm *.npz *.onnx -f
 
     models=${models}${outdir}'/lm_head.bmodel '
 fi

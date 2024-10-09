@@ -92,7 +92,7 @@ model_deploy.py \
     --chip bm1684x \
     $device_args \
     --model embedding.bmodel
-rm *.npz
+rm *.npz *.onnx -f
 models=$models' '$outdir'/embedding.bmodel '
 popd
 echo $models
@@ -135,7 +135,7 @@ model_deploy.py \
     --chip bm1684x \
     --model penalty_sample_head.bmodel
 
-rm *.npz
+rm *.npz *.onnx -f
 models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '$outdir'/penalty_sample_head.bmodel '
 popd
 echo $models
@@ -161,7 +161,7 @@ for ((i=0; i<=$num_layers; i++)); do
         --chip bm1684x \
         $device_args \
         --model block_$i.bmodel
-    rm *.npz
+    rm *.npz *.onnx -f
     models=${models}${outdir}'/block_'$i'.bmodel '
 
 done

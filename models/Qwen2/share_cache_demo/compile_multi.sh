@@ -322,7 +322,7 @@ for index in "${!share_lengths[@]}"; do
         --chip bm1684x \
         --model penalty_sample_head.bmodel
 
-    rm *.npz
+    rm *.npz *.onnx -f
 
     models=${models}$outdir'/penalty_sample_head.bmodel '
 

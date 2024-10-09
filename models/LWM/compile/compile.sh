@@ -97,7 +97,7 @@ model_deploy.py \
     $device_args \
     --model embedding_cache.bmodel
 
-rm *.npz
+rm *.npz *.onnx -f
 
 models=$models' '$outdir'/embedding.bmodel '$outdir'/embedding_cache.bmodel '
 
@@ -124,7 +124,7 @@ model_deploy.py \
     $device_args \
     --model lm_head.bmodel
 
-rm *.npz
+rm *.npz *.onnx -f
 
 models=${models}${outdir}'/lm_head.bmodel '
 popd
@@ -167,7 +167,7 @@ for ((i=0; i<=$num_layers; i++)); do
         $device_args \
         --model block_cache_$i.bmodel
 
-    rm *.npz
+    rm *.npz *.onnx -f
 
     models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
 

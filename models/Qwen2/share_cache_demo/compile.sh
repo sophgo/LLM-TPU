@@ -294,7 +294,7 @@ model_deploy.py \
     --chip bm1684x \
     --model penalty_sample_head.bmodel
 
-rm *.npz
+rm *.npz *.onnx -f
 
 models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '$outdir'/penalty_sample_head.bmodel '
 

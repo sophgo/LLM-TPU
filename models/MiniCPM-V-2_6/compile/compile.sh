@@ -81,7 +81,7 @@ for ((i = 0; i < $num_layers; i++)); do
         --addr_mode io_alone \
         --model block_cache_$i.bmodel
 
-    rm *.npz -f
+    rm *.npz *.onnx -f
 
     models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
 
@@ -121,7 +121,7 @@ model_deploy.py \
     --chip ${chip} \
     --model embedding_cache.bmodel
 
-rm *.npz -f
+rm *.npz *.onnx -f
 
 models=$models' '$outdir'/embedding.bmodel '$outdir'/embedding_cache.bmodel '
 
@@ -145,7 +145,7 @@ model_deploy.py \
     --chip ${chip} \
     --model lm_head.bmodel
 
-rm *.npz -f
+rm *.npz *.onnx -f
 
 models=${models}${outdir}'/lm_head.bmodel '
 popd
@@ -168,6 +168,8 @@ model_deploy.py \
     --processor bm1684x \
     --quant_output \
     --model vision_encoder_bf16.bmodel
+
+rm *.npz *.onnx -f
 
 models=${models}${outdir}'/vision_encoder_bf16.bmodel '
 

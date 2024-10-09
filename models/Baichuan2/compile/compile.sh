@@ -103,7 +103,7 @@ model_deploy.py \
     $device_args \
     --model embedding_1_f16.bmodel
 
-rm *.npz
+rm *.npz *.onnx -f
 
 models=$models' '$outdir'/embedding_1_f16.bmodel '$outdir'/embedding_'$seqlen'_f16.bmodel '
 
@@ -127,7 +127,7 @@ model_deploy.py \
     --chip bm1684x \
     --model lm_head.bmodel
 
-rm *.npz
+rm *.npz *.onnx -f
 
 models=${models}${outdir}'/lm_head.bmodel '
 popd
@@ -173,7 +173,7 @@ model_deploy.py \
     $device_args \
     --model block_cache_$i.bmodel
 
-rm *.npz
+rm *.npz *.onnx -f
 # rm ../../block_$i.onnx
 # rm ../../block_cache_$i.onnx
 

@@ -99,7 +99,7 @@ dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[2
 ### 4. 导出npz文件
 运行以下命令
 ```shell
-rm *.npz
+rm *.npz *.onnx -f
 python3 pipeline.py --model_path_list qwen-7b_int4_shareseq6016_1dev_dyn.bmodel --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --mode debug
 ```
 

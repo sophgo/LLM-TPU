@@ -135,7 +135,7 @@ model_deploy.py \
 
 models=$models' '$outdir'/embedding.bmodel '$outdir'/embedding_cache.bmodel '
 
-rm *.npz
+rm *.npz *.onnx -f
 popd
 
 echo $models
@@ -201,7 +201,7 @@ else
     models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '$outdir'/penalty_sample_head.bmodel '
 fi
 
-rm *.npz
+rm *.npz *.onnx -f
 popd
 echo $models
 
@@ -255,7 +255,7 @@ for ((i=0; i<$num_layers; i++)); do
         --model block_prompt_cache_$i.bmodel
 
 
-    rm *.npz
+    rm *.npz *.onnx -f
 
     models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '$outdir'/block_prompt_cache_'$i'.bmodel '
 
