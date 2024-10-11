@@ -20,10 +20,12 @@ class Qwen:
 
         # other parameters
         self.seq_length_list = [10240,8192,7168,6144,5120,4096,3072,2048,1024]
-        self.share_length_list = [8192,7680,7168,6144,5120,4096,3072,2048,1024]
+        self.prefill_length_list = [8320,8192,7168,6144,5120,4096,3072,2048,1024]
         self.lora_path = args.lora_path
-        self.lora_weight_idx = "1,2,3,4,5,6,9,10,13,14,16,17,19,20"
-        self.lora_net_idx = ",".join(str(2 * i) for i in range(28))
+        self.net_idx = ",".join(str(2 * i) for i in range(28)) + ",56" # lora + lora_embedding
+        self.mem_idx = ",".join(str(i) for i in range(28)) + ",28"
+        self.weight_idx = ["1,2,3,4,5,6,9,10,13,14,16,17,19,20"]*28 + ["0,1"]
+
 
         # load tokenizer
         print("Load " + args.tokenizer_path + " ...")
@@ -46,9 +48,9 @@ class Qwen:
 
     def update_bmodel(self):
         start_time = time.time()
-        self.model.update_bmodel_weight(self.model_path, self.lora_path, self.lora_net_idx, self.lora_weight_idx)
+        self.model.update_bmodel_weight(self.model_path, self.lora_path, self.net_idx, self.mem_idx, self.weight_idx)
         # lora更新后，再用全零覆盖，确保没有size越界
-        # self.model.update_bmodel_weight(self.model_path, "lora_weights_0.bin", self.lora_net_idx, self.lora_weight_idx)
+        # self.model.update_bmodel_weight(self.model_path, "encrypted_lora_weights_zero.bin", self.net_idx, self.mem_idx, self.weight_idx)
         end_time = time.time()
         print(f"\nLora Update Time: {(end_time - start_time):.3f} s")
 
@@ -61,6 +63,7 @@ class Qwen:
         self.model.generation_mode = args.generation_mode
         self.model.lib_path = args.lib_path
         self.model.embedding_path = args.embedding_path
+        self.model.enable_lora_embedding = args.enable_lora_embedding
 
     def encode_tokens(self, prompt):
         messages = [
@@ -89,8 +92,6 @@ class Qwen:
         first_start = time.time()
         if inference_mode == "normal":
             token = self.model.forward_first(tokens)
-        elif inference_mode == "share":
-            token = self.model.forward_unshare(tokens)
         else:
             raise ValueError(f"Not support {inference_mode}")
         first_end = time.time()
@@ -116,8 +117,6 @@ class Qwen:
         print()
         if inference_mode == "normal":
             print(f"FTL Time: {first_duration:.3f} s")
-        elif inference_mode == "share":
-            print(f"Unshare FTL Time: {first_duration:.3f} s")
         print(f"TPS: {tps:.3f} token/s")
 
     def read_json(self, json_path, task_id):
@@ -133,7 +132,7 @@ class Qwen:
 
     def get_seq_index(self, total_length, in_length):
         seq_index = []
-        for index, (t_length, i_length) in enumerate(zip(self.seq_length_list, self.share_length_list)):
+        for index, (t_length, i_length) in enumerate(zip(self.seq_length_list, self.prefill_length_list)):
             if t_length >= total_length and i_length >= in_length:
                 seq_index.append(index)
         return seq_index
@@ -160,9 +159,9 @@ class Qwen:
 
     def test_sample(self):
         json_path = "../../../assets/sophgo_kv_cache_share_test_case.json"
-        share_str, unshare_str_0 = self.read_json(json_path, 0)
-        _, unshare_str_1 = self.read_json(json_path, 1)
-        _, unshare_str_2 = self.read_json(json_path, 2)
+        prefill_str, unprefill_str_0 = self.read_json(json_path, 0)
+        _, unprefill_str_1 = self.read_json(json_path, 1)
+        _, unprefill_str_2 = self.read_json(json_path, 2)
 
         # ===------------------------------------------------------------===
         # Model Init
@@ -176,11 +175,11 @@ class Qwen:
         in_length = 2000
         out_length = 512
         in_tokens = self.tokenizer.encode(
-            share_str, max_length=in_length, truncation=True
+            prefill_str, max_length=in_length, truncation=True
         )
-        unshare_tokens = self.tokenizer.encode(unshare_str_0)
+        unprefill_tokens = self.tokenizer.encode(unprefill_str_0)
 
-        in_length = in_length + len(unshare_tokens)
+        in_length = in_length + len(unprefill_tokens)
         total_length = in_length + out_length
 
         seq_index = self.get_seq_index(total_length, in_length)
@@ -189,7 +188,7 @@ class Qwen:
 
         # load lora
         self.update_bmodel()
-        self.stream_answer(in_tokens[:in_length - len(unshare_tokens)] + unshare_tokens, "normal", out_length)
+        self.stream_answer(in_tokens[:in_length - len(unprefill_tokens)] + unprefill_tokens, "normal", out_length)
 
         # ===------------------------------------------------------------===
         # Deinit
@@ -199,9 +198,9 @@ class Qwen:
 
     def test_random(self):
         json_path = "../../../assets/long_case.json"
-        share_str, unshare_str_0 = self.read_json(json_path, 0)
-        _, unshare_str_1 = self.read_json(json_path, 1)
-        _, unshare_str_2 = self.read_json(json_path, 2)
+        prefill_str, unprefill_str_0 = self.read_json(json_path, 0)
+        _, unprefill_str_1 = self.read_json(json_path, 1)
+        _, unprefill_str_2 = self.read_json(json_path, 2)
 
         # ===------------------------------------------------------------===
         # Model Init
@@ -211,16 +210,16 @@ class Qwen:
         self.model.stage_idx = 0
         self.load_model(self.model_path, read_bmodel=True)
 
-        # share prefill
+        # prefill
         for i in range(10):
             in_length = random.randint(500, 8192)
             out_length = random.randint(200, 512)
             in_tokens = self.tokenizer.encode(
-                share_str, max_length=in_length, truncation=True
+                prefill_str, max_length=in_length, truncation=True
             )
-            unshare_tokens = self.tokenizer.encode(unshare_str_0)
+            unprefill_tokens = self.tokenizer.encode(unprefill_str_0)
 
-            in_length = in_length + len(unshare_tokens)
+            in_length = in_length + len(unprefill_tokens)
             total_length = in_length + out_length
 
             seq_index = self.get_seq_index(total_length, in_length)
@@ -229,7 +228,7 @@ class Qwen:
 
             # load lora
             self.update_bmodel()
-            self.stream_answer(in_tokens[:in_length - len(unshare_tokens)] + unshare_tokens, "normal", out_length)
+            self.stream_answer(in_tokens[:in_length - len(unprefill_tokens)] + unprefill_tokens, "normal", out_length)
 
         # ===------------------------------------------------------------===
         # Deinit
@@ -355,5 +354,6 @@ if __name__ == "__main__":
     parser.add_argument('--lib_path', type=str, default='', help='lib path by user')
     parser.add_argument('--embedding_path', type=str, default='', help='binary embedding path')
     parser.add_argument('--lora_path', type=str, default='', help='binary lora path')
+    parser.add_argument('--enable_lora_embedding', action='store_true', help="if set, enables lora embedding")
     args = parser.parse_args()
     main(args)

@@ -301,13 +301,15 @@ DECL_EXPORT bool bmrt_load_bmodel_data_with_mem(void* p_bmrt, const void * bmode
  * @param   [in]   bmodel_path   Bmodel file directory
  * @param   [in]   update_path   Update bmodel by the binary file directory
  * @param   [in]   net_idx       Update specified net by idx
+ * @param   [in]   mem_idx       Update specified mem by idx
  * @param   [in]   weight_idx    Update specified weight by loc idx
+ * @param   [in]   weight_count  weight count
  * @param   [in]   f             Function pointer to decrypt func
  *
  * @retval true    Update bmodel weight sucess.
  * @retval false   Update bmodel weight failed.
  */
-DECL_EXPORT bool bmrt_update_bmodel_weight_with_decrypt(void* p_bmrt, const char* bmodel_path, const char* update_path, const char* net_idx, const char* weight_idx, decrypt_func f);
+DECL_EXPORT bool bmrt_update_bmodel_weight_with_decrypt(void* p_bmrt, const char* bmodel_path, const char* update_path, const char* net_idx, const char* mem_idx, const char** weight_idx, int weight_count, decrypt_func f);
 
 /**
  * @name    bmrt_show_neuron_network

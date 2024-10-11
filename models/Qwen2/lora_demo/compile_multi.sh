@@ -13,8 +13,7 @@ future_update_args=""
 name=""
 num_layers=
 out_model=""
-share_length=
-unshare_length=
+prefill_length=
 hidden_size=
 dynamic=0
 max_rank_num=0
@@ -41,12 +40,8 @@ while [[ $# -gt 0 ]]; do
         addr_mode="$2"
         shift 2
         ;;
-    --share_length_list)
-        share_length_list="$2"
-        shift 2
-        ;;
-    --unshare_length_list)
-        unshare_length_list="$2"
+    --prefill_length_list)
+        prefill_length_list="$2"
         shift 2
         ;;
     --seq_length_list)
@@ -80,8 +75,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$share_length_list" ]]; then
-    echo "Error: --share_length_list is required." >&2
+if [[ -z "$prefill_length_list" ]]; then
+    echo "Error: --prefill_length_list is required." >&2
     exit 1
 fi
 
@@ -100,21 +95,20 @@ else
 fi
 
 # Split lists into arrays
-IFS=',' read -r -a share_lengths <<< "$share_length_list"
-IFS=',' read -r -a unshare_lengths <<< "$unshare_length_list"
+IFS=',' read -r -a prefill_lengths <<< "$prefill_length_list"
 IFS=',' read -r -a seq_lengths <<< "$seq_length_list"
 
 
 # Loop to process different models
-for index in "${!share_lengths[@]}"; do
+for index in "${!prefill_lengths[@]}"; do
+    rm -rf /root/.cache/tpu-mlir
 
-    share_length=${share_lengths[$index]}
-    unshare_length=${unshare_lengths[$index]}
+    prefill_length=${prefill_lengths[$index]}
     seq_length=${seq_lengths[$index]}
-    folder_suffix="share${share_length}_unshare${unshare_length}_seq${seq_length}"
+    folder_suffix="prefill${prefill_length}_seq${seq_length}"
     folder="tmp_${folder_suffix}"
 
-    folder="tmp_share${share_length}_unshare${unshare_length}_seq${seq_length}"
+    folder="tmp_prefill${prefill_length}_seq${seq_length}"
 
     if [ x$mode == x"int8" ]; then
         quantize_args="--quantize W8BF16"
@@ -178,23 +172,6 @@ for index in "${!share_lengths[@]}"; do
             $future_update_args \
             --model block_$i.bmodel
 
-        if [ x$unshare_length != x"0" ]; then
-            model_transform.py \
-                --model_name block_unshare_$i \
-                --model_def ../../onnx/block_unshare_$i.onnx \
-                --mlir block_unshare_$i.mlir
-
-            model_deploy.py \
-                --mlir block_unshare_$i.mlir \
-                ${quantize_args} \
-                --quant_input \
-                --quant_output \
-                --chip bm1684x \
-                $device_args \
-                $future_update_args \
-                --model block_unshare_$i.bmodel
-        fi
-
         model_transform.py \
             --model_name block_cache_$i \
             --model_def ../../onnx/block_cache_$i.onnx \
@@ -215,11 +192,7 @@ for index in "${!share_lengths[@]}"; do
     # Process each block in parallel
     for ((i=0; i<$num_layers; i++)); do
         process_block $i &
-        if [ x$unshare_length != x"0" ]; then
-            models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_unshare_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
-        else
-            models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
-        fi
+        models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
         sleep 45
     done
 
@@ -238,7 +211,7 @@ for index in "${!share_lengths[@]}"; do
         model_transform.py \
             --model_name embedding \
             --model_def ../../onnx/embedding.pt \
-            --input_shapes [[1,${share_length}]] \
+            --input_shapes [[1,${prefill_length}]] \
             --input_types "int32" \
             --mlir embedding.mlir
 
@@ -252,25 +225,6 @@ for index in "${!share_lengths[@]}"; do
             --model embedding.bmodel
 
         models=${models}$outdir'/embedding.bmodel '
-
-        if [ x$unshare_length != x"0" ]; then
-            model_transform.py \
-                --model_name embedding_unshare \
-                --model_def ../../onnx/embedding.pt \
-                --input_shapes [[1,${unshare_length}]] \
-                --input_types "int32" \
-                --mlir embedding_unshare.mlir
-
-            model_deploy.py \
-                --mlir embedding_unshare.mlir \
-                --quantize BF16 \
-                --quant_input \
-                --quant_output \
-                --chip bm1684x \
-                $device_args \
-                --model embedding_unshare.bmodel
-            models=${models}$outdir'/embedding_unshare.bmodel '
-        fi
 
         if [ x$index == x"0" ]; then
             model_transform.py \
@@ -289,6 +243,51 @@ for index in "${!share_lengths[@]}"; do
                 $device_args \
                 --model embedding_cache.bmodel
             models=${models}$outdir'/embedding_cache.bmodel '
+        fi
+
+        rm -f *.npz
+        popd
+        echo $models
+    fi
+
+    if [ x$max_embedding_rank_num != x"0" ]; then
+        outdir=${folder}/$mode"_"$num_device"dev"/embedding
+        mkdir -p $outdir
+        pushd $outdir
+
+        model_transform.py \
+            --model_name lora_embedding \
+            --model_def ../../onnx/lora_embedding.onnx \
+            --input_shapes [[1,${prefill_length}],[1,${prefill_length},${hidden_size}]] \
+            --input_types "int32" \
+            --mlir lora_embedding.mlir
+
+        model_deploy.py \
+            --mlir lora_embedding.mlir \
+            --quantize BF16 \
+            --quant_input \
+            --quant_output \
+            --chip bm1684x \
+            $device_args \
+            --model lora_embedding.bmodel
+        models=${models}$outdir'/lora_embedding.bmodel '
+
+        if [ x$index == x"0" ]; then
+            model_transform.py \
+                --model_name lora_embedding_cache \
+                --model_def ../../onnx/lora_embedding.onnx \
+                --input_shapes [[1,1],[1,1,${hidden_size}]] \
+                --mlir lora_embedding_cache.mlir
+
+            model_deploy.py \
+                --mlir lora_embedding_cache.mlir \
+                --quantize BF16 \
+                --quant_input \
+                --quant_output \
+                --chip bm1684x \
+                $device_args \
+                --model lora_embedding_cache.bmodel
+            models=${models}$outdir'/lora_embedding_cache.bmodel '
         fi
 
         rm -f *.npz

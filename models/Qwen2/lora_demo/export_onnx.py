@@ -11,6 +11,7 @@
 import os
 import json
 import torch
+import torch.nn as nn
 import ctypes
 import argparse
 import numpy as np
@@ -24,6 +25,16 @@ class Embedding(torch.nn.Module):
 
     def forward(self, input_ids):
         out = transformer.embed_tokens(input_ids)
+        return out.float()
+
+class LoraEmbedding(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.lora_embedding_A = nn.Embedding(num_embeddings=VOCAB_SIZE, embedding_dim=args.max_embedding_rank_num)
+        self.lora_embedding_B = nn.Linear(in_features=args.max_embedding_rank_num, out_features=HIDDEN_SIZE, bias=False)
+
+    def forward(self, input_ids, input_states):
+        out = input_states + self.lora_embedding_B(self.lora_embedding_A(input_ids))
         return out.float()
 
 
@@ -340,29 +351,114 @@ def convert_lora_to_bit():
         lora_weights_uint16 = lora_weights_uint16.byteswap()
     lora_weights_uint16 = lora_weights_uint16.newbyteorder('little')  # Ensure little-endian storage
 
-    # add zero to check after decrypt
-    zero_prefix = np.zeros(64, dtype=np.uint8)
-    lora_weights_uint8 = np.concatenate([zero_prefix, lora_weights_uint8])
-
-    # encrypt and decrypt
-    origin_path = "lora_weights.bin"
-    encrypt_path = "encrypted_lora_weights.bin"
-    decrypt_path = "decrypted_lora_weights.bin"
-    # origin
     lora_weights_uint8_low = (lora_weights_uint16 >> 8).astype(np.uint8)
     lora_weights_uint8_high = (lora_weights_uint16 & 0xFF).astype(np.uint8)
     lora_weights_uint8 = np.column_stack((lora_weights_uint8_high, lora_weights_uint8_low)).reshape(-1)
 
+    return lora_weights_uint8
+
+def convert_lora_embedding():
+    model = LoraEmbedding()
+    input_ids = torch.tensor([range(SEQ_LENGTH)])
+    input_states = torch.randn(1, SEQ_LENGTH, HIDDEN_SIZE)
+
+    torch.onnx.export(
+        model,
+        (input_ids, input_states),
+        f"{folder}/lora_embedding.onnx",
+        verbose=False,
+        input_names=["input_ids", "input_states"],
+        output_names=["hidden_states"],
+        do_constant_folding=True,
+        opset_version=15,
+    )
+
+
+def convert_lora_embedding_to_bit():
+    import copy
+    from peft import LoraConfig, PeftModel
+    # 1. load lora
+    config_file = os.path.join(args.lora_embedding_path, "adapter_config.json")
+    if not os.path.exists(config_file):
+        raise FileNotFoundError(f"Neither config.json nor adapter_config.json found in {args.lora_embedding_path}")
+    with open(config_file) as f:
+        lora_config_dict = json.load(f)
+    lora_config = LoraConfig(**lora_config_dict)
+    lora_model = PeftModel.from_pretrained(copy.deepcopy(origin_model), args.lora_embedding_path) # 需要做deepcopy，不然会影响origin_model
+
+    # 2. extract layer from model
+    lora_weight_list = []
+    lora_layers = lora_model.base_model.model.model.embed_tokens
+    extracted_layers = {}
+    for name, module in lora_layers.named_modules():
+        if 'lora_embedding_A' in name or 'lora_embedding_B' in name:
+            extracted_layers[name] = module.default
+
+    lora_A_weight_list = []
+    lora_B_weight_list = []
+
+    for name, extracted_layer in extracted_layers.items():
+        lora_weight = extracted_layer.detach().cpu().numpy().transpose(0,1)
+        left_dim, right_dim = lora_weight.shape
+
+        if 'lora_embedding_A' in name:
+            new_lora_weight = np.zeros((args.max_rank_num, right_dim), dtype=np.float32)
+            new_lora_weight[:left_dim, :] = lora_weight
+            lora_A_weight_list.append(new_lora_weight)
+        elif 'lora_embedding_B' in name:
+            new_lora_weight = np.zeros((left_dim, args.max_rank_num), dtype=np.float32)
+            new_lora_weight[:, :right_dim] = lora_weight
+            lora_B_weight_list.append(new_lora_weight)
+
+    # 由于在final.mlir中，weight的权重排列顺序是[lora_A, lora_B]的形式
+    # 所以需要把B排列在前面
+    for a, b in zip(lora_A_weight_list, lora_B_weight_list):
+        lora_weight_list.append(a)
+        lora_weight_list.append(b)
+
+
+    # Flatten the weights and convert to uint32
+    lora_weights_fp32 = np.concatenate([w.flatten() for w in lora_weight_list])
+    lora_weights_uint32 = lora_weights_fp32.view(np.uint32)
+    lora_weights_uint16 = (lora_weights_uint32 >> 16).astype(np.uint16)  # Convert to bfloat16
+
+    if lora_weights_uint16.dtype.byteorder == '>':
+        lora_weights_uint16 = lora_weights_uint16.byteswap()
+    lora_weights_uint16 = lora_weights_uint16.newbyteorder('little')  # Ensure little-endian storage
+
+    lora_weights_uint8_low = (lora_weights_uint16 >> 8).astype(np.uint8)
+    lora_weights_uint8_high = (lora_weights_uint16 & 0xFF).astype(np.uint8)
+    lora_weights_uint8 = np.column_stack((lora_weights_uint8_high, lora_weights_uint8_low)).reshape(-1)
+
+    return lora_weights_uint8
+
+def convert_total_lora_to_bit():
+    if args.max_rank_num == 0:
+        raise ValueError(f"max_rank_num is equal to {args.max_rank_num}")
+    if args.max_embedding_rank_num == 0:
+        raise ValueError(f"max_embedding_rank_num is equal to {args.max_embedding_rank_num}")
+
+    # path
+    origin_path = "lora_weights.bin"
+    encrypt_path = "encrypted_lora_weights.bin"
+    decrypt_path = "decrypted_lora_weights.bin"
+
+    # add zero to check after decrypt
+    zero_prefix = np.zeros(64, dtype=np.uint8)
+    # lora embedding
+    lora_embedding_weights = convert_lora_embedding_to_bit()
+    # lora
+    lora_weights = convert_lora_to_bit()
+    total_lora_weights = np.concatenate([zero_prefix, lora_weights, lora_embedding_weights]) # 由于在bmodel中，lora_embedding放在后面，因此这里是lora,lora_embedding的顺序
+
+    # save and encrypt & decrypt
     with open(origin_path, 'wb') as f:
-        lora_weights_uint8.tofile(f)
-
+        total_lora_weights.tofile(f)
     # encrypt
-    encrypt_and_save(lora_weights_uint8, encrypt_path)
-
+    encrypt_and_save(total_lora_weights, encrypt_path)
     # decrypt
     encrypted_data = np.fromfile(encrypt_path, dtype=np.uint8)
     decrypt_and_save(encrypted_data, decrypt_path)
-
     check_md5_equality(origin_path, decrypt_path)
 
 
@@ -400,7 +496,10 @@ def convert():
 
     # export lora model
     print("Convert lora")
-    convert_lora_to_bit()
+    convert_total_lora_to_bit()
+
+    print("Convert lora embedding")
+    convert_lora_embedding()
 
     # export models
     print("Convert block & block_cache")
@@ -429,14 +528,15 @@ if __name__ == "__main__":
     parser.add_argument('-b', '--batch_size', type=int, default=1, help='batch size')
     parser.add_argument('-s', '--seq_length', type=int, default=512, help="sequence length")
     parser.add_argument('-n', '--num_threads', type=int, default=1, help='The number of threads used for torch if device is cpu')
-    parser.add_argument('--share_length', type=int, default=6144, help="share length")
-    parser.add_argument('--unshare_length', type=int, default=4096, help="unshare length")
+    parser.add_argument('--prefill_length', type=int, default=6144, help="prefill length")
     parser.add_argument('--max_pos_len', type=int, default=8704, help="max position length")
     parser.add_argument('--generation_mode', type=str, default="default", choices=["default", "lmhead_with_penalty", "lmhead_with_sample", "lmhead_with_top1"], help="generation mode")
     parser.add_argument('--embedding_mode', type=str, default="default", choices=["default", "binary"], help="if set embedding_mode=binary, will save embedding.bin and infer without tpu")
     parser.add_argument('--lib_path', type=str, default='', help='lib path by user')
     parser.add_argument('--lora_path', type=str, default="", help="path to the lora model")
+    parser.add_argument('--lora_embedding_path', type=str, default="", help="path to the lora embedding model")
     parser.add_argument('--max_rank_num', type=int, default=0, help="the max rank for lora model")
+    parser.add_argument('--max_embedding_rank_num', type=int, default=0, help="the max rank for lora embedding model")
     args = parser.parse_args()
 
     # load model
@@ -445,8 +545,7 @@ if __name__ == "__main__":
     transformer = origin_model.model
     layers = transformer.layers
     SEQ_LENGTH = args.seq_length
-    SHARE_LENGTH = args.share_length
-    UNSHARE_LENGTH = args.unshare_length
+    SHARE_LENGTH = args.prefill_length
     BATCH_SIZE = args.batch_size
     NUM_LAYERS = config.num_hidden_layers
     HIDDEN_SIZE = config.hidden_size
@@ -455,7 +554,7 @@ if __name__ == "__main__":
     HEAD_DIM = HIDDEN_SIZE // NUM_ATTENTION_HEADS
     VOCAB_SIZE = config.vocab_size
     print(f"Layers: {NUM_LAYERS}\nHidden size: {HIDDEN_SIZE}\n")
-    folder = f"./tmp_share{args.share_length}_unshare{args.unshare_length}_seq{args.seq_length}/onnx"
+    folder = f"./tmp_prefill{args.prefill_length}_seq{args.seq_length}/onnx"
 
     # convert
     convert()
