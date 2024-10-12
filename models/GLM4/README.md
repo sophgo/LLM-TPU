@@ -35,8 +35,8 @@
 
 如果不打算自己编译模型，可以直接下载编译好的模型：
 ```bash
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/glm4-9b_int4_1dev.bmodel
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/glm4-9b_int8_1dev.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/glm4-9b_int4_seq2048_1dev.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/glm4-9b_int4_seq8192_1dev.bmodel
 ```
 ## 注意点
 * 模型编译必须要在docker内完成，无法在docker外操作。
