@@ -224,9 +224,9 @@ void dump_min_and_max(bm_handle_t bm_handle, bm_device_mem_t mem, ConvertFunc co
 
   bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, mem_size, 0);
 
-  fp32 t;
   for (int i = 0; i < ele_count; i++) {
     if constexpr (std::is_same_v<T, uint16_t>) {
+      fp32 t;
       t.bits = converter(data[i]);
       fp32_data[i] = t.fval;
     } else {
