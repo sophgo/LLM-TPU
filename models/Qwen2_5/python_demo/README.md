@@ -24,8 +24,3 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 ```bash
 python3 pipeline.py --model_path your_bmodel_path --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy
 ```
-
-### Gradio web demo
-```bash
-python3 web_demo.py --model_path your_bmodel_path
-```

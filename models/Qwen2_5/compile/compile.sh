@@ -119,6 +119,7 @@ model_deploy.py \
     --quant_output \
     --chip bm1684x \
     $device_args \
+    $dyn_args \
     --model embedding.bmodel
 
 model_transform.py \
@@ -213,6 +214,7 @@ process_block() {
         --quant_output \
         --chip bm1684x \
         $device_args \
+        $dyn_args \
         --model block_$i.bmodel
 
     model_transform.py \

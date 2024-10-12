@@ -35,6 +35,7 @@ declare -A model_to_demo=(
     ["llama3-7b"]="Llama3"
     ["qwen-7b"]="Qwen"
     ["qwen1.5-1.8b"]="Qwen1_5"
+    ["qwen2.5-7b"]="Qwen2_5"
     ["wizardcoder-15b"]="WizardCoder"
     ["lwm-text-chat"]="LWM"
     ["internvl2-4b"]="InternVL2"

@@ -31,7 +31,16 @@ pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-7b_int4_seq8192_1dev.bmodel
 ```
 
-### python demo
+### 全流程编译脚本
+以上步骤可以通过运行compile文件夹下的run_compile.sh完成，具体命令是：
+``` shell
+./run_compile.sh --model_name qwen2.5-7b --seq_length 512 --model_path your model path --tpu_mlir_path your tpu_mlir path
+```
+如果没有填写model_path，脚本会从modelscope下载模型；
+如果没有填写tpu_mlir_path，脚本会通过dfss下载对应的tpu_mlir压缩包并解压
+
+
+## python demo
 
 请见python_demo里面的README
 
