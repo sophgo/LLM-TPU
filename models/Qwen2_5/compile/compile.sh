@@ -4,7 +4,6 @@ models=
 mode="bf16"
 folder="tmp"
 num_device=1
-mode_args=""
 device_args=""
 addr_args=""
 dyn_args=""

@@ -8,7 +8,6 @@ models=
 mode="int4"
 folder="tmp"
 num_device=1
-mode_args=""
 device_args=""
 quantize_args="--quantize W4BF16 --q_group_size 64"
 name="glm4v-9b"

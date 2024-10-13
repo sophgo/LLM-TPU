@@ -81,7 +81,7 @@ python export_onnx.py --model_path ${model_path} --seq_length ${seq_length}
 
 echo "compile model..."
 source ${tpu_mlir_path}/envsetup.sh 
-source ./compile.sh --mode ${mode} --name ${model_name} --seq_length ${seq_length} --addr_mode io_alone
+./compile.sh --mode ${mode} --name ${model_name} --seq_length ${seq_length} --addr_mode io_alone
 echo "compile model success"
 
 echo "all done"

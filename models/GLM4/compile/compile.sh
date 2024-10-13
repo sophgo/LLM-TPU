@@ -7,7 +7,6 @@ models=
 mode="int4"
 folder="tmp"
 num_device=1
-mode_args=""
 device_args=""
 addr_args="--addr_mode io_alone"
 quantize_args="--quantize W4BF16 --q_group_size 64"

@@ -5,7 +5,6 @@ models=
 mode="int4"
 folder="tmp"
 num_device=1
-mode_args=""
 device_args=""
 quantize_args=""
 addr_args=""

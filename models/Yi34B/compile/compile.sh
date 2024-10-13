@@ -4,7 +4,6 @@ models=
 mode="int4"
 folder="tmp"
 num_device=2
-mode_args=""
 device_args=""
 addr_args=""
 quantize_args="--quantize F16"

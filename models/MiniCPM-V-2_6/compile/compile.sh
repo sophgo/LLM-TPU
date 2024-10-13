@@ -2,7 +2,6 @@
 set -ex
 models=""
 mode=int4
-mode_args=""
 quantize_args=""
 name="minicpmv26"
 

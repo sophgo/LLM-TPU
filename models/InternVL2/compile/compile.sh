@@ -2,7 +2,6 @@
 set -ex
 models=""
 mode=int4
-mode_args=""
 quantize_args=""
 name="internvl2-4b"
 chip="bm1684x"
