@@ -25,8 +25,20 @@ torch.set_grad_enabled(False)
 parser = argparse.ArgumentParser(description='export onnx')
 parser.add_argument('--model_path', type=str,
                     default="./InternVL2-4B/", help='path to the torch model')
+parser.add_argument('-d', '--device', type=str, choices=["cpu", "cuda"], default="cpu")
+parser.add_argument('--max_image_num', type=int, default=1)
 
 args = parser.parse_args()
+
+device = torch.device(args.device)
+if device == 'cpu':
+    torch.set_num_threads(args.num_threads)
+
+if args.device == "cpu":
+    dtype = torch.float
+else:
+    os.environ['CUDA_VISIBLE_DEVICES'] = "0"
+    dtype = torch.bfloat16
 
 model_path = args.model_path
 is_4B = "InternVL2-4B" in model_path
@@ -34,7 +46,7 @@ folder = f"./tmp/onnx"
 
 origin_model = AutoModelForCausalLM.from_pretrained(
     model_path, trust_remote_code=True,
-    torch_dtype=torch.bfloat16, device_map="cuda").eval()
+    torch_dtype=dtype).eval().to(device)
 
 for param in origin_model.parameters():
     param.requires_grad = False
@@ -50,6 +62,7 @@ HEAD_DIM = HIDDEN_SIZE // NUM_ATTENTION_HEADS
 VOCAB_SIZE = config.llm_config.vocab_size
 DOWNSAMPLE_RATIO = config.downsample_ratio
 ID_EOS = config.llm_config.eos_token_id
+IMAGE_NUM = args.max_image_num
 print(f'Layers: {NUM_LAYERS}\nHidden size: {HIDDEN_SIZE}\n')
 
 vit = origin_model.vision_model
@@ -79,9 +92,9 @@ class Block(torch.nn.Module):
         self.layer = layers[layer_id]
 
         position_ids = torch.tensor(
-            [range(SEQ_LENGTH)], dtype=torch.long).cuda()
+            [range(SEQ_LENGTH)], dtype=torch.long).to(device)
         value_states = torch.randn(
-            (1, SEQ_LENGTH, config.llm_config.num_key_value_heads, HEAD_DIM)).bfloat16().cuda()
+            (1, SEQ_LENGTH, config.llm_config.num_key_value_heads, HEAD_DIM)).to(dtype).to(device)
         if is_4B:
             self.rotary_emb = self.layer.self_attn.rotary_emb
             self.cos, self.sin = self.rotary_emb(
@@ -94,11 +107,17 @@ class Block(torch.nn.Module):
 
 
     def forward(self, hidden_states, position_ids, attention_mask):
+        cos_pos = self.cos[position_ids]
+        sin_pos = self.sin[position_ids]
+        if is_4B:
+            rotary_pos_emb_list = (self.cos, self.sin)
+        else:
+            rotary_pos_emb_list = (cos_pos, sin_pos)
         hidden_states, past_kv = self.layer(hidden_states,
                                             attention_mask,
                                             position_ids,
                                             use_cache=True,
-                                            rotary_pos_emb_list=(self.cos, self.sin),
+                                            rotary_pos_emb_list=rotary_pos_emb_list,
                                             )
         present_k, present_v = past_kv
         return hidden_states.float(), present_k.float(), present_v.float()
@@ -111,9 +130,9 @@ class BlockCache(torch.nn.Module):
         self.layer_id = layer_id
         self.layer = layers[layer_id]
         position_ids = torch.tensor(
-            [range(SEQ_LENGTH)], dtype=torch.long).cuda()
+            [range(SEQ_LENGTH)], dtype=torch.long).to(device)
         value_states = torch.randn(
-            (1, SEQ_LENGTH, config.llm_config.num_key_value_heads, HEAD_DIM)).bfloat16().cuda()
+            (1, SEQ_LENGTH, config.llm_config.num_key_value_heads, HEAD_DIM)).to(dtype).to(device)
         if is_4B:
             self.rotary_emb = self.layer.self_attn.rotary_emb
             self.cos, self.sin = self.rotary_emb(
@@ -126,14 +145,22 @@ class BlockCache(torch.nn.Module):
 
     def forward(self, hidden_states, position_ids, attention_mask, past_k,
                 past_v):
+        # cos_pos = self.cos[position_ids].squeeze(0)
+        # sin_pos = self.sin[position_ids].squeeze(0)
+        # breakpoint()
         cos_pos = self.cos[position_ids]
         sin_pos = self.sin[position_ids]
+        if is_4B:
+            rotary_pos_emb_list = (self.cos, self.sin)
+        else:
+            rotary_pos_emb_list = (cos_pos, sin_pos)
+        
         hidden_states, past_kv = self.layer(hidden_states,
                                             attention_mask,
                                             position_ids=position_ids,
                                             past_key_value=(past_k, past_v),
                                             use_cache=True,
-                                            rotary_pos_emb_list=(cos_pos, sin_pos),
+                                            rotary_pos_emb_list=rotary_pos_emb_list,
                                             )
         present_k, present_v = past_kv
         return hidden_states.float(), present_k.float(), present_v.float()
@@ -165,7 +192,7 @@ class VisionTransformer(torch.nn.Module):
 def convert_vision_transformer():
     model = VisionTransformer()
     pixel_values = torch.randn(
-        (1, CHANNELS, IMAGE_SIZE, IMAGE_SIZE)).bfloat16().cuda()
+        (IMAGE_NUM, CHANNELS, IMAGE_SIZE, IMAGE_SIZE)).to(dtype).to(device)
     torch.onnx.export(model, pixel_values,
                       f'{folder}/vision_transformer.onnx',
                       verbose=False,
@@ -177,10 +204,10 @@ def convert_vision_transformer():
 
 def convert_block(layer_id):
     model = Block(layer_id)
-    hidden_states = torch.randn((1, SEQ_LENGTH, HIDDEN_SIZE)).bfloat16().cuda()
-    position_ids = torch.tensor([range(SEQ_LENGTH)], dtype=torch.long).cuda()
+    hidden_states = torch.randn((1, SEQ_LENGTH, HIDDEN_SIZE)).to(dtype).to(device)
+    position_ids = torch.tensor([range(SEQ_LENGTH)], dtype=torch.long).to(device)
     attention_mask = torch.ones(
-        (1, 1, SEQ_LENGTH, SEQ_LENGTH)).bfloat16().cuda()
+        (1, 1, SEQ_LENGTH, SEQ_LENGTH)).to(dtype).to(device)
     torch.onnx.export(
         model, (hidden_states, position_ids, attention_mask),
         f'{folder}/block_{layer_id}.onnx',
@@ -193,13 +220,13 @@ def convert_block(layer_id):
 
 def convert_block_cache(layer_id):
     model = BlockCache(layer_id)
-    hidden_states = torch.randn((1, 1, HIDDEN_SIZE)).bfloat16().cuda()
-    position_ids = torch.tensor([range(1)], dtype=torch.long).cuda()
-    attention_mask = torch.ones((1, 1, 1, SEQ_LENGTH + 1)).bfloat16().cuda()
+    hidden_states = torch.randn((1, 1, HIDDEN_SIZE)).to(dtype).to(device)
+    position_ids = torch.tensor([range(1)], dtype=torch.long).to(device)
+    attention_mask = torch.ones((1, 1, 1, SEQ_LENGTH + 1)).to(dtype).to(device)
     past_k = torch.randn(
-        (1, SEQ_LENGTH, config.llm_config.num_key_value_heads, HEAD_DIM)).bfloat16().cuda()
+        (1, SEQ_LENGTH, config.llm_config.num_key_value_heads, HEAD_DIM)).to(dtype).to(device)
     past_v = torch.randn(
-        (1, SEQ_LENGTH, config.llm_config.num_key_value_heads, HEAD_DIM)).bfloat16().cuda()
+        (1, SEQ_LENGTH, config.llm_config.num_key_value_heads, HEAD_DIM)).to(dtype).to(device)
 
     torch.onnx.export(
         model, (hidden_states, position_ids, attention_mask, past_k, past_v),
@@ -216,7 +243,7 @@ def convert_block_cache(layer_id):
 
 def convert_embedding():
     model = Embedding()
-    input_ids = torch.tensor([range(SEQ_LENGTH)]).cuda()
+    input_ids = torch.tensor([range(SEQ_LENGTH)]).to(device)
 
     torch.onnx.export(model, (input_ids),
                       f'{folder}/embedding.onnx',
@@ -229,7 +256,7 @@ def convert_embedding():
 
 def convert_lm_head():
     model = LmHead()
-    input = torch.randn(1, HIDDEN_SIZE).bfloat16().cuda()
+    input = torch.randn(1, HIDDEN_SIZE).to(dtype).to(device)
 
     torch.onnx.export(model, (input),
                       f'{folder}/lm_head.onnx',
@@ -282,30 +309,30 @@ def test_net_with_mask():
     ids = prefix_ids + image_ids + query_ids
     jpg = "../python_demo/image2.jpg"
     pixel_values = load_image(jpg, max_num=1).to(
-        torch.bfloat16).cuda()  # [1, 3, 448, 448]
+        dtype).to(device)  # [1, 3, 448, 448]
     vit_embeds = vit_infer(pixel_values)  # [1, 256, 3072]
     ID_IM_END = tokenizer.convert_tokens_to_ids("<|im_end|>")
     ID_END = tokenizer.convert_tokens_to_ids("<|end|>")
     token_len = len(ids)
     ids = ids + (SEQ_LENGTH - token_len) * [0]
-    input_ids = torch.tensor(ids).view(SEQ_LENGTH).cuda()
+    input_ids = torch.tensor(ids).view(SEQ_LENGTH).to(device)
     out = embed(input_ids).view(1, SEQ_LENGTH, HIDDEN_SIZE)  # [1, 512, 3072]
     out[:, prefix_len:prefix_len+256, :] = vit_embeds
 
     position_ids = list(range(token_len)) + (SEQ_LENGTH - token_len) * [0]
-    position_ids = torch.tensor([position_ids]).cuda()
+    position_ids = torch.tensor([position_ids]).to(device)
     attention_mask = torch.ones((SEQ_LENGTH, SEQ_LENGTH)).float() * -10000.0
     for i in range(token_len):
         for j in range(token_len):
             if j <= i:
                 attention_mask[i][j] = 0.0
     attention_mask = attention_mask.view(
-        1, 1, SEQ_LENGTH, SEQ_LENGTH).cuda()
+        1, 1, SEQ_LENGTH, SEQ_LENGTH).to(device)
     k_cache = []
     v_cache = []
     for i in range(NUM_LAYERS):
-        out, k, v = blocks[i](out.bfloat16(), position_ids,
-                              attention_mask.bfloat16())
+        out, k, v = blocks[i](out.to(dtype), position_ids,
+                              attention_mask.to(dtype))
         k[:, :, token_len:, :] = 0
         v[:, :, token_len:, :] = 0
         k_cache.append(k)
@@ -313,23 +340,23 @@ def test_net_with_mask():
 
     out = out[:, token_len - 1:token_len].view(1, 1, HIDDEN_SIZE)
     lm = LmHead()
-    token = lm(out.bfloat16()).view(1)
+    token = lm(out.to(dtype)).view(1)
     out_ids = [int(token)]
     while int(token) not in [ID_EOS, ID_IM_END, ID_END] and token_len < SEQ_LENGTH:
         token_len += 1
-        input_ids = torch.tensor([token]).cuda()
+        input_ids = torch.tensor([token]).to(device)
         out = embed(input_ids).view(1, 1, HIDDEN_SIZE)
-        position_ids = torch.tensor([[token_len - 1]]).cuda()
+        position_ids = torch.tensor([[token_len - 1]]).to(device)
         attention_mask = torch.zeros(
-            (1, 1, 1, SEQ_LENGTH + 1)).float().cuda()
+            (1, 1, 1, SEQ_LENGTH + 1)).float().to(device)
         attention_mask[:, :, :, token_len-1:SEQ_LENGTH] = -10000.0
         for i in range(NUM_LAYERS):
-            out, k, v = block_kvs[i](out.bfloat16(), position_ids,
-                                     attention_mask.bfloat16(),
-                                     k_cache[i].bfloat16(), v_cache[i].bfloat16())
+            out, k, v = block_kvs[i](out.to(dtype), position_ids,
+                                     attention_mask.to(dtype),
+                                     k_cache[i].to(dtype), v_cache[i].to(dtype))
             k_cache[i][:, token_len-1:token_len, :, :] = k[:, :, :, :]
             v_cache[i][:, token_len-1:token_len, :, :] = v[:, :, :, :]
-        token = lm(out.bfloat16()).view(1)
+        token = lm(out.to(dtype)).view(1)
         out_ids.append(int(token))
     words = tokenizer.decode(out_ids)
     print(words)
@@ -342,6 +369,7 @@ def test_net_with_mask():
 # export models
 print(f'Convert block & block_cache')
 for i in tqdm(range(NUM_LAYERS)):
+# for i in tqdm(range(1)):
     convert_block_cache(i)
     convert_block(i)
 
