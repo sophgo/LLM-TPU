@@ -19,6 +19,7 @@ parser = argparse.ArgumentParser(description='export onnx')
 parser.add_argument('-m', '--model_path', type=str, help='path to the torch model')
 parser.add_argument('-s', '--seq_length', type=int, default=512, help="sequence length")
 parser.add_argument('-d', '--device', type=str, choices=["cpu", "cuda"], default="cpu")
+parser.add_argument('--lmhead_with_topk', type=int, default=0, help="only trace the LmHeadWithTopK")
 
 args = parser.parse_args()
 
@@ -123,6 +124,18 @@ class BlockCache(torch.nn.Module):
         return hidden_states.float(), present_k.float(), present_v.float()
 
 
+class LmHeadWithTopK(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, hidden_states):
+        hidden_states = transformer.norm(hidden_states)
+        m_logits = origin_model.lm_head(hidden_states)
+        _, token = torch.topk(m_logits.float(), 1)
+        return token
+
+
 class LmHead(torch.nn.Module):
 
     def __init__(self):
@@ -220,7 +233,14 @@ def convert_embedding():
     input_ids = torch.tensor([range(SEQ_LENGTH)], dtype=torch.int32).to(device)
     module = torch.jit.trace(model.forward, input_ids)
     torch.jit.save(module, f'{folder}/embedding.pt')
-    
+
+
+def convert_lm_head_with_topk():
+    model = LmHeadWithTopK()
+    hidden_states = torch.randn(1, 1, HIDDEN_SIZE).float().to(device)
+    module = torch.jit.trace(model.forward, hidden_states)
+    torch.jit.save(module, f'{folder}/lm_head_with_topk.pt')
+
 
 def convert_lm_head():
     model = LmHead()
@@ -347,6 +367,9 @@ print('Convert embedding')
 convert_embedding()
 
 print('Convert lm_head')
-convert_lm_head()
-convert_greedy_head()
-convert_penalty_sample_head()
+if args.lmhead_with_topk:
+    convert_lm_head_with_topk()
+else:
+    convert_lm_head()
+    convert_greedy_head()
+    convert_penalty_sample_head()

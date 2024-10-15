@@ -21,7 +21,7 @@ python3 export_onnx.py --model_path your_torch_model --seq_length 8192 --device 
 
 使用dynamic
 ```shell
-./compile.sh --mode int4 --name qwen2.5-7b --dynamic 1 --seq_length 8192
+./compile.sh --mode int4 --name qwen2.5-7b --addr_mode io_alone --dynamic 1 --seq_length 8192
 ```
 
 ### 下载迁移好的模型
