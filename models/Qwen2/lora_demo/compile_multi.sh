@@ -101,7 +101,6 @@ IFS=',' read -r -a seq_lengths <<< "$seq_length_list"
 
 # Loop to process different models
 for index in "${!prefill_lengths[@]}"; do
-    rm -rf /root/.cache/tpu-mlir
 
     prefill_length=${prefill_lengths[$index]}
     seq_length=${seq_lengths[$index]}
@@ -328,7 +327,6 @@ for index in "${!prefill_lengths[@]}"; do
         models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '
     fi
 
-
     model_transform.py \
         --model_name penalty_sample_head \
         --model_def ../../onnx/penalty_sample_head.onnx \
@@ -345,6 +343,7 @@ for index in "${!prefill_lengths[@]}"; do
 
     popd
     echo $models
+    rm -rf /root/.cache/tpu-mlir
 done
 
 model_tool --combine $models -o ${name}.bmodel

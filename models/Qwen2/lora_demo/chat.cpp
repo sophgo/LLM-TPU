@@ -49,6 +49,9 @@ public:
   void update_bmodel_weight(
     const std::string &model_path, const std::string &lora_path, const std::string &net_idx,
     const std::string &mem_idx, const std::vector<std::string> &weight_idx);
+  void empty_bmodel_weight(
+    const std::string &model_path, const std::string &net_idx,
+    const std::string &mem_idx, const std::vector<std::string> &weight_idx);
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
   std::mt19937 sgen;
@@ -297,6 +300,7 @@ void Qwen::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
         &out_tensors[i], net->stages[stage_idx].output_mems[i],
         net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
   }
+
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
@@ -555,6 +559,31 @@ void Qwen::update_bmodel_weight(
 
   auto ret = bmrt_update_bmodel_weight_with_decrypt(
     p_bmrt, model_path.c_str(), lora_path.c_str(), net_idx.c_str(), mem_idx.c_str(),
+    const_cast<const char**>(weight_idx_char), (int)weight_idx.size(), decrypt_func_
+  );
+  ASSERT(true == ret, "load lora binary weight error");
+
+  for (size_t i = 0; i < weight_idx.size(); ++i) {
+    delete[] weight_idx_char[i];
+  }
+  delete[] weight_idx_char;
+}
+
+
+void Qwen::empty_bmodel_weight(
+  const std::string &model_path, const std::string &net_idx,
+  const std::string &mem_idx, const std::vector<std::string> &weight_idx) {
+  char** weight_idx_char = new char*[weight_idx.size()];
+
+  for (size_t i = 0; i < weight_idx.size(); ++i) {
+    weight_idx_char[i] = new char[weight_idx[i].size() + 1];
+    std::copy(weight_idx[i].begin(), weight_idx[i].end(), weight_idx_char[i]);
+    weight_idx_char[i][weight_idx[i].size()] = '\0';
+  }
+
+
+  auto ret = bmrt_empty_bmodel_weight_with_decrypt(
+    p_bmrt, model_path.c_str(), net_idx.c_str(), mem_idx.c_str(),
     const_cast<const char**>(weight_idx_char), (int)weight_idx.size(), decrypt_func_
   );
   ASSERT(true == ret, "load lora binary weight error");
@@ -845,13 +874,13 @@ int Qwen::forward_next() {
 
     // net forward
     net_launch(net_blocks_cache[idx], stage_idx);
+
     out_mem = out0_mem;
     bm_memcpy_d2d_byte(bm_handle, past_key[idx], token_offset, out1_mem, 0,
                        kv_bytes);
     bm_memcpy_d2d_byte(bm_handle, past_value[idx], token_offset, out2_mem, 0,
                        kv_bytes);
   }
-
   // forward lmhead
   auto lm_out_mem = lm_launch(net_lm, out_mem, 0, hidden_bytes);
 
@@ -862,7 +891,7 @@ int Qwen::forward_next() {
     token = penalty_sample(net_penalty_sample_head, lm_out_mem, total_tokens,
                            total_length);
   }
-
+  
   total_tokens[total_length] = token;
   total_length += 1;
   return token;
@@ -904,6 +933,7 @@ PYBIND11_MODULE(chat, m) {
       .def("init_decrypt", &Qwen::init_decrypt)
       .def("deinit_decrypt", &Qwen::deinit_decrypt)
       .def("update_bmodel_weight", &Qwen::update_bmodel_weight)
+      .def("empty_bmodel_weight", &Qwen::empty_bmodel_weight)
       .def_readwrite("SEQLEN", &Qwen::SEQLEN) // read SEQLEN in pipeline.py
       .def_readwrite("MAX_PREFILL_LENGTH", &Qwen::MAX_PREFILL_LENGTH)
       .def_readwrite("total_length", &Qwen::total_length)

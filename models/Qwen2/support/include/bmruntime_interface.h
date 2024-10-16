@@ -312,6 +312,27 @@ DECL_EXPORT bool bmrt_load_bmodel_data_with_mem(void* p_bmrt, const void * bmode
 DECL_EXPORT bool bmrt_update_bmodel_weight_with_decrypt(void* p_bmrt, const char* bmodel_path, const char* update_path, const char* net_idx, const char* mem_idx, const char** weight_idx, int weight_count, decrypt_func f);
 
 /**
+ * @name    bmrt_empty_bmodel_weight_with_decrypt
+ * @brief   To empty the weight of bmodel
+ * @ingroup bmruntime
+ *
+ * This API is to empty the weight of bmodel.
+ * After loading bmodel, we can empty the weight of bmodel.
+ *
+ * @param   [in]   p_bmrt        Bmruntime that had been created
+ * @param   [in]   bmodel_path   Bmodel file directory
+ * @param   [in]   net_idx       Empty specified net by idx
+ * @param   [in]   mem_idx       Empty specified mem by idx
+ * @param   [in]   weight_idx    Empty specified weight by loc idx
+ * @param   [in]   weight_count  weight count
+ * @param   [in]   f             Function pointer to decrypt func
+ *
+ * @retval true    Empty bmodel weight sucess.
+ * @retval false   Empty bmodel weight failed.
+ */
+DECL_EXPORT bool bmrt_empty_bmodel_weight_with_decrypt(void* p_bmrt, const char* bmodel_path, const char* net_idx, const char* mem_idx, const char** weight_idx, int weight_count, decrypt_func f);
+
+/**
  * @name    bmrt_show_neuron_network
  * @brief   To print the name of all neuron network
  * @ingroup bmruntime

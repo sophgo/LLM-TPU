@@ -50,7 +50,7 @@ class Qwen:
         start_time = time.time()
         self.model.update_bmodel_weight(self.model_path, self.lora_path, self.net_idx, self.mem_idx, self.weight_idx)
         # lora更新后，再用全零覆盖，确保没有size越界
-        # self.model.update_bmodel_weight(self.model_path, "encrypted_lora_weights_zero.bin", self.net_idx, self.mem_idx, self.weight_idx)
+        self.model.empty_bmodel_weight(self.model_path, self.net_idx, self.mem_idx, self.weight_idx)
         end_time = time.time()
         print(f"\nLora Update Time: {(end_time - start_time):.3f} s")
 
@@ -184,6 +184,7 @@ class Qwen:
 
         seq_index = self.get_seq_index(total_length, in_length)
         self.model.stage_idx = seq_index[-1]
+        self.model.stage_idx  = 0
         self.load_model(self.model_path, read_bmodel=False)
 
         # load lora
