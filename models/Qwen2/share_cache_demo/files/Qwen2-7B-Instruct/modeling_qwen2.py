@@ -135,7 +135,7 @@ def rotate_half(x):
 
 
 # Copied from transformers.models.mistral.modeling_mistral.apply_rotary_pos_emb
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=2):
     """Applies Rotary Position Embedding to the query and key tensors.
 
     Args:
@@ -156,18 +156,8 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
     Returns:
         `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
     """
-    # cos = cos[position_ids].unsqueeze(unsqueeze_dim)
-    # sin = sin[position_ids].unsqueeze(unsqueeze_dim)
-    # q_embed = (q * cos) + (rotate_half(q) * sin)
-    # k_embed = (k * cos) + (rotate_half(k) * sin)
-
-    # The first two dimensions of cos and sin are always 1, so we can `squeeze` them.
-    cos = cos.squeeze(1).squeeze(0)  # [seq_len, dim]
-    sin = sin.squeeze(1).squeeze(0)  # [seq_len, dim]
-    cos = cos[position_ids].unsqueeze(1)  # [bs, 1, seq_len, dim]
-    sin = sin[position_ids].unsqueeze(1)  # [bs, 1, seq_len, dim]
-    cos = cos.transpose(1, 2)
-    sin = sin.transpose(1, 2)
+    cos = cos[position_ids].unsqueeze(unsqueeze_dim)
+    sin = sin[position_ids].unsqueeze(unsqueeze_dim)
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed, k_embed

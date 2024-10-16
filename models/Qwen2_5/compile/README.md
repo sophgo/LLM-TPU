@@ -49,22 +49,21 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5
 #### 第一处：修改旋转位置编码
 原代码：
 ```python
-cos = cos[position_ids].unsqueeze(unsqueeze_dim)
-sin = sin[position_ids].unsqueeze(unsqueeze_dim)
-q_embed = (q * cos) + (rotate_half(q) * sin)
-k_embed = (k * cos) + (rotate_half(k) * sin)
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
+    cos = cos.unsqueeze(unsqueeze_dim)
+    sin = sin.unsqueeze(unsqueeze_dim)
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed, k_embed
 ```
 修改后
 ```python
-# The first two dimensions of cos and sin are always 1, so we can `squeeze` them.
-cos = cos.squeeze(1).squeeze(0)  # [seq_len, dim]
-sin = sin.squeeze(1).squeeze(0)  # [seq_len, dim]
-cos = cos[position_ids].unsqueeze(1)  # [bs, 1, seq_len, dim]
-sin = sin[position_ids].unsqueeze(1)  # [bs, 1, seq_len, dim]
-cos = cos.transpose(1, 2)
-sin = sin.transpose(1, 2)
-q_embed = (q * cos) + (rotate_half(q) * sin)
-k_embed = (k * cos) + (rotate_half(k) * sin)
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=2):
+    cos = cos.unsqueeze(unsqueeze_dim)
+    sin = sin.unsqueeze(unsqueeze_dim)
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed, k_embed
 ```
 
 #### 第二处：修改repeat_kv
