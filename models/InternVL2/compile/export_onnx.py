@@ -26,7 +26,6 @@ parser = argparse.ArgumentParser(description='export onnx')
 parser.add_argument('--model_path', type=str,
                     default="./InternVL2-4B/", help='path to the torch model')
 parser.add_argument('-d', '--device', type=str, choices=["cpu", "cuda"], default="cpu")
-parser.add_argument('--max_image_num', type=int, default=1)
 
 args = parser.parse_args()
 
@@ -62,7 +61,6 @@ HEAD_DIM = HIDDEN_SIZE // NUM_ATTENTION_HEADS
 VOCAB_SIZE = config.llm_config.vocab_size
 DOWNSAMPLE_RATIO = config.downsample_ratio
 ID_EOS = config.llm_config.eos_token_id
-IMAGE_NUM = args.max_image_num
 print(f'Layers: {NUM_LAYERS}\nHidden size: {HIDDEN_SIZE}\n')
 
 vit = origin_model.vision_model
@@ -192,7 +190,7 @@ class VisionTransformer(torch.nn.Module):
 def convert_vision_transformer():
     model = VisionTransformer()
     pixel_values = torch.randn(
-        (IMAGE_NUM, CHANNELS, IMAGE_SIZE, IMAGE_SIZE)).to(dtype).to(device)
+        (1, CHANNELS, IMAGE_SIZE, IMAGE_SIZE)).to(dtype).to(device)
     torch.onnx.export(model, pixel_values,
                       f'{folder}/vision_transformer.onnx',
                       verbose=False,

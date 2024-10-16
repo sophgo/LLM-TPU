@@ -22,6 +22,7 @@
 #include <inttypes.h>
 #include <random>
 #include <numeric>
+#include "utils.h"
 
 static const uint16_t ATTENTION_MASK = 0xC61C; // -9984 by bfloat16
 
@@ -29,8 +30,9 @@ class InternVL2 {
 public:
   void init(int devid, std::string model_path);
   void deinit();
+  void vit_launch(std::vector<float> &pixel_values, std::vector<int> &img_offset);
   int forward_first(std::vector<int> &tokens, std::vector<float> &pixel_values,
-                    int img_offset);
+                    std::vector<int> &img_offset);
   int forward_next();
 
   std::mt19937 sgen;
@@ -128,6 +130,8 @@ void InternVL2::init(int dev_id, std::string model_path) {
   for (int i = 0; i < NUM_LAYERS; i++) {
     past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
     past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
+    empty(bm_handle, past_key[i]);
+    empty(bm_handle, past_value[i]);
   }
   auto buffer_size = bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
   status = bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
@@ -140,8 +144,27 @@ void InternVL2::deinit() {
   bm_dev_free(bm_handle);
 }
 
+void InternVL2::vit_launch(std::vector<float> &pixel_values, std::vector<int> &img_offset) {
+  auto &out_mem = net_embed->stages[0].output_mems[0];
+  auto &vit_in_mem = net_vit->stages[0].input_mems[0];
+  auto &vit_out_mem = net_vit->stages[0].output_mems[0];
+  for (size_t i = 0; i < img_offset.size(); i++) {
+    int vit_in_size = bm_mem_get_device_size(vit_in_mem);
+    assert(vit_in_size);
+    
+    int offset = i * pixel_values.size() / img_offset.size(); // 假设 IMAGE_BYTES 是每张图片展平后的大小
+    bm_memcpy_s2d(bm_handle, vit_in_mem, (void *)(pixel_values.data() + offset));
+    
+    net_launch(net_vit);
+
+    int vit_out_size = bm_mem_get_device_size(vit_out_mem);
+    int dst_offset = img_offset[i] * HIDDEN_SIZE * 2;
+    bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, vit_out_mem, 0, vit_out_size);
+  }
+}
+
 int InternVL2::forward_first(std::vector<int> &tokens,
-                             std::vector<float> &pixel_values, int img_offset) {
+                             std::vector<float> &pixel_values, std::vector<int> &img_offset) {
   std::vector<int> input_ids(SEQLEN, 0);
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
@@ -166,20 +189,14 @@ int InternVL2::forward_first(std::vector<int> &tokens,
   bm_memcpy_s2d(bm_handle, in_mem, (void *)input_ids.data());
   net_launch(net_embed); // prefil embedding
 
-  if (pixel_values.size() * sizeof(float) == IMAGE_BYTES && img_offset > 0) {
-    d2d(dev_buffer, out_mem);
-    out_mem = dev_buffer;
-    // forward vision transformer
-    auto &vit_in_mem = net_vit->stages[0].input_mems[0];
-    auto &vit_out_mem = net_vit->stages[0].output_mems[0];
-    bm_memcpy_s2d(bm_handle, vit_in_mem, (void *)pixel_values.data());
-    net_launch(net_vit);
+  int img_num = img_offset.size();
+  if (pixel_values.size() * sizeof(float) == IMAGE_BYTES * img_num  && img_num > 0) {
+    auto start = std::chrono::high_resolution_clock::now();
+    vit_launch(pixel_values, img_offset);
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> duration = end - start;
 
-    // concatenante texting embedding and image embedding
-    int dst_offset = img_offset * HIDDEN_SIZE * 2;
-    int vit_size = bm_mem_get_device_size(vit_out_mem);
-    bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, vit_out_mem, 0,
-                       vit_size);
+    std::cout << "vit_launch execution time: " << duration.count() << " seconds" << std::endl;
   }
 
   // forward blocks
@@ -193,6 +210,7 @@ int InternVL2::forward_first(std::vector<int> &tokens,
       bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
       bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     }
+
     net_launch(net_blocks[idx]);
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1]);
@@ -206,6 +224,7 @@ int InternVL2::forward_first(std::vector<int> &tokens,
   bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
                      (token_length - 1) * bytes, bytes);
   net_launch(net_lm);
+
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
   token_length++;

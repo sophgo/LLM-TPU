@@ -33,23 +33,28 @@ class InternVL2():
         # load tokenizer
         print("Load " + args.tokenizer + " ...")
         self.tokenizer = AutoTokenizer.from_pretrained(args.tokenizer,
-                                                       trust_remote_code=True)
+                                                       trust_remote_code=True,
+                                                       use_fast=False) # 这里使用use_fase和不用use_fast得到的结果不同，要特别注意
         self.tokenizer.decode([0])  # warm up
 
         # preprocess parameters, such as prompt & tokenizer
-        self.system_prompt = '<|im_start|>system\n你是由上海人工智能实验室联合商汤科技开发的书生多模态大模型，英文名叫InternVL, 是一个有用无害的人工智能助手。<|im_end|><|im_start|>user\n'
-        image_ids = [0] * 256
-        system_ids = self.tokenizer.encode(self.system_prompt + "<img>")
-        self.system_offset = len(system_ids)
-        self.system_prefix = system_ids + image_ids
+        self.system_prompt = '<|system|>\n你是由上海人工智能实验室联合商汤科技开发的书生多模态大模型，英文名叫InternVL, 是一个有用无害的人工智能助手。<|end|><|user|>\n'
+        self.system_ids = self.tokenizer.encode(self.system_prompt + "<img>")
+        self.system_offset = len(self.system_ids)
         self.image_transform = build_transform(448)
+
         # load model
         self.model = chat.InternVL2()
         self.model.init(self.device, args.model_path)
+
+        # parameters
         self.SEQLEN = self.model.SEQLEN
         self.ID_EOS = self.tokenizer.eos_token_id
         self.ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
         self.ID_IM_END = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
+        self.ID_IM_CONTEXT = self.tokenizer.convert_tokens_to_ids("<IMG_CONTEXT>")
+        self.num_image_token = 256
+        self.image_ids = [self.ID_IM_CONTEXT] * self.num_image_token
 
     def load_image(self, image_file):
         image = Image.open(image_file).convert('RGB')
@@ -57,17 +62,31 @@ class InternVL2():
         return pixel_values
 
     def encode(self):
-        if not self.image_str:
-            prompt = self.system_prompt + self.input_str + "<|im_end|><|im_start|>assistant\n"
+        if len(self.image_str_list) == 0:
+            prompt = self.system_prompt + self.input_str + "<|end|><|assistant|>\n"
             self.input_ids = self.tokenizer.encode(prompt)
             self.image_offset = 0
             self.pixel_values = []
             return
-        self.pixel_values = self.load_image(self.image_str).flatten().tolist()
-        self.image_offset = self.system_offset
-        prompt_ids = self.tokenizer.encode(
-            "</img>{}<|im_end|><|im_start|>assistant\n".format(self.input_str))
-        self.input_ids = self.system_prefix + prompt_ids
+        self.pixel_values = []
+        self.image_offset = [self.system_offset + i * self.num_image_token for i in range(len(self.image_str_list))]
+        self.image_offset = []
+        image_num = 0
+        if self.image_str_list and any(self.image_str_list):
+            for image_str in self.image_str_list:
+                if os.path.exists(image_str):
+                    self.pixel_values = self.pixel_values + self.load_image(image_str).flatten().tolist()
+                    self.image_offset.append(self.system_offset + image_num * self.num_image_token)
+                    image_num+=1
+                else:
+                    continue
+        
+            self.system_prefix = self.system_prompt + "<img>" + "<IMG_CONTEXT>" * self.num_image_token * image_num
+            prompt = self.system_prefix + "</img>\n{}<|end|><|assistant|>\n".format(self.input_str)
+        else:
+            self.system_prefix = self.system_prompt
+            prompt = self.system_prefix + "\n{}<|end|><|assistant|>\n".format(self.input_str)
+        self.input_ids = self.tokenizer.encode(prompt)
 
     def chat(self):
         """
@@ -86,11 +105,15 @@ class InternVL2():
             if self.input_str in ["exit", "q", "quit"]:
                 break
             self.image_str = input("\nImage Path: ")
+            self.image_str_list = [img for img in self.image_str.split(",")]
             print("\nAnswer:")
-            if self.image_str:
-                if not os.path.exists(self.image_str):
-                    print("Can't find image: {}".format(self.image_str))
+            image_num = 0
+            for image_str in self.image_str_list:
+                if not os.path.exists(image_str):
+                    print("Can't find image: {}".format(image_str))
                     continue
+                else:
+                    image_num+=1
             self.encode()
             # Chat
             first_start = time.time()
@@ -101,6 +124,8 @@ class InternVL2():
             # Following tokens
             full_word_tokens = []
             text = ""
+            max_token_length = image_num * 256
+            inputs_token_num = self.model.token_length
             while token not in [self.ID_EOS, self.ID_IM_END, self.ID_END
                                 ] and self.model.token_length < self.SEQLEN:
                 full_word_tokens.append(token)
@@ -117,14 +142,21 @@ class InternVL2():
                     full_word_tokens = []
                 token = self.model.forward_next()
                 tok_num += 1
+                if tok_num >= max(max_token_length, 85):
+                    break
             next_end = time.time()
             first_duration = first_end - first_start
             next_duration = next_end - first_end
             tps = tok_num / next_duration
-            print(f"\nFTL: {first_duration:.3f} s")
+            print(f"\nself.SEQLEN: {self.SEQLEN}")
+            print(f"inputs_token_length: {inputs_token_num}")
+            print(f"self.model.token_length: {self.model.token_length}")
+            print(f"max_token_length: {max_token_length}")
+            print(f"FTL: {first_duration:.3f} s")
             print(f"TPS: {tps:.3f} token/s")
-
-
+            print(f"TOKENS: {tok_num} token")
+            print(f"Total time: {first_duration + next_duration} s")
+    
 def main(args):
     model = InternVL2(args)
     model.chat()
