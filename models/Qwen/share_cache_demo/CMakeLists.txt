@@ -32,13 +32,12 @@ find_package(pybind11 REQUIRED CONFIG)
 
 file(GLOB CPP_FILES ${PROJECT_SOURCE_DIR}/*.cpp)
 
-foreach(CPP_FILE ${CPP_FILES})
-    get_filename_component(MODULE_NAME ${CPP_FILE} NAME_WE)
-    pybind11_add_module(${MODULE_NAME} ${CPP_FILE})
-    if (CMAKE_TYPE STREQUAL "DUMP")
-        target_link_libraries(${MODULE_NAME} PUBLIC bmrt bmlib cnpy cryptopp)
-    else()
-        target_link_libraries(${MODULE_NAME} PUBLIC bmrt bmlib cryptopp)
-    endif()
-    install(TARGETS ${MODULE_NAME} DESTINATION python)
-endforeach()
+
+pybind11_add_module(chat ${CPP_FILES})
+if (CMAKE_TYPE STREQUAL "DUMP")
+    target_link_libraries(chat PUBLIC bmrt bmlib cnpy cryptopp)
+else()
+    target_link_libraries(chat PUBLIC bmrt bmlib cryptopp)
+endif()
+install(TARGETS chat DESTINATION python)
+
