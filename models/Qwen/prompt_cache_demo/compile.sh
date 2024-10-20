@@ -4,7 +4,6 @@ models=
 mode="int8"
 folder="tmp"
 num_device=1
-mode_args=""
 device_args=""
 quantize_args="--quantize W8F16"
 addr_args=""
