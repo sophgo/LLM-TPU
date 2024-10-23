@@ -191,6 +191,8 @@ int InternVL2::forward_first(std::vector<int> &tokens,
 
   int img_num = img_offset.size();
   if (pixel_values.size() * sizeof(float) == IMAGE_BYTES * img_num  && img_num > 0) {
+    d2d(dev_buffer, out_mem);
+    out_mem = dev_buffer;
     auto start = std::chrono::high_resolution_clock::now();
     vit_launch(pixel_values, img_offset);
     auto end = std::chrono::high_resolution_clock::now();
