@@ -727,9 +727,9 @@ auto points_json = R"( [
 for (ondemand::object points : parser.iterate(points_json)) {
   // Iterating through an object, you iterate through key-value pairs (a 'field').
   for (auto point : points) {
-    // Get the key corresponding the the field 'point'.
+    // Get the key corresponding the field 'point'.
     cout << "id: " << std::string_view(point.unescaped_key()) << ": (";
-    // Get the value corresponding the the field 'point'.
+    // Get the value corresponding the field 'point'.
     ondemand::object xyz = point.value();
     cout << xyz["x"].get_double() << ", ";
     cout << xyz["y"].get_double() << ", ";
