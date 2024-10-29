@@ -389,6 +389,18 @@ DECL_EXPORT const char *bmrt_get_network_name(void* p_bmrt, int index);
 DECL_EXPORT const bm_net_info_t* bmrt_get_network_info(void* p_bmrt, const char* net_name);
 
 /**
+ * @name    bmrt_get_stage_size
+ * @brief   To get network stage size
+ * @ingroup bmruntime
+ *
+ * @param [in]     p_bmrt         Bmruntime that had been created
+ * @param [in]     net_name       Network name
+ *
+ * @retval  int                   Stage size; if net name not found, will return -1.
+ */
+DECL_EXPORT int bmrt_get_stage_size(void* p_bmrt, const char* net_name);
+
+/**
  * @name    bmrt_get_stage_index
  * @brief   To get network stage index by input tensor
  * @ingroup bmruntime
