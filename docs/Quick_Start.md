@@ -47,12 +47,12 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/sdcard.
 ```
 cat /proc/bmsophon/driver_version
 ```
-之后，会显示类似这样的一个release date`release version:0.5.0   release date: 20240304-175610`，如果你的日期>=20240110，也就是比较新，那么跳过这一步，如果日期<20240110，也就是版本比较老，那么按照如下步骤重新安装driver
+之后，会显示类似这样的一个release date`release version:0.5.1   release date: 20240717-103602`，如果你的日期>=20240717，也就是比较新，那么跳过这一步，如果日期<20240717，也就是版本比较老，那么按照如下步骤重新安装driver
 ```
 pip3 install dfss
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/sophon-driver_0.5.0_amd64.deb
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/sophon-libsophon-dev_0.5.0_amd64.deb
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/sophon-libsophon_0.5.0_amd64.deb
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/libsophon_club/20240717/sophon-driver_0.5.1_amd64.deb
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/libsophon_club/20240717/sophon-libsophon-dev_0.5.1_amd64.deb
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/libsophon_club/20240717/sophon-libsophon_0.5.1_amd64.deb
 
 sudo apt remove sophon-driver sophon-libsophon
 sudo dpkg -i sophon-*.deb
