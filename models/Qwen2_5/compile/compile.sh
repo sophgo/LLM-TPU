@@ -2,7 +2,7 @@
 set -ex
 models=
 mode="bf16"
-folder="qwen2.5-1.5b"
+folder="tmp"
 num_device=1
 device_args=""
 addr_args=""
