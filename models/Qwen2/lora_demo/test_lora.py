@@ -173,13 +173,16 @@ if __name__ == "__main__":
         [HIDDEN_SIZE, INTERMEDIATE_SIZE]
     ]
 
-    convert_total_lora_to_bit("encrypted_lora_weights_0_0.bin", origin_model, 0, 0, 0.0001, args)
-    convert_total_lora_to_bit("encrypted_lora_weights_10_0.bin", origin_model, 10, 0, 0.0001, args)
-    convert_total_lora_to_bit("encrypted_lora_weights_20_0.bin", origin_model, 20, 0, 0.0001, args)
-    convert_total_lora_to_bit("encrypted_lora_weights_30_0.bin", origin_model, 30, 0, 0.0001, args)
-    convert_total_lora_to_bit("encrypted_lora_weights_0_10.bin", origin_model, 0, 10, 0.0001, args)
-    convert_total_lora_to_bit("encrypted_lora_weights_0_20.bin", origin_model, 0, 20, 0.0001, args)
-    convert_total_lora_to_bit("encrypted_lora_weights_0_30.bin", origin_model, 0, 30, 0.0001, args)
+    dir_path = "test_lora"
+    convert_total_lora_to_bit(f"{dir_path}/encrypted_lora_weights_0_0.bin", origin_model, 0, 0, 0, args)
+    convert_total_lora_to_bit(f"{dir_path}/encrypted_lora_weights_1_0.bin", origin_model, 1, 0, 0, args)
+    convert_total_lora_to_bit(f"{dir_path}/encrypted_lora_weights_0_1.bin", origin_model, 0, 1, 0, args)
+    convert_total_lora_to_bit(f"{dir_path}/encrypted_lora_weights_10_0.bin", origin_model, 10, 0, 0.0001, args)
+    convert_total_lora_to_bit(f"{dir_path}/encrypted_lora_weights_20_0.bin", origin_model, 20, 0, 0.0001, args)
+    convert_total_lora_to_bit(f"{dir_path}/encrypted_lora_weights_30_0.bin", origin_model, 30, 0, 0.0001, args)
+    convert_total_lora_to_bit(f"{dir_path}/encrypted_lora_weights_0_10.bin", origin_model, 0, 10, 0.0001, args)
+    convert_total_lora_to_bit(f"{dir_path}/encrypted_lora_weights_0_20.bin", origin_model, 0, 20, 0.0001, args)
+    convert_total_lora_to_bit(f"{dir_path}/encrypted_lora_weights_0_30.bin", origin_model, 0, 30, 0.0001, args)
 
     print("-------------------test_lora-------------------")
     test_lora(lora_scale=1, lora_offset=0.0)
