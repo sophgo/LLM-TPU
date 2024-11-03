@@ -28,6 +28,8 @@ def test_lora(lora_scale, lora_offset):
     folder = f"./test_block"
     q_group_size = 64
     cos_sim_threshold = 0.98
+    print(f"lora_scale : {lora_scale}")
+    print(f"lora_offset : {lora_offset}")
 
     lora_model, lora_config = load_lora_model(origin_model, args.lora_path)
     for i in range(NUM_LAYERS):
@@ -80,6 +82,8 @@ def test_lora_embedding(lora_embedding_scale, lora_offset):
     folder = f"./test_block"
     q_group_size = 64
     cos_sim_threshold = 0.98
+    print(f"lora_embedding_scale : {lora_embedding_scale}")
+    print(f"lora_offset : {lora_offset}")
 
     lora_model, lora_config = load_lora_model(origin_model, args.lora_embedding_path)
     lora_embed = lora_model.base_model.model.model.embed_tokens

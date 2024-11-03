@@ -38,26 +38,27 @@ popd
 python test_a16matmul.py
 
 # 服务器上有bm1684x的板卡才能跑
-# for i in "${!seq_lengths[@]}"; do
-#   seq_length=${seq_lengths[$i]}
-#   prefill_length=${prefill_lengths[$i]}
+for i in "${!seq_lengths[@]}"; do
+  seq_length=${seq_lengths[$i]}
+  prefill_length=${prefill_lengths[$i]}
 
-#   # 测试0~27个block每个block在随机输入情况下，bmodel结果和反量化回torch结果的一致性
-#   export USING_CMODEL=False
-#   export LD_LIBRARY_PATH=/opt/sophon/libsophon-current/lib/:$LD_LIBRARY_PATH
-#   export LD_LIBRARY_PATH=$PWD/../support/lib_pcie:$LD_LIBRARY_PATH
-#   python test_block.py \
-#     --model_path $model_path \
-#     --device $device \
-#     --prefill_length $prefill_length \
-#     --seq_length $seq_length \
-#     --num_thread $num_thread \
-#     --max_pos_len $max_pos_len
-# done
+  # 测试0~27个block每个block在随机输入情况下，bmodel结果和反量化回torch结果的一致性
+  export USING_CMODEL=False
+  export LD_LIBRARY_PATH=/opt/sophon/libsophon-current/lib/:$LD_LIBRARY_PATH
+  export LD_LIBRARY_PATH=$PWD/../support/lib_pcie:$LD_LIBRARY_PATH
+  python test_block.py \
+    --model_path $model_path \
+    --device $device \
+    --prefill_length $prefill_length \
+    --seq_length $seq_length \
+    --num_thread $num_thread \
+    --max_pos_len $max_pos_len
+done
 
 
 pip3 uninstall transformers -y
 pip3 install transformers==4.41.2
+rm -rf /root/.cache/
 
 for i in "${!seq_lengths[@]}"; do
   seq_length=${seq_lengths[$i]}
