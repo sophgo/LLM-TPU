@@ -156,8 +156,7 @@ def test_a16matmul():
     output_bmodel = np.load(f"{dir_path}/test_a_bm1684x_w4bf16_model_outputs.npz")["4_Mul"]
     cos_sim = cosine_similarity(output_c.numpy().flatten(), output_bmodel.flatten())
 
-    if cos_sim < cos_sim_threshold:
-        print(f"bmodel结果 与 反量化回torch的结果，余弦相似度为：{cos_sim}")
+    print(f"bmodel结果 与 反量化回torch的结果，余弦相似度为：{cos_sim}")
 
 
 if __name__ == "__main__":

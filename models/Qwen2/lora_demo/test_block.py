@@ -178,9 +178,9 @@ def test_block():
         for output_i, dequant_output_i, bmodel_output_name_i in zip(output, dequant_output, bmodel_output.files):
             cos_sim_0 = cosine_similarity(output_i.numpy().flatten(), dequant_output_i.numpy().flatten()) # torch & dequant torch
             cos_sim_1 = cosine_similarity(dequant_output_i.numpy().flatten(), bmodel_output[bmodel_output_name_i].flatten()) # dequant torch & w4bf16 bmodel
-            if cos_sim_0 < cos_sim_threshold or cos_sim_1 < cos_sim_threshold:
-                print(f"fp32的torch结果 与 反量化回torch的结果，余弦相似度为：{cos_sim_0}")
-                print(f"bmodel结果 与 反量化回torch的结果，余弦相似度为：{cos_sim_1}")
+
+            print(f"fp32的torch结果 与 反量化回torch的结果，余弦相似度为：{cos_sim_0}")
+            print(f"bmodel结果 与 反量化回torch的结果，余弦相似度为：{cos_sim_1}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='export onnx')
