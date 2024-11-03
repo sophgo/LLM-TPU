@@ -174,6 +174,10 @@ if __name__ == "__main__":
     ]
 
     dir_path = "test_lora"
+    # create folder to store onnx
+    if not os.path.exists(dir_path):
+        os.makedirs(dir_path)
+    print("开始转化encrypted_lora_weights，用于test_pipeline.py")
     convert_total_lora_to_bit(f"{dir_path}/encrypted_lora_weights_0_0.bin", origin_model, 0, 0, 0, args)
     convert_total_lora_to_bit(f"{dir_path}/encrypted_lora_weights_1_0.bin", origin_model, 1, 0, 0, args)
     convert_total_lora_to_bit(f"{dir_path}/encrypted_lora_weights_0_1.bin", origin_model, 0, 1, 0, args)
