@@ -7,7 +7,7 @@
 # third-party components.
 #
 # ==============================================================================
-
+import gc
 import os
 import json
 import torch
@@ -254,7 +254,7 @@ def check_md5_equality(file1, file2):
     else:
         print("MD5 checksumsm match successfully!")
 
-def encrypt_and_save(data, save_path):
+def encrypt_and_save(data, save_path, args):
     import ctypes
     if not os.path.exists(args.lib_path):
         raise FileNotFoundError(f"{args.lib_path} not found")
@@ -275,7 +275,7 @@ def encrypt_and_save(data, save_path):
 
     lib.free_memory(encrypted_data_ptr)
 
-def decrypt_and_save(data, save_path):
+def decrypt_and_save(data, save_path, args):
     if not os.path.exists(args.lib_path):
         raise FileNotFoundError(f"{args.lib_path} not found")
     lib = ctypes.CDLL(args.lib_path)
@@ -297,21 +297,25 @@ def decrypt_and_save(data, save_path):
 
     lib.free_memory(decrypted_data_ptr)
 
-def convert_lora_to_bit():
+
+def load_lora_model(origin_model, path):
     import copy
     from peft import LoraConfig, PeftModel
     # 1. load lora
-    config_file = os.path.join(args.lora_path, "adapter_config.json")
+    config_file = os.path.join(path, "adapter_config.json")
     if not os.path.exists(config_file):
-        raise FileNotFoundError(f"Neither config.json nor adapter_config.json found in {args.lora_path}")
+        raise FileNotFoundError(f"Neither config.json nor adapter_config.json found in {path}")
     with open(config_file) as f:
         lora_config_dict = json.load(f)
     lora_config = LoraConfig(**lora_config_dict)
-    lora_model = PeftModel.from_pretrained(copy.deepcopy(origin_model), args.lora_path) # 需要做deepcopy，不然会影响origin_model
+    lora_model = PeftModel.from_pretrained(copy.deepcopy(origin_model), path, offload_dir='./offload_dir') # 需要做deepcopy，不然会影响origin_model
+    return lora_model, lora_config
 
-    # 2. extract layer from model
+
+def convert_lora_to_bit(lora_model, lora_config, lora_scale, lora_offset, args):
+    # extract layer from model
     lora_weight_list = []
-    for i in range(NUM_LAYERS):
+    for i in range(len(lora_model.base_model.model.model.layers)):
         lora_layers = lora_model.base_model.model.model.layers[i]
         extracted_layers = {}
 
@@ -343,7 +347,8 @@ def convert_lora_to_bit():
             lora_weight_list.append(a)
 
     # Flatten the weights and convert to uint32
-    lora_weights_fp32 = np.concatenate([w.flatten() for w in lora_weight_list])
+    lora_weights_fp32 = np.concatenate([(w.flatten() + lora_offset) * lora_scale for w in lora_weight_list])
+    lora_weights_fp32 = lora_weights_fp32
     lora_weights_uint32 = lora_weights_fp32.view(np.uint32)
     lora_weights_uint16 = (lora_weights_uint32 >> 16).astype(np.uint16)  # Convert to bfloat16
 
@@ -374,19 +379,8 @@ def convert_lora_embedding():
     )
 
 
-def convert_lora_embedding_to_bit():
-    import copy
-    from peft import LoraConfig, PeftModel
-    # 1. load lora
-    config_file = os.path.join(args.lora_embedding_path, "adapter_config.json")
-    if not os.path.exists(config_file):
-        raise FileNotFoundError(f"Neither config.json nor adapter_config.json found in {args.lora_embedding_path}")
-    with open(config_file) as f:
-        lora_config_dict = json.load(f)
-    lora_config = LoraConfig(**lora_config_dict)
-    lora_model = PeftModel.from_pretrained(copy.deepcopy(origin_model), args.lora_embedding_path) # 需要做deepcopy，不然会影响origin_model
-
-    # 2. extract layer from model
+def convert_lora_embedding_to_bit(lora_model, lora_config, lora_embedding_scale, lora_offset, args):
+    # extract layer from model
     lora_weight_list = []
     lora_layers = lora_model.base_model.model.model.embed_tokens
     extracted_layers = {}
@@ -416,9 +410,8 @@ def convert_lora_embedding_to_bit():
         lora_weight_list.append(a)
         lora_weight_list.append(b)
 
-
     # Flatten the weights and convert to uint32
-    lora_weights_fp32 = np.concatenate([w.flatten() for w in lora_weight_list])
+    lora_weights_fp32 = np.concatenate([(w.flatten() + lora_offset) * lora_embedding_scale for w in lora_weight_list])
     lora_weights_uint32 = lora_weights_fp32.view(np.uint32)
     lora_weights_uint16 = (lora_weights_uint32 >> 16).astype(np.uint16)  # Convert to bfloat16
 
@@ -432,7 +425,7 @@ def convert_lora_embedding_to_bit():
 
     return lora_weights_uint8
 
-def convert_total_lora_to_bit():
+def convert_total_lora_to_bit(encrypt_path, origin_model, lora_scale, lora_embedding_scale, lora_offset, args):
     if args.max_rank_num == 0:
         raise ValueError(f"max_rank_num is equal to {args.max_rank_num}")
     if args.max_embedding_rank_num == 0:
@@ -440,25 +433,26 @@ def convert_total_lora_to_bit():
 
     # path
     origin_path = "lora_weights.bin"
-    encrypt_path = "encrypted_lora_weights.bin"
     decrypt_path = "decrypted_lora_weights.bin"
 
     # add zero to check after decrypt
     zero_prefix = np.zeros(64, dtype=np.uint8)
     # lora embedding
-    lora_embedding_weights = convert_lora_embedding_to_bit()
+    lora_model, lora_config = load_lora_model(origin_model, args.lora_embedding_path)
+    lora_embedding_weights = convert_lora_embedding_to_bit(lora_model, lora_config, lora_embedding_scale, lora_offset, args)
     # lora
-    lora_weights = convert_lora_to_bit()
+    lora_model, lora_config = load_lora_model(origin_model, args.lora_path)
+    lora_weights = convert_lora_to_bit(lora_model, lora_config, lora_scale, lora_offset, args)
     total_lora_weights = np.concatenate([zero_prefix, lora_weights, lora_embedding_weights]) # 由于在bmodel中，lora_embedding放在后面，因此这里是lora,lora_embedding的顺序
 
     # save and encrypt & decrypt
     with open(origin_path, 'wb') as f:
         total_lora_weights.tofile(f)
     # encrypt
-    encrypt_and_save(total_lora_weights, encrypt_path)
+    encrypt_and_save(total_lora_weights, encrypt_path, args)
     # decrypt
     encrypted_data = np.fromfile(encrypt_path, dtype=np.uint8)
-    decrypt_and_save(encrypted_data, decrypt_path)
+    decrypt_and_save(encrypted_data, decrypt_path, args)
     check_md5_equality(origin_path, decrypt_path)
 
 
@@ -468,7 +462,7 @@ def setup_environment():
     np.random.seed(seed)
     return
 
-def load_model():
+def load_model(args):
     # setup environment
     setup_environment()
 
@@ -483,7 +477,7 @@ def load_model():
     # load model
     model_path = args.model_path
     origin_model = AutoModelForCausalLM.from_pretrained(
-        model_path, trust_remote_code=True, torch_dtype=dtype, device_map="auto"
+        model_path, trust_remote_code=True, torch_dtype=dtype
     ).eval()
     for param in origin_model.parameters():
         param.requires_grad = False
@@ -496,10 +490,7 @@ def convert():
 
     # export lora model
     print("Convert lora")
-    convert_total_lora_to_bit()
-
-    print("Convert lora embedding")
-    convert_lora_embedding()
+    convert_total_lora_to_bit("encrypted_lora_weights.bin", origin_model, 1, 1, 0, args)
 
     # export models
     print("Convert block & block_cache")
@@ -540,7 +531,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # load model
-    origin_model, device, dtype = load_model()
+    origin_model, device, dtype = load_model(args)
     config = origin_model.config
     transformer = origin_model.model
     layers = transformer.layers

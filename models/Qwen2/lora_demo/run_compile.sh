@@ -2,7 +2,7 @@
 set -ex
 
 # 配置环境
-pip3 install torch==2.0.1 transformers_stream_generator einops tiktoken accelerate transformers==4.41.2
+pip3 install torch==2.0.1 transformers_stream_generator einops tiktoken accelerate transformers==4.41.2 peft
 cp files/Qwen2-7B-Instruct/* /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2/
 
 max_pos_len=10240 # 旋转位置编码的长度，设置为同一个值，才能将block_cache和block权重合并

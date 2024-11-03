@@ -237,69 +237,6 @@ class Qwen:
         self.model.deinit_decrypt()
         self.model.deinit()
 
-    def test_ceval(self):
-        """
-        Test c-eval
-        """
-        import pandas as pd
-        self.system_prompt = "You will provide correct answer to the question."
-
-        test_path = "ceval-exam/test"
-        subject_path = "subject_mapping.json"
-        subject_map = load_json(subject_path)
-
-        # 3. inference
-        self.model.init_decrypt()
-        submit_path = "Qwen2_submit.json"
-        self.model.stage_idx = 0
-        self.load_model(self.model_path, read_bmodel=True)
-
-        res = {}
-        subject_num = len(os.listdir(test_path))
-        print(f"Subject numbers: {subject_num}")
-        for idx, test_csv_file in enumerate(os.listdir(test_path)):
-            test_csv_path = os.path.join(test_path, test_csv_file)
-            test_df = pd.read_csv(test_csv_path)
-
-            subject = test_csv_file.replace("_test.csv", "")
-            subject_zh = subject_map[subject][1]
-
-            subject_dict = {}
-            print("======================================")
-            print("======================================")
-            print("Current subject:", subject)
-            print("======================================")
-            print("======================================")
-            # if subject != "middle_school_physics":continue
-            for i in range(len(test_df)):
-                print(f"\n================={i}/{len(test_df)}====================")
-                prompt = construct_prompt(subject_zh, [], test_df.loc[i], 0)
-                tokens = self.encode_tokens(prompt)
-                in_length = len(tokens)
-                print("token length:", in_length)
-                if in_length >= 3200:
-                    raise ValueError(f"The length you input is {in_length}, exceed the maximum length")
-
-                seq_index = self.get_seq_index(in_length + self.model.max_new_tokens, in_length)
-                self.model.stage_idx = seq_index[-1]
-                self.load_model(self.model_path, read_bmodel=False)
-                self.stream_answer(tokens, "normal", self.model.max_new_tokens)
-
-                option = extract_cot_answer(self.answer_cur)
-                #print("\nprediction:", pred)
-                print("\noption:", option)
-
-                subject_dict[str(i)] = option
-            res[subject] = subject_dict
-
-        # 4. deinit & save
-        dump_json(res, submit_path)
-
-        # deinit
-        self.model.deinit_decrypt()
-        self.model.deinit()
-
-
 """
 -1: your input is empty or exceed the maximum length
 -2: can not to create handle
@@ -314,18 +251,7 @@ def main(args):
     try:
         engine = Qwen(args)
 
-        # 1. test one sample
         engine.test_sample()
-
-        # 2. test random
-        # engine.test_random()
-        
-        # 2. test c-eval
-        # engine.test_ceval()
-
-        # 3. test length
-        # engine.test_length()
-
 
         print("All Right!")
     except RuntimeError:
