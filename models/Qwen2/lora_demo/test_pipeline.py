@@ -46,6 +46,8 @@ class Qwen:
         print(f"\nLoad Time: {(load_end - load_start):.3f} s")
 
     def update_bmodel(self, lora_path):
+        if not os.path.exists(lora_path):
+            raise FileNotFoundError(f"{lora_path} not found")
         start_time = time.time()
         self.model.update_bmodel_weight(self.model_path, lora_path, self.net_idx, self.mem_idx, self.weight_idx)
         end_time = time.time()
@@ -194,7 +196,7 @@ class Qwen:
         self.model.deinit_decrypt()
         self.model.deinit()
 
-    def test_empty_lora(self):
+    def test_empty_lora(self, lora_path):
         sample_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n" + "Give me a short introduction to large language model." + "<|im_end|>\n<|im_start|>assistant\n"
 
         # ===------------------------------------------------------------===
@@ -286,6 +288,87 @@ class Qwen:
         self.model.deinit_decrypt()
         self.model.deinit()
 
+    def test_abnormal_length(self):
+        sample_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n" + "Give me a short introduction to large language model." + "<|im_end|>\n<|im_start|>assistant\n"
+
+        # ===------------------------------------------------------------===
+        # Model Init
+        # ===------------------------------------------------------------===
+        self.model.init_decrypt()
+        self.model.prefill_reuse = 0
+        self.model.stage_idx = 0
+        self.load_model(self.model_path, read_bmodel=True)
+
+        # sample 0
+        in_tokens = self.tokenizer.encode(sample_str)
+
+        in_length = len(in_tokens)
+        out_length = 20
+        total_length = in_length + out_length
+
+        self.stream_answer(in_tokens*1000, "normal", out_length)
+
+        # ===------------------------------------------------------------===
+        # Deinit
+        # ===------------------------------------------------------------===
+        self.model.deinit_decrypt()
+        self.model.deinit()
+
+    def test_abnormal_stage(self, stage_idx):
+        sample_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n" + "Give me a short introduction to large language model." + "<|im_end|>\n<|im_start|>assistant\n"
+
+        # ===------------------------------------------------------------===
+        # Model Init
+        # ===------------------------------------------------------------===
+        self.model.init_decrypt()
+        self.model.prefill_reuse = 0
+        self.model.stage_idx = stage_idx
+        self.load_model(self.model_path, read_bmodel=True)
+
+        # sample 0
+        in_tokens = self.tokenizer.encode(sample_str)
+
+        in_length = len(in_tokens)
+        out_length = 20
+        total_length = in_length + out_length
+
+        self.stream_answer(in_tokens, "normal", out_length)
+
+        # ===------------------------------------------------------------===
+        # Deinit
+        # ===------------------------------------------------------------===
+        self.model.deinit_decrypt()
+        self.model.deinit()
+
+    def test_abnormal_stage_2(self, stage_idx):
+        sample_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n" + "Give me a short introduction to large language model." + "<|im_end|>\n<|im_start|>assistant\n"
+
+        # ===------------------------------------------------------------===
+        # Model Init
+        # ===------------------------------------------------------------===
+        self.model.init_decrypt()
+        self.model.prefill_reuse = 0
+        self.model.stage_idx = 0
+        self.load_model(self.model_path, read_bmodel=True)
+
+        self.model.stage_idx = stage_idx
+        self.load_model(self.model_path, read_bmodel=False)
+
+        # sample 0
+        in_tokens = self.tokenizer.encode(sample_str)
+
+        in_length = len(in_tokens)
+        out_length = 20
+        total_length = in_length + out_length
+
+        self.stream_answer(in_tokens, "normal", out_length)
+
+        # ===------------------------------------------------------------===
+        # Deinit
+        # ===------------------------------------------------------------===
+        self.model.deinit_decrypt()
+        self.model.deinit()
+
 """
 -1: your input is empty or exceed the maximum length
 -2: can not to create handle
@@ -299,47 +382,62 @@ def main(args):
     dir_path = "test_lora"
     start_time = time.time()
 
-    try:
-        engine = Qwen(args)
+    engine = Qwen(args)
 
-        print("---------------------------(1)---------------------------")
-        engine.enable_lora_embedding = False
-        engine.test_sample()
+    print("---------------------------(1)---------------------------")
+    engine.model.enable_lora_embedding = False
+    engine.test_sample()
 
-        print("---------------------------(2)---------------------------")
-        engine.enable_lora_embedding = False
-        engine.test_lora(f"{dir_path}/encrypted_lora_weights_1_0.bin")
-        engine.enable_lora_embedding = True
-        engine.test_lora(f"{dir_path}/encrypted_lora_weights_0_1.bin")
+    print("---------------------------(2)---------------------------")
+    engine.model.enable_lora_embedding = False
+    engine.test_lora(f"{dir_path}/encrypted_lora_weights_1_0.bin")
+    engine.model.enable_lora_embedding = True
+    engine.test_lora(f"{dir_path}/encrypted_lora_weights_0_1.bin")
 
-        print("---------------------------(3)---------------------------")
-        engine.enable_lora_embedding = False
-        engine.test_empty_lora(f"{dir_path}/encrypted_lora_weights_1_0.bin")
-        engine.test_empty_lora_with_loop(f"{dir_path}/encrypted_lora_weights_1_0.bin", loop_num)
-        engine.enable_lora_embedding = True
-        engine.test_empty_lora(f"{dir_path}/encrypted_lora_weights_0_1.bin")
-        engine.test_empty_lora_with_loop(f"{dir_path}/encrypted_lora_weights_0_1.bin", loop_num)
+    print("---------------------------(3)---------------------------")
+    engine.model.enable_lora_embedding = False
+    engine.test_empty_lora(f"{dir_path}/encrypted_lora_weights_1_0.bin")
+    engine.test_empty_lora_with_loop(f"{dir_path}/encrypted_lora_weights_1_0.bin", loop_num)
+    engine.model.enable_lora_embedding = True
+    engine.test_empty_lora(f"{dir_path}/encrypted_lora_weights_0_1.bin")
+    engine.test_empty_lora_with_loop(f"{dir_path}/encrypted_lora_weights_0_1.bin", loop_num)
 
-        print("---------------------------(4)---------------------------")
-        engine.test_zero_lora(f"{dir_path}/encrypted_lora_weights_0_0.bin")
+    print("---------------------------(4)---------------------------")
+    engine.test_zero_lora(f"{dir_path}/encrypted_lora_weights_0_0.bin")
 
-        print("---------------------------(6)(8)---------------------------")
-        engine.enable_lora_embedding = False
-        engine.test_lora(f"{dir_path}/encrypted_lora_weights_10_0.bin")
-        engine.test_lora(f"{dir_path}/encrypted_lora_weights_20_0.bin")
-        engine.test_lora(f"{dir_path}/encrypted_lora_weights_30_0.bin")
-        engine.enable_lora_embedding = True
-        engine.test_lora(f"{dir_path}/encrypted_lora_weights_0_10.bin")
-        engine.test_lora(f"{dir_path}/encrypted_lora_weights_0_20.bin")
-        engine.test_lora(f"{dir_path}/encrypted_lora_weights_0_30.bin")
+    print("---------------------------(6)(8)---------------------------")
+    engine.model.enable_lora_embedding = False
+    engine.test_lora(f"{dir_path}/encrypted_lora_weights_10_0.bin")
+    engine.test_lora(f"{dir_path}/encrypted_lora_weights_20_0.bin")
+    engine.test_lora(f"{dir_path}/encrypted_lora_weights_30_0.bin")
+    engine.model.enable_lora_embedding = True
+    engine.test_lora(f"{dir_path}/encrypted_lora_weights_0_10.bin")
+    engine.test_lora(f"{dir_path}/encrypted_lora_weights_0_20.bin")
+    engine.test_lora(f"{dir_path}/encrypted_lora_weights_0_30.bin")
 
-        print("All Right!")
-    except RuntimeError:
-        print("RuntimeError")
-    except ValueError:
-        print("ValueError")
-    except:
-        print("Error")
+    # print("---------------------------测试异常长度---------------------------")
+    # engine.model.enable_lora_embedding = False
+    # engine.test_abnormal_length()
+
+    # print("---------------------------测试异常stage---------------------------")
+    # engine.model.enable_lora_embedding = False
+    # engine.test_abnormal_stage(stage_idx=-1)
+    # engine.test_abnormal_stage(stage_idx=100)
+    # engine.test_abnormal_stage_2(stage_idx=-1)
+    # engine.test_abnormal_stage_2(stage_idx=100)
+
+    # print("---------------------------测试变长密钥---------------------------")
+    # engine.model.enable_lora_embedding = False
+    # engine.model.lib_path = "../share_cache_demo/build/libcipher_varlen.so"
+    # engine.model_path = "encrypted_varlen.bmodel"
+    # engine.test_sample()
+
+    # print("---------------------------压力测试---------------------------")
+    # for _ in range(loop_num):
+    #     engine.model.enable_lora_embedding = False
+    #     engine.test_lora(f"{dir_path}/encrypted_lora_weights_1_0.bin")
+    #     engine.model.enable_lora_embedding = True
+    #     engine.test_lora(f"{dir_path}/encrypted_lora_weights_0_1.bin")
 
     end_time = time.time()
     print(f"\nTotal Time: {(end_time - start_time):.3f} s")

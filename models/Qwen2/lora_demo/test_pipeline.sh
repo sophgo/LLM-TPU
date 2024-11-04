@@ -91,7 +91,7 @@ for i in "${!seq_lengths[@]}"; do
 done
 
 # 请在soc上测试以下命令
-# python3 pipeline.py \
+# python3 test_pipeline.py \
 #     --model_path encrypted.bmodel \
 #     --tokenizer_path ../support/token_config/ \
 #     --devid 0 \

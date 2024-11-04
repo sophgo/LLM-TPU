@@ -460,6 +460,11 @@ void Qwen::init_nets() {
 }
 
 void Qwen::init_params() {
+  auto stage_size = bmrt_get_stage_size(p_bmrt, "block_0");
+  if (stage_idx < 0 || stage_idx >= stage_size) {
+    throw std::runtime_error("Invalid stage idx");
+  }
+
   // read parameters from bmodel
   is_dynamic = net_blocks[0]->is_dynamic;
   auto addr_mode = net_blocks_cache[0]->addr_mode;
@@ -758,6 +763,9 @@ bm_device_mem_t Qwen::lm_launch(const bm_net_info_t *net,
 }
 
 int Qwen::forward_first(std::vector<int> &tokens) {
+  if ((int)tokens.size() >= MAX_PREFILL_LENGTH) {
+    throw std::runtime_error("the sequence length you input exceeds MAX_PREFILL_LENGTH");
+  }
   std::vector<int> first_tokens(MAX_PREFILL_LENGTH, 0);
   std::vector<int> position_id(MAX_PREFILL_LENGTH, 0);
   std::vector<uint16_t> attention_mask(MAX_PREFILL_LENGTH * MAX_PREFILL_LENGTH,
@@ -838,6 +846,10 @@ int Qwen::forward_first(std::vector<int> &tokens) {
 }
 
 int Qwen::forward_next() {
+  if (total_length >= SEQLEN) {
+    throw std::runtime_error("the sequence length exceeds SEQLEN");
+  }
+
   int cur_token = total_tokens[total_length - 1];
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);

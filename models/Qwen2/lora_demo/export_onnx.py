@@ -492,6 +492,9 @@ def convert():
     print("Convert lora")
     convert_total_lora_to_bit("encrypted_lora_weights.bin", origin_model, 1, 1, 0, args)
 
+    print("Convert lora embedding")
+    convert_lora_embedding()
+
     # export models
     print("Convert block & block_cache")
     for i in tqdm(range(NUM_LAYERS)):
