@@ -108,7 +108,6 @@ def test_a16matmul():
     if not os.path.exists(dir_path):
         os.makedirs(dir_path)
 
-    torch.manual_seed(0)
     x = torch.randn(4, 512).float()
 
     inputs = {'x': x.numpy()}

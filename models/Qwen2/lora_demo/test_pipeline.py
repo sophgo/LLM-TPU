@@ -1,13 +1,15 @@
 import os
+import sys
 import json
 import time
 import random
 import argparse
+import numpy as np
 from transformers import AutoTokenizer
 
-import sys
 import chat
 
+from test_a16matmul import cosine_similarity
 
 class Qwen:
     def __init__(self, args):
@@ -21,10 +23,6 @@ class Qwen:
         self.prefill_length_list = [8320,8192,7168,6144,5120,4096,3072,2048,1024]
         self.lora_path = args.lora_path
         self.zero_lora_path = args.zero_lora_path
-        self.net_idx = ",".join(str(2 * i) for i in range(28)) + ",56" # lora + lora_embedding
-        self.mem_idx = ",".join(str(i) for i in range(28)) + ",28"
-        self.weight_idx = ["1,2,3,4,5,6,9,10,13,14,16,17,19,20"]*28 + ["0,1"]
-
 
         # load tokenizer
         print("Load " + args.tokenizer_path + " ...")
@@ -45,17 +43,46 @@ class Qwen:
         load_end = time.time()
         print(f"\nLoad Time: {(load_end - load_start):.3f} s")
 
-    def update_bmodel(self, lora_path):
+    def update_lora_and_lora_embedding(self, lora_path):
         if not os.path.exists(lora_path):
             raise FileNotFoundError(f"{lora_path} not found")
+
+        net_idx = ",".join(str(2 * i) for i in range(28)) + ",56" # lora + lora_embedding
+        mem_idx = ",".join(str(i) for i in range(28)) + ",28"
+        weight_idx = ["1,2,3,4,5,6,9,10,13,14,16,17,19,20"]*28 + ["0,1"]
+
         start_time = time.time()
-        self.model.update_bmodel_weight(self.model_path, lora_path, self.net_idx, self.mem_idx, self.weight_idx)
+        self.model.update_bmodel_weight(self.model_path, lora_path, net_idx, mem_idx, weight_idx)
         end_time = time.time()
         print(f"\nLora Update Time: {(end_time - start_time):.3f} s")
 
-    def empty_bmodel(self):
+    def empty_lora(self):
+        net_idx = ",".join(str(2 * i) for i in range(28)) # lora
+        mem_idx = ",".join(str(i) for i in range(28))
+        weight_idx = ["1,2,3,4,5,6,9,10,13,14,16,17,19,20"]*28
+
         start_time = time.time()
-        self.model.empty_bmodel_weight(self.model_path, self.net_idx, self.mem_idx, self.weight_idx)
+        self.model.empty_bmodel_weight(self.model_path, net_idx, mem_idx, weight_idx)
+        end_time = time.time()
+        print(f"\nLora Empty Time: {(end_time - start_time):.3f} s")
+
+    def empty_lora_embedding(self):
+        net_idx = "56" # lora_embedding
+        mem_idx = "28"
+        weight_idx =  ["0,1"]
+
+        start_time = time.time()
+        self.model.empty_bmodel_weight(self.model_path, net_idx, mem_idx, weight_idx)
+        end_time = time.time()
+        print(f"\nLora Empty Time: {(end_time - start_time):.3f} s")
+
+    def empty_lora_and_lora_embedding(self):
+        net_idx = ",".join(str(2 * i) for i in range(28)) + ",56" # lora + lora_embedding
+        mem_idx = ",".join(str(i) for i in range(28)) + ",28"
+        weight_idx = ["1,2,3,4,5,6,9,10,13,14,16,17,19,20"]*28 + ["0,1"]
+
+        start_time = time.time()
+        self.model.empty_bmodel_weight(self.model_path, net_idx, mem_idx, weight_idx)
         end_time = time.time()
         print(f"\nLora Empty Time: {(end_time - start_time):.3f} s")
 
@@ -187,7 +214,7 @@ class Qwen:
         total_length = in_length + out_length
 
         # load lora model
-        self.update_bmodel(lora_path)
+        self.update_lora_and_lora_embedding(lora_path)
         self.stream_answer(in_tokens, "normal", out_length)
 
         # ===------------------------------------------------------------===
@@ -215,8 +242,8 @@ class Qwen:
         total_length = in_length + out_length
 
         # load lora model
-        self.update_bmodel(lora_path)
-        self.empty_bmodel()
+        self.update_lora_and_lora_embedding(lora_path)
+        self.empty_lora_and_lora_embedding()
         self.stream_answer(in_tokens, "normal", out_length)
 
         # ===------------------------------------------------------------===
@@ -244,7 +271,7 @@ class Qwen:
         total_length = in_length + out_length
 
         # load lora model
-        self.update_bmodel(lora_path)
+        self.update_lora_and_lora_embedding(lora_path)
         self.stream_answer(in_tokens, "normal", out_length)
 
         # ===------------------------------------------------------------===
@@ -273,13 +300,13 @@ class Qwen:
 
         # load lora model
         for _ in range(loop_num):
-            self.update_bmodel(lora_path)
-            self.empty_bmodel()
+            self.update_lora_and_lora_embedding(lora_path)
+            self.empty_lora_and_lora_embedding()
             self.stream_answer(in_tokens, "normal", out_length)
 
         for _ in range(loop_num):
-            self.update_bmodel(lora_path)
-            self.empty_bmodel()
+            self.update_lora_and_lora_embedding(lora_path)
+            self.empty_lora_and_lora_embedding()
         self.stream_answer(in_tokens, "normal", out_length)
 
         # ===------------------------------------------------------------===
@@ -369,6 +396,15 @@ class Qwen:
         self.model.deinit_decrypt()
         self.model.deinit()
 
+def get_cos_sim(torch_data_path, bmodel_data_path):
+    torch_data = np.load(torch_data_path)
+
+    seq_length = torch_data.shape[1]
+    bmodel_data = np.load(bmodel_data_path)["output_0"][:,:seq_length]
+
+    os.remove(bmodel_data_path)
+    return cosine_similarity(torch_data.flatten(), bmodel_data.flatten())
+
 """
 -1: your input is empty or exceed the maximum length
 -2: can not to create handle
@@ -384,36 +420,30 @@ def main(args):
 
     engine = Qwen(args)
 
+    print("\033[31m请注意！！实际跑的时候，注释掉chat.cpp中的dump_net_output_to_file\033[0m")
     print("---------------------------(1)---------------------------")
     engine.model.enable_lora_embedding = False
     engine.test_sample()
 
-    print("---------------------------(2)---------------------------")
-    engine.model.enable_lora_embedding = False
-    engine.test_lora(f"{dir_path}/encrypted_lora_weights_1_0.bin")
-    engine.model.enable_lora_embedding = True
-    engine.test_lora(f"{dir_path}/encrypted_lora_weights_0_1.bin")
 
-    print("---------------------------(3)---------------------------")
-    engine.model.enable_lora_embedding = False
-    engine.test_empty_lora(f"{dir_path}/encrypted_lora_weights_1_0.bin")
-    engine.test_empty_lora_with_loop(f"{dir_path}/encrypted_lora_weights_1_0.bin", loop_num)
+    print("---------------------------(2)(6)(8)---------------------------")
+    lora_scale_list = [0, 0.1, 0, 0.001, 0.005, 0.01]
+    lora_embedding_scale_list = [0, 0, 0.1, 0.001, 0.005, 0.01]
+    for lora_scale, lora_embedding_scale in zip(lora_scale_list, lora_embedding_scale_list):
+        print(f"lora_scale : {lora_scale}, lora_embedding_lora : {lora_embedding_scale}")
+        engine.model.enable_lora_embedding = True if lora_embedding_scale > 0 else False
+        engine.test_lora(f"{dir_path}/scale{lora_scale}_embedding_scale{lora_embedding_scale}_encrypted_lora_weights.bin")
+        cos_sim = get_cos_sim(f"{dir_path}/scale{lora_scale}_embedding_scale{lora_embedding_scale}_torch_hidden_states.npy", f"{dir_path}/bmodel_hidden_states.npz")
+        print(f"cos_sim: {cos_sim}")
+        if cos_sim < 0.8:raise ValueError("failed")
+
+    print("---------------------------(3)(压力测试)---------------------------")
     engine.model.enable_lora_embedding = True
-    engine.test_empty_lora(f"{dir_path}/encrypted_lora_weights_0_1.bin")
-    engine.test_empty_lora_with_loop(f"{dir_path}/encrypted_lora_weights_0_1.bin", loop_num)
+    engine.test_empty_lora(f"{dir_path}/scale0.005_embedding_scale0.005_encrypted_lora_weights.bin")
+    engine.test_empty_lora_with_loop(f"{dir_path}/scale0.005_embedding_scale0.005_encrypted_lora_weights.bin", loop_num)
 
     print("---------------------------(4)---------------------------")
-    engine.test_zero_lora(f"{dir_path}/encrypted_lora_weights_0_0.bin")
-
-    print("---------------------------(6)(8)---------------------------")
-    engine.model.enable_lora_embedding = False
-    engine.test_lora(f"{dir_path}/encrypted_lora_weights_10_0.bin")
-    engine.test_lora(f"{dir_path}/encrypted_lora_weights_20_0.bin")
-    engine.test_lora(f"{dir_path}/encrypted_lora_weights_30_0.bin")
-    engine.model.enable_lora_embedding = True
-    engine.test_lora(f"{dir_path}/encrypted_lora_weights_0_10.bin")
-    engine.test_lora(f"{dir_path}/encrypted_lora_weights_0_20.bin")
-    engine.test_lora(f"{dir_path}/encrypted_lora_weights_0_30.bin")
+    engine.test_zero_lora(f"{dir_path}/scale0_embedding_scale0_encrypted_lora_weights.bin")
 
     # print("---------------------------测试异常长度---------------------------")
     # engine.model.enable_lora_embedding = False
@@ -431,13 +461,6 @@ def main(args):
     # engine.model.lib_path = "../share_cache_demo/build/libcipher_varlen.so"
     # engine.model_path = "encrypted_varlen.bmodel"
     # engine.test_sample()
-
-    # print("---------------------------压力测试---------------------------")
-    # for _ in range(loop_num):
-    #     engine.model.enable_lora_embedding = False
-    #     engine.test_lora(f"{dir_path}/encrypted_lora_weights_1_0.bin")
-    #     engine.model.enable_lora_embedding = True
-    #     engine.test_lora(f"{dir_path}/encrypted_lora_weights_0_1.bin")
 
     end_time = time.time()
     print(f"\nTotal Time: {(end_time - start_time):.3f} s")

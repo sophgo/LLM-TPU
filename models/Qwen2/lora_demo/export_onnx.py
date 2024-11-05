@@ -312,7 +312,7 @@ def load_lora_model(origin_model, path):
     return lora_model, lora_config
 
 
-def convert_lora_to_bit(lora_model, lora_config, lora_scale, lora_offset, args):
+def convert_lora_to_bit(lora_model, lora_config, args):
     # extract layer from model
     lora_weight_list = []
     for i in range(len(lora_model.base_model.model.model.layers)):
@@ -347,7 +347,7 @@ def convert_lora_to_bit(lora_model, lora_config, lora_scale, lora_offset, args):
             lora_weight_list.append(a)
 
     # Flatten the weights and convert to uint32
-    lora_weights_fp32 = np.concatenate([(w.flatten() + lora_offset) * lora_scale for w in lora_weight_list])
+    lora_weights_fp32 = np.concatenate([w.flatten() for w in lora_weight_list])
     lora_weights_fp32 = lora_weights_fp32
     lora_weights_uint32 = lora_weights_fp32.view(np.uint32)
     lora_weights_uint16 = (lora_weights_uint32 >> 16).astype(np.uint16)  # Convert to bfloat16
@@ -379,7 +379,7 @@ def convert_lora_embedding():
     )
 
 
-def convert_lora_embedding_to_bit(lora_model, lora_config, lora_embedding_scale, lora_offset, args):
+def convert_lora_embedding_to_bit(lora_model, lora_config, args):
     # extract layer from model
     lora_weight_list = []
     lora_layers = lora_model.base_model.model.model.embed_tokens
@@ -411,7 +411,7 @@ def convert_lora_embedding_to_bit(lora_model, lora_config, lora_embedding_scale,
         lora_weight_list.append(b)
 
     # Flatten the weights and convert to uint32
-    lora_weights_fp32 = np.concatenate([(w.flatten() + lora_offset) * lora_embedding_scale for w in lora_weight_list])
+    lora_weights_fp32 = np.concatenate([w.flatten() for w in lora_weight_list])
     lora_weights_uint32 = lora_weights_fp32.view(np.uint32)
     lora_weights_uint16 = (lora_weights_uint32 >> 16).astype(np.uint16)  # Convert to bfloat16
 
@@ -425,7 +425,8 @@ def convert_lora_embedding_to_bit(lora_model, lora_config, lora_embedding_scale,
 
     return lora_weights_uint8
 
-def convert_total_lora_to_bit(encrypt_path, origin_model, lora_scale, lora_embedding_scale, lora_offset, args):
+
+def convert_total_lora_to_bit(encrypt_path, origin_model, args):
     if args.max_rank_num == 0:
         raise ValueError(f"max_rank_num is equal to {args.max_rank_num}")
     if args.max_embedding_rank_num == 0:
@@ -439,10 +440,10 @@ def convert_total_lora_to_bit(encrypt_path, origin_model, lora_scale, lora_embed
     zero_prefix = np.zeros(64, dtype=np.uint8)
     # lora embedding
     lora_model, lora_config = load_lora_model(origin_model, args.lora_embedding_path)
-    lora_embedding_weights = convert_lora_embedding_to_bit(lora_model, lora_config, lora_embedding_scale, lora_offset, args)
+    lora_embedding_weights = convert_lora_embedding_to_bit(lora_model, lora_config, args)
     # lora
     lora_model, lora_config = load_lora_model(origin_model, args.lora_path)
-    lora_weights = convert_lora_to_bit(lora_model, lora_config, lora_scale, lora_offset, args)
+    lora_weights = convert_lora_to_bit(lora_model, lora_config, args)
     total_lora_weights = np.concatenate([zero_prefix, lora_weights, lora_embedding_weights]) # 由于在bmodel中，lora_embedding放在后面，因此这里是lora,lora_embedding的顺序
 
     # save and encrypt & decrypt
@@ -490,7 +491,7 @@ def convert():
 
     # export lora model
     print("Convert lora")
-    convert_total_lora_to_bit("encrypted_lora_weights.bin", origin_model, 1, 1, 0, args)
+    convert_total_lora_to_bit("encrypted_lora_weights.bin", origin_model, args)
 
     print("Convert lora embedding")
     convert_lora_embedding()

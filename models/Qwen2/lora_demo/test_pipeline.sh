@@ -2,8 +2,6 @@
 set -ex
 
 # 配置环境
-# pip3 uninstall transformers -y
-# pip3 install torch==2.0.1 transformers_stream_generator einops tiktoken accelerate transformers==4.41.2 peft
 pip3 install torch==2.0.1 transformers_stream_generator einops tiktoken accelerate transformers==4.41.2 peft
 cp files/Qwen2-7B-Instruct/* /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2/
 
@@ -20,8 +18,7 @@ seq_length_list="1024" # 输入长度 + 输出长度不能超过seq_length
 prefill_length_list="1024" # 输入长度prefill_length
 model_path="/workspace/models/Qwen2-7B-Instruct/" # 训练的pytorch基座模型的路径
 lib_path="../share_cache_demo/build/libcipher.so" # 加解密so的路径
-lora_path="saves_lora/lora_sft_qwen2_unpretrained_init/" # 微调的lora模型的路径
-lora_embedding_path="saves_lora/lora_sft_qwen2_unpretrained_init_embedding/" # 微调的lora模型的路径
+lora_config_path="./adapter_config.json" # 微调的lora config的路径
 device="cpu"
 num_thread=16
 tpu_mlir_path="/workspace/tpu-mlir_v1.11.beta.0-65-g1ce2f8ddf-20241029"
@@ -58,7 +55,7 @@ done
 
 pip3 uninstall transformers -y
 pip3 install transformers==4.41.2
-rm -rf /root/.cache/
+rm -rf /root/.cache/tpu-mlir
 
 for i in "${!seq_lengths[@]}"; do
   seq_length=${seq_lengths[$i]}
@@ -84,13 +81,17 @@ for i in "${!seq_lengths[@]}"; do
       --num_thread $num_thread \
       --max_pos_len $max_pos_len \
       --lib_path $lib_path \
-      --lora_path $lora_path \
-      --lora_embedding_path $lora_embedding_path \
+      --lora_config_path $lora_config_path \
       --max_rank_num $max_rank_num \
       --max_embedding_rank_num $max_embedding_rank_num
 done
 
 # 请在soc上测试以下命令
+# mkdir third_party && cd third_party
+# git clone https://github.com/rogersce/cnpy.git
+# cd ..
+# rm -rf build && mkdir build
+# cd build && cmake -DCMAKE_TYPE=DUMP .. && make && cp *cpython* .. && cd ..
 # python3 test_pipeline.py \
 #     --model_path encrypted.bmodel \
 #     --tokenizer_path ../support/token_config/ \

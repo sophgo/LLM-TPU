@@ -89,15 +89,17 @@ def dequant(npz_file, op_name, q_group_size, hidden_size):
     dequant_weight[1::2] = dequant_weights_low
     return dequant_weight
 
-def get_dequant_weight_dic(fp32_file, npz_file, fp32_op_name_list, op_name_list, op_shape_list, q_group_size, cos_sim_threshold):
+def get_dequant_weight_dic(fp32_file, npz_file, fp32_op_name_list, op_name_list, op_shape_list, q_group_size, cos_sim_threshold, verify=True):
     dequant_weight_dic = {}
     for fp32_op_name, op_name, op_shape in zip(fp32_op_name_list, op_name_list, op_shape_list):
         dequant_weight = dequant(npz_file, op_name, q_group_size, op_shape[1]) # 这里用op_shape[1]而不是HIDDEN_SIZE
-        fp32_weight = fp32_file[fp32_op_name].flatten()
-        dequant_bf16_weight = dequant_weight.reshape(op_shape).transpose(1,0).flatten()
-        cos_sim = cosine_similarity(fp32_weight, dequant_bf16_weight)
-        if cos_sim < cos_sim_threshold:
-            raise ValueError(f"cos_sim : {cos_sim}, failed")
+
+        if verify:
+            fp32_weight = fp32_file[fp32_op_name].flatten()
+            dequant_bf16_weight = dequant_weight.reshape(op_shape).transpose(1,0).flatten()
+            cos_sim = cosine_similarity(fp32_weight, dequant_bf16_weight)
+            if cos_sim < cos_sim_threshold:
+                raise ValueError(f"cos_sim : {cos_sim}, failed")
         dequant_torch_weight = torch.FloatTensor(dequant_weight.reshape(op_shape))
         dequant_weight_dic[op_name] = torch.nn.Parameter(dequant_torch_weight, requires_grad=False)
     return dequant_weight_dic

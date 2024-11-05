@@ -828,6 +828,9 @@ int Qwen::forward_first(std::vector<int> &tokens) {
         total_length * kv_bytes);
   }
 
+  // test lora
+  dump_net_output_to_file(bm_handle, net_blocks[NUM_LAYERS-1], "test_lora/bmodel_hidden_states.npz");
+
   // forward lmhead
   auto lm_out_mem = lm_launch(net_lm, out_mem,
                               (total_length - 1) * hidden_bytes, hidden_bytes);
