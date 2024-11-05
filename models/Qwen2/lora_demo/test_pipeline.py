@@ -22,7 +22,6 @@ class Qwen:
         self.seq_length_list = [10240,8192,7168,6144,5120,4096,3072,2048,1024]
         self.prefill_length_list = [8320,8192,7168,6144,5120,4096,3072,2048,1024]
         self.lora_path = args.lora_path
-        self.zero_lora_path = args.zero_lora_path
 
         # load tokenizer
         print("Load " + args.tokenizer_path + " ...")
@@ -427,8 +426,8 @@ def main(args):
 
 
     print("---------------------------(2)(6)(8)---------------------------")
-    lora_scale_list = [0, 0.1, 0, 0.001, 0.005, 0.01]
-    lora_embedding_scale_list = [0, 0, 0.1, 0.001, 0.005, 0.01]
+    lora_scale_list = [0, 0.01, 0, 0.001, 0.005, 0.01]
+    lora_embedding_scale_list = [0, 0, 0.01, 0.001, 0.005, 0.01]
     for lora_scale, lora_embedding_scale in zip(lora_scale_list, lora_embedding_scale_list):
         print(f"lora_scale : {lora_scale}, lora_embedding_lora : {lora_embedding_scale}")
         engine.model.enable_lora_embedding = True if lora_embedding_scale > 0 else False
@@ -482,7 +481,6 @@ if __name__ == "__main__":
     parser.add_argument('--lib_path', type=str, default='', help='lib path by user')
     parser.add_argument('--embedding_path', type=str, default='', help='binary embedding path')
     parser.add_argument('--lora_path', type=str, default='', help='binary lora path')
-    parser.add_argument('--zero_lora_path', type=str, default='', help='zero binary lora path')
     parser.add_argument('--enable_lora_embedding', action='store_true', help="if set, enables lora embedding")
     args = parser.parse_args()
     main(args)

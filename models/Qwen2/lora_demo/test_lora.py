@@ -197,8 +197,8 @@ if __name__ == "__main__":
         os.makedirs(dir_path)
 
     print("-------------------test_lora-------------------")
-    lora_scale_list = [0, 0.1, 0, 0.001, 0.005, 0.01]
-    lora_embedding_scale_list = [0, 0, 0.1, 0.001, 0.005, 0.01]
+    lora_scale_list = [0, 0.01, 0, 0.001, 0.005, 0.01]
+    lora_embedding_scale_list = [0, 0, 0.01, 0.001, 0.005, 0.01]
     for lora_scale, lora_embedding_scale in zip(lora_scale_list, lora_embedding_scale_list):
         test_lora(lora_scale=lora_scale, lora_embedding_scale=lora_embedding_scale, dir_path=dir_path)
 
