@@ -104,7 +104,7 @@ def get_dequant_weight_dic(fp32_file, npz_file, fp32_op_name_list, op_name_list,
         dequant_weight_dic[op_name] = torch.nn.Parameter(dequant_torch_weight, requires_grad=False)
     return dequant_weight_dic
 
-def exec_cmd(i, dir_path):
+def exec_cmd(i, dir_path, tpu_in_pcie):
     os.system(f'cd {dir_path} && \
         model_transform.py \
             --model_name block_{i} \
@@ -120,18 +120,20 @@ def exec_cmd(i, dir_path):
             --quant_input \
             --quant_output \
             --addr_mode io_alone \
-            --debug && \
-        model_runner.py \
+            --debug')
+    if tpu_in_pcie:
+        os.system(f'model_runner.py \
             --input block_{i}_in_f32.npz \
             --model block_{i}_bm1684x_w4bf16_tpu.mlir \
             --output block_{i}_bm1684x_w4bf16_tpu_outputs.npz && \
         model_runner.py \
             --input block_{i}_in_f32.npz \
             --model block_{i}.bmodel \
-            --output block_{i}_bm1684x_w4bf16_model_outputs.npz && \
-        cd ..')
+            --output block_{i}_bm1684x_w4bf16_model_outputs.npz')
+    os.system("cd ..")
 
-def test_block():
+
+def test_block(tpu_in_pcie):
     dir_path = "test_block"
     q_group_size = 64
     cos_sim_threshold = 0.97
@@ -163,7 +165,7 @@ def test_block():
             opset_version=15,
         )
 
-        exec_cmd(i, dir_path)
+        exec_cmd(i, dir_path, tpu_in_pcie)
 
         fp32_npz_name = f"{dir_path}/block_{i}_top_f32_all_weight.npz"
         addressed_npz_name = f"{dir_path}/block_{i}_tpu_addressed_bm1684x_w4bf16_weight.npz"
@@ -171,18 +173,18 @@ def test_block():
         npz_file = np.load(addressed_npz_name)
 
         dequant_weight_dic = get_dequant_weight_dic(fp32_file, npz_file, fp32_op_name_list, op_name_list, op_shape_list, q_group_size, cos_sim_threshold)
-
         dequant_block = DequantBlock(i, dequant_weight_dic, op_name_list)
 
         output = block(input_states, position_ids, attention_mask)
         dequant_output = dequant_block(input_states, position_ids, attention_mask)
-        bmodel_output = np.load(f"{dir_path}/block_{i}_bm1684x_w4bf16_model_outputs.npz")
-        for output_i, dequant_output_i, bmodel_output_name_i in zip(output, dequant_output, bmodel_output.files):
+        for output_i, dequant_output_i in zip(output, dequant_output):
             cos_sim_0 = cosine_similarity(output_i.numpy().flatten(), dequant_output_i.numpy().flatten()) # torch & dequant torch
-            cos_sim_1 = cosine_similarity(dequant_output_i.numpy().flatten(), bmodel_output[bmodel_output_name_i].flatten()) # dequant torch & w4bf16 bmodel
-
             print(f"fp32的torch结果 与 反量化回torch的结果，余弦相似度为：{cos_sim_0}")
-            print(f"bmodel结果 与 反量化回torch的结果，余弦相似度为：{cos_sim_1}")
+
+        if tpu_in_pcie:
+            for dequant_output_i, bmodel_output_name_i in zip(dequant_output, bmodel_output.files):
+                cos_sim_1 = cosine_similarity(dequant_output_i.numpy().flatten(), bmodel_output[bmodel_output_name_i].flatten()) # dequant torch & w4bf16 bmodel
+                print(f"bmodel结果 与 反量化回torch的结果，余弦相似度为：{cos_sim_1}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='export onnx')
@@ -193,6 +195,7 @@ if __name__ == "__main__":
     parser.add_argument('-n', '--num_threads', type=int, default=1, help='The number of threads used for torch if device is cpu')
     parser.add_argument('--prefill_length', type=int, default=6144, help="prefill length")
     parser.add_argument('--max_pos_len', type=int, default=8704, help="max position length")
+    parser.add_argument('--tpu_in_pcie', action='store_true', help="when exists tpu in pcie, please set")
     args = parser.parse_args()
 
     # load model
@@ -242,5 +245,5 @@ if __name__ == "__main__":
         [HIDDEN_SIZE, INTERMEDIATE_SIZE]
     ]
 
-    test_block()
+    test_block(args.tpu_in_pcie)
     print("Block验证完毕")

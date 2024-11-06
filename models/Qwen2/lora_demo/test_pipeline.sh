@@ -22,6 +22,7 @@ lora_config_path="./adapter_config.json" # 微调的lora config的路径
 device="cpu"
 num_thread=16
 tpu_mlir_path="/workspace/tpu-mlir_v1.11.beta.0-65-g1ce2f8ddf-20241029"
+tpu_in_pcie="" # --tpu_in_pcie
 
 # Convert comma-separated lists to arrays
 IFS=',' read -r -a seq_lengths <<< "$seq_length_list"
@@ -40,16 +41,19 @@ for i in "${!seq_lengths[@]}"; do
   prefill_length=${prefill_lengths[$i]}
 
   # 测试0~27个block每个block在随机输入情况下，bmodel结果和反量化回torch结果的一致性
-  export USING_CMODEL=False
-  export LD_LIBRARY_PATH=/opt/sophon/libsophon-current/lib/:$LD_LIBRARY_PATH
-  export LD_LIBRARY_PATH=$PWD/../support/lib_pcie:$LD_LIBRARY_PATH
+  if [[ -n "$tpu_in_pcie" ]]; then
+    export USING_CMODEL=False
+    export LD_LIBRARY_PATH=/opt/sophon/libsophon-current/lib/:$LD_LIBRARY_PATH
+    export LD_LIBRARY_PATH=$PWD/../support/lib_pcie:$LD_LIBRARY_PATH
+  fi
   python test_block.py \
     --model_path $model_path \
     --device $device \
     --prefill_length $prefill_length \
     --seq_length $seq_length \
     --num_thread $num_thread \
-    --max_pos_len $max_pos_len
+    --max_pos_len $max_pos_len \
+    $tpu_in_pcie
 done
 
 
@@ -100,5 +104,4 @@ done
 #     --lib_path ../share_cache_demo/build/libcipher.so \
 #     --embedding_path embedding.bin \
 #     --lora_path encrypted_lora_weights.bin \
-#     --zero_lora_path encrypted_lora_weights_0_0.bin \
 #     --enable_lora_embedding
