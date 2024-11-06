@@ -96,6 +96,10 @@ done
 # cd ..
 # rm -rf build && mkdir build
 # cd build && cmake -DCMAKE_TYPE=DUMP .. && make && cp *cpython* .. && cd ..
+
+# mkdir test_lora
+# mv /path_to/*encrypted_lora_weights.bin test_lora
+# mv /path_to/*torch_hidden_states.npy test_lora
 # python3 test_pipeline.py \
 #     --model_path encrypted.bmodel \
 #     --tokenizer_path ../support/token_config/ \
