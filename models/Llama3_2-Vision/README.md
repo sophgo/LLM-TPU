@@ -62,9 +62,9 @@ source ./envsetup.sh
 
 ``` shell
 pip install -r requirements.txt
-cp ./compile/files/Llama-3.2-11B-Vision-Instruct/modeling_llama.py /usr/local/lib/python3.10/dist-packages/transformers/models/mllama/modeling_llama.py
+cp ./compile/files/Llama-3.2-11B-Vision-Instruct/modeling_mllama.py /usr/local/lib/python3.10/dist-packages/transformers/models/mllama/modeling_mllama.py
 ```
-* PS：不一定是/usr/local/lib/python3.10/dist-packages/transformers/models/llama/modeling_llama.py这个路径，建议替换前先pip show transformers查看一下
+* PS：不一定是/usr/local/lib/python3.10/dist-packages/transformers/models/llama/modeling_mllama.py这个路径，建议替换前先pip show transformers查看一下
 
 ### 步骤五：生成onnx文件
 
@@ -127,7 +127,7 @@ python3 pipeline.py --help
 主要对.shape等操作转换为静态shape，避免模型过大导致常量折叠失败，进而导致动态子网
 还有一些scatterND操作，通过改为concat实现，理由同上
 
-- 在`modeling_llama.py`文件中如下代码：
+- 在`modeling_mllama.py`文件中如下代码：
 
 ```python
     def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
@@ -151,7 +151,7 @@ python3 pipeline.py --help
         return q_embed, k_embed
 ```
 
-- 在`modeling_llama.py`文件中如下代码：
+- 在`modeling_mllama.py`文件中如下代码：
 
 ```python
     def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -171,7 +171,7 @@ python3 pipeline.py --help
         return hidden_states.reshape(batch, slen, num_key_value_heads * n_rep, head_dim).transpose(1, 2)
 ```
 
-- 在`modeling_llama.py`文件中如下代码：
+- 在`modeling_mllama.py`文件中如下代码：
 
 ```python
     class LlamaAttention(nn.Module):

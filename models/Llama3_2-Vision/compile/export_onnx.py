@@ -10,7 +10,6 @@
 
 import os
 import torch
-import numpy
 import argparse
 import transformers
 from tqdm import tqdm
@@ -438,37 +437,23 @@ def test_net_with_mask(image_path):
             block_kvs.append(CrossBlockCache(i))
 
     # inference
-    numpy.savez('verify/vit_in.npz',input_0=inputs['pixel_values'].squeeze(0).squeeze(0), input_1=inputs['aspect_ratio_ids'], input_2=inputs['aspect_ratio_mask'].squeeze(0))
     vit_out = vit(inputs['pixel_values'].squeeze(0).squeeze(0),
                   inputs['aspect_ratio_ids'],
                   inputs['aspect_ratio_mask'].squeeze(0))
-    numpy.savez('verify/vit_out.npz',output_0=vit_out)
-    numpy.savez('verify/embed_in.npz',input_0=input_ids)
     out = embed(input_ids).view(1, SEQ_LENGTH, HIDDEN_SIZE)
-    numpy.savez('verify/embed_ref.npz',output_0=out)
     k_cache = []
     v_cache = []
     for i in range(NUM_LAYERS):
         if i not in CROSS_ATTN_LAYERS:
-            if i == 2:
-                numpy.savez('verify/block_in.npz',input_0=out,input_1=position_ids,input_2=attention_mask)
             out, k, v = blocks[i](out, position_ids, attention_mask)
-            if i == 2:
-                numpy.savez('verify/block_ref.npz',output_0=out,output_1=k,output_2=v)
             k_cache.append(k)
             v_cache.append(v)
         else:
-            if i == 3:
-                numpy.savez('verify/cblock_in.npz',input_0=out,input_1=vit_out,input_2=text_row_mask,input_3=cross_attn_mask)
             out, k, v = blocks[i](out, vit_out, text_row_mask, cross_attn_mask)
-            if i == 3:
-                numpy.savez('verify/cblock_ref.npz',output_0=out,output_1=k,output_2=v)
             k_cache.append(k)
             v_cache.append(v)
     out = out[:, token_len - 1: token_len].view(1, 1, HIDDEN_SIZE)
-    numpy.savez('verify/head_in.npz',input_0=out)
     token = greedy_head(lm_head(out)).view(1)
-    numpy.savez('verify/head_ref.npz',output_0=token)
     out_ids = [int(token)]
     word = processor.decode([int(token)])
     print(word, end="")
