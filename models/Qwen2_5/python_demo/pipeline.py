@@ -123,14 +123,20 @@ class Qwen2():
         token = self.model.forward_first(tokens)
         first_end = time.time()
         # Following tokens
+        full_word_tokens = []
         while token != self.EOS and self.model.token_length < self.model.SEQLEN:
-            word = self.tokenizer.decode(token, skip_special_tokens=True)
-            self.answer_token += [token]
+            full_word_tokens.append(token)
+            word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
+            if "�" in word:
+                token = self.model.forward_next()
+                tok_num += 1
+                continue
+            self.answer_token += full_word_tokens
             print(word, flush=True, end="")
             tok_num += 1
+            full_word_tokens = []
             token = self.model.forward_next()
-        self.answer_cur = self.tokenizer.decode(self.answer_token)
-        
+
         # counting time
         next_end = time.time()
         first_duration = first_end - first_start
@@ -138,6 +144,7 @@ class Qwen2():
         tps = tok_num / next_duration
 
         if self.enable_history:
+            self.answer_cur = self.tokenizer.decode(self.answer_token)
             self.update_history()
         else:
             self.clear()

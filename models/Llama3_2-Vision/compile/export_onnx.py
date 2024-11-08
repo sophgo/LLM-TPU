@@ -457,7 +457,7 @@ def test_net_with_mask(image_path):
     out_ids = [int(token)]
     word = processor.decode([int(token)])
     print(word, end="")
-    while int(token) != processor.tokenizer.eos_token_id and token_len < ori_token_len + 30 and word != '.\n\n':
+    while int(token) != processor.tokenizer.eos_token_id and token_len < ori_token_len + 50:
         token_len += 1
         input_ids = torch.tensor([token])
         out = embed(input_ids).view(1, 1, HIDDEN_SIZE)
@@ -481,7 +481,6 @@ def test_net_with_mask(image_path):
     print("\noutput_ids:{}".format(out_ids))
 
 # test_net_with_mask('../python_demo/test.jpg')
-
 
 print(f'Convert vision transformer')
 convert_vision_transformer()

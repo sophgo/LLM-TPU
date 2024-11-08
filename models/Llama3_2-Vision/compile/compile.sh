@@ -1,12 +1,12 @@
 #!/bin/bash
-# set -ex
+set -ex
 models=
-mode="f16"
+mode="int4"
 folder="tmp"
 num_device=1
 device_args=""
 addr_args=""
-quantize_args="--quantize F16"
+quantize_args="--quantize BF16"
 name=""
 num_layers=
 hidden_size=
@@ -54,11 +54,11 @@ else
 fi
 
 if [ x$mode == x"int8" ]; then
-    quantize_args="--quantize W8F16"
+    quantize_args="--quantize W8BF16"
 elif [ x$mode == x"bf16" ]; then
-    quantize_args="--quantize F16"
+    quantize_args="--quantize BF16"
 elif [ x$mode == x"int4" ]; then
-    quantize_args="--quantize W4F16 --q_group_size 64"
+    quantize_args="--quantize W4BF16 --q_group_size 64"
 else
     echo "Error, unknown quantize mode"
     exit 1
@@ -88,7 +88,7 @@ model_transform.py \
 
 model_deploy.py \
     --mlir embedding.mlir \
-    --quantize F16 \
+    --quantize BF16 \
     --quant_output \
     --chip bm1684x \
     $device_args \
@@ -103,7 +103,7 @@ model_transform.py \
 
 model_deploy.py \
     --mlir embedding_cache.mlir \
-    --quantize F16 \
+    --quantize BF16 \
     --quant_output \
     --chip bm1684x \
     $device_args \
@@ -235,7 +235,7 @@ model_transform.py \
 
 model_deploy.py \
     --mlir vit.mlir \
-    --quantize F16 \
+    --quantize BF16 \
     --quant_output \
     --chip bm1684x \
     --model vit.bmodel

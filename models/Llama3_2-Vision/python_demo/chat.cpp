@@ -24,7 +24,7 @@
 #include <numeric>
 #include "utils.h"
 
-static const uint16_t ATTENTION_MASK = fp32_to_fp16_bits(-10000.);
+static const float ATTENTION_MASK = -9984.;
 
 class Llama3_2 {
 public:
@@ -55,6 +55,7 @@ public:
   int NUM_LAYERS;  // read from bmodel
   int NUM_TILES;   // read from bmodel
   int NUM_PATCHES; // read from bmodel
+  uint16_t mask_value;
   bool io_alone;
   std::vector<int> visited_tokens;
   std::vector<int> cross_attn_layers={3,8,13,18,23,28,33,38};
@@ -151,7 +152,15 @@ void Llama3_2::init(const std::vector<int> &devices, std::string model_path) {
   NUM_PATCHES = net_vit->stages[0].output_shapes[0].dims[1];
   auto num_nets = bmrt_get_network_number(p_bmrt);
   NUM_LAYERS = (num_nets - 6) / 2;
-
+  if (net_embed->output_dtypes[0] == BM_FLOAT16) {
+    mask_value = fp32_to_fp16_bits(ATTENTION_MASK);
+  } else if (net_embed->output_dtypes[0] == BM_BFLOAT16) {
+    mask_value = fp32_to_bf16_bits(ATTENTION_MASK);
+  } else {
+    std::cerr << "\nError: Invalid attention dtype\n";
+    std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
+    throw std::runtime_error("Invalid attention dtype");
+  }
   // resize
   visited_tokens.resize(SEQLEN);
 
@@ -289,14 +298,15 @@ int Llama3_2::forward_first(std::vector<int> &tokens,
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> text_row_mask(SEQLEN, 0);
   std::vector<uint16_t> cross_attention_mask(SEQLEN * NUM_TILES * NUM_PATCHES, 
-                                             ATTENTION_MASK);
-  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
+                                             mask_value);
+  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, mask_value);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
   token_length = tokens.size();
 
   // valid text token start from 6
   for (int i = 6; i < token_length; i++) {
-    text_row_mask[i] = fp32_to_fp16_bits(1.);
+    text_row_mask[i] = net_embed->output_dtypes[0] == BM_FLOAT16 ?
+          fp32_to_bf16_bits(1.) : fp32_to_fp16_bits(1.);
   }
   for (int i = 0; i < SEQLEN; i++) {
     for (int j = 0; j < NUM_TILES; j++) {
@@ -305,10 +315,10 @@ int Llama3_2::forward_first(std::vector<int> &tokens,
           cross_attention_mask[i * NUM_TILES * NUM_PATCHES + j * NUM_PATCHES + k] = 0;
         else if ( i >= 6 && i < token_length)
           cross_attention_mask[i * NUM_TILES * NUM_PATCHES + j * NUM_PATCHES + k] = 
-            cross_attn_mask[i * NUM_TILES + j] == 1 ? 0 : ATTENTION_MASK;
+            cross_attn_mask[i * NUM_TILES + j] == 1 ? 0 : mask_value;
         else
           cross_attention_mask[i * NUM_TILES * NUM_PATCHES + j * NUM_PATCHES + k] =
-                                ATTENTION_MASK;
+                                mask_value;
       }
     }
   }
@@ -392,16 +402,16 @@ int Llama3_2::forward_first(std::vector<int> &tokens,
 int Llama3_2::forward_next() {
   int cur_token = visited_tokens[token_length - 1];
 
-  std::vector<uint16_t> cross_attention_mask(NUM_TILES * NUM_PATCHES, ATTENTION_MASK);
+  std::vector<uint16_t> cross_attention_mask(NUM_TILES * NUM_PATCHES, mask_value);
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = 0; i < NUM_TILES; i++) {
     for (int j = 0; j < NUM_PATCHES; j++) {
         cross_attention_mask[i * NUM_PATCHES + j] = 
-          i < 2 ? 0 : ATTENTION_MASK;
+          i < 2 ? 0 : mask_value;
     }
   }
   for (int i = token_length - 1; i < SEQLEN; i++) {
-    attention_mask[i] = ATTENTION_MASK;
+    attention_mask[i] = mask_value;
   }
   int32_t position_id = token_length - 1;
 
