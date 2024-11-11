@@ -126,9 +126,9 @@ class PenaltySampleHead(torch.nn.Module):
 
 def convert_block(layer_id):
     model = Block(layer_id)
-    hidden_states = torch.randn((1, SHARE_LENGTH, HIDDEN_SIZE)).to(device)
+    hidden_states = torch.randn((1, SHARE_LENGTH, HIDDEN_SIZE)).to(dtype).to(device)
     position_ids = torch.tensor([range(SHARE_LENGTH)], dtype=torch.long).to(device)
-    attention_mask = torch.randn((1, 1, SHARE_LENGTH, SHARE_LENGTH)).to(device)
+    attention_mask = torch.randn((1, 1, SHARE_LENGTH, SHARE_LENGTH)).to(dtype).to(device)
 
     torch.onnx.export(
         model,
@@ -479,7 +479,7 @@ def load_model(args):
     model_path = args.model_path
     origin_model = AutoModelForCausalLM.from_pretrained(
         model_path, trust_remote_code=True, torch_dtype=dtype
-    ).eval()
+    ).eval().to(device)
     for param in origin_model.parameters():
         param.requires_grad = False
     return origin_model, device, dtype
