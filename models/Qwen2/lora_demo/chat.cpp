@@ -701,10 +701,10 @@ Qwen::load_and_infer_embedding(const std::vector<int> &tokens) {
 
   size_t embedding_bytes = hidden_bytes;
   size_t embedding_dim = embedding_bytes / sizeof(uint16_t);
-  size_t size = tokens.size();
+  int size = tokens.size();
 
   std::vector<uint16_t> buffer(size * embedding_dim);
-  for (size_t i = 0; i < size; i++) {
+  for (int i = 0; i < std::min(size, total_length); i++) {
     long long start_position = (long long)tokens[i] * embedding_bytes;
     file.seekg(start_position, std::ios::beg);
     file.read(reinterpret_cast<char *>(&buffer[i * embedding_dim]),
