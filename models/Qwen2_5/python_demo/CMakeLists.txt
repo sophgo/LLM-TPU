@@ -1,9 +1,11 @@
 cmake_minimum_required(VERSION 3.10)
-project(qwen2)
+project(qwen2_5)
 
 if (NOT DEFINED TARGET_ARCH)
     set(TARGET_ARCH pcie)
 endif()
+
+set(CMAKE_CXX_STANDARD 17)
 
 include_directories(${PROJECT_SOURCE_DIR}/../support/include)
 
@@ -17,7 +19,7 @@ elseif (${TARGET_ARCH} STREQUAL "pcie")
 	message("PCIE mode, starting......")
 endif()
 
-add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -Werror)
+add_definitions(-DDEBUG -fPIC -Wall -Werror)
 set(CMAKE_BUILD_TYPE "Debug")
 
 find_package(pybind11 REQUIRED CONFIG)

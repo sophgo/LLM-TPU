@@ -60,7 +60,7 @@ HIDDEN_SIZE = config.text_config.hidden_size
 NUM_ATTENTION_HEADS = config.text_config.num_attention_heads
 NUM_KEY_VALUE_HEADS = config.text_config.num_key_value_heads
 HEAD_DIM = HIDDEN_SIZE // NUM_ATTENTION_HEADS
-VOCAB_SIZE = config.text_config.hidden_size
+VOCAB_SIZE = config.text_config.vocab_size
 CROSS_ATTN_LAYERS = config.text_config.cross_attention_layers
 print(f'\nLLM config:\n\
     Layers: {NUM_LAYERS}\n\

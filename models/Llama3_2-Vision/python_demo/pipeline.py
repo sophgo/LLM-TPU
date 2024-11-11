@@ -137,8 +137,7 @@ class Llama3_2_Vision():
 
             self.answer_token += full_word_tokens
             print(word, flush=True, end="")
-            if tok_num > self.model.max_new_tokens and word == '.':
-                break
+
             token = self.model.forward_next()
             tok_num += 1
             full_word_tokens = []

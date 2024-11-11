@@ -5,6 +5,8 @@ if (NOT DEFINED TARGET_ARCH)
     set(TARGET_ARCH pcie)
 endif()
 
+set(CMAKE_CXX_STANDARD 17)
+
 include_directories(${PROJECT_SOURCE_DIR}/../../../support/include)
 
 if (${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "aarch64")
@@ -17,7 +19,7 @@ elseif (${TARGET_ARCH} STREQUAL "pcie")
     message("PCIE mode, starting......")
 endif()
 
-add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -Werror)
+add_definitions(-DDEBUG -fPIC -Wall -Werror)
 set(CMAKE_BUILD_TYPE "Debug")
 
 find_package(pybind11 REQUIRED CONFIG)
