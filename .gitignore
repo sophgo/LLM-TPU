@@ -10,4 +10,4 @@ core
 *.zip
 *.tar.gz
 *.deb
-*.so
+chat*.so
