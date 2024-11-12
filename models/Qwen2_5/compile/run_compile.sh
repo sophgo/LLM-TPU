@@ -6,8 +6,9 @@ set -e
 model_path=""
 tpu_mlir_path=""
 mode="int4"
-seq_length=512
+seq_length=
 model_name=""
+model_name_upper=""
 
 
 # 参数解析
@@ -47,26 +48,36 @@ if [[ -z "$model_name" ]]; then
     echo "Model name is required."
     exit 1
 fi
+if [[ -z "$seq_length" ]]; then
+    echo "Error: --seq_length is required." >&2
+    exit 1
+fi
+
 if [ "$model_name" = "qwen2.5-7b" ]; then
+  model_name_upper="Qwen2.5-7B"
   echo "Compile Qwen2.5-7B"
+elif [ "$model_name" = "qwen2.5-3b" ]; then
+  model_name_upper="Qwen2.5-3B"
+  echo "Compile Qwen2.5-3B"
 else
-  >&2 echo -e "Error: Invalid name $name, the input name must be \033[31mqwen2.5-7b\033[0m"
+  >&2 echo -e "Error: Invalid name $name, the input name must be \033[31mqwen2.5-7b|qwen2.5-3b\033[0m"
   exit 1
 fi
 
 echo "Install the required Python lib..."
 pip install transformers_stream_generator einops tiktoken accelerate torch==2.0.1+cpu torchvision==0.15.2 transformers==4.45.2
 pip3 install dfss
+pip3 install modelscope
 
 # 根据 model_path 的值决定是否下载模型
 if [[ -z "$model_path" ]]; then
     echo "Download model..."
-    python3 -c "from modelscope import snapshot_download; snapshot_download('Qwen/Qwen2.5-7B-Instruct', local_dir='./origin_model')"
-    model_path="../origin_model"
+    python3 -c "from modelscope import snapshot_download; snapshot_download('Qwen/${model_name_upper}-Instruct', local_dir='./${model_name_upper}-Instruct')"
+    model_path="../${model_name_upper}-Instruct"
 fi
 
 if [[ -z "$tpu_mlir_path" ]]; then
-    python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/tpu-mlir_v1.9.beta.0-84-ga12293f84-20240921.tar.gz
+    python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/mlir_club/tpu-mlir_v1.9.beta.0-84-ga12293f84-20240921.tar.gz
     tar -xf tpu-mlir_v1.9.beta.0-84-ga12293f84-20240921.tar.gz
     tpu_mlir_path="../tpu-mlir_v1.9.beta.0-84-ga12293f84-20240921"
 fi
@@ -74,7 +85,7 @@ fi
 echo "Replace the files in the transformers lib..."
 pkg_path=$(pip show transformers | grep Location | cut -d ' ' -f2)
 cp ${pkg_path}/transformers/models/qwen2/modeling_qwen2.py modeling_qwen2_backup.py
-sudo cp files/Qwen2.5-7B-Instruct/modeling_qwen2.py ${pkg_path}/transformers/models/qwen2/modeling_qwen2.py
+sudo cp files/${model_name_upper}-Instruct/modeling_qwen2.py ${pkg_path}/transformers/models/qwen2/modeling_qwen2.py
 
 echo "export onnx..."
 python export_onnx.py --model_path ${model_path} --seq_length ${seq_length}

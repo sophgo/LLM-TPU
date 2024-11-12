@@ -59,20 +59,24 @@ if [[ -z "$seq_length" ]]; then
     exit 1
 fi
 
-if [ "$name" = "qwen2.5-7b" ]; then
-  num_layers=28
-  hidden_size=3584
-  echo "Compile Qwen2.5-7B"
-elif [ "$name" = "qwen2.5-14b" ]; then
+if [ "$name" = "qwen2.5-14b" ]; then
   num_layers=48
   hidden_size=5120
   echo "Compile Qwen2.5-14B"
+elif [ "$name" = "qwen2.5-7b" ]; then
+  num_layers=28
+  hidden_size=3584
+  echo "Compile Qwen2.5-7B"
+elif [ "$name" = "qwen2.5-3b" ]; then
+  num_layers=36
+  hidden_size=2048
+  echo "Compile Qwen2.5-3B"
 elif [ "$name" = "qwen2.5-1.5b" ]; then
   num_layers=28
   hidden_size=1536
   echo "Compile Qwen2.5-1.5B"
 else
-  >&2 echo -e "Error: Invalid name $name, the input name must be \033[31mqwen2.5-7b|qwen2.5-1.5b|qwen2.5-14b\033[0m"
+  >&2 echo -e "Error: Invalid name $name, the input name must be \033[31mqwen2.5-14b|qwen2.5-7b|qwen2.5-3b|qwen2.5-1.5b\033[0m"
   exit 1
 fi
 

@@ -33,8 +33,15 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5
 
 ### 全流程编译脚本
 以上步骤可以通过运行compile文件夹下的run_compile.sh完成，具体命令是：
+
+迁移Qwen2.5-7B
+```shell
+./run_compile.sh --model_name qwen2.5-7b --seq_length 512 --model_path your_model_path --tpu_mlir_path your_tpu_mlir_path
+```
+
+迁移Qwen2.5-3B，且输入+输出最大长度为4096
 ``` shell
-./run_compile.sh --model_name qwen2.5-7b --seq_length 512 --model_path your model path --tpu_mlir_path your tpu_mlir path
+./run_compile.sh --model_name qwen2.5-3b --seq_length 4096
 ```
 如果没有填写model_path，脚本会从modelscope下载模型；
 如果没有填写tpu_mlir_path，脚本会通过dfss下载对应的tpu_mlir压缩包并解压
