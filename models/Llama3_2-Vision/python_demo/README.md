@@ -9,6 +9,9 @@ pip3 install sentencepiece transformers==4.45.2
 如果不打算自己编译模型，可以直接用下载好的模型
 ```
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/llama3.2-11b-vision_int4_512seq.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/llama3.2-11b-vision_int4_2048seq.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/llama3.2-11b-vision_int4_4096seq.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/llama3.2-11b-vision_int4_8192seq.bmodel
 ```
 
 编译库文件
