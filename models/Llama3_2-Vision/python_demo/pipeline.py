@@ -86,6 +86,12 @@ class Llama3_2_Vision():
                 break
             # New Chat
             elif self.input_str in ["clear", "new"]:
+	        image_path = input("\nNew image path:")
+                try:
+                    self.image = Image.open(image_path)
+                    print(f'load new image: {image_path}')
+                except:
+                    print(f"load image: {image_path} faild, load origin image: {args.image_path} instead")
                 self.clear()
             # Chat
             else:
