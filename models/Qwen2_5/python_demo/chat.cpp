@@ -26,14 +26,11 @@
 #include "utils.h"
 
 static const uint16_t ATTENTION_MASK = 0xC61C;
-typedef uint8_t *(*decrypt_func)(const uint8_t *, uint64_t, uint64_t *);
 
 class Qwen {
 public:
   void init(const std::vector<int> &devid, std::string model_path);
   void deinit();
-  void init_decrypt();
-  void deinit_decrypt();
   int forward_first(std::vector<int> &tokens);
   int forward_next();
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
@@ -62,7 +59,6 @@ public:
   bool io_alone;
   bool is_dynamic;
   std::vector<int> visited_tokens;
-  std::string lib_path;
 
   // generation
   float temperature;
@@ -84,9 +80,6 @@ private:
   const bm_net_info_t *net_lm, *net_greedy_head, *net_penalty_sample_head;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
-
-  void *decrypt_handle_;    // handle of decrypt lib
-  decrypt_func decrypt_func_; // decrypt func from lib
 };
 
 void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
@@ -99,43 +92,6 @@ void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset) {
 
 void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset, int size) {
   bm_memcpy_d2d_byte(bm_handle, dst, offset, src, 0, size);
-}
-
-void Qwen::init_decrypt() {
-  // init decrypt
-  if (lib_path.empty()) {
-    return;
-  }
-  decrypt_handle_ = dlopen(lib_path.c_str(), RTLD_LAZY);
-  if (!decrypt_handle_) {
-    std::cout << "Error:" << "Decrypt lib [" << lib_path << "] load failed."
-                      << std::endl;
-    return;
-  }
-  decrypt_func_ = (decrypt_func)dlsym(decrypt_handle_, "decrypt");
-  auto error = dlerror();
-  if (error) {
-    dlclose(decrypt_handle_);
-    std::cout << "Error:" << "Decrypt lib [" << lib_path
-                      << "] symbol find failed." << std::endl;
-    return;
-  }
-  return;
-}
-
-void Qwen::deinit_decrypt() {
-  if (lib_path.empty()) {
-    return;
-  }
-  // Step 1: Close the dynamic library handle if it's open.
-  if (decrypt_handle_) {
-    dlclose(decrypt_handle_);
-    decrypt_handle_ = nullptr; // Avoid dangling pointer by resetting to nullptr.
-  }
-
-  // Step 2: Reset the function pointer to nullptr. 
-  // No need to free or close anything specific for it.
-  decrypt_func_ = nullptr;
 }
 
 void Qwen::init(const std::vector<int> &devices, std::string model_path) {
@@ -165,11 +121,7 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   // load bmodel by file
   printf("Model[%s] loading ....\n", model_path.c_str());
   bool ret = false;
-  if (!lib_path.empty()) {
-    ret = bmrt_load_bmodel_with_decrypt(p_bmrt, model_path.c_str(), decrypt_func_);
-  } else {
-    ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
-  }
+  ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
 
@@ -546,8 +498,6 @@ PYBIND11_MODULE(chat, m) {
       .def("forward_next", &Qwen::forward_next)
       .def("generate", &Qwen::generate)
       .def("deinit", &Qwen::deinit)
-      .def("init_decrypt", &Qwen::init_decrypt)
-      .def("deinit_decrypt", &Qwen::deinit_decrypt)
       .def_readwrite("SEQLEN", &Qwen::SEQLEN) // read SEQLEN in pipeline.py
       .def_readwrite("token_length", &Qwen::token_length)
       .def_readwrite("temperature", &Qwen::temperature)
@@ -556,6 +506,5 @@ PYBIND11_MODULE(chat, m) {
       .def_readwrite("repeat_last_n", &Qwen::repeat_last_n)
       .def_readwrite("max_new_tokens", &Qwen::max_new_tokens)
       .def_readwrite("generation_mode", &Qwen::generation_mode)
-      .def_readwrite("lib_path", &Qwen::lib_path)
       .def_readwrite("prompt_mode", &Qwen::prompt_mode);
 }

@@ -66,7 +66,7 @@ if [[ -z "$model_path" ]]; then
 fi
 
 if [[ -z "$tpu_mlir_path" ]]; then
-    python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/tpu-mlir_v1.9.beta.0-84-ga12293f84-20240921.tar.gz
+    python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/mlir_club/tpu-mlir_v1.9.beta.0-84-ga12293f84-20240921.tar.gz
     tar -xf tpu-mlir_v1.9.beta.0-84-ga12293f84-20240921.tar.gz
     tpu_mlir_path="../tpu-mlir_v1.9.beta.0-84-ga12293f84-20240921"
 fi

@@ -27,7 +27,6 @@ class Qwen2():
 
         self.model = chat.Qwen()
         self.init_params(args)
-        self.model.init_decrypt()
         self.load_model(args.model_path)
 
 
@@ -45,7 +44,6 @@ class Qwen2():
         self.model.repeat_last_n = args.repeat_last_n
         self.model.max_new_tokens = args.max_new_tokens
         self.model.generation_mode = args.generation_mode
-        self.model.lib_path = args.lib_path
 
 
     def clear(self):
@@ -85,7 +83,6 @@ class Qwen2():
             self.input_str = input("\nQuestion: ")
             # Quit
             if self.input_str in ["exit", "q", "quit"]:
-                self.model.deinit_decrypt()
                 break
             # New Chat
             elif self.input_str in ["clear", "new"]:
@@ -210,6 +207,5 @@ if __name__ == "__main__":
     parser.add_argument('--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
     parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
     parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory")
-    parser.add_argument('--lib_path', type=str, default='', help='lib path by user')
     args = parser.parse_args()
     main(args)
