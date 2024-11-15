@@ -17,8 +17,6 @@ from transformers import Qwen2VLForConditionalGeneration, AutoProcessor, AutoTok
 from qwen_vl_utils import process_vision_info
 torch.set_grad_enabled(False)
 
-processor = AutoProcessor.from_pretrained("/workspace/models/Qwen2-VL-2B-Instruct")
-tokenizer = AutoTokenizer.from_pretrained("/workspace/models/Qwen2-VL-2B-Instruct", trust_remote_code=True)
 
 class Embedding(torch.nn.Module):
 
@@ -39,22 +37,20 @@ class Block(torch.nn.Module):
         # SEQ_LENGTH = 175
         value_states = torch.zeros(
             (1, SEQ_LENGTH, NUM_KEY_VALUE_HEADS, HEAD_DIM), dtype=dtype).to(device)
-        # position_ids = torch.tensor(3*[[range(SEQ_LENGTH)]], dtype=torch.long).to(device)
-        self.position_ids = POSITION_IDS
+        position_ids = torch.tensor(3*[[range(SEQ_LENGTH)]], dtype=torch.long).to(device)
         self.rotary_emb = self.layer.self_attn.rotary_emb
-        self.cos, self.sin = self.rotary_emb(value_states, self.position_ids)
+        self.cos, self.sin = self.rotary_emb(value_states, position_ids)
         self.cos = self.cos.transpose(1,2)
         self.sin = self.sin.transpose(1,2)
 
-    def forward(self, hidden_states, attention_mask):
+    def forward(self, hidden_states, position_ids, attention_mask):
         hidden_states, past_kv = self.layer(
             hidden_states,
             attention_mask=attention_mask,
-            position_ids=self.position_ids,
+            position_ids=position_ids,
             position_embeddings=(self.cos, self.sin),
             use_cache=True)
         present_k, present_v = past_kv
-        # breakpoint()
         return hidden_states.float(), present_k.float(), present_v.float()
 
 
@@ -71,21 +67,15 @@ class BlockCache(torch.nn.Module):
         self.cos, self.sin = self.rotary_emb(value_states, position_ids)
         self.cos = self.cos.transpose(1,2)
         self.sin = self.sin.transpose(1,2)
-        self.cos_pos = torch.empty(3,1,1,self.cos.shape[-1])
-        self.sin_pos = torch.empty(3,1,1,self.sin.shape[-1])
 
     def forward(self, hidden_states, position_ids, attention_mask, past_k,
                 past_v):
-        # breakpoint()
-        for i in range(3):
-            self.cos_pos[i] = self.cos[i,position_ids[i,0,0],0,:]
-            self.sin_pos[i] = self.sin[i,position_ids[i,0,0],0,:]
         hidden_states, past_kv = self.layer(
             hidden_states,
             attention_mask=attention_mask,
             past_key_value=(past_k, past_v),
             position_ids=position_ids,
-            position_embeddings=(self.cos_pos, self.sin_pos),
+            position_embeddings=(self.cos, self.sin),
             use_cache=True)
         present_k, present_v = past_kv
         return hidden_states.float(), present_k.float(), present_v.float()
@@ -101,24 +91,12 @@ class VisionTransformer(torch.nn.Module):
         self.cu_seqlens = F.pad(self.cu_seqlens, (1, 0), value=0)
 
     def forward(self, hidden_states):
-        breakpoint()
         hidden_states = ViT.patch_embed(hidden_states)
         for blk in ViT.blocks:
             hidden_states = blk(hidden_states, cu_seqlens=self.cu_seqlens, rotary_pos_emb=self.rotary_pos_emb)
-        breakpoint()
         hidden_states = ViT.merger(hidden_states)
         return hidden_states
 
-class LmHeadWithTopK(torch.nn.Module):
-
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, hidden_states):
-        hidden_states = transformer.ln_f(hidden_states)
-        m_logits = origin_model.lm_head(hidden_states)
-        _, token = torch.topk(m_logits.float(), 1)
-        return token
 
 class LmHead(torch.nn.Module):
 
@@ -126,7 +104,7 @@ class LmHead(torch.nn.Module):
         super().__init__()
 
     def forward(self, hidden_states):
-        # hidden_states = transformer.ln_f(hidden_states)
+        hidden_states = transformer.norm(hidden_states)
         m_logits = origin_model.lm_head(hidden_states)
         return m_logits
 
@@ -181,10 +159,10 @@ def convert_block(layer_id):
     attention_mask = torch.randn(
         (1, 1, SEQ_LENGTH, SEQ_LENGTH)).float().to(device)
     torch.onnx.export(
-        model, (hidden_states, attention_mask),
+        model, (hidden_states, position_ids, attention_mask),
         f'{folder}/block_{layer_id}.onnx',
         verbose=False,
-        input_names=['input_states', 'attention_mask'],
+        input_names=['input_states', 'position_ids', 'attention_mask'],
         output_names=['hidden_states', 'past_k', 'past_v'],
         do_constant_folding=True,
         opset_version=15)
@@ -219,16 +197,6 @@ def convert_vision_transformer():
 
     # # trace
     model = VisionTransformer(thw)
-    # traced_model = torch.jit.trace(model, (x, thw))
-    # torch.jit.save(traced_model, f'{folder}/vision_transformer.pt')
-
-    # model = VisionTransformer()
-    # # x = torch.randn(1, 3, IMAGE_SIZE, IMAGE_SIZE).to(dtype=torch.float32, device=device)
-    # image_pixel_values = torch.randn(600, HIDDEN_SIZE).to(dtype=torch.float32, device=device)
-    # image_grid_thw = torch.tensor([[ 1, 20, 30]], dtype=torch.int32, device=device)
-
-    # module = torch.jit.trace(model.forward, image_pixel_values, image_grid_thw)
-    # torch.jit.save(module, f'{folder}/vision_transformer.pt')
     torch.onnx.export(
         model, (x),
         f'{folder}/vit/vision_transformer.onnx',
@@ -245,12 +213,6 @@ def convert_embedding():
     module = torch.jit.trace(model.forward, input_ids)
     torch.jit.save(module, f'{folder}/embedding.pt')
 
-
-def convert_lm_head_with_topk():
-    model = LmHeadWithTopK()
-    hidden_states = torch.randn(1, 1, HIDDEN_SIZE).float().to(device)
-    module = torch.jit.trace(model.forward, hidden_states)
-    torch.jit.save(module, f'{folder}/lm_head_with_topk.pt')
 
 def convert_lm_head():
     model = LmHead()
@@ -330,9 +292,6 @@ def convert():
     if not os.path.exists(folder + '/vit'):
         os.makedirs(folder + '/vit')
 
-    print(f'Convert Vision Transformer')
-    convert_vision_transformer()
-
     # export models
     print(f'Convert block & block_cache')
     for i in tqdm(range(NUM_LAYERS)):
@@ -344,68 +303,16 @@ def convert():
     convert_embedding()
 
     print(f'Convert lm_head')
-    # if args.lmhead_with_topk == "lmhead_with_topk":
-    #     convert_lm_head_with_topk()
-    # else:
-    #     convert_lm_head()
-    #     convert_greedy_head()
-    #     convert_penalty_sample_head()
-
     convert_lm_head()
     convert_greedy_head()
     convert_penalty_sample_head()
 
-    # print(f'Convert Vision Transformer')
-    # convert_vision_transformer()
+    print(f'Convert Vision Transformer')
+    convert_vision_transformer()
     print("Done")
 
-def get_position_ids(image_path="./../python_demo/image1.jpg", text="Describe this image."):
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": text},
-                {
-                    "type": "image",
-                    "image": image_path,
-                    "resized_height": 280,
-                    "resized_width": 420,
-                },
-            ],
-        }
-    ]
-    text = processor.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
-    )
-    image_inputs, video_inputs = process_vision_info(messages)
-    inputs = processor(
-        text=[text],
-        images=image_inputs,
-        videos=video_inputs,
-        padding=True,
-        return_tensors="pt",
-    )
-    input_ids = inputs.input_ids
-    pixel_values = inputs.pixel_values
-    image_grid_thw = inputs.image_grid_thw
-    input_ids_prefill = torch.zeros(1, SEQ_LENGTH).to(torch.int32)
-    input_ids_prefill[:, :input_ids.shape[-1]] = input_ids
-    attention_mask_prefill = torch.zeros(1, SEQ_LENGTH)
-    attention_mask_prefill[:, :input_ids.shape[-1]] = inputs.attention_mask
-    position_ids, _ = Qwen2VLForConditionalGeneration(config).get_rope_index(
-        input_ids_prefill, image_grid_thw, None, attention_mask_prefill
-    )
-    breakpoint()
-    for i in range(position_ids.shape[0]):
-        for j in range(input_ids.shape[-1], position_ids.shape[-1]):
-            position_ids[i, 0, j] = position_ids[i, 0, j - 1] + 1
-    return position_ids
 
 def test_net_with_mask():
-    # prefix = "<|system|>\n你是由上海人工智能实验室联合商汤科技开发的书生多模态大模型，英文名叫InternVL, 是一个有用无害的人工智能助手。<|end|><|user|>\n<img>"
-    # prefix_ids = tokenizer.encode(prefix)
-    # query = "</img>请简单的描述图片中的内容<|end|><|assistant|>\n"
-
     messages = [
         {
             "role": "user",
@@ -442,14 +349,6 @@ def test_net_with_mask():
     block_kvs = [BlockCache(i) for i in range(NUM_LAYERS)]
     greedy = GreedyHead()
     vit_infer = VisionTransformer(image_grid_thw)
-    # query_ids = tokenizer.encode(query)
-
-    # image_ids = [0] * 150
-    # prefix_len = len(prefix_ids)
-    # ids = prefix_ids + image_ids + query_ids
-    # jpg = "../python_demo/image2.jpg"
-    # pixel_values = load_image(jpg, max_num=1).to(
-    #     dtype).to(device)  # [1, 3, 448, 448]
 
     # prefill
     input_ids_prefill = torch.zeros(1, SEQ_LENGTH).to(torch.int32)
@@ -458,7 +357,6 @@ def test_net_with_mask():
     attention_mask_prefill[:, :input_ids.shape[-1]] = inputs.attention_mask
 
     image_embeds = vit_infer(pixel_values)  # [150, 1536]
-    breakpoint()
     inputs_embeds = torch.zeros((1, SEQ_LENGTH, HIDDEN_SIZE)).to(device)
 
     inputs_embeds = embed(input_ids_prefill)
@@ -469,21 +367,12 @@ def test_net_with_mask():
 
     ID_IM_END = tokenizer.convert_tokens_to_ids("<|im_end|>")
     ID_END = tokenizer.convert_tokens_to_ids("<|end|>")
-    # token_len = len(ids)
-    # ids = ids + (SEQ_LENGTH - token_len) * [0]
-    # input_ids = torch.tensor(ids).view(SEQ_LENGTH).to(device)
-    # out = embed(input_ids).view(1, SEQ_LENGTH, HIDDEN_SIZE)  # [1, 512, 3072]
-    # out[:, prefix_len:prefix_len+256, :] = vit_embeds
-
-    # position_ids = list(range(token_len)) + (SEQ_LENGTH - token_len) * [0]
-    # position_ids = torch.tensor([position_ids]).to(device)
     
     position_ids, rope_deltas = Qwen2VLForConditionalGeneration(config).get_rope_index(
         input_ids_prefill, image_grid_thw, None, attention_mask_prefill
     )
 
     attention_mask = torch.ones((SEQ_LENGTH, SEQ_LENGTH)).float() * -10000.0
-    # attention_mask = torch.ones((input_ids.shape[-1], input_ids.shape[-1])).float() * -10000.0
 
     for i in range(input_ids.shape[-1]):
         for j in range(input_ids.shape[-1]):
@@ -491,25 +380,16 @@ def test_net_with_mask():
                 attention_mask[i][j] = 0.0
     attention_mask = attention_mask.view(
         1, 1, SEQ_LENGTH, SEQ_LENGTH).to(device)
-    # attention_mask = attention_mask.view(
-    #     1, 1, input_ids.shape[-1], input_ids.shape[-1]).to(device)
-    
-    # position_ids, rope_deltas = Qwen2VLForConditionalGeneration(config).get_rope_index(
-    #     input_ids, image_grid_thw, None, inputs.attention_mask
-    # )
 
     k_cache = []
     v_cache = []
-    for i in range(NUM_LAYERS):
-        # inputs_embeds, k, v = blocks[i](embed(input_ids).to(dtype), position_ids,
-        #                       attention_mask.to(dtype))
-        inputs_embeds, k, v = blocks[i](inputs_embeds.to(dtype),
+    for i in tqdm(range(NUM_LAYERS)):
+        inputs_embeds, k, v = blocks[i](inputs_embeds.to(dtype), position_ids,
                               attention_mask.to(dtype))
         k[:, input_ids.shape[-1]:, :, :] = 0
         v[:, input_ids.shape[-1]:, :, :] = 0
         k_cache.append(k)
         v_cache.append(v)
-
     inputs_embeds = inputs_embeds[:, input_ids.shape[-1] - 1:input_ids.shape[-1]].view(1, 1, HIDDEN_SIZE)
     lm = LmHead()
 
@@ -517,6 +397,7 @@ def test_net_with_mask():
     out_ids = [int(token)]
     token_len = input_ids.shape[-1]
     valid_position_ids = position_ids.numpy().max()
+
     while int(token) not in [ID_IM_END, ID_END] and token_len < SEQ_LENGTH:
         token_len += 1
         input_id = torch.tensor([token]).to(device)
@@ -554,10 +435,13 @@ if __name__ == "__main__":
     parser.add_argument('--generation_mode', type=str, default="default", choices=["default", "lmhead_with_topk"], help="generation mode")
     args = parser.parse_args()
 
+    # processor & tokenizer
+    processor = AutoProcessor.from_pretrained(args.model_path)
+    tokenizer = AutoTokenizer.from_pretrained(args.model_path, trust_remote_code=True)
+
     # load model
     origin_model, device, dtype = load_model()
     config = origin_model.config
-    config.save_pretrained('./tmp')
     transformer = origin_model.model
     ViT = origin_model.visual
     layers = transformer.layers
@@ -570,10 +454,10 @@ if __name__ == "__main__":
     NUM_KEY_VALUE_HEADS = config.num_key_value_heads
     HEAD_DIM = HIDDEN_SIZE // NUM_ATTENTION_HEADS
     VOCAB_SIZE = config.vocab_size
-    POSITION_IDS = get_position_ids()
     print(f"Layers: {NUM_LAYERS}\nHidden size: {HIDDEN_SIZE}\n")
     print("\033[31m修改了config文件，将config._attn_implementation由sdpa改为了eager！！！\033[0m")
     folder = f"./tmp/onnx"
+
 
     test_net_with_mask()
 

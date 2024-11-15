@@ -242,12 +242,12 @@ if __name__ == "__main__":
                         required=True,
                         help='path to the bmodel file')
     parser.add_argument('-t',
-                        '--tokenizer',
+                        '--tokenizer_path',
                         type=str,
                         default="../support/token_config",
                         help='path to the tokenizer file')
     parser.add_argument('-p',
-                        '--processor',
+                        '--processor_path',
                         type=str,
                         default="../support/processor_config",
                         help='path to the processor file')

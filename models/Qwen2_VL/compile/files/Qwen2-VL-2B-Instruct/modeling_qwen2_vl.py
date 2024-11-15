@@ -17,7 +17,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# docker:fz_torch2d5
 """PyTorch Qwen2-VL model."""
 
 import math
@@ -201,7 +200,51 @@ def rotate_half(x):
     return torch.cat((-x2, x1), dim=-1)
 
 
-def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim=1):
+# def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim=0):
+#     """Applies Rotary Position Embedding with Multimodal Sections to the query and key tensors (https://qwenlm.github.io/blog/qwen2-vl/).
+
+#     Explanation:
+#         Multimodal 3D rotary position embedding is an extension to 1D rotary position embedding. The input embedding
+#         sequence contains vision (images / videos) embedding and text embedding or just contains text embedding. For
+#         vision embedding part, we apply rotary position embedding on temporal, height and width dimension seperately.
+#         Here we split the channel dimension to 3 chunks for the temporal, height and width rotary position embedding.
+#         For text embedding part, we just apply 1D rotary position embedding. The three rotary position index (temporal,
+#         height and width) of text embedding is always the same, so the text embedding rotary position embedding has no
+#         difference with modern LLMs.
+
+#     Args:
+#         q (`torch.Tensor`): The query tensor.
+#         k (`torch.Tensor`): The key tensor.
+#         cos (`torch.Tensor`): The cosine part of the rotary embedding.
+#         sin (`torch.Tensor`): The sine part of the rotary embedding.
+#         position_ids (`torch.Tensor`):
+#             The position indices of the tokens corresponding to the query and key tensors. For example, this can be
+#             used to pass offsetted position ids when working with a KV-cache.
+#         mrope_section(`List(int)`):
+#             Multimodal rope section is for channel dimension of temporal, height and width in rope calculation.
+#         unsqueeze_dim (`int`, *optional*, defaults to 1):
+#             The 'unsqueeze_dim' argument specifies the dimension along which to unsqueeze cos[position_ids] and
+#             sin[position_ids] so that they can be properly broadcasted to the dimensions of q and k. For example, note
+#             that cos[position_ids] and sin[position_ids] have the shape [batch_size, seq_len, head_dim]. Then, if q and
+#             k have the shape [batch_size, heads, seq_len, head_dim], then setting unsqueeze_dim=1 makes
+#             cos[position_ids] and sin[position_ids] broadcastable to the shapes of q and k. Similarly, if q and k have
+#             the shape [batch_size, seq_len, heads, head_dim], then set unsqueeze_dim=2.
+#     Returns:
+#         `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
+#     """
+#     mrope_section = mrope_section * 2
+#     cos = torch.cat([m[i % 3] for i, m in enumerate(cos.split(mrope_section, dim=-1))], dim=-1).unsqueeze(
+#         unsqueeze_dim
+#     )
+#     sin = torch.cat([m[i % 3] for i, m in enumerate(sin.split(mrope_section, dim=-1))], dim=-1).unsqueeze(
+#         unsqueeze_dim
+#     )
+
+#     q_embed = (q * cos) + (rotate_half(q) * sin)
+#     k_embed = (k * cos) + (rotate_half(k) * sin)
+#     return q_embed, k_embed
+
+def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, position_ids, unsqueeze_dim=1):
     """Applies Rotary Position Embedding with Multimodal Sections to the query and key tensors (https://qwenlm.github.io/blog/qwen2-vl/).
 
     Explanation:
@@ -233,14 +276,10 @@ def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, unsqueeze_dim
     Returns:
         `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
     """
-    unsqueeze_dim=0
     mrope_section = mrope_section * 2
-    cos = torch.cat([m[i % 3] for i, m in enumerate(cos.split(mrope_section, dim=-1))], dim=-1).unsqueeze(
-        unsqueeze_dim
-    )
-    sin = torch.cat([m[i % 3] for i, m in enumerate(sin.split(mrope_section, dim=-1))], dim=-1).unsqueeze(
-        unsqueeze_dim
-    )
+    cos = torch.cat([m[i % 3][position_ids[i % 3]] for i, m in enumerate(cos.split(mrope_section, dim=-1))], dim=-1)
+    sin = torch.cat([m[i % 3][position_ids[i % 3]] for i, m in enumerate(sin.split(mrope_section, dim=-1))], dim=-1)
+
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed, k_embed
@@ -620,13 +659,10 @@ class Qwen2VLAttention(nn.Module):
                 "removed and `position_embeddings` will be mandatory."
             )
             cos, sin = self.rotary_emb(value_states, position_ids)
-            cos = cos.transpose(1, 2)
-            sin = sin.transpose(1, 2)
         else:
             cos, sin = position_embeddings
-
         query_states, key_states = apply_multimodal_rotary_pos_emb(
-            query_states, key_states, cos, sin, self.rope_scaling["mrope_section"]
+            query_states, key_states, cos, sin, self.rope_scaling["mrope_section"], position_ids
         )
 
         # if past_key_value is not None:
@@ -678,7 +714,7 @@ class Qwen2VLAttention(nn.Module):
 
         if not output_attentions:
             attn_weights = None
-        
+
         # return attn_output, attn_weights, past_key_value
         return attn_output, attn_weights, past_kv
 
@@ -1001,6 +1037,7 @@ class Qwen2VLDecoderLayer(nn.Module):
         residual = hidden_states
 
         hidden_states = self.input_layernorm(hidden_states)
+
         # Self Attention
         hidden_states, self_attn_weights, present_key_value = self.self_attn(
             hidden_states=hidden_states,
