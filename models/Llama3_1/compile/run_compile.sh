@@ -1,12 +1,11 @@
 #!/bin/bash
-
-set -e
+set -ex
 
 # 默认参数设置
 model_path=""
 tpu_mlir_path=""
-mode="int8"
-seq_length=512
+mode="int4"
+seq_length=
 model_name=""
 
 

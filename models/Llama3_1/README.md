@@ -93,7 +93,7 @@ python export_onnx.py --model_path your_model_path --seq_length 512
 * PS3：目前给定的lib_pcie和lib_soc部分仅包含单芯的动态库，多芯部分会在后续更新
 * PS4：步骤三到步骤六可以通过运行compile文件夹下的run_compile.sh完成，具体命令是：
 ``` shell
-./run_compile.sh --model_name llama3.1-8b --seq_length 512 --model_path your model path --tpu_mlir_path your tpu_mlir path
+./run_compile.sh --model_name llama3.1-8b --seq_length 512 --model_path your_model_path --tpu_mlir_path your_tpu_mlir_path
 ```
 如果没有填写model_path，脚本会从modelscope下载模型，如果没有填写tpu_mlir_path，脚本会通过dfss下载对应的tpu_mlir压缩包并解压
 ----------------------------

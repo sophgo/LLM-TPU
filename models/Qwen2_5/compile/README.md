@@ -12,6 +12,7 @@ python3 export_onnx.py --model_path your_torch_model --seq_length 8192 --device 
 ```
 * 风险点：尤其注意，如果使用--device cpu在cpu上导出，使用的精度是float32，与训练精度bfloat16不一致，可能导致精度问题
 * 如果有cuda，建议使用cuda导出
+* 多芯模型的编译请参考`python_demo_parallel/README.md`
 
 ## Compile bmodel
 使用io_alone
@@ -43,8 +44,15 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5
 ``` shell
 ./run_compile.sh --model_name qwen2.5-3b --seq_length 4096
 ```
-如果没有填写model_path，脚本会从modelscope下载模型；
-如果没有填写tpu_mlir_path，脚本会通过dfss下载对应的tpu_mlir压缩包并解压
+
+迁移Qwen2.5-3B，多芯，双芯
+``` shell
+./run_compile.sh --model_name qwen2.5-3b --seq_length 4096 --num_device 2
+```
+* 如果没有填写model_path，脚本会从modelscope下载模型
+* 如果没有填写tpu_mlir_path，脚本会通过dfss下载对应的tpu_mlir压缩包并解压
+* 如果没有填写num_device，默认为单芯
+* 如果没有填写mode，默认为int4，W4BF16量化
 
 
 ## python demo

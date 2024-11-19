@@ -1,6 +1,5 @@
 #!/bin/bash
-
-set -e
+set -ex
 
 # 默认参数设置
 model_path=""
@@ -9,7 +8,13 @@ mode="int4"
 seq_length=
 model_name=""
 model_name_upper=""
+num_device=1
+config_file="../../../config.json"
+tpu_mlir_name=""
 
+read_config() {
+    python3 -c "import json; print(json.load(open('${config_file}'))['tpu_mlir_name'])"
+}
 
 # 参数解析
 while [[ $# -gt 0 ]]; do
@@ -34,6 +39,10 @@ while [[ $# -gt 0 ]]; do
         ;;
     --tpu_mlir_path)
         tpu_mlir_path="$2"
+        shift 2
+        ;;
+    --num_device)
+        num_device="$2"
         shift 2
         ;;
     *)
@@ -66,20 +75,21 @@ fi
 
 echo "Install the required Python lib..."
 pip install transformers_stream_generator einops tiktoken accelerate torch==2.0.1+cpu torchvision==0.15.2 transformers==4.45.2
-pip3 install dfss
-pip3 install modelscope
 
 # 根据 model_path 的值决定是否下载模型
 if [[ -z "$model_path" ]]; then
+    pip3 install modelscope
     echo "Download model..."
     python3 -c "from modelscope import snapshot_download; snapshot_download('Qwen/${model_name_upper}-Instruct', local_dir='./${model_name_upper}-Instruct')"
     model_path="../${model_name_upper}-Instruct"
 fi
 
 if [[ -z "$tpu_mlir_path" ]]; then
-    python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/mlir_club/tpu-mlir_v1.9.beta.0-84-ga12293f84-20240921.tar.gz
-    tar -xf tpu-mlir_v1.9.beta.0-84-ga12293f84-20240921.tar.gz
-    tpu_mlir_path="../tpu-mlir_v1.9.beta.0-84-ga12293f84-20240921"
+    tpu_mlir_name=$(read_config "$config_file" "tpu_mlir_name")
+    pip3 install dfss
+    python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/mlir_club/${tpu_mlir_name}.tar.gz
+    tar -xf ${tpu_mlir_name}.tar.gz
+    tpu_mlir_path="./${tpu_mlir_name}"
 fi
 
 echo "Replace the files in the transformers lib..."
@@ -88,11 +98,15 @@ cp ${pkg_path}/transformers/models/qwen2/modeling_qwen2.py modeling_qwen2_backup
 sudo cp files/${model_name_upper}-Instruct/modeling_qwen2.py ${pkg_path}/transformers/models/qwen2/modeling_qwen2.py
 
 echo "export onnx..."
-python export_onnx.py --model_path ${model_path} --seq_length ${seq_length}
+if [ x$num_device != x1 ]; then
+    python export_onnx.py --model_path ${model_path} --seq_length ${seq_length} --lmhead_with_topk 1
+else
+    python export_onnx.py --model_path ${model_path} --seq_length ${seq_length}
+fi
 
 echo "compile model..."
 source ${tpu_mlir_path}/envsetup.sh 
-source ./compile.sh --mode ${mode} --name ${model_name} --seq_length ${seq_length} --addr_mode io_alone
+source ./compile.sh --mode ${mode} --name ${model_name} --seq_length ${seq_length} --addr_mode io_alone --num_device ${num_device}
 echo "compile model success"
 
 echo "all done"
