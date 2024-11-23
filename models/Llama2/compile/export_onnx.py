@@ -12,12 +12,12 @@ import os
 import torch
 import argparse
 from tqdm import tqdm
-from transformers import LlamaTokenizer, LlamaForCausalLM
+from transformers import LlamaForCausalLM
 torch.set_grad_enabled(False)
 
 parser = argparse.ArgumentParser(description='export onnx.')
-parser.add_argument('--model_path', type=str, help='path to the torch model.')
-parser.add_argument('--seq_length', type=int, default=512, help="sequence length")
+parser.add_argument('-m', '--model_path', type=str, help='path to the torch model.')
+parser.add_argument('-s', '--seq_length', type=int, default=512, help="sequence length")
 parser.add_argument('--lmhead_with_topk', type=int, default=0, help="only trace the LmHeadWithTopK")
 
 args = parser.parse_args()
@@ -44,7 +44,6 @@ VOCAB_SIZE = config.vocab_size
 
 print(f'Layers: {NUM_LAYERS}\nHidden size: {HIDDEN_SIZE}\n')
 
-tokenizer = LlamaTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
 class Embedding(torch.nn.Module):
 

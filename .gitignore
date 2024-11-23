@@ -11,3 +11,5 @@ core
 *.tar.gz
 *.deb
 chat*.so
+gen*
+verify*
