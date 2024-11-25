@@ -287,10 +287,6 @@ int MiniCPM3::forward_first(std::vector<int> &tokens) {
       bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     }
     net_launch(net_blocks[idx]);
-    if (idx == 0) {
-      dump_net_input_to_file(bm_handle, net_blocks[0], "in.npz");
-      dump_net_output_to_file(bm_handle, net_blocks[0], "out.npz");
-    }
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1]);
     d2d(past_value[idx], net_blocks[idx]->stages[0].output_mems[2]);

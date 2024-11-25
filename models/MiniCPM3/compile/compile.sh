@@ -248,9 +248,9 @@ process_block() {
 for ((i=0; i<$num_layers; i++)); do
     process_block $i &
     models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
-    sleep 45
 done
 
+sleep 45
 wait  # Wait for all background processes to finish
 
 rm -f *.npz
