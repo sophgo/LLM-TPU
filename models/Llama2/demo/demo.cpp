@@ -541,6 +541,11 @@ void LLama2::answer(const std::string &input_str) {
   int tok_num = 1;
   std::vector<int> tokens;
   sentencepiece.Encode(sentence_input, &tokens);
+
+  if (int(tokens.size()) >= SEQLEN - 10) {
+    std::cout << "The tokens you input exceeds MAX SEQ LENGTH" << std::endl;
+    return;
+  }
   int pre_token = 0;
   auto t0 = std::chrono::system_clock::now();
   int token = forward_first(tokens);
