@@ -1,0 +1,6 @@
+{
+  "auto_map": {
+    "AutoProcessor": "preprocessing_molmo.MolmoProcessor"
+  },
+  "processor_class": "MolmoProcessor"
+}

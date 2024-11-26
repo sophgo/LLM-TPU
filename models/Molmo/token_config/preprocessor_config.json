@@ -1,0 +1,32 @@
+{
+  "auto_map": {
+    "AutoImageProcessor": "image_preprocessing_molmo.MolmoImageProcessor",
+    "AutoProcessor": "preprocessing_molmo.MolmoProcessor"
+  },
+  "base_image_input_size": [
+    336,
+    336
+  ],
+  "do_normalize": true,
+  "image_mean": [
+    0.48145466,
+    0.4578275,
+    0.40821073
+  ],
+  "image_padding_mask": true,
+  "image_patch_size": 14,
+  "image_processor_type": "MolmoImageProcessor",
+  "image_std": [
+    0.26862954,
+    0.26130258,
+    0.27577711
+  ],
+  "image_token_length_h": 12,
+  "image_token_length_w": 12,
+  "max_crops": 12,
+  "overlap_margins": [
+    4,
+    4
+  ],
+  "processor_class": "MolmoProcessor"
+}
