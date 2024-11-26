@@ -856,7 +856,7 @@ int Qwen::forward_next() {
   int cur_token = total_tokens[total_length - 1];
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
-  for (int i = total_length; i < SEQLEN; i++) {
+  for (int i = total_length - 1; i < SEQLEN; i++) {
     attention_mask[i] = mask_value;
   }
   int32_t position_id = total_length - 1;
