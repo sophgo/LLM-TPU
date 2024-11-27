@@ -81,7 +81,7 @@ if [[ -z "$model_path" ]]; then
     pip3 install modelscope
     echo "Download model..."
     python3 -c "from modelscope import snapshot_download; snapshot_download('Qwen/${model_name_upper}-Instruct', local_dir='./${model_name_upper}-Instruct')"
-    model_path="../${model_name_upper}-Instruct"
+    model_path="./${model_name_upper}-Instruct"
 fi
 
 if [[ -z "$tpu_mlir_path" ]]; then
