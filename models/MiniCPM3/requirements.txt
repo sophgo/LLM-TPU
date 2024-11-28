@@ -1,5 +1,5 @@
 transformers_stream_generator
-atamodel_code_generator
+datamodel_code_generator
 accelerate>=0.26.0
 transformers>=4.41.0
 sentencepiece
