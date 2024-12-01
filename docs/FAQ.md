@@ -242,3 +242,12 @@ cd build && cmake .. && make
 ``` shell
 pip3 install git+https://github.com/huggingface/transformers
 ```
+
+### Q18 `torch.onnx.errors.UnsupportedOperatorError`
+
+完全报错为：`torch.onnx.errors.UnsupportedOperatorError: Exporting the operator 'aten::_convolution_mode' to ONNX opset version 15 is not supported. Please feel free to request support or submit a pull request on PyTorch GitHub: https://github.com/pytorch/pytorch/issues`
+
+一般见于多模态模型的Conv算子，torch版本太低，更新torch版本
+``` shell
+pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+```

@@ -6,7 +6,7 @@ quantize_args=""
 name="minicpmv26"
 
 chip="bm1684x"
-num_layers=28
+num_layers=
 out_model=$name.bmodel
 
 while [[ $# -gt 0 ]]; do
@@ -21,6 +21,10 @@ while [[ $# -gt 0 ]]; do
         name="$2"
         shift 2
         ;;
+    --seq_length)
+        seq_length="$2"
+        shift 2
+        ;;
     *)
         echo "Invalid option: $key" >&2
         exit 1
@@ -31,6 +35,15 @@ while [[ $# -gt 0 ]]; do
         ;;
     esac
 done
+
+if [ "$name" = "minicpmv26" ]; then
+  num_layers=28
+  hidden_size=3584
+  echo "Compile MiniCPM-V-2_6"
+else
+  echo -e "Error: Invalid name $name, the input name must be \033[31mminicpmv26\033[0m"
+  exit 1
+fi
 
 if [ x$mode == x"int8" ]; then
     quantize_args="--quantize W8BF16"
@@ -45,14 +58,17 @@ fi
 
 onnx_dir=$PWD/tmp/onnx
 folder='tmp/'$name'_'$chip'_'$mode
-out_model=$name'_'$chip'_'$mode'.bmodel'
+out_model=$name'_'$chip'_'$mode'_seq'${seq_length}'.bmodel'
 
 # Convert block
 outdir=${folder}/block
 mkdir -p $outdir
 pushd $outdir
 
-for ((i = 0; i < $num_layers; i++)); do
+process_block()
+{
+    i=$1
+
     model_transform.py \
         --model_name block_$i \
         --model_def ${onnx_dir}/block_$i.onnx \
@@ -64,6 +80,7 @@ for ((i = 0; i < $num_layers; i++)); do
         --quant_input \
         --quant_output \
         --chip ${chip} \
+        $device_args \
         --model block_$i.bmodel
 
     model_transform.py \
@@ -77,14 +94,23 @@ for ((i = 0; i < $num_layers; i++)); do
         --quant_input \
         --quant_output \
         --chip ${chip} \
+        $device_args \
         --addr_mode io_alone \
         --model block_cache_$i.bmodel
 
     rm *.npz *.onnx -f
+}
 
-    models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
-
+# Process each block
+for ((i=0; i<$num_layers; i++)); do
+    process_block $i &
+    models="${models}${outdir}/block_${i}.bmodel ${outdir}/block_cache_${i}.bmodel "
+    sleep 60
 done
+
+wait  # Wait for all background processes to finish
+rm *.npz *.onnx -f
+
 popd
 echo $models
 
@@ -95,7 +121,9 @@ pushd $outdir
 
 model_transform.py \
     --model_name embedding \
-    --model_def ${onnx_dir}/embedding.onnx \
+    --model_def ${onnx_dir}/embedding.pt \
+    --input_shapes "[[1,$seq_length]]" \
+    --input_types "int32" \
     --mlir embedding.mlir
 
 model_deploy.py \
@@ -104,12 +132,14 @@ model_deploy.py \
     --quant_input \
     --quant_output \
     --chip ${chip} \
+    $device_args \
     --model embedding.bmodel
 
 model_transform.py \
     --model_name embedding_cache \
-    --model_def ${onnx_dir}/embedding.onnx \
-    --input_shapes [[1,1]] \
+    --model_def ${onnx_dir}/embedding.pt \
+    --input_shapes "[[1,1]]" \
+    --input_types "int32" \
     --mlir embedding_cache.mlir
 
 model_deploy.py \
@@ -118,9 +148,10 @@ model_deploy.py \
     --quant_input \
     --quant_output \
     --chip ${chip} \
+    $device_args \
     --model embedding_cache.bmodel
 
-rm *.npz *.onnx -f
+rm *.npz *.onnx *.pt -f
 
 models=$models' '$outdir'/embedding.bmodel '$outdir'/embedding_cache.bmodel '
 
@@ -134,7 +165,8 @@ pushd $outdir
 
 model_transform.py \
     --model_name lm_head \
-    --model_def ${onnx_dir}/lm_head.onnx \
+    --model_def ${onnx_dir}/lm_head.pt \
+    --input_shapes "[[1,${hidden_size}]]" \
     --mlir lm_head.mlir
 
 model_deploy.py \
@@ -142,9 +174,10 @@ model_deploy.py \
     $quantize_args \
     --quant_input \
     --chip ${chip} \
+    $device_args \
     --model lm_head.bmodel
 
-rm *.npz *.onnx -f
+rm *.npz *.onnx *.pt -f
 
 models=${models}${outdir}'/lm_head.bmodel '
 popd

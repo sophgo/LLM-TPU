@@ -133,7 +133,7 @@ class SiglipVisionConfig(PretrainedConfig):
             )
 
         return cls.from_dict(config_dict, **kwargs)
-
+        
 
 _CHECKPOINT_FOR_DOC = "google/siglip-base-patch16-224"
 
@@ -314,24 +314,55 @@ class SiglipVisionEmbeddings(nn.Module):
         self.num_positions = self.num_patches
         self.position_embedding = nn.Embedding(self.num_positions, self.embed_dim)
 
+    def compute_position_ids(self, pixel_values: torch.FloatTensor, tgt_sizes: torch.IntTensor) -> torch.Tensor:
+        batch_size = pixel_values.size(0)
+        patch_attention_mask = torch.ones(
+            size=(
+                batch_size,
+                pixel_values.size(2) // self.config.patch_size,
+                pixel_values.size(3) // self.config.patch_size,
+            ),
+            dtype=torch.bool,
+            device=pixel_values.device,
+        )
+
+        max_im_h, max_im_w = pixel_values.size(2), pixel_values.size(3)
+        max_nb_patches_h, max_nb_patches_w = max_im_h // self.patch_size, max_im_w // self.patch_size
         boundaries = torch.arange(1 / self.num_patches_per_side, 1.0, 1 / self.num_patches_per_side)
+        position_ids = torch.full(
+            size=(
+                batch_size,
+                max_nb_patches_h * max_nb_patches_w,
+            ),
+            fill_value=0,
+        )
 
-        nb_patches_h = 32
-        nb_patches_w = 32
-        fractional_coords_h = torch.arange(0, 1 - 1e-6, 1 / nb_patches_h)
-        fractional_coords_w = torch.arange(0, 1 - 1e-6, 1 / nb_patches_w)
+        for batch_idx, p_attn_mask in enumerate(patch_attention_mask):
+            if tgt_sizes is not None:
+                nb_patches_h = tgt_sizes[batch_idx][0]
+                nb_patches_w = tgt_sizes[batch_idx][1]
+            else:
+                nb_patches_h = p_attn_mask[:, 0].sum()
+                nb_patches_w = p_attn_mask[0].sum()
 
-        bucket_coords_h = torch.bucketize(fractional_coords_h, boundaries, right=True)
-        bucket_coords_w = torch.bucketize(fractional_coords_w, boundaries, right=True)
+            fractional_coords_h = torch.arange(0, 1 - 1e-6, 1 / nb_patches_h)
+            fractional_coords_w = torch.arange(0, 1 - 1e-6, 1 / nb_patches_w)
 
-        position_ids = (bucket_coords_h[:, None] * self.num_patches_per_side + bucket_coords_w).flatten()
-        self.position_ids = position_ids.to("cuda")
+            bucket_coords_h = torch.bucketize(fractional_coords_h, boundaries, right=True)
+            bucket_coords_w = torch.bucketize(fractional_coords_w, boundaries, right=True)
 
-    def forward(self, pixel_values: torch.FloatTensor, patch_attention_mask: torch.BoolTensor=None, tgt_sizes: Optional[torch.IntTensor]=None) -> torch.Tensor:
+            pos_ids = (bucket_coords_h[:, None] * self.num_patches_per_side + bucket_coords_w).flatten()
+            position_ids[batch_idx][p_attn_mask.view(-1).cpu()] = pos_ids
 
-        patch_embeds = self.patch_embedding(pixel_values).view(1, 1152, 1024)
+        position_ids = position_ids.to(self.position_embedding.weight.device)
+        return position_ids
+
+
+    def forward(self, pixel_values: torch.FloatTensor, position_ids: torch.IntTensor) -> torch.Tensor:
+
+        patch_embeds = self.patch_embedding(pixel_values).squeeze(2)
         embeddings = patch_embeds.transpose(1, 2)
-        embeddings = embeddings + self.position_embedding(self.position_ids)
+        embeddings = embeddings + self.position_embedding(position_ids)
         return embeddings
 
 
@@ -366,7 +397,7 @@ class SiglipAttention(nn.Module):
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         """Input shape: Batch x Time x Channel"""
 
-        batch_size, q_len = 1, 1024
+        batch_size, q_len, _ = hidden_states.size()
 
         query_states = self.q_proj(hidden_states)
         key_states = self.k_proj(hidden_states)
@@ -376,7 +407,7 @@ class SiglipAttention(nn.Module):
         key_states = key_states.view(batch_size, q_len, self.num_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(batch_size, q_len, self.num_heads, self.head_dim).transpose(1, 2)
 
-        k_v_seq_len = 1024
+        k_v_seq_len = key_states.shape[-2]
         attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) * self.scale
 
         if attn_weights.size() != (batch_size, self.num_heads, q_len, k_v_seq_len):

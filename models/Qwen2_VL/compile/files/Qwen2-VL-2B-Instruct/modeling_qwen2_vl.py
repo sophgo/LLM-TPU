@@ -1479,7 +1479,6 @@ class Qwen2VLForConditionalGeneration(Qwen2VLPreTrainedModel, GenerationMixin):
 
     def __init__(self, config):
         super().__init__(config)
-        config._attn_implementation = 'eager'
         self.visual = Qwen2VisionTransformerPretrainedModel._from_config(
             config.vision_config, attn_implementation=config._attn_implementation
         )

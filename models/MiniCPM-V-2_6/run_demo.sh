@@ -24,4 +24,4 @@ fi
 
 # run demo
 echo $PWD
-python3 python_demo/pipeline.py --model ../../bmodels/minicpmv26_bm1684x_int4.bmodel --tokenizer ./support/token_config --devid 0
+python3 python_demo/pipeline.py --model_path ../../bmodels/minicpmv26_bm1684x_int4.bmodel --tokenizer_path ./support/token_config --devid 0

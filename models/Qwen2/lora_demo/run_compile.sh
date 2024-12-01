@@ -2,7 +2,8 @@
 set -ex
 
 # 配置环境
-pip3 install torch==2.0.1 transformers_stream_generator einops tiktoken accelerate transformers==4.41.2 peft
+pip3 install torch==2.0.1+cpu torchvision==0.15.2 -f https://download.pytorch.org/whl/cpu/torch_stable.html
+pip3 install transformers_stream_generator einops tiktoken accelerate transformers==4.41.2 peft
 
 max_pos_len=10240 # 旋转位置编码的长度，设置为同一个值，才能将block_cache和block权重合并
 generation_mode=default # 解码模式

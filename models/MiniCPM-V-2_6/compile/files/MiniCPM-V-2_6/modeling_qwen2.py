@@ -180,7 +180,7 @@ def rotate_half(x):
 
 
 # Copied from transformers.models.mixtral.modeling_mixtral.apply_rotary_pos_emb
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=2):
     """Applies Rotary Position Embedding to the query and key tensors.
 
     Args:
@@ -316,8 +316,8 @@ class Qwen2Attention(nn.Module):
         attn_weights = torch.matmul(query_states.transpose(1,2), key_states.transpose(1, 2).transpose(2, 3)) / math.sqrt(self.head_dim)
 
         if attention_mask is not None:  # no matter the length, we just slice it
-            causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
-            attn_weights = attn_weights + causal_mask
+            # causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
+            attn_weights = attn_weights + attention_mask
 
         # upcast attention to fp32
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)

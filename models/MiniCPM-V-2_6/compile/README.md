@@ -4,7 +4,9 @@
 
 ```shell
 pip install transformers_stream_generator einops tiktoken accelerate torch==2.0.1+cpu torchvision==0.15.2 transformers==4.40.0
-cp files/openbmb-MiniCPM-V-2_6/modeling_qwen2.py /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2/
+cp files/MiniCPM-V-2_6/modeling_qwen2.py /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2/
+cp files/MiniCPM-V-2_6/resampler.py your_torch_model
+cp files/MiniCPM-V-2_6/modeling_navit_siglip.py your_torch_model
 ```
 your_torch_model是你模型的位置
 ```shell
@@ -14,7 +16,7 @@ python3 export_onnx.py --model_path your_torch_model --seq_length 512 --device c
 ## Compile bmodel
 使用io_alone
 ```
-./compile.sh --mode int4 --name qwen2-7b --addr_mode io_alone --seq_length 512
+./compile.sh --mode int4 --name minicpmv26 --seq_length 512
 ```
 
 ### 下载迁移好的模型

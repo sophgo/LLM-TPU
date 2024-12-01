@@ -38,15 +38,18 @@ class MiniCPMV():
         self.device = args.devid
 
         # load tokenizer
-        print("Load " + args.tokenizer + " ...")
+        print("Load " + args.tokenizer_path + " ...")
         self.tokenizer = AutoTokenizer.from_pretrained(
-            args.tokenizer, trust_remote_code=True
+            args.tokenizer_path, trust_remote_code=True
         )
         self.tokenizer.decode([0])  # warm up
 
+        self.processor = AutoProcessor.from_pretrained(
+            args.tokenizer_path, trust_remote_code=True
+        )
+
         # preprocess parameters, such as prompt & tokenizer
         self.system_prompt = '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n'
-        self.image_ids = [0] * 64
 
         # load model
         self.model = chat.MiniCPMV()
@@ -57,17 +60,25 @@ class MiniCPMV():
 
     def encode(self):
         if not self.image_str:
+            inserted_image_str = ""
+            self.pixel_values = []
+        else:
+            inserted_image_str = "(<image>./</image>)\n"
+            image = Image.open(sample_image_file).convert('RGB')
+            inputs = processor.image_processor([image], do_pad=True, max_slice_nums=MAX_SLICE_NUMS, return_tensors="pt")
+            pixel_values = inputs["pixel_values"][0]
+
+        msgs = [{'role': 'user', 'content': '{}{}'.format(self.inserted_image_str, self.input_str)}]
             prompt = self.system_prompt + self.input_str + "<|im_end|>\n<|im_start|>assistant\n"
             self.input_ids = self.tokenizer.encode(prompt)
             self.image_offset = 0
             self.pixel_values = []
             return
         self.pixel_values = load_image(self.image_str).flatten().tolist()
-        system_ids = self.tokenizer.encode(self.system_prompt + "<image>")
-        self.image_offset = len(system_ids)
-        prompt_ids = self.tokenizer.encode(
-            "</image>\n{}<|im_end|>\n<|im_start|>assistant\n".format(self.input_str))
-        self.input_ids = system_ids + self.image_ids + prompt_ids
+        msgs = [{'role': 'user', 'content': '(<image>./</image>)\n{}'.format(self.input_str)}]
+        self.input_ids = processor.tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)[0]
+        self.image_offset = 0
+        breakpoint()
 
     def chat(self):
         """
@@ -131,7 +142,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--model_path', type=str,
                         required=True, help='path to the bmodel file')
-    parser.add_argument('-t', '--tokenizer', type=str,
+    parser.add_argument('-t', '--tokenizer_path', type=str,
                         default="../support/token_config", help='path to the tokenizer file')
     parser.add_argument('-d', '--devid', type=int,
                         default=0, help='device ID to use')

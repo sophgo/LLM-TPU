@@ -81,9 +81,9 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 执行程序，如下：
 
 ```
-python3 pipeline.py --model_path minicpmv26_bm1684x_int4.bmodel --tokenizer ../support/token_config --devid 0
+python3 pipeline.py --model_path minicpmv26_bm1684x_int4.bmodel --tokenizer_path ../support/token_config --devid 0
 ```
-model为实际的model储存路径；tokenizer_path为实际的tokenizer配置的储存路径
+model_path为实际的model储存路径；tokenizer_path为实际的tokenizer配置的储存路径
 
 * 运行效果
 

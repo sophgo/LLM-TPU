@@ -104,14 +104,6 @@ class Resampler(nn.Module):
         self.proj = nn.Parameter((embed_dim ** -0.5) * torch.randn(embed_dim, embed_dim))
 
         self._set_2d_pos_cache(self.max_size)
-        self._adjust_pos_cache([32,32], device="cuda")
-        pos_embed = []
-        # for i in range(bs):
-        tgt_h, tgt_w = 32, 32
-        pos_embed.append(self.pos_embed[:tgt_h, :tgt_w, :].reshape((tgt_h * tgt_w, -1)))  # patches * D
-        # key_padding_mask[:, patch_len:] = True
-        self.pos_embed = torch.nn.utils.rnn.pad_sequence(
-            pos_embed, batch_first=True, padding_value=0.0).permute(1, 0, 2)  # BLD => L * B * D
 
     def _set_2d_pos_cache(self, max_size, device='cpu'):
         if is_deepspeed_zero3_enabled():
@@ -120,8 +112,8 @@ class Resampler(nn.Module):
         self.register_buffer("pos_embed", pos_embed, persistent=False)
 
     def _adjust_pos_cache(self, tgt_sizes, device):
-        max_h = 32
-        max_w = 32
+        max_h = torch.max(tgt_sizes[:, 0])
+        max_w = torch.max(tgt_sizes[:, 1])
         if max_h > self.max_size[0] or max_w > self.max_size[1]:
             self.max_size = [max(max_h, self.max_size[0]), max(max_w, self.max_size[1])]
             self._set_2d_pos_cache(self.max_size, device)
@@ -135,18 +127,38 @@ class Resampler(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    def forward(self, x, tgt_sizes=None):
-        dtype = x.dtype
+    def compute_pos_embed(self, x, tgt_sizes=None):
+        assert x.shape[0] == tgt_sizes.shape[0]
+        bs = x.shape[0]
 
+        device = x.device
+        dtype = x.dtype
+        patch_len = (tgt_sizes[:, 0] * tgt_sizes[:, 1]).int().tolist()
+
+        self._adjust_pos_cache(tgt_sizes, device=device)
+        max_patch_len = max(patch_len)
+        key_padding_mask = torch.zeros((bs, max_patch_len), dtype=torch.bool, device=device)
+
+        pos_embed = []
+        for i in range(bs):
+            tgt_h, tgt_w = tgt_sizes[i].int().tolist()
+            pos_embed.append(self.pos_embed[:tgt_h, :tgt_w, :].reshape((tgt_h * tgt_w, -1)).to(dtype))  # patches * D
+            key_padding_mask[i, patch_len[i]:] = True
+
+        pos_embed = torch.nn.utils.rnn.pad_sequence(
+            pos_embed, batch_first=True, padding_value=0.0).permute(1, 0, 2)  # BLD => L * B * D
+        return pos_embed
+
+    def forward(self, x, pos_embed):
+        bs = x.shape[0]
 
         x = self.kv_proj(x)  # B * L * D
         x = self.ln_kv(x).permute(1, 0, 2)  # L * B * D
 
         q = self.ln_q(self.query)  # Q * D
-
         out = self.attn(
-            q.unsqueeze(1),  # Q * B * D
-            x + self.pos_embed.to(dtype),  # L * B * D +  L * B * D
+            self._repeat(q, bs),  # Q * B * D
+            x + pos_embed,  # L * B * D +  L * B * D
             x,
             key_padding_mask=None)[0]
         #  out: Q * B * D
@@ -161,7 +173,7 @@ class Resampler(nn.Module):
 
 
 class MultiheadAttention(nn.MultiheadAttention):
-    def __init__(self, embed_dim, num_heads, dropout=0., bias=True, add_bias_kv=False,
+    def __init__(self, embed_dim, num_heads, dropout=0., bias=True, add_bias_kv=False, 
                  add_zero_attn=False, kdim=None, vdim=None, batch_first=False, device=None, dtype=None):
         super().__init__(embed_dim, num_heads, dropout, bias, add_bias_kv, add_zero_attn, kdim, vdim, batch_first, device, dtype)
 
@@ -292,7 +304,7 @@ class MultiheadAttention(nn.MultiheadAttention):
                     value = key
             else:
                 query, key, value = (x.transpose(1, 0) for x in (query, key, value))
-
+        
         if not self._qkv_same_embed_dim:
             attn_output, attn_output_weights = self.multi_head_attention_forward(
                 query, key, value, self.embed_dim, self.num_heads,
@@ -323,7 +335,7 @@ class MultiheadAttention(nn.MultiheadAttention):
             return attn_output.transpose(1, 0), attn_output_weights
         else:
             return attn_output, attn_output_weights
-
+            
     def multi_head_attention_forward(
         self,
         query: Tensor,
@@ -353,9 +365,9 @@ class MultiheadAttention(nn.MultiheadAttention):
         is_causal: bool = False,
     ) -> Tuple[Tensor, Optional[Tensor]]:
         tens_ops = (query, key, value, in_proj_weight, in_proj_bias, bias_k, bias_v, out_proj_weight, out_proj_bias)
-
+    
         is_batched = _mha_shape_check(query, key, value, key_padding_mask, attn_mask, num_heads)
-
+    
         # For unbatched input, we unsqueeze at the expected batch-dim to pretend that the input
         # is batched, run the computation and before returning squeeze the
         # batch dimension so that the output doesn't carry this temporary batch dimension.
@@ -366,11 +378,11 @@ class MultiheadAttention(nn.MultiheadAttention):
             value = value.unsqueeze(1)
             if key_padding_mask is not None:
                 key_padding_mask = key_padding_mask.unsqueeze(0)
-
+    
         # set up shape vars
         tgt_len, bsz, embed_dim = query.shape
         src_len, _, _ = key.shape
-
+    
         key_padding_mask = _canonical_mask(
             mask=key_padding_mask,
             mask_name="key_padding_mask",
@@ -378,14 +390,14 @@ class MultiheadAttention(nn.MultiheadAttention):
             other_name="attn_mask",
             target_type=query.dtype
         )
-
+    
         if is_causal and attn_mask is None:
             raise RuntimeError(
                 "Need attn_mask if specifying the is_causal hint. "
                 "You may use the Transformer module method "
                 "`generate_square_subsequent_mask` to create this mask."
             )
-
+    
         if is_causal and key_padding_mask is None and not need_weights:
             # when we have a kpm or need weights, we need attn_mask
             # Otherwise, we use the is_causal hint go as is_causal
@@ -400,13 +412,13 @@ class MultiheadAttention(nn.MultiheadAttention):
                 target_type=query.dtype,
                 check_other=False,
             )
-
+    
             if key_padding_mask is not None:
                 # We have the attn_mask, and use that to merge kpm into it.
                 # Turn off use of is_causal hint, as the merged mask is no
                 # longer causal.
                 is_causal = False
-
+    
         assert embed_dim == embed_dim_to_check, \
             f"was expecting embedding dimension of {embed_dim_to_check}, but got {embed_dim}"
         if isinstance(embed_dim, torch.Tensor):
@@ -421,7 +433,7 @@ class MultiheadAttention(nn.MultiheadAttention):
                 f"key's sequence and batch dims {key.shape[:2]} do not match value's {value.shape[:2]}"
         else:
             assert key.shape == value.shape, f"key shape {key.shape} does not match value shape {value.shape}"
-
+    
         #
         # compute in-projection
         #
@@ -437,9 +449,9 @@ class MultiheadAttention(nn.MultiheadAttention):
             else:
                 b_q, b_k, b_v = in_proj_bias.chunk(3)
             q, k, v = _in_projection(query, key, value, q_proj_weight, k_proj_weight, v_proj_weight, b_q, b_k, b_v)
-
+    
         # prep attention mask
-
+    
         if attn_mask is not None:
             # ensure attn_mask's dim is 3
             if attn_mask.dim() == 2:
@@ -453,7 +465,7 @@ class MultiheadAttention(nn.MultiheadAttention):
                     raise RuntimeError(f"The shape of the 3D attn_mask is {attn_mask.shape}, but should be {correct_3d_size}.")
             else:
                 raise RuntimeError(f"attn_mask's dimension {attn_mask.dim()} is not supported")
-
+    
         # add bias along batch dimension (currently second)
         if bias_k is not None and bias_v is not None:
             assert static_k is None, "bias cannot be added to static key."
@@ -467,7 +479,7 @@ class MultiheadAttention(nn.MultiheadAttention):
         else:
             assert bias_k is None
             assert bias_v is None
-
+    
         #
         # reshape q, k, v for multihead attention and make em batch first
         #
@@ -490,7 +502,7 @@ class MultiheadAttention(nn.MultiheadAttention):
             assert static_v.size(2) == head_dim, \
                 f"expecting static_v.size(2) of {head_dim}, but got {static_v.size(2)}"
             v = static_v
-
+    
         # add zero attention along batch dimension (now first)
         if add_zero_attn:
             zero_attn_shape = (bsz * num_heads, 1, head_dim)
@@ -500,10 +512,10 @@ class MultiheadAttention(nn.MultiheadAttention):
                 attn_mask = pad(attn_mask, (0, 1))
             if key_padding_mask is not None:
                 key_padding_mask = pad(key_padding_mask, (0, 1))
-
+    
         # update source sequence length after adjustments
         src_len = k.size(1)
-
+    
         # merge key padding and attention masks
         if key_padding_mask is not None:
             assert key_padding_mask.shape == (bsz, src_len), \
@@ -514,21 +526,21 @@ class MultiheadAttention(nn.MultiheadAttention):
                 attn_mask = key_padding_mask
             else:
                 attn_mask = attn_mask + key_padding_mask
-
+    
         # adjust dropout probability
         if not training:
             dropout_p = 0.0
-
+    
         #
         # (deep breath) calculate attention and out projection
         #
-
+    
         if need_weights:
-            B, Nt, E = 28, 64, 128
+            B, Nt, E = q.shape
             q_scaled = q / math.sqrt(E)
-
+    
             assert not (is_causal and attn_mask is None), "FIXME: is_causal not implemented for need_weights"
-
+    
             if attn_mask is not None:
                 attn_output_weights = torch.baddbmm(attn_mask, q_scaled, k.transpose(-2, -1))
             else:
@@ -536,18 +548,18 @@ class MultiheadAttention(nn.MultiheadAttention):
             attn_output_weights = softmax(attn_output_weights, dim=-1)
             if dropout_p > 0.0:
                 attn_output_weights = dropout(attn_output_weights, p=dropout_p)
-
+    
             attn_output = torch.bmm(attn_output_weights, v)
-
+    
             attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len * bsz, embed_dim)
             attn_output = self.out_proj(attn_output)
             attn_output = attn_output.view(tgt_len, bsz, attn_output.size(1))
-
+    
             # optionally average attention weights over heads
             attn_output_weights = attn_output_weights.view(bsz, num_heads, tgt_len, src_len)
             if average_attn_weights:
                 attn_output_weights = attn_output_weights.mean(dim=1)
-
+    
             if not is_batched:
                 # squeeze the output if input was unbatched
                 attn_output = attn_output.squeeze(1)
@@ -562,14 +574,14 @@ class MultiheadAttention(nn.MultiheadAttention):
                     attn_mask = attn_mask.unsqueeze(0)
                 else:
                     attn_mask = attn_mask.view(bsz, num_heads, -1, src_len)
-
+    
             q = q.view(bsz, num_heads, tgt_len, head_dim)
             k = k.view(bsz, num_heads, src_len, head_dim)
             v = v.view(bsz, num_heads, src_len, head_dim)
-
+    
             attn_output = F.scaled_dot_product_attention(q, k, v, attn_mask, dropout_p, is_causal)
             attn_output = attn_output.permute(2, 0, 1, 3).contiguous().view(bsz * tgt_len, embed_dim)
-
+    
             attn_output = self.out_proj(attn_output)
             attn_output = attn_output.view(tgt_len, bsz, attn_output.size(1))
             if not is_batched:
@@ -768,4 +780,4 @@ def _in_projection(
     assert b_q is None or b_q.shape == (Eq,), f"expecting query bias shape of {(Eq,)}, but got {b_q.shape}"
     assert b_k is None or b_k.shape == (Eq,), f"expecting key bias shape of {(Eq,)}, but got {b_k.shape}"
     assert b_v is None or b_v.shape == (Eq,), f"expecting value bias shape of {(Eq,)}, but got {b_v.shape}"
-    return linear(q, w_q, b_q), linear(k, w_k, b_k), linear(v, w_v, b_v)
+    return linear(q, w_q, b_q), linear(k, w_k, b_k), linear(v, w_v, b_v) 

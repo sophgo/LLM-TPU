@@ -279,7 +279,9 @@ def load_model():
     # load model
     model_path = args.model_path
     origin_model = Qwen2VLForConditionalGeneration.from_pretrained(
-        model_path, trust_remote_code=True, torch_dtype=dtype, device_map="cpu").eval()
+        model_path, trust_remote_code=True, attn_implementation='eager',
+        torch_dtype=dtype, device_map="cpu"
+    ).eval()
 
     for param in origin_model.parameters():
         param.requires_grad = False
@@ -455,7 +457,7 @@ if __name__ == "__main__":
     HEAD_DIM = HIDDEN_SIZE // NUM_ATTENTION_HEADS
     VOCAB_SIZE = config.vocab_size
     print(f"Layers: {NUM_LAYERS}\nHidden size: {HIDDEN_SIZE}\n")
-    print("\033[31m修改了config文件，将config._attn_implementation由sdpa改为了eager！！！\033[0m")
+    print("\033[31m修改了load model方式，将attn_implementation由sdpa改为了eager，不然无法导出onnx\033[0m")
     folder = f"./tmp/onnx"
 
 
