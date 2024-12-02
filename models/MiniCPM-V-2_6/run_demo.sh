@@ -4,10 +4,10 @@ if [ ! -d "../../bmodels" ]; then
   mkdir ../../bmodels
 fi
 
-if [ ! -f "../../bmodels/minicpmv26_bm1684x_int4.bmodel" ]; then
+if [ ! -f "../../bmodels/minicpmv26_bm1684x_int4_seq1024.bmodel" ]; then
   pip3 install dfss
-  python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpmv26_bm1684x_int4.bmodel
-  mv minicpmv26_bm1684x_int4.bmodel ../../bmodels
+  python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpmv26_bm1684x_int4_seq1024.bmodel
+  mv minicpmv26_bm1684x_int4_seq1024.bmodel ../../bmodels
 else
   echo "Bmodel Exists!"
 fi
@@ -24,4 +24,4 @@ fi
 
 # run demo
 echo $PWD
-python3 python_demo/pipeline.py --model_path ../../bmodels/minicpmv26_bm1684x_int4.bmodel --tokenizer_path ./support/token_config --devid 0
+python3 python_demo/pipeline.py --model_path ../../bmodels/minicpmv26_bm1684x_int4_seq1024.bmodel --processor_path ./support/token_config --devid 0
