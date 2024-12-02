@@ -48,7 +48,7 @@ public:
   void init(int devid, std::string model_path);
   void deinit();
   int forward_first(std::vector<int> &tokens, std::vector<float> &pixel_values,
-                    int img_offset);
+                    std::vector<int> &img_offsets, int patch_num);
   int forward_next();
 
   std::mt19937 sgen;
@@ -160,7 +160,7 @@ void MiniCPMV::deinit() {
 }
 
 int MiniCPMV::forward_first(std::vector<int> &tokens,
-                             std::vector<float> &pixel_values, int img_offset) {
+                             std::vector<float> &pixel_values, std::vector<int> &img_offsets, int patch_num) {
   std::vector<int> input_ids(SEQLEN, 0);
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
@@ -185,7 +185,7 @@ int MiniCPMV::forward_first(std::vector<int> &tokens,
   bm_memcpy_s2d(bm_handle, in_mem, (void *)input_ids.data());
   net_launch(net_embed); // prefil embedding
 
-  if (pixel_values.size() * sizeof(float) == IMAGE_BYTES && img_offset > 0) {
+  if (pixel_values.size() * sizeof(float) == IMAGE_BYTES && img_offsets.size() > 0) {
     d2d(dev_buffer, out_mem);
     out_mem = dev_buffer;
     // forward vision transformer
@@ -195,10 +195,15 @@ int MiniCPMV::forward_first(std::vector<int> &tokens,
     net_launch(net_vit);
 
     // concatenante texting embedding and image embedding
-    int dst_offset = img_offset * HIDDEN_SIZE * 2;
-    int vit_size = bm_mem_get_device_size(vit_out_mem);
-    bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, vit_out_mem, 0,
-                       vit_size);
+    int type_byte = sizeof(uint16_t);
+    int patch_bytes = bm_mem_get_device_size(vit_out_mem) / patch_num;
+    int patch_size = net_vit->stages[0].output_shapes[0].dims[1];
+    for (int i = 0; i < patch_num; i++) {
+      int vit_offset = i * patch_bytes;
+      int dst_offset = img_offsets[i * patch_size] * HIDDEN_SIZE * type_byte;
+
+      bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, vit_out_mem, vit_offset, patch_bytes);
+    }
   }
 
   // forward blocks

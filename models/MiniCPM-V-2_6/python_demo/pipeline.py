@@ -3,7 +3,7 @@ import torch
 import argparse
 from PIL import Image
 import torchvision.transforms as T
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoProcessor
 from torchvision.transforms.functional import InterpolationMode
 import chat
 import os
@@ -38,18 +38,13 @@ class MiniCPMV():
         self.device = args.devid
 
         # load tokenizer
-        print("Load " + args.tokenizer_path + " ...")
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            args.tokenizer_path, trust_remote_code=True
-        )
-        self.tokenizer.decode([0])  # warm up
-
+        print("Load " + args.processor_path + " ...")
         self.processor = AutoProcessor.from_pretrained(
-            args.tokenizer_path, trust_remote_code=True
+            args.processor_path, trust_remote_code=True
         )
 
-        # preprocess parameters, such as prompt & tokenizer
-        self.system_prompt = '<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n'
+        self.tokenizer = self.processor.tokenizer
+        self.tokenizer.decode([0])  # warm up
 
         # load model
         self.model = chat.MiniCPMV()
@@ -58,27 +53,33 @@ class MiniCPMV():
         self.ID_EOS = self.tokenizer.eos_token_id
         self.ID_IM_END = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
 
+        # parameters
+        self.MAX_SLICE_NUMS = self.processor.image_processor.max_slice_nums
+
     def encode(self):
         if not self.image_str:
             inserted_image_str = ""
-            self.pixel_values = []
         else:
             inserted_image_str = "(<image>./</image>)\n"
-            image = Image.open(sample_image_file).convert('RGB')
-            inputs = processor.image_processor([image], do_pad=True, max_slice_nums=MAX_SLICE_NUMS, return_tensors="pt")
-            pixel_values = inputs["pixel_values"][0]
+            image = Image.open(self.image_str).convert('RGB')
 
-        msgs = [{'role': 'user', 'content': '{}{}'.format(self.inserted_image_str, self.input_str)}]
-            prompt = self.system_prompt + self.input_str + "<|im_end|>\n<|im_start|>assistant\n"
-            self.input_ids = self.tokenizer.encode(prompt)
-            self.image_offset = 0
-            self.pixel_values = []
-            return
-        self.pixel_values = load_image(self.image_str).flatten().tolist()
-        msgs = [{'role': 'user', 'content': '(<image>./</image>)\n{}'.format(self.input_str)}]
-        self.input_ids = processor.tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)[0]
-        self.image_offset = 0
-        breakpoint()
+        msgs = [{'role': 'user', 'content': '{}{}'.format(inserted_image_str, self.input_str)}]
+        prompts_lists = self.processor.tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
+
+        inputs = self.processor(
+            prompts_lists,
+            [[image]] if image else None,
+            max_slice_nums=self.MAX_SLICE_NUMS,
+            use_image_id=None,
+            return_tensors="pt",
+            max_length=8192
+        )
+        self.input_ids = inputs.input_ids[0]
+        self.pixel_values = torch.cat(inputs["pixel_values"][0], dim=0).flatten().tolist()
+        self.image_offsets = torch.where(self.input_ids==128244)[0].tolist()
+        self.patch_num = len(inputs["pixel_values"][0])
+
+        self.input_ids = self.input_ids.tolist()
 
     def chat(self):
         """
@@ -107,7 +108,7 @@ class MiniCPMV():
             # Chat
             first_start = time.time()
             token = self.model.forward_first(
-                self.input_ids, self.pixel_values, self.image_offset)
+                self.input_ids, self.pixel_values, self.image_offsets, self.patch_num)
             first_end = time.time()
             tok_num = 1
             # Following tokens
@@ -142,8 +143,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--model_path', type=str,
                         required=True, help='path to the bmodel file')
-    parser.add_argument('-t', '--tokenizer_path', type=str,
-                        default="../support/token_config", help='path to the tokenizer file')
+    parser.add_argument('-p', '--processor_path', type=str,
+                        default="../support/processor_config", help='path to the processor file')
     parser.add_argument('-d', '--devid', type=int,
                         default=0, help='device ID to use')
     args = parser.parse_args()

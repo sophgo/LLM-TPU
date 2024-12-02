@@ -94,7 +94,7 @@ sudo cp files/${model_name_upper}/resampler.py ${model_path}
 sudo cp files/${model_name_upper}/modeling_navit_siglip.py ${model_path}
 
 echo "export onnx..."
-python export_onnx.py --model_path ${model_path} --seq_length ${seq_length}
+python export_onnx.py --model_path ${model_path} --seq_length ${seq_length} --image_file ../python_demo/test0.jpg
 
 echo "compile model..."
 source ${tpu_mlir_path}/envsetup.sh 

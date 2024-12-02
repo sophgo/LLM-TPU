@@ -3,27 +3,30 @@
 ## Export onnx
 
 ```shell
-pip install transformers_stream_generator einops tiktoken accelerate torch==2.0.1+cpu torchvision==0.15.2 transformers==4.40.0
+pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+pip install transformers_stream_generator einops tiktoken accelerate transformers==4.40.0
 cp files/MiniCPM-V-2_6/modeling_qwen2.py /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2/
 cp files/MiniCPM-V-2_6/resampler.py your_torch_model
 cp files/MiniCPM-V-2_6/modeling_navit_siglip.py your_torch_model
 ```
 your_torch_model是你模型的位置
 ```shell
-python3 export_onnx.py --model_path your_torch_model --seq_length 512 --device cpu
+python3 export_onnx.py --model_path your_torch_model --seq_length 1024 --device cpu --image_file ../python_demo/test0.jpg
 ```
+* image_file：image_file为真实图片的路径，导出模型时，输入size会固定为该图片的size。`image_file请输入你实际的图片`
+* 目前不支持多图，不支持图片size可变
 
 ## Compile bmodel
 使用io_alone
 ```
-./compile.sh --mode int4 --name minicpmv26 --seq_length 512
+./compile.sh --mode int4 --name minicpmv26 --seq_length 1024
 ```
 
 ### 下载迁移好的模型
 也可以直接下载编译好的模型，不用自己编译
 ```shell
 pip3 install dfss
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpm_int4_seq512_1dev.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpmv26_bm1684x_int4_seq1024.bmodel
 ```
 
 ### python demo

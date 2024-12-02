@@ -32,7 +32,7 @@ python3 export_onnx.py --model_path your_minicpmv_path
 此处介绍如何将onnx模型编译成bmodel。也可以省去编译模型这一步，直接下载编译好的模型：
 
 ``` shell
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpmv26_bm1684x_int4.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpmv26_bm1684x_int4_seq1024.bmodel
 ```
 
 #### 1. 下载docker，启动容器
@@ -61,12 +61,9 @@ source ./envsetup.sh  #激活环境变量
 
 #### 3. 编译模型生成bmodel
 
-对ONNX模型进行编译，生成模型`minicpmv26_bm1684x_int4.bmodel`
+对ONNX模型进行编译，生成模型
 
-``` shell
-cd compile
-./compile.sh
-```
+具体请参考python_demo/README.md
 
 ## 编译与运行程序
 

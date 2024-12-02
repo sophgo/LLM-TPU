@@ -286,7 +286,6 @@ def test_net_with_mask():
     tgt_sizes = inputs["tgt_sizes"][0].to(dtype).to(device)
     vit_infer = VisionTransformer(pixel_values, tgt_sizes)
     vit_embeds = vit_infer(pixel_values)  # [1, 64, 3584]
-    vit_token_length = vit_embeds.shape[1]
 
     msgs = [{'role': 'user', 'content': '(<image>./</image>)\n请详细描述一下图片内容'}]
     prompts_lists = processor.tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
@@ -295,11 +294,11 @@ def test_net_with_mask():
         [[image]], 
         max_slice_nums=MAX_SLICE_NUMS,
         use_image_id=None,
-        return_tensors="pt", 
+        return_tensors="pt",
         max_length=8192
     ).to(device)
     ids = inputs.input_ids[0]
-    first_offset = int(torch.where(ids==128244)[0][0])
+    image_offsets = torch.where(ids==128244)[0].tolist()
     ids = ids.tolist()
 
     ID_IM_END = tokenizer.convert_tokens_to_ids("<|im_end|>")
@@ -308,8 +307,10 @@ def test_net_with_mask():
     input_ids = torch.tensor(ids).view(SEQ_LENGTH).to(device)
     out = embed(input_ids).view(1, SEQ_LENGTH, HIDDEN_SIZE)  # [1, 512, 3584]
 
-    for i in range(vit_embeds.shape[0]):
-        out[:, first_offset+i*vit_token_length:first_offset+(i+1)*vit_token_length, :] = vit_embeds[i]
+    patch_num = pixel_values.shape[0]
+    patch_size = len(image_offsets) // patch_num
+    for i in range(patch_num):
+        out[:, image_offsets[i*patch_size]:image_offsets[i*patch_size]+patch_size, :] = vit_embeds[i]
 
     position_ids = list(range(token_len)) + (SEQ_LENGTH - token_len) * [0]
     position_ids = torch.tensor([position_ids]).to(device)
