@@ -9,24 +9,117 @@ import chat
 import json
 import os
 import torch
+from typing import Optional, Tuple
 
 # Preprocess the images
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 
+def get_rope_index(
+        config,
+        input_ids: torch.LongTensor,
+        image_grid_thw: Optional[torch.LongTensor] = None,
+        video_grid_thw: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        spatial_merge_size = config.vision_config.spatial_merge_size
+        image_token_id = config.image_token_id
+        video_token_id = config.video_token_id
+        vision_start_token_id = config.vision_start_token_id
+        mrope_position_deltas = []
+        if image_grid_thw is not None or video_grid_thw is not None:
+            total_input_ids = input_ids
+            position_ids = torch.ones(
+                3, input_ids.shape[0], input_ids.shape[1], dtype=torch.long, device=input_ids.device
+            )
+            image_index, video_index = 0, 0
+            for i, input_ids in enumerate(total_input_ids):
+                if attention_mask is not None:
+                    input_ids = input_ids[attention_mask[i] == 1]
+                image_nums, video_nums = 0, 0
+                vision_start_indices = torch.argwhere(input_ids == vision_start_token_id).squeeze(1)
+                vision_tokens = input_ids[vision_start_indices + 1]
+                image_nums = (vision_tokens == image_token_id).sum()
+                video_nums = (vision_tokens == video_token_id).sum()
+                input_tokens = input_ids.tolist()
+                llm_pos_ids_list: list = []
+                st = 0
+                remain_images, remain_videos = image_nums, video_nums
+                for _ in range(image_nums + video_nums):
+                    if image_token_id in input_tokens and remain_images > 0:
+                        ed_image = input_tokens.index(image_token_id, st)
+                    else:
+                        ed_image = len(input_tokens) + 1
+                    if video_token_id in input_tokens and remain_videos > 0:
+                        ed_video = input_tokens.index(video_token_id, st)
+                    else:
+                        ed_video = len(input_tokens) + 1
+                    if ed_image < ed_video:
+                        t, h, w = (
+                            image_grid_thw[image_index][0],
+                            image_grid_thw[image_index][1],
+                            image_grid_thw[image_index][2],
+                        )
+                        image_index += 1
+                        remain_images -= 1
+                        ed = ed_image
+                    else:
+                        t, h, w = (
+                            video_grid_thw[video_index][0],
+                            video_grid_thw[video_index][1],
+                            video_grid_thw[video_index][2],
+                        )
+                        video_index += 1
+                        remain_videos -= 1
+                        ed = ed_video
+                    llm_grid_t, llm_grid_h, llm_grid_w = (
+                        t.item(),
+                        h.item() // spatial_merge_size,
+                        w.item() // spatial_merge_size,
+                    )
+                    text_len = ed - st
 
-def build_transform(input_size):
-    MEAN, STD = IMAGENET_MEAN, IMAGENET_STD
-    transform = T.Compose([
-        T.Lambda(lambda img: img.convert('RGB') if img.mode != 'RGB' else img),
-        T.Resize((input_size, input_size),
-                 interpolation=InterpolationMode.BICUBIC),
-        T.ToTensor(),
-        T.Normalize(mean=MEAN, std=STD)
-    ])
-    return transform
+                    st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
+                    llm_pos_ids_list.append(torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
 
-def get_position_ids(processor, config, image_path="./image1.jpg", text="Describe this picture and tell a story about this animal."):
+                    t_index = torch.arange(llm_grid_t).view(-1, 1).expand(-1, llm_grid_h * llm_grid_w).flatten()
+                    h_index = torch.arange(llm_grid_h).view(1, -1, 1).expand(llm_grid_t, -1, llm_grid_w).flatten()
+                    w_index = torch.arange(llm_grid_w).view(1, 1, -1).expand(llm_grid_t, llm_grid_h, -1).flatten()
+                    llm_pos_ids_list.append(torch.stack([t_index, h_index, w_index]) + text_len + st_idx)
+                    st = ed + llm_grid_t * llm_grid_h * llm_grid_w
+
+                if st < len(input_tokens):
+                    st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
+                    text_len = len(input_tokens) - st
+                    llm_pos_ids_list.append(torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
+
+                llm_positions = torch.cat(llm_pos_ids_list, dim=1).reshape(3, -1)
+                position_ids[..., i, attention_mask[i] == 1] = llm_positions.to(position_ids.device)
+                mrope_position_deltas.append(llm_positions.max() + 1 - len(total_input_ids[i]))
+            mrope_position_deltas = torch.tensor(mrope_position_deltas, device=input_ids.device).unsqueeze(1)
+            return position_ids, mrope_position_deltas
+        else:
+            if attention_mask is not None:
+                position_ids = attention_mask.long().cumsum(-1) - 1
+                position_ids.masked_fill_(attention_mask == 0, 1)
+                position_ids = position_ids.unsqueeze(0).expand(3, -1, -1).to(input_ids.device)
+                max_position_ids = position_ids.max(0, keepdim=False)[0].max(-1, keepdim=True)[0]
+                mrope_position_deltas = max_position_ids + 1 - attention_mask.shape[-1]
+            else:
+                position_ids = (
+                    torch.arange(input_ids.shape[1], device=input_ids.device)
+                    .view(1, 1, -1)
+                    .expand(3, input_ids.shape[0], -1)
+                )
+                mrope_position_deltas = torch.zeros(
+                    [input_ids.shape[0], 1],
+                    device=input_ids.device,
+                    dtype=input_ids.dtype,
+                )
+
+            return position_ids, mrope_position_deltas
+
+def get_position_ids(processor, config, image_path, text="Describe this image and tell a story."):
     messages = [
         {
             "role": "user",
@@ -41,7 +134,6 @@ def get_position_ids(processor, config, image_path="./image1.jpg", text="Describ
             ],
         }
     ]
-
     text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     
     image_inputs, video_inputs = process_vision_info(messages)
@@ -53,13 +145,15 @@ def get_position_ids(processor, config, image_path="./image1.jpg", text="Describ
         return_tensors="pt",
     )
 
-    SEQ_LENGTH = config['max_position_embeddings']
+    # SEQ_LENGTH = config['max_position_embeddings']
+    SEQ_LENGTH = 2048
     # SEQ_LENGTH = self.SEQLEN
     if SEQ_LENGTH <= inputs.input_ids.shape[-1]:
         raise ValueError(
                 f"The input_length must be shorter than model's seq_length (got `input_length`: {inputs.input_ids.shape[-1]}"
                 f" and `seq_length`: {SEQ_LENGTH})."
             )
+    breakpoint()
     input_ids = inputs.input_ids
     pixel_values = inputs.pixel_values
     image_grid_thw = inputs.image_grid_thw
@@ -93,8 +187,12 @@ def get_position_ids(processor, config, image_path="./image1.jpg", text="Describ
     # )
 
     # 创建模型实例
-    model = Qwen2VLForConditionalGeneration(loaded_config)
-    position_ids, _ = Qwen2VLForConditionalGeneration(loaded_config).get_rope_index(
+    # model = Qwen2VLForConditionalGeneration(loaded_config)
+    # position_ids, _ = Qwen2VLForConditionalGeneration(loaded_config).get_rope_index(
+    #     input_ids_prefill, image_grid_thw, None, attention_mask_prefill
+    # )
+    breakpoint()
+    position_ids, _ = get_rope_index(loaded_config,
         input_ids_prefill, image_grid_thw, None, attention_mask_prefill
     )
 
@@ -105,9 +203,9 @@ class Qwen2VL():
     def __init__(self, args):
         # devid
         self.device = args.devid
-        self.processor = AutoProcessor.from_pretrained(args.processor,
+        self.processor = AutoProcessor.from_pretrained(args.processor_path,
                                                        trust_remote_code=True)
-        self.tokenizer = AutoTokenizer.from_pretrained(args.tokenizer,
+        self.tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path,
                                                        trust_remote_code=True)
         with open(args.config, 'r') as f:
             self.config = json.load(f)
@@ -116,7 +214,7 @@ class Qwen2VL():
         self.model = chat.Qwen2VL()
         self.model.init(self.device, args.model_path)
         self.model.generation_mode = args.generation_mode
-        self.POSITION_IDS, _, _ = get_position_ids(processor=self.processor, config=self.config)
+        # self.POSITION_IDS, _, _ = get_position_ids(processor=self.processor, config=self.config)
         self.SEQLEN = self.model.SEQLEN
         # self.ID_EOS = self.tokenizer.eos_token_id
         self.ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
@@ -165,10 +263,10 @@ class Qwen2VL():
 
             # self.encode()
             # self.POSITION_IDS, inputs, image_offset = get_position_ids(processor=self.processor, config=self.config, image_path=self.image_str, text=self.input_str)
-            self.POSITION_IDS, inputs, image_offset = get_position_ids(processor=self.processor, config=self.config)
+            self.POSITION_IDS, inputs, image_offset = get_position_ids(processor=self.processor, config=self.config, image_path="image1.jpg")
             # messages = [
             #     {
-            #         "role": "user",
+            #         "role": "user",cd 
             #         "content": [
             #             {
             #                 "type": "image",
@@ -195,10 +293,10 @@ class Qwen2VL():
             #     input_ids_prefill, image_grid_thw, None, attention_mask_prefill
             # )
             position_ids = self.POSITION_IDS
-            breakpoint()
             # Chat
             first_start = time.time()
-            token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), position_ids.squeeze(1).tolist(), inputs.pixel_values.flatten().tolist(),
+            breakpoint()
+            token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), position_ids.flatten().tolist(), inputs.pixel_values.flatten().tolist(),
                                              inputs.image_grid_thw.squeeze(0).tolist(), image_offset)
             first_end = time.time()
             tok_num = 1

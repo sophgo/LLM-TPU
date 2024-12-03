@@ -31,7 +31,7 @@ class Qwen2VL {
 public:
   void init(int devid, std::string model_path);
   void deinit();
-  int forward_first(std::vector<int> &tokens, std::vector<std::vector<int>> &position_id,
+  int forward_first(std::vector<int> &tokens, std::vector<int> &position_id,
                     std::vector<float> &pixel_values, std::vector<int> &image_grid_thw,
                     int img_offset);
   int forward_next();
@@ -189,19 +189,21 @@ int Qwen2VL::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem
   return token;
 }
 
-int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<std::vector<int>> &position_ids,
+int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_ids,
                              std::vector<float> &pixel_values, std::vector<int> &image_grid_thw,
                              int img_offset) {
   std::vector<int> input_ids(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, 0);
   std::copy(tokens.begin(), tokens.end(), input_ids.data());
-  POSITION_IDS.resize(position_ids[0].size(), std::vector<int>(3));
+  POSITION_IDS.resize(position_ids.size()/3, std::vector<int>(3));
   MAX_POS = 0;
+  std::vector<int> p_ids(SEQLEN*3, 0);
+
   for (int i = 0; i < (int)POSITION_IDS.size(); ++i) {
     for (int j = 0; j < 3; ++j) {
-      if (MAX_POS < position_ids[j][i])
-        MAX_POS = position_ids[j][i];
-      POSITION_IDS[i][j] = position_ids[j][i];
+      if (MAX_POS < position_ids[j * (int)POSITION_IDS.size() + i])
+        MAX_POS = position_ids[j * (int)POSITION_IDS.size() + i];
+      POSITION_IDS[i][j] = position_ids[j * (int)POSITION_IDS.size() + i];
     }
   }
 
@@ -223,6 +225,7 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<std::vector<int
   bm_memcpy_s2d(bm_handle, in_mem, (void *)input_ids.data());
   net_launch(net_embed); // prefil embedding
 
+  auto start = std::chrono::high_resolution_clock::now();
   if (pixel_values.size() * sizeof(float) == IMAGE_BYTES && img_offset > 0) {
     d2d(dev_buffer, out_mem);
     out_mem = dev_buffer;
@@ -237,7 +240,6 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<std::vector<int
     // concatenante texting embedding and image embedding
     int dst_offset = img_offset * HIDDEN_SIZE * 2;
     int vit_size = bm_mem_get_device_size(vit_out_mem);
-    auto start = std::chrono::high_resolution_clock::now();
   int cnt = bm_mem_get_device_size(vit_out_mem) / 4;
   auto buffer = std::make_unique<float[]>(cnt);
   bm_memcpy_d2s(bm_handle, buffer.get(), vit_out_mem);
@@ -249,12 +251,13 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<std::vector<int
   bm_status_t status = bm_malloc_device_byte(bm_handle, &bf16_buffer, buffer_size/2);
   assert(BM_SUCCESS == status);
   bm_memcpy_s2d(bm_handle, bf16_buffer, (void *)uint16_value.data());
-  auto end = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double> duration = end - start;
-  std::cout << "vit_launch execution time: " << duration.count() << " seconds" << std::endl;
+
     bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, bf16_buffer, 0,
                        vit_size/2);
   }
+  auto end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> duration = end - start;
+  std::cout << "vit_launch execution time: " << duration.count() << " seconds" << std::endl;
 
   // auto start = std::chrono::high_resolution_clock::now();
   // auto &vit_in_mem_pixels = net_vit->stages[0].input_mems[0];
@@ -290,13 +293,14 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<std::vector<int
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
-    // auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
+    auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
     // d2d(in0_mem, block_out_mem);
     d2d(in0_mem, out_mem);
     if (idx == 0) {
       // only first time need copy
-      // bm_memcpy_s2d(bm_handle, in1_mem, (void *)flat_data.data());
-      bm_memcpy_s2d(bm_handle, in1_mem, (void *)attention_mask.data());
+      bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_ids.data());
+      // bm_memcpy_s2d(bm_handle, in1_mem, (void *)POSITION_IDS.data());
+      bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     }
     net_launch(net_blocks[idx]);
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
