@@ -10,8 +10,6 @@ your_torch_model是你模型的位置
 ```shell
 python3 export_onnx.py --model_path your_torch_model --seq_length 8192 --device cpu
 ```
-* 风险点：尤其注意，如果使用--device cpu在cpu上导出，使用的精度是float32，与训练精度bfloat16不一致，可能导致精度问题
-* 如果有cuda，建议使用cuda导出
 
 ## Compile bmodel
 使用io_alone
@@ -23,6 +21,15 @@ python3 export_onnx.py --model_path your_torch_model --seq_length 8192 --device 
 ```
 ./compile.sh --mode int4 --name qwen2-1.5b --addr_mode io_alone --seq_length 8192
 ```
+
+迁移Qwen2-7B，单芯
+``` shell
+./run_compile.sh --model_name qwen2-7b --seq_length 4096
+```
+* 如果没有填写model_path，脚本会从modelscope下载模型
+* 如果没有填写tpu_mlir_path，脚本会通过dfss下载对应的tpu_mlir压缩包并解压
+* 如果没有填写num_device，默认为单芯
+* 如果没有填写mode，默认为int4，W4BF16量化
 
 ### 下载迁移好的模型
 也可以直接下载编译好的模型，不用自己编译

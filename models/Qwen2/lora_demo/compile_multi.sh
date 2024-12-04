@@ -189,9 +189,14 @@ for index in "${!prefill_lengths[@]}"; do
 
     # Process each block in parallel
     for ((i=0; i<$num_layers; i++)); do
-        process_block $i &
+        # Check if block_$i.bmodel and block_cache_$i.bmodel exist
+        if [ -f "block_$i.bmodel" ] && [ -f "block_cache_$i.bmodel" ]; then
+            echo "block_$i.bmodel and block_cache_$i.bmodel already exist. Skipping..."
+        else
+            process_block $i &
+            sleep 45
+        fi
         models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
-        sleep 45
     done
 
     wait  # Wait for all background processes to finish
