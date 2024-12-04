@@ -71,7 +71,8 @@ else
 fi
 
 echo "Install the required Python lib..."
-pip install transformers_stream_generator einops tiktoken accelerate torch==2.0.1+cpu torchvision==0.15.2 transformers==4.41.2
+pip3 install torch==2.0.1+cpu torchvision==0.15.2 -f https://download.pytorch.org/whl/cpu/torch_stable.html
+pip install transformers_stream_generator einops tiktoken accelerate transformers==4.41.2
 
 # 根据 model_path 的值决定是否下载模型
 if [[ -z "$model_path" ]]; then
