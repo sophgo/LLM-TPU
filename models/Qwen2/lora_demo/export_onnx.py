@@ -328,23 +328,25 @@ def convert_lora_to_bit(lora_model, lora_config, args):
         lora_B_weight_list = []
 
         for name, extracted_layer in extracted_layers.items():
-            lora_weight = extracted_layer.weight.detach().cpu().numpy().transpose(0,1)
+            lora_weight = extracted_layer.weight.detach().cpu().numpy().transpose(1,0)
             left_dim, right_dim = lora_weight.shape
 
-            if 'lora_A' in name:
-                new_lora_weight = np.zeros((args.max_rank_num, right_dim), dtype=np.float32)
-                new_lora_weight[:left_dim, :] = lora_weight
-                lora_A_weight_list.append(new_lora_weight)
-            elif 'lora_B' in name:
+            if 'lora_A' in name and left_dim > right_dim:
                 new_lora_weight = np.zeros((left_dim, args.max_rank_num), dtype=np.float32)
                 new_lora_weight[:, :right_dim] = lora_weight
+                lora_A_weight_list.append(new_lora_weight)
+            elif 'lora_B' in name and left_dim < right_dim:
+                new_lora_weight = np.zeros((args.max_rank_num, right_dim), dtype=np.float32)
+                new_lora_weight[:left_dim, :] = lora_weight
                 lora_B_weight_list.append(new_lora_weight)
+            else:
+                raise NotImplementedError
 
         # 由于在final.mlir中，weight的权重排列顺序是[lora_B, lora_A, lora_B, lora_A]的形式
         # 所以需要把B排列在前面
         for a, b in zip(lora_A_weight_list, lora_B_weight_list):
-            lora_weight_list.append(b)
             lora_weight_list.append(a)
+            lora_weight_list.append(b)
 
     # Flatten the weights and convert to uint32
     lora_weights_fp32 = np.concatenate([w.flatten() for w in lora_weight_list])
@@ -392,17 +394,19 @@ def convert_lora_embedding_to_bit(lora_model, lora_config, args):
     lora_B_weight_list = []
 
     for name, extracted_layer in extracted_layers.items():
-        lora_weight = extracted_layer.detach().cpu().numpy().transpose(0,1)
+        lora_weight = extracted_layer.detach().cpu().numpy().transpose(1,0)
         left_dim, right_dim = lora_weight.shape
 
-        if 'lora_embedding_A' in name:
-            new_lora_weight = np.zeros((args.max_rank_num, right_dim), dtype=np.float32)
-            new_lora_weight[:left_dim, :] = lora_weight
-            lora_A_weight_list.append(new_lora_weight)
-        elif 'lora_embedding_B' in name:
-            new_lora_weight = np.zeros((left_dim, args.max_rank_num), dtype=np.float32)
+        if 'lora_embedding_A' in name and left_dim > right_dim:
+            new_lora_weight = np.zeros((left_dim, args.max_embedding_rank_num), dtype=np.float32)
             new_lora_weight[:, :right_dim] = lora_weight
+            lora_A_weight_list.append(new_lora_weight)
+        elif 'lora_embedding_B' in name and left_dim < right_dim:
+            new_lora_weight = np.zeros((args.max_embedding_rank_num, right_dim), dtype=np.float32)
+            new_lora_weight[:left_dim, :] = lora_weight
             lora_B_weight_list.append(new_lora_weight)
+        else:
+            raise NotImplementedError
 
     # 由于在final.mlir中，weight的权重排列顺序是[lora_A, lora_B]的形式
     # 所以需要把B排列在前面
