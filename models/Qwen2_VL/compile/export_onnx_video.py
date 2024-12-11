@@ -418,14 +418,22 @@ def test_net_with_mask():
         pos_ids.append(torch.stack([hpos_ids, wpos_ids], dim=-1).repeat(t, 1))
     pos_ids = torch.cat(pos_ids, dim=0)
 
-    image_embeds = vit_infer(pixel_values, pos_ids, attention_mask_vit)  # [150, 1536]
-    breakpoint()
+    # prefill vit
+    pixel_values_prefill = torch.zeros([2000, 1176]).to(dtype=torch.float32, device=device)
+    pixel_values_prefill[:pixel_values.shape[0],:] = pixel_values
+    pos_ids_prefill = torch.zeros([2000, 2]).to(dtype=torch.int32, device=device)
+    pos_ids_prefill[:pos_ids.shape[0],:] = pos_ids
+    attention_mask_vit_prefill = torch.zeros([1, 2000, 2000], device=device, dtype=torch.bool)
+    attention_mask_vit_prefill[0,:pos_ids.shape[0],:pos_ids.shape[0]] = attention_mask_vit
+
+    image_embeds = vit_infer(pixel_values_prefill, pos_ids_prefill, attention_mask_vit_prefill)  # [150, 1536]
     inputs_embeds = torch.zeros((1, SEQ_LENGTH, HIDDEN_SIZE)).to(device)
 
     inputs_embeds = embed(input_ids_prefill)
     inputs_embeds = inputs_embeds.view(1, SEQ_LENGTH, HIDDEN_SIZE)
     image_mask = (input_ids_prefill == config.video_token_id).unsqueeze(-1).expand_as(inputs_embeds)
     image_embeds = image_embeds[0].to(device, dtype)
+    breakpoint()
     inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
 
     ID_IM_END = tokenizer.convert_tokens_to_ids("<|im_end|>")
@@ -527,5 +535,5 @@ if __name__ == "__main__":
     test_net_with_mask()
 
     # convert
-    convert()
+    # convert()
 

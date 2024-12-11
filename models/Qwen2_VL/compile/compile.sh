@@ -127,30 +127,6 @@ models=$models' '$outdir'/embedding.bmodel '$outdir'/embedding_cache.bmodel '
 rm -f *.npz
 popd
 
-echo $models
-
-# # Compile VIT model
-# outdir=${folder}/$mode"_1dev"/vit
-# mkdir -p $outdir
-# pushd $outdir
-
-# model_transform.py \
-#   --model_name qwen2_VL_vit \
-#   --model_def /workspace/LLM-TPU/models/Qwen2-VL/compile/tmp/onnx/vision_transformer.onnx \
-#   --input_shapes [[600,1176],[1,3]] \
-#   --output_names xx \
-#   --input_types "int32","int32" \
-#   --mlir qwen2_VL_vit.mlir 
-
-# model_deploy \
-#   --mlir qwen2_VL_vit.mlir \
-#   --quantize BF16 \
-#   --quant_output \
-#   --chip bm1684x \
-#   --model qwen2_VL_vit_1684x_f16.bmodel
-
-# model_tool --combine $models qwen2_VL_vit_1684x_f16.bmodel -o $out_model
-
 outdir=${folder}/$mode"_1dev"/lm_head
 mkdir -p $outdir
 pushd $outdir
@@ -243,6 +219,27 @@ for ((i=0; i<$num_layers; i++)); do
 
 done
 popd
+# echo $models
+
+# # Compile VIT model
+# outdir=${folder}/$mode"_1dev"/vit
+# mkdir -p $outdir
+# pushd $outdir
+# model_transform.py \
+#   --model_name vit \
+#   --model_def ../../onnx/vit/vision_transformer.onnx \
+#   --input_shapes [[1440,1176],[1,3],[1]] \
+#   --input_types "float32,int32,int32" \
+#   --mlir vit.mlir 
+
+# model_deploy.py \
+#   --mlir vit.mlir \
+#   --quantize F16 \
+#   --chip bm1684x \
+#   --model vit.bmodel
+
+# popd
+
 echo $models
 
 # Compile VIT model
@@ -252,8 +249,8 @@ pushd $outdir
 model_transform.py \
   --model_name vit \
   --model_def ../../onnx/vit/vision_transformer.onnx \
-  --input_shapes [[600,1176]] \
-  --input_types "float32" \
+  --input_shapes [[2000,1176],[2000,2],[1,2000,2000]] \
+  --input_types "float32,int32,int32" \
   --mlir vit.mlir 
 
 model_deploy.py \
