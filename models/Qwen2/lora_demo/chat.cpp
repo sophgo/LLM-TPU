@@ -706,8 +706,14 @@ Qwen::load_and_infer_embedding(const std::vector<int> &tokens) {
   for (int i = 0; i < std::min(size, total_length); i++) {
     long long start_position = (long long)tokens[i] * embedding_bytes;
     file.seekg(start_position, std::ios::beg);
+    if (file.fail()) {
+      throw std::runtime_error("File size is not correct\n");
+    }
     file.read(reinterpret_cast<char *>(&buffer[i * embedding_dim]),
               embedding_bytes);
+    if (file.fail()) {
+      throw std::runtime_error("File read failed\n");
+    }
   }
   return buffer;
 }
