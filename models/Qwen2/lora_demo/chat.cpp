@@ -566,12 +566,11 @@ void Qwen::update_bmodel_weight(
     p_bmrt, model_path.c_str(), lora_path.c_str(), net_idx.c_str(), mem_idx.c_str(),
     const_cast<const char**>(weight_idx_char), (int)weight_idx.size(), decrypt_func_
   );
-  ASSERT(true == ret, "load lora binary weight error");
-
   for (size_t i = 0; i < weight_idx.size(); ++i) {
     delete[] weight_idx_char[i];
   }
   delete[] weight_idx_char;
+  ASSERT(true == ret, "load lora binary weight error");
 }
 
 
