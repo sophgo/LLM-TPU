@@ -16,6 +16,7 @@ from torch import nn
 from .config_molmo import MolmoConfig
 from torch.nn import functional as F
 
+
 log = logging.getLogger(__name__)
 
 
@@ -132,8 +133,8 @@ class RotaryEmbedding(nn.Module):
         return pos_sin, pos_cos
 
     def rotate_half(self, x: torch.Tensor) -> torch.Tensor:
-        B, nh, T, hs = x.size()
-        x = x.view(B, nh, T, 2, hs // 2)
+        B, T, nh, hs = x.size()
+        x = x.view(B, T, nh, 2, hs // 2)
         x1, x2 = x.unbind(dim=-2)
         return torch.cat((-x2, x1), dim=-1)
 
@@ -163,7 +164,7 @@ class RotaryEmbedding(nn.Module):
 
         with torch.autocast(q.device.type, enabled=False):
             batch_size = q_.shape[0]
-            query_len, key_len = q_.shape[-2], k_.shape[-2]  # could be different if layer_past not None
+            query_len, key_len = q_.shape[1], k_.shape[1]  # could be different if layer_past not None
             if position_ids is not None:
                 freqs_cis_len = (self.config.max_position_embeddings or self.config.max_sequence_length)
             else:
@@ -174,57 +175,19 @@ class RotaryEmbedding(nn.Module):
             if position_ids is not None:
                 assert query_len == key_len, "Query and key lengths must be equal when using position IDs."
                 pos_sin = pos_sin[0, 0][position_ids].view(
-                    (batch_size, 1, key_len, pos_sin.shape[-1])
+                    (batch_size, key_len, 1, pos_sin.shape[-1])
                 )
                 pos_cos = pos_cos[0, 0][position_ids].view(
-                    (batch_size, 1, key_len, pos_cos.shape[-1])
+                    (batch_size, key_len, 1, pos_cos.shape[-1])
                 )
             q_ = self.apply_rotary_pos_emb(
-                pos_sin[:, :, key_len - query_len : key_len, :],
-                pos_cos[:, :, key_len - query_len : key_len, :],
+                pos_sin[:, key_len - query_len : key_len, :, :],
+                pos_cos[:, key_len - query_len : key_len, :, :],
                 q_,
             )
             k_ = self.apply_rotary_pos_emb(pos_sin, pos_cos, k_)
         return q_.type_as(q), k_.type_as(k)
 
-    def forward_with_const(
-        self,
-        q: torch.Tensor,
-        k: torch.Tensor,
-        position_ids: Optional[torch.Tensor] = None,
-        pos_sin: Optional[torch.Tensor] = None,
-        pos_cos: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        if self.config.rope_full_precision:
-            q_, k_ = q.float(), k.float()
-        else:
-            q_, k_ = q, k
-
-        with torch.autocast(q.device.type, enabled=False):
-            batch_size = q_.shape[0]
-            query_len, key_len = q_.shape[-2], k_.shape[-2]  # could be different if layer_past not None
-            if position_ids is not None:
-                freqs_cis_len = (self.config.max_position_embeddings or self.config.max_sequence_length)
-            else:
-                freqs_cis_len = key_len
-            # pos_sin, pos_cos = self.get_rotary_embedding(freqs_cis_len, q_.device)
-            pos_sin = pos_sin.type_as(q_)
-            pos_cos = pos_cos.type_as(q_)
-            if position_ids is not None:
-                assert query_len == key_len, "Query and key lengths must be equal when using position IDs."
-                pos_sin = pos_sin[0, 0][position_ids].view(
-                    (batch_size, 1, key_len, pos_sin.shape[-1])
-                )
-                pos_cos = pos_cos[0, 0][position_ids].view(
-                    (batch_size, 1, key_len, pos_cos.shape[-1])
-                )
-            q_ = self.apply_rotary_pos_emb(
-                pos_sin[:, :, key_len - query_len : key_len, :],
-                pos_cos[:, :, key_len - query_len : key_len, :],
-                q_,
-            )
-            k_ = self.apply_rotary_pos_emb(pos_sin, pos_cos, k_)
-        return q_.type_as(q), k_.type_as(k)
 
 class MolmoBlock(nn.Module):
     """
@@ -353,14 +316,21 @@ class MolmoBlock(nn.Module):
             return r.transpose(1, 2)
         else:
             # torch's sdpa doesn't support GQA, so we're doing this
-            assert k.size(1) == v.size(1)
-            num_kv_heads = k.size(1)
-            num_q_heads = q.size(1)
+            assert k.size(2) == v.size(2)
+            num_kv_heads = k.size(2)
+            num_q_heads = q.size(2)
             if num_q_heads != num_kv_heads:
                 assert num_q_heads % num_kv_heads == 0
-                k = k.repeat_interleave(num_q_heads // num_kv_heads, dim=1, output_size=num_q_heads)
-                v = v.repeat_interleave(num_q_heads // num_kv_heads, dim=1, output_size=num_q_heads)
+                k = k.repeat_interleave(num_q_heads // num_kv_heads, dim=2, output_size=num_q_heads)
+                v = v.repeat_interleave(num_q_heads // num_kv_heads, dim=2, output_size=num_q_heads)
 
+            scale = 1 / math.sqrt(q.size(-1))
+            attn_weight = q.transpose(1,2) @ k.permute(0,2,3,1) * scale
+            attn_weight += attn_mask
+            attn_weight = torch.softmax(attn_weight, dim=-1)
+            att = attn_weight @ v.transpose(1,2)
+            return att
+            '''
             return F.scaled_dot_product_attention(
                 q,
                 k,
@@ -369,6 +339,7 @@ class MolmoBlock(nn.Module):
                 dropout_p=dropout_p,
                 is_causal=is_causal,
             )
+            '''
 
     def attention(
         self,
@@ -379,7 +350,6 @@ class MolmoBlock(nn.Module):
         position_ids: Optional[torch.Tensor] = None,
         layer_past: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
         use_cache: bool = False,
-        **kwargs
     ) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
         B, T, C = q.size()  # batch size, sequence length, d_model
         dtype = k.dtype
@@ -390,30 +360,32 @@ class MolmoBlock(nn.Module):
             k = self.k_norm(k).to(dtype=dtype)
 
         # Move head forward to be next to the batch dim.
-        # shape: (B, nh, T, hs)
-        q = q.view(B, T, self.config.n_heads, C // self.config.n_heads).transpose(1, 2)
-        # shape: (B, n_kv_h, T, hs)
-        k = k.view(B, T, self.config.effective_n_kv_heads, C // self.config.n_heads).transpose(1, 2)
-        # shape: (B, n_kv_h, T, hs)
-        v = v.view(B, T, self.config.effective_n_kv_heads, C // self.config.n_heads).transpose(1, 2)
+        # shape: (B, T, nh, hs)
+        q = q.view(B, T, self.config.n_heads, C // self.config.n_heads)
+        # shape: (B, T, n_kv_h, hs)
+        k = k.view(B, T, self.config.effective_n_kv_heads, C // self.config.n_heads)
+        # shape: (B, T, n_kv_h, hs)
+        v = v.view(B, T, self.config.effective_n_kv_heads, C // self.config.n_heads)
 
         if self.config.use_position_ids and self.config.rope:
             # Apply rotary embeddings
-            # q, k = self.rotary_emb(q, k, position_ids=position_ids)
-            q, k = self.rotary_emb.forward_with_const(q, k, position_ids=position_ids, pos_sin=pos_sin, pos_cos=pos_cos)
+            q, k = self.rotary_emb(q, k, position_ids=position_ids)
 
+        past_kv = (k, v)
         if layer_past is not None:
             past_key, past_value = layer_past
-            k = torch.cat((past_key.to(k.device), k), dim=-2)
-            v = torch.cat((past_value.to(v.device), v), dim=-2)
+            k = torch.cat((past_key.to(k.device), k), dim=1)
+            v = torch.cat((past_value.to(v.device), v), dim=1)
 
-        present = (k, v) if use_cache else None
-        query_len, key_len = q.shape[-2], k.shape[-2]  # could be different if layer_past not None
-
+        # present = (k, v) if use_cache else None
+        query_len, key_len = q.shape[1], k.shape[1]  # could be different if layer_past not None
+        
+        '''
         if not self.config.use_position_ids and self.config.rope:
             # Apply rotary embeddings
             q, k = self.rotary_emb(q, k)
 
+        
         if attention_bias is not None:
             # Resize and cast attention bias.
             # The current dtype of the attention bias might not match the dtype that the SDP attn function will
@@ -423,6 +395,7 @@ class MolmoBlock(nn.Module):
             attention_bias = self._cast_attn_bias(
                 attention_bias[:, :, key_len - query_len : key_len, :key_len], dtype
             )
+        '''
 
         # Get the attention scores.
         # shape: (B, nh, T, hs)
@@ -440,7 +413,7 @@ class MolmoBlock(nn.Module):
         att = att.transpose(1, 2).contiguous().view(B, T, C)
 
         # Apply output projection.
-        return self.attn_out(att), present
+        return self.attn_out(att), past_kv
 
     def forward(
         self,
@@ -449,7 +422,6 @@ class MolmoBlock(nn.Module):
         position_ids: Optional[torch.Tensor] = None,
         layer_past: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
         use_cache: bool = False,
-        **kwargs
     ) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
         raise NotImplementedError
 
@@ -506,7 +478,6 @@ class MolmoSequentialBlock(MolmoBlock):
         position_ids: Optional[torch.Tensor] = None,
         layer_past: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
         use_cache: bool = False,
-        **kwargs
     ) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
         # Get query, key, value projections.
         # shape:
@@ -536,10 +507,7 @@ class MolmoSequentialBlock(MolmoBlock):
                 self.attention, q, k, v, attention_bias, position_ids=position_ids, layer_past=layer_past, use_cache=use_cache
             )
         else:
-            att, cache = self.attention(
-                q, k, v, attention_bias, 
-                position_ids=position_ids, layer_past=layer_past, use_cache=use_cache, pos_sin=pos_sin, pos_cos=pos_cos
-            )
+            att, cache = self.attention(q, k, v, attention_bias, position_ids=position_ids, layer_past=layer_past, use_cache=use_cache)
 
         if self.config.norm_after:
             if self._activation_checkpoint_fn is not None:
@@ -769,20 +737,6 @@ def _expand_token(token, batch_size: int):
     return token.view(1, 1, -1).expand(batch_size, -1, -1)
 
 
-class LayerNormFp32(nn.LayerNorm):
-    """Subclass torch's LayerNorm to handle fp16 (by casting to float32 and back).
-    Derived from https://github.com/mlfoundations/open_clip/blob/main/src/open_clip/transformer.py.
-    """
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # orig_type = x.dtype
-        # x = F.layer_norm(x.to(torch.float32), self.normalized_shape, self.weight, self.bias, self.eps)
-        orig_type = x.dtype
-        x = F.layer_norm(x.to(torch.float32), self.normalized_shape, self.weight.to(torch.float32),
-                         self.bias.to(torch.float32), self.eps)
-        return x.to(orig_type)
-
-
 class ViTMLP(nn.Module):
     def __init__(self, config: FullMolmoConfig):
         super().__init__()
@@ -818,7 +772,6 @@ class ViTMLP(nn.Module):
         x = self.act(x)
         x = self.w2(x)
         return x
-
 
 
 class ResidualAttentionBlock(nn.Module):
@@ -877,6 +830,14 @@ class BlockCollection(nn.Module):
         return hidden_states
 
 
+class LayerNormFp32(nn.LayerNorm):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        orig_type = x.dtype
+        x = F.layer_norm(x.to(torch.float32), self.normalized_shape, self.weight.to(torch.float32),
+                         self.bias.to(torch.float32), self.eps)
+        return x.to(orig_type)
+
+
 class VisionTransformer(nn.Module):
 
     def __init__(self, config: FullMolmoConfig):
@@ -905,7 +866,6 @@ class VisionTransformer(nn.Module):
         self.pre_ln = LayerNormFp32(
             v_cfg.image_emb_dim,
             eps=v_cfg.image_norm_eps,
-            device=config.init_device,
         )
 
         self.transformer = BlockCollection(config)
@@ -951,7 +911,7 @@ class VisionTransformer(nn.Module):
         if patch_num is None:
             patch_num = self.config.vision_backbone.image_num_patch
         B, N, D = x.shape
-        
+
         x = self.patch_embedding(x)
 
         # class embeddings and positional embeddings
@@ -1053,13 +1013,20 @@ class MultiHeadDotProductAttention(nn.Module):
             xk = xk.to(torch.float)
 
         if self.config.attention_type == "direct":
+            xq = xq / math.sqrt(xq.size(-1))
+            attn_weights = xq.transpose(1,2) @ xk.permute(0,2,3,1)
+            attn_weights = F.softmax(attn_weights, dim=-1, dtype=torch.float32).to(xq.dtype)
+            attn_output = (attn_weights @ xv.transpose(1,2)).transpose(1,2)
+            '''
             attn_weights = torch.einsum("...qhd,...khd->...hqk", xq / math.sqrt(xq.size(-1)), xk)
             attn_weights = F.softmax(attn_weights, dim=-1, dtype=torch.float32).to(xq.dtype)
             if self.attention_dropout is not None:
                 attn_weights = self.attention_dropout(attn_weights)
             attn_output = torch.einsum("...hqk,...khd->...qhd", attn_weights.to(xv.dtype), xv)
-
+            '''
         elif self.config.attention_type == "sdpa":
+            if self.config.float32_attention and not torch.is_autocast_enabled():
+                xv = xv.to(torch.float32)
             attn_output = F.scaled_dot_product_attention(
                 xq.transpose(1, 2).contiguous(),
                 xk.transpose(1, 2).contiguous(),
@@ -1200,6 +1167,11 @@ class MultiHeadAttentionPool(nn.Module):
         xk = xk.to(torch.float)
 
         xq = xq / math.sqrt(xq.size(-1))
+        attn_weights = xq.transpose(1,2) @ xk.permute(0,2,3,1)
+        attn_weights = F.softmax(attn_weights, dim=-1).to(xq.dtype)
+        attn_output = (attn_weights @ xv.transpose(1,2)).transpose(1,2)
+
+        '''
         attn_weights = torch.einsum("...qhd,...khd->...hqk", xq, xk)
 
         attn_weights = F.softmax(attn_weights, dim=-1).to(xq.dtype)
@@ -1207,6 +1179,8 @@ class MultiHeadAttentionPool(nn.Module):
         attn_weights = self.attention_dropout(attn_weights).to(xv.dtype)
 
         attn_output = torch.einsum("...hqk,...khd->...qhd", attn_weights, xv)
+        '''
+
         attn_output = self._merge_heads(attn_output)
         if self.output_layer:
             attn_output = self.wo(attn_output)
@@ -1390,7 +1364,7 @@ class OLMoPretrainedVisionBackbone(OLMoVisionBackbone):
         v_cfg = self.config.vision_backbone
         B, T, N, D = images.shape
 
-        mask = ~torch.all(images.view(B * T, N, D) == -1, dim=(1, 2), keepdim=True)
+        # mask = ~torch.all(images.view(B * T, N, D) == -1, dim=(1, 2), keepdim=True)
 
         # Output all hidden states
         # n_layers x (batch_num_crops, (1+)n_tokens, image_emb_dim)
@@ -1410,7 +1384,7 @@ class OLMoPretrainedVisionBackbone(OLMoVisionBackbone):
             cls_embed = image_features[:, 0]
             image_features = image_features[:, 1:]
 
-        image_features = image_features * mask
+        # image_features = image_features * mask
         image_features = image_features.view(B, T, N, -1)
 
         cls_embed = cls_embed.view(B, T, -1) if cls_embed is not None else None
@@ -1436,8 +1410,8 @@ class OLMoPretrainedVisionBackbone(OLMoVisionBackbone):
             elif cfg.image_padding_embed == "pad_and_partial_pad":
                 pad_embed = self.pad_embed[:, None, None, None, :]
                 all_pad = image_masks == 0
-                partial_pad = torch.logical_and(image_masks < 1, torch.logical_not(all_pad)).to(dtype=torch.float32)
-                all_pad = all_pad.to(dtype=torch.float32)
+                partial_pad = torch.logical_and(image_masks < 1, torch.logical_not(all_pad)).to(dtype=image_features.dtype)
+                all_pad = all_pad.to(dtype=image_features.dtype)
                 image_features = image_features + pad_embed[0] * torch.unsqueeze(all_pad, -1)
                 image_features = image_features + pad_embed[1] * torch.unsqueeze(partial_pad, -1)
             else:
@@ -1816,6 +1790,7 @@ class Molmo(nn.Module):
             for block_group in self.transformer.block_groups:
                 block_group.reset_parameters()
 
+
     def forward(
         self,
         input_ids: torch.LongTensor,
@@ -2077,7 +2052,7 @@ class MolmoForCausalLM(PreTrainedModel):
                 qkv_bias=config.qkv_bias,
                 norm_after=config.norm_after,
                 embedding_size=config.embedding_size,
-                attention_type="sdpa",
+                attention_type="direct",
                 embedding_dropout=0,
                 attention_dropout=0,
                 residual_dropout=0,
@@ -2116,6 +2091,7 @@ class MolmoForCausalLM(PreTrainedModel):
             self.model = Molmo(full_config, init_params=init_params)
         else:
             self.model = model
+
 
     def forward(
         self,

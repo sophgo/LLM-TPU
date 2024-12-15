@@ -3839,7 +3839,7 @@
     "AutoProcessor": "preprocessing_molmo.MolmoProcessor"
   },
   "bos_token": null,
-  "chat_template": "{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\nYou are a helpful assistant<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}",
+  "chat_template": "{% for message in messages -%}\n        {%- if (loop.index % 2 == 1 and message['role'] != 'user') or \n          (loop.index % 2 == 0 and message['role'].lower() != 'assistant') -%}\n        {{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}\n        {%- endif -%}\n        {{ message['role'].capitalize() + ': ' + message['content'] }}\n        {%- if not loop.last -%}\n        {{ ' ' }}\n        {%- endif %}\n        {%- endfor -%}\n        {%- if add_generation_prompt -%}\n        {{ ' Assistant:' }}\n        {%- endif %}",
   "clean_up_tokenization_spaces": false,
   "eos_token": "<|endoftext|>",
   "errors": "replace",

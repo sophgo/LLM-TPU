@@ -21,6 +21,7 @@ from transformers.utils import logging
 
 logger = logging.get_logger(__name__)
 
+
 def pad_to_bounding_box(
     image, offset_height, offset_width, target_height,
     target_width, value=0
@@ -139,6 +140,7 @@ class MolmoImagesKwargs(ImagesKwargs, total=False):
 
 class MolmoImageProcessor(BaseImageProcessor):
     """Preprocess images and multi-model inputs"""
+
     def __init__(
         self,
         max_crops: int = 12,
@@ -487,8 +489,6 @@ class MolmoImageProcessor(BaseImageProcessor):
         if images is None:
             return {
                 "input_ids": tokens,
-                "images": None,
-                "image_input_idx": None
             }
         else:
             n = len(images)
