@@ -35,7 +35,7 @@ while [[ $# -gt 0 ]]; do
             addr_mode="$2"
             shift 2
             ;;
-        --dynamic)
+	--dynamic)
             dynamic="$2"
             shift 2
             ;;
