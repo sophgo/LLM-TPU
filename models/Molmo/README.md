@@ -78,7 +78,12 @@ python export_onnx.py -m $your_model_path -s 1024 -i 384
 * PS1：-s为模型sequence长度，默认1024，不建议导出1024长度以下的模型，因为image token会占用seq len通常都在512长度以上
 * PS2：-i为图像大小，默认384，表示输入图像为384x384，如果输入图像宽高不一致的图像可以手动修改脚本export_onnx.py 44行
 * PS3：图像大小必须指定，目的是生成对应的size的fake input保存为权重，用于后续生成静态模型
-
+* PS4：步骤三到步骤六可以通过运行compile文件夹下的run_compile.sh完成，具体命令是：
+``` shell
+./run_compile.sh --model_name molmo-7b --seq_length 1024 --model_path your model path --tpu_mlir_path your tpu_mlir path
+```
+如果没有填写model_path，脚本会从modelscope下载模型，如果没有填写tpu_mlir_path，脚本会通过dfss下载对应的tpu_mlir压缩包并解压
+----------------------------
 ### 步骤六：生成bmodel文件
 
 生成单芯模型
