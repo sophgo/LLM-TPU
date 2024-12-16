@@ -40,14 +40,14 @@
 |Qwen1.5-0.5B         |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen1.5-0.5B-Chat)                     |
 |Qwen1.5-1.8B         |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen1.5-1.8B-Chat)                     |
 |Qwen1.5-7B           |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen1.5-7B-Chat)                       |
-|Qwen2-7B           |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen2-7B-Chat)                       |
+|Qwen2-7B             |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen2-7B-Chat)                       |
 |Qwen2.5-7B           |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen2.5-7B-Chat)                       |
 |Llama2-7B            |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf)              |
 |Llama2-13B           |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/meta-llama/Llama-2-13b-chat-hf)             |
 |Llama3-8B            |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/meta-llama/Meta-Llama-3-8B)                 |
 |Llama3.1-8B          |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B)               |
 |LWM-Text-Chat        |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/LargeWorldModel/LWM-Text-Chat-1M)           |
-|MiniCPM3-4B        |:white\_check\_mark:|:white\_check\_mark:|                    |[LINK](https://huggingface.co/openbmb/MiniCPM3-4B)                      |
+|MiniCPM3-4B          |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/openbmb/MiniCPM3-4B)                      |
 |Mistral-7B-Instruct  |:white\_check\_mark:|:white\_check\_mark:|                    |[LINK](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2)         |
 |Stable Diffusion     |                    |                    |:white\_check\_mark:|[LINK](https://huggingface.co/runwayml/stable-diffusion-v1-5)             |
 |Stable Diffusion XL  |                    |                    |:white\_check\_mark:|[LINK](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)   |
@@ -55,11 +55,12 @@
 |Yi-6B-chat           |:white\_check\_mark:|:white\_check\_mark:|                    |[LINK](https://huggingface.co/01-ai/Yi-6B-Chat)                           |
 |Yi-34B-chat          |:white\_check\_mark:|:white\_check\_mark:|                    |[LINK](https://huggingface.co/01-ai/Yi-34B-Chat)                          |
 |Qwen-VL-Chat         |:white\_check\_mark:|:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen-VL-Chat)                          |
-|Qwen2-VL-Chat         |:white\_check\_mark:|:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct)                          |
+|Qwen2-VL-Chat        |:white\_check\_mark:|:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct)                          |
 |InternVL2-4B         |:white\_check\_mark:|:white\_check\_mark:|                    |[LINK](https://huggingface.co/OpenGVLab/InternVL2-4B)                     |
 |InternVL2-2B         |:white\_check\_mark:|:white\_check\_mark:|                    |[LINK](https://huggingface.co/OpenGVLab/InternVL2-2B)                     |
 |MiniCPM-V-2_6        |:white\_check\_mark:|:white\_check\_mark:|                    |[LINK](https://huggingface.co/openbmb/MiniCPM-V-2_6)                      |
 |Llama3.2-Vision-11B          |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct)               |
+|Molmo-7B-D-0924      |:white\_check\_mark:|:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/allenai/Molmo-7B-D-0924)               |
 
 
 如果您想要知道转换细节和源码，可以到本项目[models](./models)子目录查看各类模型部署细节。
@@ -97,6 +98,7 @@ git clone https://github.com/sophgo/LLM-TPU.git
 | WizardCoder-15B | ./run.sh --model wizardcoder-15b --arch soc | ./run.sh --model wizardcoder-15b --arch pcie |
 | InternVL2-4B    | ./run.sh --model internvl2-4b --arch soc    | ./run.sh --model internvl2-4b --arch pcie    |
 | MiniCPM-V-2_6   | ./run.sh --model minicpmv2_6  --arch soc    | ./run.sh --model minicpmv2_6 --arch pcie     |
+| Molmo-7B-D-0924 |                     \                       | ./run.sh --model molmo-7b --arch pcie        |
 
 ## 进阶功能
 进阶功能说明：

@@ -1,12 +1,10 @@
 #!/bin/bash
 set -x
 models=
-mode="int8"
+mode="int4"
 folder="tmp"
-chip="--chip bm1684x"
 quantize_args="--quantize W4F16"
 addr_args=""
-dyn_args=""
 name=""
 num_layers=
 out_model=$name.bmodel
@@ -78,11 +76,6 @@ out_model=${name}_${mode}_seq${seq_length}.bmodel
 
 if [ x$addr_mode == x"io_alone" ]; then
     addr_args="--addr_mode io_alone"
-fi
-
-if [ x$dynamic == x1 ]; then
-    dyn_args="--dynamic"
-    out_model=${name}_${mode}_seq${seq_length}_dyn.bmodel
 fi
 
 outdir=${folder}/embedding
@@ -174,9 +167,9 @@ echo $models
 outdir=${folder}/$mode/block
 mkdir -p $outdir
 pushd $outdir
-
-for ((i=0; i<$num_layers; i++)); do
-
+process_block()
+{
+    i=$1
     model_transform.py \
         --model_name block_$i \
         --model_def ../../onnx/block_$i.onnx \
@@ -184,11 +177,11 @@ for ((i=0; i<$num_layers; i++)); do
 
     model_deploy.py \
         --mlir block_$i.mlir \
-        ${quantize_args} \
+        $quantize_args \
         --quant_input \
         --quant_output \
         --chip bm1684x \
-        $dyn_args \
+        $device_args \
         --model block_$i.bmodel
 
     model_transform.py \
@@ -198,18 +191,22 @@ for ((i=0; i<$num_layers; i++)); do
 
     model_deploy.py \
         --mlir block_cache_$i.mlir \
-        ${quantize_args} \
+        $quantize_args \
         --quant_input \
         --quant_output \
         --chip bm1684x \
+        $device_args \
         $addr_args \
         --model block_cache_$i.bmodel
+}
 
-    rm -f *.npz
-
+for ((i=0; i<$num_layers; i++)); do
+    process_block $i &
     models=${models}${outdir}'/block_'$i'.bmodel '$outdir'/block_cache_'$i'.bmodel '
-
+    sleep 45
 done
+
+rm -f *.npz *.onnx
 popd
 echo $models
 
@@ -232,6 +229,7 @@ model_deploy.py \
 
 models=${models}${outdir}'/vit.bmodel '
 
+rm -f *.npz *.onnx
 popd
 echo $models
 

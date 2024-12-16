@@ -11,9 +11,9 @@ class Molmo():
         self.devices = [int(d) for d in args.devid.split(",")]
 
         # load tokenizer
-        print("Load " + args.tokenizer_path + " ...")
+        print("Load " + args.processor_path + " ...")
         self.processor = AutoProcessor.from_pretrained(
-            args.tokenizer_path, trust_remote_code=True)
+            args.processor_path, trust_remote_code=True)
         self.tokenizer = self.processor.tokenizer
 
         # warm up
@@ -21,8 +21,7 @@ class Molmo():
 
         # load image
         self.EOS = [self.tokenizer.eos_token_id]
-        self.image = Image.open(args.image_path)
-                          .resize((args.image_size, args.image_size))
+        self.image = Image.open(args.image_path).resize((args.image_size, args.image_size))
         # load model
         self.load_model(args)
 
@@ -148,9 +147,9 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--model_path', type=str, required=True, help='path to the bmodel file')
-    parser.add_argument('-t', '--tokenizer_path', type=str, default="../token_config", help='path to the tokenizer file')
+    parser.add_argument('-t', '--processor_path', type=str, default="../processor_config", help='path to the processor file')
     parser.add_argument('-i', '--image_path', type=str, default="./test.jpg", help='path to image')
-    parser.add_argument('-s', '--image_size', type=int, default=384, help='image size for bmodel')
+    parser.add_argument('-s', '--image_size', type=int, default=384, help='image size in compiling bmodel')
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
     parser.add_argument('--temperature', type=float, default=0.6, help='temperature scaling factor for the likelihood distribution')
     parser.add_argument('--top_p', type=float, default=0.9, help='cumulative probability of token words to consider as a set of candidates')

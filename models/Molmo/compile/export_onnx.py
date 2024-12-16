@@ -316,9 +316,7 @@ def test_net_with_mask(image_path):
 
     # inference
     out = embed(input_ids).view(1, SEQ_LENGTH, HIDDEN_SIZE)
-    numpy.savez('vit_in.npz', input_states=out.numpy(), images=inputs['images'].numpy(), image_mask=inputs['image_masks'].numpy())
     out = vit(out, inputs['images'], inputs['image_masks'])
-    numpy.savez('vit_out.npz', hidden_states=out.numpy())
     k_cache = []
     v_cache = []
     for i in range(NUM_LAYERS):

@@ -40,6 +40,7 @@ declare -A model_to_demo=(
     ["lwm-text-chat"]="LWM"
     ["internvl2-4b"]="InternVL2"
     ["minicpmv2_6"]="MiniCPM-V-2_6"
+    ["molmo-7b"]="Molmo"
 )
 
 # Process Args
