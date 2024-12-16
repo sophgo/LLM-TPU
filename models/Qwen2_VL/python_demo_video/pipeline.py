@@ -162,6 +162,7 @@ def get_position_ids(processor, config, video_path, text="Describe this video an
         config_dict = json.load(json_file)
         loaded_config = Qwen2VLConfig(**config_dict)
         # print(loaded_config)
+    breakpoint()
     image_mask = (input_ids_prefill == loaded_config.video_token_id)
     true_indices = torch.nonzero(image_mask, as_tuple=True)[1]
 
@@ -174,7 +175,9 @@ def get_position_ids(processor, config, video_path, text="Describe this video an
         input_ids_prefill, None, video_grid_thw, attention_mask_prefill
     )
 
-    return position_ids, inputs, first_true_index
+    pixel_num = true_indices.shape[-1]
+    breakpoint()
+    return position_ids, inputs, first_true_index, pixel_num
 
 class Qwen2VL():
 
@@ -210,9 +213,9 @@ class Qwen2VL():
 =================================================================""")
         # Stop Chatting with "exit" input
         while True:
-            self.POSITION_IDS, inputs, image_offset = get_position_ids(processor=self.processor,
+            self.POSITION_IDS, inputs, image_offset, pixel_num = get_position_ids(processor=self.processor,
                                                                        config=self.config,
-                                                                       video_path="../compile/files/Qwen2-VL-2B-Instruct/sample.mp4")
+                                                                       video_path="sample.mp4")
             position_ids = self.POSITION_IDS
             
             pixel_values = inputs.pixel_values_videos
@@ -221,9 +224,17 @@ class Qwen2VL():
                 dim=0, dtype=torch.int32
             )
             cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
-            attention_mask_vit = torch.zeros([1, pixel_values.shape[0], pixel_values.shape[0]], dtype=torch.bool)
+
+            # attention_mask_vit = torch.zeros([1, pixel_values.shape[0], pixel_values.shape[0]], dtype=torch.bool)
+            # for i in range(1, len(cu_seqlens)):
+            #     attention_mask_vit[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = True
+
+            attention_mask_vit = torch.full(
+                [1, pixel_values.shape[0], pixel_values.shape[0]], torch.finfo(torch.float32).min, dtype=torch.float32
+            )
             for i in range(1, len(cu_seqlens)):
-                attention_mask_vit[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = True
+                attention_mask_vit[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0
+
             # length = torch.tensor([1], dtype=torch.int32, device=device)
             # length[0] = pixel_values.shape[-2]
             pos_ids = []
@@ -263,9 +274,11 @@ class Qwen2VL():
             breakpoint()
             first_start = time.time()
             # token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), position_ids.flatten().tolist(), inputs.pixel_values_videos.flatten().tolist(),
-            #                                  pos_ids.flatten().tolist(), attention_mask_vit.flatten().tolist(), image_offset)
+            #                                  pos_ids.flatten().tolist(), attention_mask_vit.flatten().tolist(), image_offset, pixel_num)
+            
             token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), position_ids.flatten().tolist(), pixel_values_prefill.flatten().tolist(),
-                                             pos_ids_prefill.flatten().tolist(), attention_mask_vit_prefill.flatten().tolist(), image_offset)
+                                             pos_ids_prefill.flatten().tolist(), attention_mask_vit_prefill.flatten().to(dtype=torch.float32).tolist(),
+                                             image_offset, pixel_num)
             first_end = time.time()
             tok_num = 1
             # Following tokens

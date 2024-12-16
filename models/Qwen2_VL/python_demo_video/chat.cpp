@@ -33,7 +33,7 @@ public:
   void deinit();
   int forward_first(std::vector<int> &tokens, std::vector<int> &position_id,
                     std::vector<float> &pixel_values, std::vector<int> &posids,
-                    std::vector<int> &attnmask, int img_offset);
+                    std::vector<float> &attnmask, int img_offset, int pixel_num);
   int forward_next();
 
   std::mt19937 sgen;
@@ -191,7 +191,7 @@ int Qwen2VL::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem
 
 int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_ids,
                              std::vector<float> &pixel_values, std::vector<int> &posids,
-                             std::vector<int> &attnmask, int img_offset) {
+                             std::vector<float> &attnmask, int img_offset, int pixel_num) {
   std::vector<int> input_ids(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, 0);
   std::copy(tokens.begin(), tokens.end(), input_ids.data());
@@ -237,11 +237,12 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
     bm_memcpy_s2d(bm_handle, vit_in_mem_pixels, (void *)pixel_values.data());
     bm_memcpy_s2d(bm_handle, vit_in_mem_posids, (void *)posids.data());
     bm_memcpy_s2d(bm_handle, vit_in_mem_attnmask, (void *)attnmask.data());
+    // dump_net_input_to_file(bm_handle, net_vit, "vit_input.npz");
     net_launch(net_vit);
 
     // concatenante texting embedding and image embedding
     int dst_offset = img_offset * HIDDEN_SIZE * 2;
-    int vit_size = bm_mem_get_device_size(vit_out_mem);
+    // int vit_size = bm_mem_get_device_size(vit_out_mem);
   int cnt = bm_mem_get_device_size(vit_out_mem) / 4;
   auto buffer = std::make_unique<float[]>(cnt);
   bm_memcpy_d2s(bm_handle, buffer.get(), vit_out_mem);
@@ -255,7 +256,7 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
   bm_memcpy_s2d(bm_handle, bf16_buffer, (void *)uint16_value.data());
 
     bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, bf16_buffer, 0,
-                       vit_size/2);
+                       pixel_num * HIDDEN_SIZE * 2);
   }
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> duration = end - start;

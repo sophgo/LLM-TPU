@@ -173,6 +173,28 @@ models=${models}${outdir}'/lm_head.bmodel '$outdir'/greedy_head.bmodel '$outdir'
 
 # rm -f *.npz
 popd
+# ################################################
+# echo $models
+
+# # Compile VIT model
+# outdir=${folder}/$mode"_1dev"/vit
+# mkdir -p $outdir
+# pushd $outdir
+# model_transform.py \
+#   --model_name vit \
+#   --model_def ../../onnx/vit/vision_transformer.onnx \
+#   --input_shapes [[2000,1176],[2000,2],[1,2000,2000]] \
+#   --input_types "float32,int32,float32" \
+#   --mlir vit.mlir 
+
+# model_deploy.py \
+#   --mlir vit.mlir \
+#   --quantize BF16 \
+#   --chip bm1684x \
+#   --model vit.bmodel
+
+# popd
+# #################################################
 echo $models
 
 outdir=${folder}/$mode"_1dev"/block
@@ -250,7 +272,7 @@ model_transform.py \
   --model_name vit \
   --model_def ../../onnx/vit/vision_transformer.onnx \
   --input_shapes [[2000,1176],[2000,2],[1,2000,2000]] \
-  --input_types "float32,int32,int32" \
+  --input_types "float32,int32,float32" \
   --mlir vit.mlir 
 
 model_deploy.py \

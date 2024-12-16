@@ -87,7 +87,6 @@ class VisionTransformer(torch.nn.Module):
         self.rotary_pos_emb_full = ViT.rotary_pos_emb(100)
 
     def forward(self, hidden_states, pos_ids, attention_mask):
-        breakpoint()
         hidden_states = ViT.patch_embed(hidden_states)
         # hidden_states = ViT.patch_embed(hidden_states[:pixel_length[0],:])
         # rotary_pos_emb = ViT.rot_pos_emb(image_grid_thw)
@@ -98,12 +97,9 @@ class VisionTransformer(torch.nn.Module):
         #     dim=0, dtype=torch.int32
         # )
         # cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
-        breakpoint()
 
         for blk in ViT.blocks:
             hidden_states = blk(hidden_states, attention_mask=attention_mask, rotary_pos_emb=rotary_pos_emb)
-        hh = ViT.merger(hidden_states)
-        breakpoint()
 
         return ViT.merger(hidden_states), 
 
@@ -204,11 +200,10 @@ def convert_vision_transformer():
     x = torch.randn(2000, 1176).to(dtype=torch.float32, device=device)
     # thw = torch.randn(3).to(dtype=torch.int32, device=device)
     thw = torch.tensor([[2, 20, 36]])
-    breakpoint()
     # length = torch.tensor([1440], dtype=torch.int32, device=device)
     pos_ids = torch.randn(x.shape[0], 2).to(dtype=torch.int32, device=device)
     # cu_seqlens = torch.tensor([[0, 720, 1440]])
-    attention_mask = torch.zeros([1, x.shape[0], x.shape[0]], device=device, dtype=torch.bool)
+    attention_mask = torch.zeros([1, x.shape[0], x.shape[0]], device=device, dtype=torch.float32)
 
     # # trace
     model = VisionTransformer()
@@ -348,7 +343,7 @@ def test_net_with_mask():
             "content": [
                 {
                     "type": "video",
-                    "video": "files/Qwen2-VL-2B-Instruct/sample.mp4",
+                    "video": "../python_demo_video/sample.mp4",
                     "max_pixels": 360 * 420,
                     "fps": 1.0,
                 },
@@ -389,9 +384,14 @@ def test_net_with_mask():
         dim=0, dtype=torch.int32
     )
     cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
-    attention_mask_vit = torch.zeros([1, pixel_values.shape[0], pixel_values.shape[0]], device=device, dtype=torch.bool)
+    attention_mask_vit = torch.full(
+        [1, pixel_values.shape[0], pixel_values.shape[0]], torch.finfo(torch.float32).min, device=device, dtype=torch.float32
+    )
     for i in range(1, len(cu_seqlens)):
-        attention_mask_vit[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = True
+        attention_mask_vit[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0
+    # attention_mask_vit = torch.zeros([1, pixel_values.shape[0], pixel_values.shape[0]], device=device, dtype=torch.bool)
+    # for i in range(1, len(cu_seqlens)):
+    #     attention_mask_vit[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = True
     # length = torch.tensor([1], dtype=torch.int32, device=device)
     # length[0] = pixel_values.shape[-2]
     pos_ids = []
@@ -427,13 +427,13 @@ def test_net_with_mask():
     attention_mask_vit_prefill[0,:pos_ids.shape[0],:pos_ids.shape[0]] = attention_mask_vit
 
     image_embeds = vit_infer(pixel_values_prefill, pos_ids_prefill, attention_mask_vit_prefill)  # [150, 1536]
+    # image_embeds = vit_infer(pixel_values, pos_ids, attention_mask_vit)  # [150, 1536]
     inputs_embeds = torch.zeros((1, SEQ_LENGTH, HIDDEN_SIZE)).to(device)
 
     inputs_embeds = embed(input_ids_prefill)
     inputs_embeds = inputs_embeds.view(1, SEQ_LENGTH, HIDDEN_SIZE)
     image_mask = (input_ids_prefill == config.video_token_id).unsqueeze(-1).expand_as(inputs_embeds)
     image_embeds = image_embeds[0].to(device, dtype)
-    breakpoint()
     inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
 
     ID_IM_END = tokenizer.convert_tokens_to_ids("<|im_end|>")
@@ -452,7 +452,6 @@ def test_net_with_mask():
     attention_mask = attention_mask.view(
         1, 1, SEQ_LENGTH, SEQ_LENGTH).to(device)
 
-    breakpoint()
 
     k_cache = []
     v_cache = []

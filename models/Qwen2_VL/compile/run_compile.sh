@@ -85,7 +85,7 @@ fi
 echo "Replace the files in the transformers lib..."
 pkg_path=$(pip show transformers | grep Location | cut -d ' ' -f2)
 cp ${pkg_path}/transformers/models/qwen2_vl/modeling_qwen2_vl.py modeling_qwen2_vl_backup.py
-sudo cp files/${model_name_upper}-Instruct/modeling_qwen2_vl.py ${pkg_path}/transformers/models/qwen2/modeling_qwen2_vl.py
+sudo cp files/${model_name_upper}-Instruct/modeling_qwen2_vl.py ${pkg_path}/transformers/models/qwen2_vl/modeling_qwen2_vl.py
 
 echo "export onnx..."
 python export_onnx.py --model_path ${model_path} --seq_length ${seq_length}
