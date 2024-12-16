@@ -1,4 +1,4 @@
-# Llama3.2
+# Molmo-7B
 
 本项目实现BM1684X部署语言大模型[Molmo-7B-D-0924](https://huggingface.co/allenai/Molmo-7B-D-0924)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X的PCIE环境，或者SoC环境。
 
@@ -21,7 +21,8 @@
     ├── special_tokens_map.json
     ├── tokenizer.json
     ├── tokenizer_config.json
-    └── ```
+    └── ...
+```
 ----------------------------
 
 #  自动化推理脚本
@@ -87,11 +88,6 @@ python export_onnx.py -m $your_model_path -s 1024 -i 384
 ```
 * PS1：生成bmodel耗时大概3小时以上，建议64G内存以及200G以上硬盘空间，不然很可能OOM或者no space left
 * PS2：--name必须指定为molmo-7b
-* PS3：步骤三到步骤六可以通过运行compile文件夹下的run_compile.sh完成，具体命令是：
-``` shell
-./run_compile.sh --model_name molmo-7b --seq_length 1024 --model_path $your_model_path --tpu_mlir_path $your_mlir_path
-```
-如果没有填写model_path，脚本会从modelscope下载模型，如果没有填写mlir_path，脚本会通过dfss下载对应的tpu_mlir压缩包并解压
 ----------------------------
 
 # 【阶段二】可执行文件生成
@@ -111,8 +107,8 @@ cp *chat* ..
 cd ./python_demo
 python3 pipeline.py -m bmodel_path -i image_path -s image_size -t ../processor_config --devid your_devid
 ```
-注意：image size必须指定为export onnx时的image size，pipeline中会将输入图像resize到image size
-其它可用参数可以通过`pipeline.py` 或者执行如下命令进行查看 
+* 注意：image size必须指定为export onnx时的image size，pipeline中会将输入图像resize到image size
+* 其它可用参数可以通过`pipeline.py` 或者执行如下命令进行查看 
 ```shell
 python3 pipeline.py --help
 ```
