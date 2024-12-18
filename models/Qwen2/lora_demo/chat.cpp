@@ -283,19 +283,12 @@ void Qwen::handle_error() {
 
 // can not create bmrt
 void Qwen::bmrt_error() {
-  for (auto h : handles) {
-    bm_dev_free(h);
-  }
   status_code = -3;
   throw std::runtime_error("can not create bmrt");
 }
 
 // can not load bmodel
 void Qwen::bmodel_error() {
-  bmrt_destroy(p_bmrt);
-  for (auto h : handles) {
-    bm_dev_free(h);
-  }
   status_code = -4;
   throw std::runtime_error("can not load bmodel correctly");
 }
