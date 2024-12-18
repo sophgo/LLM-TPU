@@ -71,7 +71,7 @@ else
 fi
 
 echo "Install the required Python lib..."
-pip3 install torch==2.0.1+cpu torchvision==0.15.2 -f https://download.pytorch.org/whl/cpu/torch_stable.html
+pip install torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cpu
 pip install transformers_stream_generator einops tiktoken accelerate transformers==4.41.2
 
 # 根据 model_path 的值决定是否下载模型

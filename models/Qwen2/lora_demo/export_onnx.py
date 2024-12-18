@@ -12,6 +12,7 @@ import os
 import json
 import torch
 import torch.nn as nn
+import struct
 import ctypes
 import argparse
 import numpy as np
@@ -234,9 +235,13 @@ def convert_embedding_to_bit():
     if embedding_weights_uint16.dtype.byteorder == '>':
         embedding_weights_uint16 = embedding_weights_uint16.byteswap()
     embedding_weights_uint16 = embedding_weights_uint16.newbyteorder('little') # 确保数据以小端序存储
+    embedding_weights_uint8 = embedding_weights_uint16.view(np.uint8)
 
+    header = make_header(len(embedding_weights_uint8))
+
+    embedding_weights_uint8 = np.concatenate([header, embedding_weights_uint8])
     with open('embedding.bin', 'wb') as f:
-        embedding_weights_uint16.tofile(f)
+        embedding_weights_uint8.tofile(f)
 
 def file_md5(filename):
     import hashlib
@@ -429,6 +434,13 @@ def convert_lora_embedding_to_bit(lora_model, lora_config, args):
 
     return lora_weights_uint8
 
+def make_header(size, header_size = 64):
+    if header_size < 4:
+        raise ValueError("Header size must be at least 4 bytes to store the size.")
+    header = np.zeros(header_size, dtype=np.uint8)
+    size_bytes = struct.pack('<I', header_size + size)
+    header[:4] = np.frombuffer(size_bytes, dtype=np.uint8)
+    return header
 
 def convert_total_lora_to_bit(encrypt_path, origin_model, args):
     if args.max_rank_num == 0:
@@ -440,15 +452,15 @@ def convert_total_lora_to_bit(encrypt_path, origin_model, args):
     origin_path = "lora_weights.bin"
     decrypt_path = "decrypted_lora_weights.bin"
 
-    # add zero to check after decrypt
-    zero_prefix = np.zeros(64, dtype=np.uint8)
     # lora embedding
     lora_model, lora_config = load_lora_model(origin_model, args.lora_embedding_path)
     lora_embedding_weights = convert_lora_embedding_to_bit(lora_model, lora_config, args)
     # lora
     lora_model, lora_config = load_lora_model(origin_model, args.lora_path)
     lora_weights = convert_lora_to_bit(lora_model, lora_config, args)
-    total_lora_weights = np.concatenate([zero_prefix, lora_weights, lora_embedding_weights]) # 由于在bmodel中，lora_embedding放在后面，因此这里是lora,lora_embedding的顺序
+    # header
+    header = make_header(len(lora_weights) + len(lora_embedding_weights))
+    total_lora_weights = np.concatenate([header, lora_weights, lora_embedding_weights]) # 由于在bmodel中，lora_embedding放在后面，因此这里是lora,lora_embedding的顺序
 
     # save and encrypt & decrypt
     with open(origin_path, 'wb') as f:
