@@ -162,7 +162,6 @@ def get_position_ids(processor, config, video_path, text="Describe this video an
         config_dict = json.load(json_file)
         loaded_config = Qwen2VLConfig(**config_dict)
         # print(loaded_config)
-    breakpoint()
     image_mask = (input_ids_prefill == loaded_config.video_token_id)
     true_indices = torch.nonzero(image_mask, as_tuple=True)[1]
 
@@ -176,7 +175,6 @@ def get_position_ids(processor, config, video_path, text="Describe this video an
     )
 
     pixel_num = true_indices.shape[-1]
-    breakpoint()
     return position_ids, inputs, first_true_index, pixel_num
 
 class Qwen2VL():
@@ -225,18 +223,12 @@ class Qwen2VL():
             )
             cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
 
-            # attention_mask_vit = torch.zeros([1, pixel_values.shape[0], pixel_values.shape[0]], dtype=torch.bool)
-            # for i in range(1, len(cu_seqlens)):
-            #     attention_mask_vit[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = True
-
             attention_mask_vit = torch.full(
                 [1, pixel_values.shape[0], pixel_values.shape[0]], torch.finfo(torch.float32).min, dtype=torch.float32
             )
             for i in range(1, len(cu_seqlens)):
                 attention_mask_vit[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0
 
-            # length = torch.tensor([1], dtype=torch.int32, device=device)
-            # length[0] = pixel_values.shape[-2]
             pos_ids = []
             for t, h, w in grid_thw:
                 hpos_ids = torch.arange(h).unsqueeze(1).expand(-1, w)
@@ -269,12 +261,8 @@ class Qwen2VL():
             attention_mask_vit_prefill = torch.zeros([1, 2000, 2000], dtype=torch.bool)
             attention_mask_vit_prefill[0,:pos_ids.shape[0],:pos_ids.shape[0]] = attention_mask_vit
 
-
             # Chat
-            breakpoint()
             first_start = time.time()
-            # token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), position_ids.flatten().tolist(), inputs.pixel_values_videos.flatten().tolist(),
-            #                                  pos_ids.flatten().tolist(), attention_mask_vit.flatten().tolist(), image_offset, pixel_num)
             
             token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), position_ids.flatten().tolist(), pixel_values_prefill.flatten().tolist(),
                                              pos_ids_prefill.flatten().tolist(), attention_mask_vit_prefill.flatten().to(dtype=torch.float32).tolist(),

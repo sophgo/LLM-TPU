@@ -31,11 +31,11 @@ cp files/Qwen2-VL-2B-Instruct/modeling_qwen2_vl.py /usr/local/lib/python3.10/dis
 
 ``` shell
 # 安装组件
-pip3 install qwen-vl-utils accelerate torch==2.0.1+cpu torchvision==0.15.2 transformers==4.45.1
+pip3 install qwen-vl-utils accelerate torch==2.5.0 torchvision==0.15.2 transformers==4.45.1
 
 # 导出onnx
 cd compile
-python3 export_onnx.py --model_path /path/to/Qwen2-VL-2B-Instruct --seq_length 512
+python3 export_onnx_video.py --model_path /path/to/Qwen2-VL-2B-Instruct --seq_length 2048
 ```
 
 ## 编译模型
@@ -43,7 +43,7 @@ python3 export_onnx.py --model_path /path/to/Qwen2-VL-2B-Instruct --seq_length 5
 此处介绍如何将onnx模型编译成bmodel。也可以省去编译模型这一步，直接下载编译好的模型：
 
 ``` shell
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2-vl-2b_int4_seq512_1dev.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2-vl-2b_int4_seq2048_1dev.bmodel
 ```
 
 #### 1. 下载docker，启动容器
@@ -72,10 +72,10 @@ source ./envsetup.sh  #激活环境变量
 
 #### 3. 编译模型生成bmodel
 
-对ONNX模型进行编译，生成模型`qwen2-vl-2b_int4_seq512_1dev.bmodel`
+对ONNX模型进行编译，生成模型`qwen2-vl-2b_int4_seq2048_1dev.bmodel `
 
 ``` shell
-./compile.sh --name qwen2-vl-2b --seq_length 512
+./compile.sh --name qwen2-vl-2b --seq_length 2048
 ```
 
 ## 编译与运行程序
@@ -91,7 +91,7 @@ pip3 install qwen-vl-utils accelerate torch==2.5.0 transformers==4.45.1
 编译库文件，生成`chat.cpython*.so`文件，将该文件拷贝到`pipeline.py`文件目录
 
 ``` shell
-cd python_demo
+cd python_demo_video
 mkdir build 
 cd build && cmake .. && make && cp *cpython* .. && cd ..
 ```
@@ -99,7 +99,7 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 * python demo
 
 ``` shell
-python3 pipeline.py --model_path qwen2-vl-2b_int4_seq512_1dev.bmodel --tokenizer_path ../support/token_config/ --processor_path ../support/processor_config --devid 0 --generation_mode greedy
+python3 pipeline.py --model_path qwen2-vl-2b_int4_seq2048_1dev.bmodel --tokenizer_path ../support/token_config/ --processor_path ../support/processor_config --devid 0
 ```
 model为实际的model储存路径；tokenizer_path为实际的tokenizer配置的储存路径
 

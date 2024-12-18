@@ -534,5 +534,5 @@ if __name__ == "__main__":
     test_net_with_mask()
 
     # convert
-    # convert()
+    convert()
 

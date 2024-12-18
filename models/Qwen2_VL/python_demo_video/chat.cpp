@@ -242,18 +242,17 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
 
     // concatenante texting embedding and image embedding
     int dst_offset = img_offset * HIDDEN_SIZE * 2;
-    // int vit_size = bm_mem_get_device_size(vit_out_mem);
-  int cnt = bm_mem_get_device_size(vit_out_mem) / 4;
-  auto buffer = std::make_unique<float[]>(cnt);
-  bm_memcpy_d2s(bm_handle, buffer.get(), vit_out_mem);
-  std::vector<uint16_t> uint16_value(cnt, 0);
-  for (int i = 0; i < cnt; ++i)
-    uint16_value[i] = fp32_to_bf16_bits(buffer[i]);
-  auto buffer_size = bm_mem_get_device_size(vit_out_mem);
-  bm_device_mem_t bf16_buffer;
-  bm_status_t status = bm_malloc_device_byte(bm_handle, &bf16_buffer, buffer_size/2);
-  assert(BM_SUCCESS == status);
-  bm_memcpy_s2d(bm_handle, bf16_buffer, (void *)uint16_value.data());
+    int cnt = bm_mem_get_device_size(vit_out_mem) / 4;
+    auto buffer = std::make_unique<float[]>(cnt);
+    bm_memcpy_d2s(bm_handle, buffer.get(), vit_out_mem);
+    std::vector<uint16_t> uint16_value(cnt, 0);
+    for (int i = 0; i < cnt; ++i)
+      uint16_value[i] = fp32_to_bf16_bits(buffer[i]);
+    auto buffer_size = bm_mem_get_device_size(vit_out_mem);
+    bm_device_mem_t bf16_buffer;
+    bm_status_t status = bm_malloc_device_byte(bm_handle, &bf16_buffer, buffer_size/2);
+    assert(BM_SUCCESS == status);
+    bm_memcpy_s2d(bm_handle, bf16_buffer, (void *)uint16_value.data());
 
     bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, bf16_buffer, 0,
                        pixel_num * HIDDEN_SIZE * 2);
@@ -262,37 +261,6 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
   std::chrono::duration<double> duration = end - start;
   std::cout << "vit_launch execution time: " << duration.count() << " seconds" << std::endl;
 
-  // auto start = std::chrono::high_resolution_clock::now();
-  // auto &vit_in_mem_pixels = net_vit->stages[0].input_mems[0];
-  // int cnt = bm_mem_get_device_size(vit_in_mem_pixels) / 4;
-  // auto buffer = std::make_unique<float[]>(cnt);
-  // bm_memcpy_d2s(bm_handle, buffer.get(), vit_in_mem_pixels);
-  // std::vector<uint16_t> uint16_value(cnt, 0);
-  // for (int i = 0; i < cnt; ++i)
-  //   uint16_value[i] = fp32_to_bf16_bits(buffer[i]);
-  // auto buffer_size = bm_mem_get_device_size(vit_in_mem_pixels);
-  // bm_device_mem_t fp32_buffer;
-  // bm_status_t status = bm_malloc_device_byte(bm_handle, &fp32_buffer, buffer_size/2);
-  // assert(BM_SUCCESS == status);
-  // bm_memcpy_s2d(bm_handle, fp32_buffer, (void *)uint16_value.data());
-  // auto end = std::chrono::high_resolution_clock::now();
-  // std::chrono::duration<double> duration = end - start;
-  // std::cout << "vit_launch execution time: " << duration.count() << " seconds" << std::endl;
-
-
-  // forward blocks
-
-  // size_t total_size = 0;
-  // for (const auto& vec : position_ids) {
-  //     total_size += vec.size();
-  // }
-  // std::vector<int> flat_data;
-  // flat_data.reserve(total_size);
-  // for (const auto& vec : position_ids) {
-  //     flat_data.insert(flat_data.end(), vec.begin(), vec.end());
-  // }
-  // auto &block_out_mem = net_blocks[0]->stages[0].output_mems[0];
-  // d2d(block_out_mem, out_mem);
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
@@ -302,7 +270,6 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
     if (idx == 0) {
       // only first time need copy
       bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_ids.data());
-      // bm_memcpy_s2d(bm_handle, in1_mem, (void *)POSITION_IDS.data());
       bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     }
     net_launch(net_blocks[idx]);
@@ -325,7 +292,6 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
     std::cout << "ERROR: unsupported generation mode!" << std::endl;
     exit(1);
   }
-  // bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
   token_length++;
   return token;
 }
