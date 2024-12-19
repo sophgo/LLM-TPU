@@ -413,8 +413,9 @@ def convert_lora_embedding_to_bit(lora_model, lora_config, args):
         else:
             raise NotImplementedError
 
-    # 由于在final.mlir中，weight的权重排列顺序是[lora_A, lora_B]的形式
-    # 所以需要把B排列在前面
+    # 由于在final.mlir中，weight的权重排列顺序是[lora_B, lora_A]的形式
+    # 但是在加载时，是按照算子调用逻辑来调用的，lora_A先走先调，lora_B后跑后调
+    # 所以需要把A排列在前面
     for a, b in zip(lora_A_weight_list, lora_B_weight_list):
         lora_weight_list.append(a)
         lora_weight_list.append(b)
@@ -435,11 +436,11 @@ def convert_lora_embedding_to_bit(lora_model, lora_config, args):
     return lora_weights_uint8
 
 def make_header(size, header_size = 64):
-    if header_size < 4:
+    if header_size < 8:
         raise ValueError("Header size must be at least 4 bytes to store the size.")
     header = np.zeros(header_size, dtype=np.uint8)
-    size_bytes = struct.pack('<I', header_size + size)
-    header[:4] = np.frombuffer(size_bytes, dtype=np.uint8)
+    size_bytes = struct.pack('<Q', header_size + size)
+    header[:8] = np.frombuffer(size_bytes, dtype=np.uint8)
     return header
 
 def convert_total_lora_to_bit(encrypt_path, origin_model, args):

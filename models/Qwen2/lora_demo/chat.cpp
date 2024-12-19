@@ -107,7 +107,7 @@ public:
   int stage_idx;
   bool enable_lora_embedding;
   bool make_in_tensors_flag;
-  int header_size;
+  uint64_t header_size;
 
   // model
   int hidden_bytes;
@@ -663,15 +663,15 @@ Qwen::load_and_infer_embedding(const std::vector<int> &tokens) {
   }
 
   file.seekg(0, std::ios::end);
-  long long file_size = static_cast<long long>(file.tellg());
-  if (file_size < header_size) {
+  uint64_t file_size_in_disk = file.tellg();
+  if (file_size_in_disk < header_size) {
     throw std::runtime_error("file is too small\n");
   }
 
-  std::vector<uint32_t> header(header_size / sizeof(uint32_t));
+  uint64_t file_size_in_header = 0;
   file.seekg(0, std::ios::beg);
-  file.read(reinterpret_cast<char *>(&header[0]), sizeof(uint32_t));
-  if (file_size != header[0]) {
+  file.read(reinterpret_cast<char *>(&file_size_in_header), sizeof(uint64_t));
+  if (file_size_in_disk != file_size_in_header) {
     throw std::runtime_error("Error: file size is not equal to file size in header\n");
   }
 
