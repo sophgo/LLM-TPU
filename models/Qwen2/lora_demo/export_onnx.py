@@ -225,7 +225,7 @@ def convert_penalty_sample_head():
 def fp32_string(data):
     return bin(ctypes.c_uint32.from_buffer(ctypes.c_float(data)).value)[2:]
 
-def convert_embedding_to_bit():
+def convert_embedding_to_bit(path, transformer):
     print("\033[31m请注意！！如果embedding_mode=binary，目前convert_embedding_to_bit只支持embedding为float32格式，并且导出格式为bfloat16！！！\033[0m")
     print("\033[31m如果想导出float16的embedding，请修改此函数！！！\033[0m")
     embedding_weights = transformer.embed_tokens.weight.data
@@ -240,7 +240,7 @@ def convert_embedding_to_bit():
     header = make_header(len(embedding_weights_uint8))
 
     embedding_weights_uint8 = np.concatenate([header, embedding_weights_uint8])
-    with open('embedding.bin', 'wb') as f:
+    with open(path, 'wb') as f:
         embedding_weights_uint8.tofile(f)
 
 def file_md5(filename):
@@ -523,7 +523,7 @@ def convert():
     if args.embedding_mode == "default":
         convert_embedding()
     elif args.embedding_mode == "binary":
-        convert_embedding_to_bit()
+        convert_embedding_to_bit('embedding.bin', transformer)
 
     print("Convert lm_head")
     convert_lm_head()

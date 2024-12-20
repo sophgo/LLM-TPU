@@ -10,13 +10,15 @@
 import os
 import argparse
 
-from export_onnx import load_model, convert_total_lora_to_bit
+from export_onnx import load_model, convert_total_lora_to_bit, convert_embedding_to_bit
 
 def convert_abnormal():
-    for rank in [32, 96]:
+    for rank in [32, 64, 96]:
         args.max_embedding_rank_num = rank
         args.max_rank_num = rank
         convert_total_lora_to_bit(f"{dir_path}/encrypted_lora_weights_r{rank}.bin", origin_model, args)
+
+    convert_embedding_to_bit(f"{dir_path}/embedding.bin", transformer)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='export onnx')
@@ -32,6 +34,7 @@ if __name__ == "__main__":
 
     # load model
     origin_model, device, dtype = load_model(args)
+    transformer = origin_model.model
 
     # convert_abnormal
     dir_path = "test_abnormal"

@@ -9,8 +9,6 @@ from transformers import AutoTokenizer
 
 import chat
 
-os.environ['BMRT_LOG_VERSION'] = '3'
-
 class Qwen:
     def __init__(self, args):
         # preprocess parameters, such as prompt & tokenizer
@@ -21,7 +19,6 @@ class Qwen:
         # other parameters
         self.seq_length_list = [8192,7168,6144,5120,4096,3072,2048,1024]
         self.prefill_length_list = [8192,7168,6144,5120,4096,3072,2048,1024]
-        self.lora_path = args.lora_path
 
         # load tokenizer
         print("Load " + args.tokenizer_path + " ...")
@@ -205,179 +202,6 @@ class Qwen:
         self.model.deinit_decrypt()
         self.model.deinit()
 
-    def test_empty_lora(self, lora_path):
-        sample_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n" + "Give me a short introduction to large language model." + "<|im_end|>\n<|im_start|>assistant\n"
-
-        # ===------------------------------------------------------------===
-        # Model Init
-        # ===------------------------------------------------------------===
-        self.model.init_decrypt()
-        self.model.prefill_reuse = 0
-        self.model.stage_idx = 0
-        self.load_model(self.model_path, read_bmodel=True)
-
-        # sample 0
-        in_tokens = self.tokenizer.encode(sample_str)
-
-        in_length = len(in_tokens)
-        out_length = 20
-        total_length = in_length + out_length
-
-        # load lora model
-        self.update_lora_and_lora_embedding(lora_path)
-        self.empty_lora_and_lora_embedding()
-        self.stream_answer(in_tokens, out_length)
-
-        # ===------------------------------------------------------------===
-        # Deinit
-        # ===------------------------------------------------------------===
-        self.model.deinit_decrypt()
-        self.model.deinit()
-
-    def test_zero_lora(self, lora_path):
-        sample_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n" + "Give me a short introduction to large language model." + "<|im_end|>\n<|im_start|>assistant\n"
-
-        # ===------------------------------------------------------------===
-        # Model Init
-        # ===------------------------------------------------------------===
-        self.model.init_decrypt()
-        self.model.prefill_reuse = 0
-        self.model.stage_idx = 0
-        self.load_model(self.model_path, read_bmodel=True)
-
-        # sample 0
-        in_tokens = self.tokenizer.encode(sample_str)
-
-        in_length = len(in_tokens)
-        out_length = 20
-        total_length = in_length + out_length
-
-        # load lora model
-        self.update_lora_and_lora_embedding(lora_path)
-        self.stream_answer(in_tokens, out_length)
-
-        # ===------------------------------------------------------------===
-        # Deinit
-        # ===------------------------------------------------------------===
-        self.model.deinit_decrypt()
-        self.model.deinit()
-
-    def test_empty_lora_with_loop(self, lora_path, loop_num):
-        sample_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n" + "Give me a short introduction to large language model." + "<|im_end|>\n<|im_start|>assistant\n"
-
-        # ===------------------------------------------------------------===
-        # Model Init
-        # ===------------------------------------------------------------===
-        self.model.init_decrypt()
-        self.model.prefill_reuse = 0
-        self.model.stage_idx = 0
-        self.load_model(self.model_path, read_bmodel=True)
-
-        # sample 0
-        in_tokens = self.tokenizer.encode(sample_str)
-
-        in_length = len(in_tokens)
-        out_length = 20
-        total_length = in_length + out_length
-
-        # load lora model
-        for _ in range(loop_num):
-            self.update_lora_and_lora_embedding(lora_path)
-            self.empty_lora_and_lora_embedding()
-            self.stream_answer(in_tokens, out_length)
-
-        for _ in range(loop_num):
-            self.update_lora_and_lora_embedding(lora_path)
-            self.empty_lora_and_lora_embedding()
-        self.stream_answer(in_tokens, out_length)
-
-        # ===------------------------------------------------------------===
-        # Deinit
-        # ===------------------------------------------------------------===
-        self.model.deinit_decrypt()
-        self.model.deinit()
-
-    def test_abnormal_length(self):
-        sample_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n" + "Give me a short introduction to large language model." + "<|im_end|>\n<|im_start|>assistant\n"
-
-        # ===------------------------------------------------------------===
-        # Model Init
-        # ===------------------------------------------------------------===
-        self.model.init_decrypt()
-        self.model.prefill_reuse = 0
-        self.model.stage_idx = 0
-        self.load_model(self.model_path, read_bmodel=True)
-
-        # sample 0
-        in_tokens = self.tokenizer.encode(sample_str)
-
-        in_length = len(in_tokens)
-        out_length = 20
-        total_length = in_length + out_length
-
-        self.stream_answer(in_tokens*1000, out_length)
-
-        # ===------------------------------------------------------------===
-        # Deinit
-        # ===------------------------------------------------------------===
-        self.model.deinit_decrypt()
-        self.model.deinit()
-
-    def test_abnormal_stage(self, stage_idx):
-        sample_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n" + "Give me a short introduction to large language model." + "<|im_end|>\n<|im_start|>assistant\n"
-
-        # ===------------------------------------------------------------===
-        # Model Init
-        # ===------------------------------------------------------------===
-        self.model.init_decrypt()
-        self.model.prefill_reuse = 0
-        self.model.stage_idx = stage_idx
-        self.load_model(self.model_path, read_bmodel=True)
-
-        # sample 0
-        in_tokens = self.tokenizer.encode(sample_str)
-
-        in_length = len(in_tokens)
-        out_length = 20
-        total_length = in_length + out_length
-
-        self.stream_answer(in_tokens, out_length)
-
-        # ===------------------------------------------------------------===
-        # Deinit
-        # ===------------------------------------------------------------===
-        self.model.deinit_decrypt()
-        self.model.deinit()
-
-    def test_abnormal_stage_2(self, stage_idx):
-        sample_str = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n" + "Give me a short introduction to large language model." + "<|im_end|>\n<|im_start|>assistant\n"
-
-        # ===------------------------------------------------------------===
-        # Model Init
-        # ===------------------------------------------------------------===
-        self.model.init_decrypt()
-        self.model.prefill_reuse = 0
-        self.model.stage_idx = 0
-        self.load_model(self.model_path, read_bmodel=True)
-
-        self.model.stage_idx = stage_idx
-        self.load_model(self.model_path, read_bmodel=False)
-
-        # sample 0
-        in_tokens = self.tokenizer.encode(sample_str)
-
-        in_length = len(in_tokens)
-        out_length = 20
-        total_length = in_length + out_length
-
-        self.stream_answer(in_tokens, out_length)
-
-        # ===------------------------------------------------------------===
-        # Deinit
-        # ===------------------------------------------------------------===
-        self.model.deinit_decrypt()
-        self.model.deinit()
-
 """
 -1: your input is empty or exceed the maximum length
 -2: can not to create handle
@@ -387,8 +211,7 @@ class Qwen:
 -6: addr_mode = 0, but must set addr_mode =1
 """
 def main(args):
-    loop_num = 5
-    dir_path = "./test_abnormal"
+    dir_path = args.abnormal_path
     start_time = time.time()
 
     engine = Qwen(args)
@@ -413,7 +236,7 @@ def main(args):
         engine.model.embedding_path = f"{dir_path}/{embedding_path_list[0]}"
         print("---------------------------(2) test lora---------------------------")
         lora_path_list = [
-            "encrypted_lora_weights.bin", "encrypted_lora_weights.bin.empty", 
+            "encrypted_lora_weights_r64.bin", "encrypted_lora_weights.bin.empty",
             "encrypted_lora_weights_r32.bin", "encrypted_lora_weights_r96.bin"
         ]
         random.shuffle(lora_path_list)
@@ -429,22 +252,6 @@ def main(args):
             finally:
                 engine.model.deinit()
 
-    # print("---------------------------测试异常长度---------------------------")
-    # engine.model.enable_lora_embedding = False
-    # engine.test_abnormal_length()
-
-    # print("---------------------------测试异常stage---------------------------")
-    # engine.model.enable_lora_embedding = False
-    # engine.test_abnormal_stage(stage_idx=-1)
-    # engine.test_abnormal_stage(stage_idx=100)
-    # engine.test_abnormal_stage_2(stage_idx=-1)
-    # engine.test_abnormal_stage_2(stage_idx=100)
-
-    # print("---------------------------测试变长密钥---------------------------")
-    # engine.model.enable_lora_embedding = False
-    # engine.model.lib_path = "../share_cache_demo/build/libcipher_varlen.so"
-    # engine.model_path = "encrypted_varlen.bmodel"
-    # engine.test_sample()
 
     end_time = time.time()
     print(f"\nTotal Time: {(end_time - start_time):.3f} s")
@@ -464,6 +271,7 @@ if __name__ == "__main__":
     parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
     parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory")
     parser.add_argument('--lib_path', type=str, default='', help='lib path by user')
+    parser.add_argument('--abnormal_path', type=str, default='', help='abnormal path to test exception')
     parser.add_argument('--embedding_path', type=str, default='', help='binary embedding path')
     parser.add_argument('--lora_path', type=str, default='', help='binary lora path')
     parser.add_argument('--enable_lora_embedding', action='store_true', help="if set, enables lora embedding")
