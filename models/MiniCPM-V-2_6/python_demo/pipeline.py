@@ -63,6 +63,12 @@ class MiniCPMV():
             inserted_image_str = "(<image>./</image>)\n"
             image = Image.open(self.image_str).convert('RGB')
 
+
+        print("\033[31m请注意，目前不支持图片size可变，因此图片会进行resize。目标size为export_onnx时，image_file的图片size\033[0m")
+        print("\033[31m请注意，如果你export_onnx.py时，image_file使用的是其他图片，请修改下面这行代码\033[0m")
+        sample_image = Image.open("test0.jpg").convert('RGB')
+        image = image.resize(sample_image.size, Image.LANCZOS)
+
         msgs = [{'role': 'user', 'content': '{}{}'.format(inserted_image_str, self.input_str)}]
         prompts_lists = self.processor.tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
 
