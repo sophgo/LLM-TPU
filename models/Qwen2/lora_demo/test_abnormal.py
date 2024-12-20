@@ -219,7 +219,8 @@ def main(args):
         print(f"---------------------------{idx}---------------------------")
         print("---------------------------(1) test embedding---------------------------")
         embedding_path_list = [
-            "embedding.bin", "embedding.bin.empty", "embedding.bin.splitaa", "embedding.bin.splitab"
+            "embedding.bin", "embedding.bin.empty", "embedding.bin.splitaa",
+            "embedding.bin.splitab", "embedding.bin.split0", "embedding.bin.split1"
         ]
         random.shuffle(embedding_path_list)
         for embedding_path in embedding_path_list:

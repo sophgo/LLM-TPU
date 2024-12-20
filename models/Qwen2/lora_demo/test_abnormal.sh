@@ -47,18 +47,25 @@ if [ "$mode" == "compile" ]; then
     --max_embedding_rank_num $max_embedding_rank_num
 
 elif [ "$mode" == "run" ]; then
-  pushd test_abnormal
+  abnormal_path="/data2/v4/test_abnormal"
+  bmodel_path="/data2/v4/encrypted.bmodel"
+
+  pushd ${abnormal_path}
   touch embedding.bin.empty
   touch encrypted_lora_weights.bin.empty
+  split -b 600M embedding.bin embedding.bin.split
+  dd if=embedding.bin of=embedding.bin.split0 bs=56 count=1
+  dd if=embedding.bin of=embedding.bin.split1 bs=64 count=1
+  popd
 
 
   python3 test_abnormal.py \
-    --model_path /data2/v4/encrypted.bmodel \
+    --model_path ${bmodel_path} \
     --tokenizer_path ../support/token_config/ \
     --devid 0 \
     --generation_mode greedy \
     --lib_path ../share_cache_demo/build/libcipher.so \
-    --abnormal_path ./test_abnormal \
+    --abnormal_path ${abnormal_path} \
     --enable_lora_embedding | tee test_abnormal.log
 else
   echo "Error: Unknown mode '$mode'. Use 'compile' or 'run'."
