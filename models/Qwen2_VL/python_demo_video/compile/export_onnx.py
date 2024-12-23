@@ -88,15 +88,8 @@ class VisionTransformer(torch.nn.Module):
 
     def forward(self, hidden_states, pos_ids, attention_mask):
         hidden_states = ViT.patch_embed(hidden_states)
-        # hidden_states = ViT.patch_embed(hidden_states[:pixel_length[0],:])
-        # rotary_pos_emb = ViT.rot_pos_emb(image_grid_thw)
-        # max_grid_size = image_grid_thw[:, 1:].max()
+
         rotary_pos_emb = self.rotary_pos_emb_full[pos_ids].flatten(1)
-        
-        # cu_seqlens = torch.repeat_interleave(image_grid_thw[:, 1] * image_grid_thw[:, 2], image_grid_thw[:, 0]).cumsum(
-        #     dim=0, dtype=torch.int32
-        # )
-        # cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
 
         for blk in ViT.blocks:
             hidden_states = blk(hidden_states, attention_mask=attention_mask, rotary_pos_emb=rotary_pos_emb)
@@ -343,7 +336,7 @@ def test_net_with_mask():
             "content": [
                 {
                     "type": "video",
-                    "video": "../python_demo_video/sample.mp4",
+                    "video": "../python_demo/sample.mp4",
                     "max_pixels": 360 * 420,
                     "fps": 1.0,
                 },

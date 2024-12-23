@@ -88,7 +88,7 @@ cp ${pkg_path}/transformers/models/qwen2_vl/modeling_qwen2_vl.py modeling_qwen2_
 sudo cp files/${model_name_upper}-Instruct/modeling_qwen2_vl.py ${pkg_path}/transformers/models/qwen2_vl/modeling_qwen2_vl.py
 
 echo "export onnx..."
-python export_onnx_video.py --model_path ${model_path} --seq_length ${seq_length}
+python export_onnx.py --model_path ${model_path} --seq_length ${seq_length}
 
 echo "compile model..."
 source ${tpu_mlir_path}/envsetup.sh 

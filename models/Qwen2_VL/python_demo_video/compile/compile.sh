@@ -241,6 +241,7 @@ for ((i=0; i<$num_layers; i++)); do
 
 done
 popd
+
 # echo $models
 
 # # Compile VIT model
@@ -250,8 +251,8 @@ popd
 # model_transform.py \
 #   --model_name vit \
 #   --model_def ../../onnx/vit/vision_transformer.onnx \
-#   --input_shapes [[1440,1176],[1,3],[1]] \
-#   --input_types "float32,int32,int32" \
+#   --input_shapes [[600,1176]] \
+#   --input_types "float32" \
 #   --mlir vit.mlir 
 
 # model_deploy.py \

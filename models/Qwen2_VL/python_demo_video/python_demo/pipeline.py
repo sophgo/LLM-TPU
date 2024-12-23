@@ -2,6 +2,7 @@ import time
 import argparse
 from PIL import Image
 import torchvision.transforms as T
+import torch.nn.functional as F
 from torchvision.transforms.functional import InterpolationMode
 from transformers import AutoModelForCausalLM, Qwen2VLForConditionalGeneration, AutoProcessor, AutoTokenizer, PretrainedConfig, Qwen2VLConfig
 from qwen_vl_utils import process_vision_info
@@ -10,10 +11,6 @@ import json
 import os
 import torch
 from typing import Optional, Tuple
-
-# Preprocess the images
-IMAGENET_MEAN = (0.485, 0.456, 0.406)
-IMAGENET_STD = (0.229, 0.224, 0.225)
 
 def get_rope_index(
         config,
@@ -119,18 +116,18 @@ def get_rope_index(
 
             return position_ids, mrope_position_deltas
 
-def get_position_ids(processor, config, image_path, text="Describe this image and tell a story."):
+def get_position_ids(processor, config, video_path, text="Describe this video and tell a story."):
     messages = [
         {
             "role": "user",
             "content": [
                 {
-                    "type": "image",
-                    "image": image_path,
-                    "resized_height": 280,
-                    "resized_width": 420,
+                    "type": "video",
+                    "video": video_path,
+                    "max_pixels": 360 * 420,
+                    "fps": 1.0,
                 },
-                {"type": "text", "text": text},
+                {"type": "text", "text": "Describe this video."},
             ],
         }
     ]
@@ -145,18 +142,17 @@ def get_position_ids(processor, config, image_path, text="Describe this image an
         return_tensors="pt",
     )
 
-    # SEQ_LENGTH = config['max_position_embeddings']
-    SEQ_LENGTH = 2048
+    SEQ_LENGTH = config['max_position_embeddings']
+    # SEQ_LENGTH = 2048
     # SEQ_LENGTH = self.SEQLEN
     if SEQ_LENGTH <= inputs.input_ids.shape[-1]:
         raise ValueError(
-                f"The input_length must be shorter than model's seq_length (got `input_length`: {inputs.input_ids.shape[-1]}"
-                f" and `seq_length`: {SEQ_LENGTH})."
-            )
-    breakpoint()
+            f"The input_length must be shorter than model's seq_length (got `input_length`: {inputs.input_ids.shape[-1]}"
+            f" and `seq_length`: {SEQ_LENGTH})."
+        )
     input_ids = inputs.input_ids
-    pixel_values = inputs.pixel_values
-    image_grid_thw = inputs.image_grid_thw
+    pixel_values = inputs.pixel_values_videos
+    video_grid_thw = inputs.video_grid_thw
     input_ids_prefill = torch.zeros(1, SEQ_LENGTH).to(torch.int32)
     input_ids_prefill[:, :input_ids.shape[-1]] = input_ids
     attention_mask_prefill = torch.zeros(1, SEQ_LENGTH)
@@ -166,7 +162,7 @@ def get_position_ids(processor, config, image_path, text="Describe this image an
         config_dict = json.load(json_file)
         loaded_config = Qwen2VLConfig(**config_dict)
         # print(loaded_config)
-    image_mask = (input_ids_prefill == loaded_config.image_token_id)
+    image_mask = (input_ids_prefill == loaded_config.video_token_id)
     true_indices = torch.nonzero(image_mask, as_tuple=True)[1]
 
     if true_indices.numel() > 0:
@@ -174,29 +170,12 @@ def get_position_ids(processor, config, image_path, text="Describe this image an
     else:
         first_true_index = None
     
-
-    # config = Qwen2VLConfig(
-    #     # vocab_size=151936,
-    #     # hidden_size=1536,
-    #     # num_hidden_layers=28,
-    #     # num_attention_heads=12,
-    #     # intermediate_size=8960,
-    #     # max_position_embeddings=32768,
-    #     # 添加其他必要的参数
-    #     **config
-    # )
-
-    # 创建模型实例
-    # model = Qwen2VLForConditionalGeneration(loaded_config)
-    # position_ids, _ = Qwen2VLForConditionalGeneration(loaded_config).get_rope_index(
-    #     input_ids_prefill, image_grid_thw, None, attention_mask_prefill
-    # )
-    breakpoint()
     position_ids, _ = get_rope_index(loaded_config,
-        input_ids_prefill, image_grid_thw, None, attention_mask_prefill
+        input_ids_prefill, None, video_grid_thw, attention_mask_prefill
     )
 
-    return position_ids, inputs, first_true_index
+    pixel_num = true_indices.shape[-1]
+    return position_ids, inputs, first_true_index, pixel_num
 
 class Qwen2VL():
 
@@ -220,24 +199,6 @@ class Qwen2VL():
         self.ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
         self.ID_IM_END = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
 
-    # def load_image(self, image_file):
-    #     image = Image.open(image_file).convert('RGB')
-    #     pixel_values = self.image_transform(image)
-    #     return pixel_values
-
-    # def encode(self):
-    #     if not self.image_str:
-    #         prompt = self.system_prompt + self.input_str + "<|im_end|><|im_start|>assistant\n"
-    #         self.input_ids = self.tokenizer.encode(prompt)
-    #         self.image_offset = 0
-    #         self.pixel_values = []
-    #         return
-    #     self.pixel_values = self.load_image(self.image_str).flatten().tolist()
-    #     self.image_offset = self.system_offset
-    #     prompt_ids = self.tokenizer.encode(
-    #         "</img>{}<|im_end|><|im_start|>assistant\n".format(self.input_str))
-    #     self.input_ids = self.system_prefix + prompt_ids
-
     def chat(self):
         """
         Start a chat session.
@@ -250,54 +211,62 @@ class Qwen2VL():
 =================================================================""")
         # Stop Chatting with "exit" input
         while True:
-            # self.input_str = input("\nQuestion: ")
-            # # Quit
-            # if self.input_str in ["exit", "q", "quit"]:
-            #     break
-            # self.image_str = input("\nImage Path: ")
-            # print("\nAnswer:")
-            # if self.image_str:
-            #     if not os.path.exists(self.image_str):
-            #         print("Can't find image: {}".format(self.image_str))
-            #         continue
-
-            # self.encode()
-            # self.POSITION_IDS, inputs, image_offset = get_position_ids(processor=self.processor, config=self.config, image_path=self.image_str, text=self.input_str)
-            self.POSITION_IDS, inputs, image_offset = get_position_ids(processor=self.processor, config=self.config, image_path="image1.jpg")
-            # messages = [
-            #     {
-            #         "role": "user",cd 
-            #         "content": [
-            #             {
-            #                 "type": "image",
-            #                 "image": self.image_str,
-            #             },
-            #             {"type": "text", "text": self.input_str},
-            #         ],
-            #     }
-            # ]
-            # text = processor.apply_chat_template(
-            #     messages, tokenize=False, add_generation_prompt=True
-            # )
-            # image_inputs, video_inputs = process_vision_info(messages)
-            # inputs = processor(
-            #     text=[text],
-            #     images=image_inputs,
-            #     videos=video_inputs,
-            #     padding=True,
-            #     return_tensors="pt",
-            # )
-            # config = origin_model.config
-
-            # position_ids, _ = Qwen2VLForConditionalGeneration(config).get_rope_index(
-            #     input_ids_prefill, image_grid_thw, None, attention_mask_prefill
-            # )
+            self.POSITION_IDS, inputs, image_offset, pixel_num = get_position_ids(processor=self.processor,
+                                                                       config=self.config,
+                                                                       video_path="sample.mp4")
             position_ids = self.POSITION_IDS
+            
+            pixel_values = inputs.pixel_values_videos
+            grid_thw = inputs.video_grid_thw
+            cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
+                dim=0, dtype=torch.int32
+            )
+            cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
+
+            attention_mask_vit = torch.full(
+                [1, pixel_values.shape[0], pixel_values.shape[0]], torch.finfo(torch.float32).min, dtype=torch.float32
+            )
+            for i in range(1, len(cu_seqlens)):
+                attention_mask_vit[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0
+
+            pos_ids = []
+            for t, h, w in grid_thw:
+                hpos_ids = torch.arange(h).unsqueeze(1).expand(-1, w)
+                hpos_ids = hpos_ids.reshape(
+                    h // self.config['vision_config']['spatial_merge_size'],
+                    self.config['vision_config']['spatial_merge_size'],
+                    w // self.config['vision_config']['spatial_merge_size'],
+                    self.config['vision_config']['spatial_merge_size'],
+                )
+                hpos_ids = hpos_ids.permute(0, 2, 1, 3)
+                hpos_ids = hpos_ids.flatten()
+
+                wpos_ids = torch.arange(w).unsqueeze(0).expand(h, -1)
+                wpos_ids = wpos_ids.reshape(
+                    h // self.config['vision_config']['spatial_merge_size'],
+                    self.config['vision_config']['spatial_merge_size'],
+                    w // self.config['vision_config']['spatial_merge_size'],
+                    self.config['vision_config']['spatial_merge_size'],
+                )
+                wpos_ids = wpos_ids.permute(0, 2, 1, 3)
+                wpos_ids = wpos_ids.flatten()
+                pos_ids.append(torch.stack([hpos_ids, wpos_ids], dim=-1).repeat(t, 1))
+            pos_ids = torch.cat(pos_ids, dim=0)
+
+            # prefill vit
+            pixel_values_prefill = torch.zeros([2000, 1176]).to(dtype=torch.float32)
+            pixel_values_prefill[:inputs.pixel_values_videos.shape[0],:] = inputs.pixel_values_videos
+            pos_ids_prefill = torch.zeros([2000, 2]).to(dtype=torch.int32)
+            pos_ids_prefill[:pos_ids.shape[0],:] = pos_ids
+            attention_mask_vit_prefill = torch.zeros([1, 2000, 2000], dtype=torch.bool)
+            attention_mask_vit_prefill[0,:pos_ids.shape[0],:pos_ids.shape[0]] = attention_mask_vit
+
             # Chat
             first_start = time.time()
-            breakpoint()
-            token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), position_ids.flatten().tolist(), inputs.pixel_values.flatten().tolist(),
-                                             inputs.image_grid_thw.squeeze(0).tolist(), image_offset)
+            
+            token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), position_ids.flatten().tolist(), pixel_values_prefill.flatten().tolist(),
+                                             pos_ids_prefill.flatten().tolist(), attention_mask_vit_prefill.flatten().to(dtype=torch.float32).tolist(),
+                                             image_offset, pixel_num)
             first_end = time.time()
             tok_num = 1
             # Following tokens
@@ -342,12 +311,12 @@ if __name__ == "__main__":
     parser.add_argument('-t',
                         '--tokenizer_path',
                         type=str,
-                        default="../support/token_config",
+                        default="../../support/token_config",
                         help='path to the tokenizer file')
     parser.add_argument('-p',
                         '--processor_path',
                         type=str,
-                        default="../support/processor_config",
+                        default="../../support/processor_config",
                         help='path to the processor file')
     parser.add_argument('-c',
                         '--config',
