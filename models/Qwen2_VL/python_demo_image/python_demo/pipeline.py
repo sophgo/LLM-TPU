@@ -153,7 +153,6 @@ def get_position_ids(processor, config, image_path, text="Describe this image an
                 f"The input_length must be shorter than model's seq_length (got `input_length`: {inputs.input_ids.shape[-1]}"
                 f" and `seq_length`: {SEQ_LENGTH})."
             )
-    breakpoint()
     input_ids = inputs.input_ids
     pixel_values = inputs.pixel_values
     image_grid_thw = inputs.image_grid_thw
@@ -191,7 +190,6 @@ def get_position_ids(processor, config, image_path, text="Describe this image an
     # position_ids, _ = Qwen2VLForConditionalGeneration(loaded_config).get_rope_index(
     #     input_ids_prefill, image_grid_thw, None, attention_mask_prefill
     # )
-    breakpoint()
     position_ids, _ = get_rope_index(loaded_config,
         input_ids_prefill, image_grid_thw, None, attention_mask_prefill
     )
@@ -205,8 +203,7 @@ class Qwen2VL():
         self.device = args.devid
         self.processor = AutoProcessor.from_pretrained(args.processor_path,
                                                        trust_remote_code=True)
-        self.tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path,
-                                                       trust_remote_code=True)
+        self.tokenizer = self.processor.tokenizer
         with open(args.config, 'r') as f:
             self.config = json.load(f)
 
@@ -295,7 +292,6 @@ class Qwen2VL():
             position_ids = self.POSITION_IDS
             # Chat
             first_start = time.time()
-            breakpoint()
             token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), position_ids.flatten().tolist(), inputs.pixel_values.flatten().tolist(),
                                              inputs.image_grid_thw.squeeze(0).tolist(), image_offset)
             first_end = time.time()
