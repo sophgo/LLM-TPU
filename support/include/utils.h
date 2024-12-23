@@ -215,29 +215,79 @@ float float_to_fp32(float float_val) {
   return float_val;
 }
 
-template<typename T, typename ConvertFunc>
-void dump_min_and_max(bm_handle_t bm_handle, bm_device_mem_t mem, ConvertFunc converter) {
-  size_t mem_size = bm_mem_get_device_size(mem);
-  int ele_count = mem_size / sizeof(T);
-  std::vector<T> data(ele_count);
-  std::vector<float> fp32_data(ele_count);
-
-  bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, mem_size, 0);
-
-  for (int i = 0; i < ele_count; i++) {
-    if constexpr (std::is_same_v<T, uint16_t>) {
-      fp32 t;
-      t.bits = converter(data[i]);
-      fp32_data[i] = t.fval;
-    } else {
-      fp32_data[i] = converter(data[i]);
+void calculate_min_and_max(const std::vector<float>& data) {
+    if (data.empty()) {
+        std::cout << "No data to process." << std::endl;
+        return;
     }
-  }
+    auto min_it = std::min_element(data.begin(), data.end());
+    auto max_it = std::max_element(data.begin(), data.end());
+    std::cout << "min_value: " << *min_it << std::endl;
+    std::cout << "max_value: " << *max_it << std::endl;
+}
 
-  auto min_it = std::min_element(fp32_data.begin(), fp32_data.end());
-  auto max_it = std::max_element(fp32_data.begin(), fp32_data.end());
-  std::cout << "min_value: " << *min_it << std::endl;
-  std::cout << "max_value: " << *max_it << std::endl;
+void dump_min_and_max_bf16(bm_handle_t bm_handle, bm_device_mem_t mem, uint32_t (*converter)(uint16_t)) {
+    size_t mem_size = bm_mem_get_device_size(mem);
+    int ele_count = mem_size / sizeof(uint16_t);
+    std::vector<uint16_t> data(ele_count);
+    std::vector<float> fp32_data(ele_count);
+
+    bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, mem_size, 0);
+
+    for (int i = 0; i < ele_count; i++) {
+        fp32 t;
+        t.bits = converter(data[i]);
+        fp32_data[i] = t.fval;
+    }
+
+    calculate_min_and_max(fp32_data);
+}
+
+void dump_min_and_max_fp16(bm_handle_t bm_handle, bm_device_mem_t mem, uint32_t (*converter)(uint16_t)) {
+    size_t mem_size = bm_mem_get_device_size(mem);
+    int ele_count = mem_size / sizeof(uint16_t);
+    std::vector<uint16_t> data(ele_count);
+    std::vector<float> fp32_data(ele_count);
+
+    bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, mem_size, 0);
+
+    for (int i = 0; i < ele_count; i++) {
+        fp32 t;
+        t.bits = converter(data[i]);
+        fp32_data[i] = t.fval;
+    }
+
+    calculate_min_and_max(fp32_data);
+}
+
+void dump_min_and_max_int(bm_handle_t bm_handle, bm_device_mem_t mem, float (*converter)(int)) {
+    size_t mem_size = bm_mem_get_device_size(mem);
+    int ele_count = mem_size / sizeof(int);
+    std::vector<int> data(ele_count);
+    std::vector<float> fp32_data(ele_count);
+
+    bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, mem_size, 0);
+
+    for (int i = 0; i < ele_count; i++) {
+        fp32_data[i] = converter(data[i]);
+    }
+
+    calculate_min_and_max(fp32_data);
+}
+
+void dump_min_and_max_fp32(bm_handle_t bm_handle, bm_device_mem_t mem, float (*converter)(float)) {
+    size_t mem_size = bm_mem_get_device_size(mem);
+    int ele_count = mem_size / sizeof(float);
+    std::vector<float> data(ele_count);
+    std::vector<float> fp32_data(ele_count);
+
+    bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, mem_size, 0);
+
+    for (int i = 0; i < ele_count; i++) {
+        fp32_data[i] = converter(data[i]);
+    }
+
+    calculate_min_and_max(fp32_data);
 }
 
 void dump_bf16_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
@@ -257,7 +307,7 @@ void dump_bf16_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
   }
   std::cout << "-------------------------------------" << std::endl;
 
-  dump_min_and_max<uint16_t>(bm_handle, mem, bf16_to_fp32_bits);
+  dump_min_and_max_bf16(bm_handle, mem, bf16_to_fp32_bits);
 }
 
 void dump_fp16_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
@@ -277,7 +327,7 @@ void dump_fp16_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
   }
   std::cout << "-------------------------------------" << std::endl;
 
-  dump_min_and_max<uint16_t>(bm_handle, mem, fp16_ieee_to_fp32_bits);
+  dump_min_and_max_fp16(bm_handle, mem, fp16_ieee_to_fp32_bits);
 }
 
 void dump_fp32_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
@@ -295,7 +345,7 @@ void dump_fp32_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
   }
   std::cout << "-------------------------------------" << std::endl;
 
-  dump_min_and_max<float>(bm_handle, mem, float_to_fp32);
+  dump_min_and_max_fp32(bm_handle, mem, float_to_fp32);
 }
 
 void dump_int_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
@@ -313,7 +363,7 @@ void dump_int_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
   }
   std::cout << "-------------------------------------" << std::endl;
 
-  dump_min_and_max<int>(bm_handle, mem, int_to_fp32);
+  dump_min_and_max_int(bm_handle, mem, int_to_fp32);
 }
 
 //===------------------------------------------------------------===//
@@ -321,74 +371,6 @@ void dump_int_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
 //===------------------------------------------------------------===//
 #ifdef DUMP_TENSOR
 #include "cnpy.h"
-template <typename T>
-void dump_mem_to_file(bm_handle_t &bm_handle, bm_device_mem_t &t,
-                      std::vector<size_t> &&shape, const std::string &filename,
-                      const std::string &tensor_name) {
-  int cnt = bm_mem_get_device_size(t) / sizeof(T);
-  auto buffer = std::make_unique<T[]>(cnt);
-  bm_memcpy_d2s(bm_handle, buffer.get(), t);
-
-  if constexpr (std::is_same_v<T, uint16_t>) {
-    std::vector<float> data(cnt);
-    for (int i = 0; i < cnt; i++)
-      data[i] = bf16_to_fp32_value(buffer[i]);
-    // data[i] = fp16_ieee_to_fp32_value(buffer[i]);
-    cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
-  } else if constexpr (std::is_same_v<T, int32_t>) {
-    std::vector<int> data(cnt);
-    memcpy(data.data(), buffer.get(), sizeof(int) * cnt);
-    cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
-  } else {
-    std::vector<float> data(cnt);
-    memcpy(data.data(), buffer.get(), sizeof(float) * cnt);
-    cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
-  }
-}
-
-void dump_tensor_to_file(bm_handle_t &bm_handle, bm_tensor_t &t,
-                         bm_shape_t bm_shape, const std::string &filename,
-                         bm_data_type_t tensor_type,
-                         const std::string &tensor_name) {
-  int mem_size = bm_mem_get_device_size(t.device_mem);
-  std::vector<size_t> shape(bm_shape.dims, bm_shape.dims + bm_shape.num_dims);
-
-  if (tensor_type == BM_FLOAT16) {
-    // F16
-    int cnt = mem_size / sizeof(uint16_t);
-    std::vector<float> data(cnt);
-    std::vector<uint16_t> buffer(cnt);
-    bm_memcpy_d2s(bm_handle, buffer.data(), t.device_mem);
-    for (size_t i = 0; i < data.size(); i++) {
-      data[i] = fp16_ieee_to_fp32_value(buffer[i]);
-    }
-    cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
-  } else if (tensor_type == BM_BFLOAT16) {
-    // BF16
-    int cnt = mem_size / sizeof(uint16_t);
-    std::vector<float> data(cnt);
-    std::vector<uint16_t> buffer(cnt);
-    bm_memcpy_d2s(bm_handle, buffer.data(), t.device_mem);
-    for (size_t i = 0; i < data.size(); i++) {
-      data[i] = bf16_to_fp32_value(buffer[i]);
-    }
-    cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
-  } else if (tensor_type == BM_INT32) {
-    // INT32
-    int cnt = mem_size / sizeof(int32_t);
-    std::vector<int> data(cnt);
-    bm_memcpy_d2s(bm_handle, data.data(), t.device_mem);
-    cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
-  } else if (tensor_type == BM_FLOAT32) {
-    // FLOAT32
-    int cnt = mem_size / sizeof(float);
-    std::vector<float> data(cnt);
-    bm_memcpy_d2s(bm_handle, data.data(), t.device_mem);
-    cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
-  } else {
-    throw std::runtime_error("Not support dtype");
-  }
-}
 
 void dump_net_input_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
                       const std::string &filename) {

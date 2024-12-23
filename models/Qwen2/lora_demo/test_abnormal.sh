@@ -47,15 +47,27 @@ if [ "$mode" == "compile" ]; then
     --max_embedding_rank_num $max_embedding_rank_num
 
 elif [ "$mode" == "run" ]; then
-  abnormal_path="/data2/v4/test_abnormal"
-  bmodel_path="/data2/v4/encrypted.bmodel"
+  abnormal_path="/data2/v4/test_abnormal" # change to your abnormal_path
+  bmodel_path="/data2/v4/encrypted.bmodel" # change to your bmodel_path
 
   pushd ${abnormal_path}
   touch embedding.bin.empty
+
+  # lora
   touch encrypted_lora_weights.bin.empty
   split -b 600M embedding.bin embedding.bin.split
   dd if=embedding.bin of=embedding.bin.split0 bs=56 count=1
   dd if=embedding.bin of=embedding.bin.split1 bs=64 count=1
+
+  # bmodel
+  cp ${bmodel_path} . 
+  touch encrypted.bmodel.empty
+  dd if=${bmodel_path} of=encrypted.bmodel.split0 bs=56 count=1
+  dd if=${bmodel_path} of=encrypted.bmodel.split1 bs=64 count=1
+  dd if=${bmodel_path} of=encrypted.bmodel.split2 bs=100 count=1
+  dd if=${bmodel_path} of=encrypted.bmodel.split3 bs=10000 count=1
+  dd if=${bmodel_path} of=encrypted.bmodel.split4 bs=1000000 count=1
+  dd if=${bmodel_path} of=encrypted.bmodel.split5 bs=100000000 count=1
   popd
 
 

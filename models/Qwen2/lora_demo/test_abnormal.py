@@ -222,6 +222,7 @@ def main(args):
             "embedding.bin", "embedding.bin.empty", "embedding.bin.splitaa",
             "embedding.bin.splitab", "embedding.bin.split0", "embedding.bin.split1"
         ]
+        engine.model_path = args.model_path
         random.shuffle(embedding_path_list)
         for embedding_path in embedding_path_list:
             try:
@@ -234,18 +235,44 @@ def main(args):
                 engine.model.deinit()
 
 
-        engine.model.embedding_path = f"{dir_path}/{embedding_path_list[0]}"
         print("---------------------------(2) test lora---------------------------")
         lora_path_list = [
             "encrypted_lora_weights_r64.bin", "encrypted_lora_weights.bin.empty",
             "encrypted_lora_weights_r32.bin", "encrypted_lora_weights_r96.bin"
         ]
+        engine.model_path = args.model_path
+        engine.model.embedding_path = f"{dir_path}/{embedding_path_list[0]}"
         random.shuffle(lora_path_list)
         for lora_path in lora_path_list:
             try:
                 engine.model.enable_lora_embedding = False
                 engine.test_lora(f"{dir_path}/{lora_path}")
 
+                engine.model.enable_lora_embedding = True
+                engine.test_lora(f"{dir_path}/{lora_path}")
+            except Exception as e:
+                print(f"{type(e).__name__} : {str(e)}")
+            finally:
+                engine.model.deinit()
+
+
+        print("---------------------------(3) test bmodel---------------------------")
+        bmodel_path_list = [
+            "encrypted.bmodel", "encrypted.bmodel.empty",
+            "encrypted.bmodel.split0", "encrypted.bmodel.split1",
+            "encrypted.bmodel.split2", "encrypted.bmodel.split3",
+            "encrypted.bmodel.split4", "encrypted.bmodel.split5"
+        ]
+        lora_path = "encrypted_lora_weights_r64.bin"
+        engine.model.embedding_path = f"{dir_path}/{embedding_path_list[0]}"
+        random.shuffle(bmodel_path_list)
+        for bmodel_path in bmodel_path_list:
+            try:
+                engine.model_path = f"{dir_path}/{bmodel_path}"
+                engine.model.enable_lora_embedding = False
+                engine.test_lora(f"{dir_path}/{lora_path}")
+
+                engine.model_path = f"{dir_path}/{bmodel_path}"
                 engine.model.enable_lora_embedding = True
                 engine.test_lora(f"{dir_path}/{lora_path}")
             except Exception as e:
