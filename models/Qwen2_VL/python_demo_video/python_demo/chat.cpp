@@ -32,7 +32,7 @@ public:
   void init(int devid, std::string model_path);
   void deinit();
   int forward_first(std::vector<int> &tokens, std::vector<int> &position_id,
-                    std::vector<float> &pixel_values, std::vector<int> &posids,
+                    std::vector<float> &pixel_values, std::vector<int> &grid_thw,
                     std::vector<float> &attnmask, int img_offset, int pixel_num);
   int forward_next();
 
@@ -46,9 +46,16 @@ private:
   int greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   uint16_t mask_value;
 
+  std::vector<int> range(int start, int end);
+  std::vector<std::vector<std::vector<std::vector<int>>>> Qwen2VL::reshape_2Dto4D(
+    const std::vector<int>& ori, int d1, int d2, int d3, int d4
+  );
+  std::vector<int> get_vit_pos_ids(std::vector<int> &gird_thw);
+
 public:
   int token_length;
   int SEQLEN; // read from bmodel
+  int VIT_SEQLEN; // read from bmodel
   int HIDDEN_SIZE;
   int NUM_LAYERS; // read from bmodel
   uint64_t IMAGE_BYTES;
@@ -189,8 +196,91 @@ int Qwen2VL::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem
   return token;
 }
 
+std::vector<int> Qwen2VL::range(int start, int end) {
+    std::vector<int> result;
+    for (int i = start; i < end; ++i) {
+        result.push_back(i);
+    }
+    return result;
+}
+
+std::vector<std::vector<std::vector<std::vector<int>>>> Qwen2VL::reshape_2Dto4D(
+    const std::vector<int>& ori, int d1, int d2, int d3, int d4
+) {
+    std::vector<std::vector<std::vector<std::vector<int>>>> result(
+        d1, std::vector<std::vector<std::vector<int>>>(
+            d2, std::vector<std::vector<int>>(
+                d3, std::vector<int>(d4))));
+
+    // std::vector<int> result(d1 * d2 * d3 * d4);
+
+    int index = 0;
+    for (int i = 0; i < d1; ++i) {
+        for (int j = 0; j < d2; ++j) {
+            for (int k = 0; k < d3; ++k) {
+                for (int l = 0; l < d4; ++l) {
+                    int ori_index = i * d2 * d3 * d4 + j * d3 *d4 + k * d4 + l;
+                    result[i][j][k][l] = ori[ori_index];
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
+std::vector<int> Qwen2VL::get_vit_pos_ids(std::vector<int> &grid_thw) {
+  int t, h, w;
+  t = grid_thw[0];
+  h = grid_thw[1];
+  w = grid_thw[2];
+  int spatial_merge_size = 2;
+  std::vector<int> h_range = range(0, h);
+    std::vector<int> hpos_ids_flat(h * w);
+    for (int i = 0; i < h; ++i) {
+        for (int j = 0; j < w; ++j) {
+            hpos_ids_flat[i * w + j] = h_range[i];
+        }
+    }
+
+    std::vector<int> w_range = range(0, w);
+    std::vector<int> wpos_ids_flat(h * w);
+    for (int i = 0; i < w; ++i) {
+        for (int j = 0; j < h; ++j) {
+            wpos_ids_flat[j * w + i] = w_range[i];
+        }
+    }
+
+    auto hpos_ids = reshape_2Dto4D(hpos_ids_flat, h / spatial_merge_size, spatial_merge_size,
+                                   w / spatial_merge_size, spatial_merge_size);
+
+    auto wpos_ids = reshape_2Dto4D(wpos_ids_flat, h / spatial_merge_size, spatial_merge_size,
+                                   w / spatial_merge_size, spatial_merge_size);
+    
+    // std::vector<int> hpos_ids_permuted(h * w);
+    // std::vector<int> wpos_ids_permuted(h * w);
+    std::vector<int> pos_ids(VIT_SEQLEN * 2);
+    int idx = 0, p_idx = 0;
+    for (int i = 0; i < h / spatial_merge_size; ++i) {
+        for (int k = 0; k < w /spatial_merge_size; ++k) {
+            for (int j = 0; j < spatial_merge_size; ++j) {
+                for (int l = 0; l < spatial_merge_size; ++l) {
+                    // hpos_ids_permuted[idx] = hpos_ids[i][j][k][l];
+                    // wpos_ids_permuted[idx] = wpos_ids[i][j][k][l];
+                    pos_ids[p_idx++] = hpos_ids[i][j][k][l];
+                    pos_ids[p_idx++] = wpos_ids[i][j][k][l];
+                    idx++;
+                    std::cout<< pos_ids[p_idx-2] << " " << pos_ids[p_idx-1] << " ";
+                }
+            }
+        }
+    }
+    return pos_ids;
+}
+
+
 int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_ids,
-                             std::vector<float> &pixel_values, std::vector<int> &posids,
+                             std::vector<float> &pixel_values, std::vector<int> &grid_thw,
                              std::vector<float> &attnmask, int img_offset, int pixel_num) {
   std::vector<int> input_ids(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, 0);
@@ -198,6 +288,9 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
   POSITION_IDS.resize(position_ids.size()/3, std::vector<int>(3));
   MAX_POS = 0;
   std::vector<int> p_ids(SEQLEN*3, 0);
+  std::vector<int> pos_ids(VIT_SEQLEN*2, 0);
+
+  pos_ids = get_vit_pos_ids(grid_thw);
 
   for (int i = 0; i < (int)POSITION_IDS.size(); ++i) {
     for (int j = 0; j < 3; ++j) {
@@ -235,7 +328,7 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
     auto &vit_in_mem_attnmask = net_vit->stages[0].input_mems[2];
     auto &vit_out_mem = net_vit->stages[0].output_mems[0];
     bm_memcpy_s2d(bm_handle, vit_in_mem_pixels, (void *)pixel_values.data());
-    bm_memcpy_s2d(bm_handle, vit_in_mem_posids, (void *)posids.data());
+    bm_memcpy_s2d(bm_handle, vit_in_mem_posids, (void *)grid_thw.data());
     bm_memcpy_s2d(bm_handle, vit_in_mem_attnmask, (void *)attnmask.data());
     // dump_net_input_to_file(bm_handle, net_vit, "vit_input.npz");
     net_launch(net_vit);
@@ -367,5 +460,6 @@ PYBIND11_MODULE(chat, m) {
       .def("deinit", &Qwen2VL::deinit)
       .def_readwrite("SEQLEN", &Qwen2VL::SEQLEN) // read SEQLEN in pipeline.py
       .def_readwrite("token_length", &Qwen2VL::token_length)
+      .def_readwrite("vit_seqlen", &Qwen2VL::VIT_SEQLEN)
       .def_readwrite("generation_mode", &Qwen2VL::generation_mode);
 }

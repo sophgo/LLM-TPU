@@ -195,6 +195,7 @@ class Qwen2VL():
         self.model.generation_mode = args.generation_mode
         # self.POSITION_IDS, _, _ = get_position_ids(processor=self.processor, config=self.config)
         self.SEQLEN = self.model.SEQLEN
+        self.VIT_SEQLEN = args.vit_seqlen
         # self.ID_EOS = self.tokenizer.eos_token_id
         self.ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
         self.ID_IM_END = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
@@ -265,7 +266,7 @@ class Qwen2VL():
             first_start = time.time()
             
             token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), position_ids.flatten().tolist(), pixel_values_prefill.flatten().tolist(),
-                                             pos_ids_prefill.flatten().tolist(), attention_mask_vit_prefill.flatten().to(dtype=torch.float32).tolist(),
+                                             grid_thw.flatten().tolist(), attention_mask_vit_prefill.flatten().to(dtype=torch.float32).tolist(),
                                              image_offset, pixel_num)
             first_end = time.time()
             tok_num = 1
@@ -331,5 +332,8 @@ if __name__ == "__main__":
                         choices=["greedy", "penalty_sample"],
                         default="greedy",
                         help='mode for generating next token')
+    parser.add_argument('-v',
+                        '--vit_seqlen',
+                        type=int, default=2000, help="vit sequence length")
     args = parser.parse_args()
     main(args)

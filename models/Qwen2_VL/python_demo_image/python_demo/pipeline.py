@@ -146,7 +146,7 @@ def get_position_ids(processor, config, image_path, text="Describe this image an
     )
 
     SEQ_LENGTH = config['max_position_embeddings']
-    # SEQ_LENGTH = 2048
+    SEQ_LENGTH = 2048
     # SEQ_LENGTH = self.SEQLEN
     if SEQ_LENGTH <= inputs.input_ids.shape[-1]:
         raise ValueError(
@@ -213,6 +213,7 @@ class Qwen2VL():
         self.model.generation_mode = args.generation_mode
         # self.POSITION_IDS, _, _ = get_position_ids(processor=self.processor, config=self.config)
         self.SEQLEN = self.model.SEQLEN
+        self.VIT_SEQLEN = args.vit_seqlen
         # self.ID_EOS = self.tokenizer.eos_token_id
         self.ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
         self.ID_IM_END = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
@@ -358,5 +359,8 @@ if __name__ == "__main__":
                         choices=["greedy", "penalty_sample"],
                         default="greedy",
                         help='mode for generating next token')
+    parser.add_argument('-v',
+                        '--vit_seqlen',
+                        type=int, default=2000, help="vit sequence length")
     args = parser.parse_args()
     main(args)
