@@ -14,7 +14,7 @@ your_torch_model是你模型的位置
 python3 export_onnx.py --model_path your_torch_model --seq_length 1024 --device cpu --image_file ../python_demo/test0.jpg
 ```
 * image_file：image_file为真实图片的路径，导出模型时，输入size会固定为该图片的size。`image_file请输入你实际的图片`
-* 目前不支持多图，不支持图片size可变
+* 目前不支持图片size可变
 
 ## Compile bmodel
 使用io_alone
@@ -26,7 +26,7 @@ python3 export_onnx.py --model_path your_torch_model --seq_length 1024 --device 
 也可以直接下载编译好的模型，不用自己编译
 ```shell
 pip3 install dfss
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpmv26_bm1684x_int4_seq1024.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpmv26_bm1684x_int4_seq1024_imsize448.bmodel
 ```
 
 ### python demo

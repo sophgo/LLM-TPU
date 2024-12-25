@@ -185,24 +185,24 @@ int MiniCPMV::forward_first(std::vector<int> &tokens,
   bm_memcpy_s2d(bm_handle, in_mem, (void *)input_ids.data());
   net_launch(net_embed); // prefil embedding
 
-  if (pixel_values.size() * sizeof(float) == IMAGE_BYTES && img_offsets.size() > 0) {
-    d2d(dev_buffer, out_mem);
-    out_mem = dev_buffer;
-    // forward vision transformer
-    auto &vit_in_mem = net_vit->stages[0].input_mems[0];
-    auto &vit_out_mem = net_vit->stages[0].output_mems[0];
-    bm_memcpy_s2d(bm_handle, vit_in_mem, (void *)pixel_values.data());
-    net_launch(net_vit);
+  int patch_size = net_vit->stages[0].output_shapes[0].dims[1];
+  int type_byte = sizeof(uint16_t);
 
-    // concatenante texting embedding and image embedding
-    int type_byte = sizeof(uint16_t);
-    int patch_bytes = bm_mem_get_device_size(vit_out_mem) / patch_num;
-    int patch_size = net_vit->stages[0].output_shapes[0].dims[1];
+  if (patch_num > 0 && pixel_values.size() * sizeof(float) == patch_num * IMAGE_BYTES && img_offsets.size() > 0) {
     for (int i = 0; i < patch_num; i++) {
-      int vit_offset = i * patch_bytes;
-      int dst_offset = img_offsets[i * patch_size] * HIDDEN_SIZE * type_byte;
+      float* patch_pixel_values_ptr = pixel_values.data() + i * IMAGE_BYTES / sizeof(float);
+      d2d(dev_buffer, out_mem);
+      out_mem = dev_buffer;
+      // forward vision transformer
+      auto &vit_in_mem = net_vit->stages[0].input_mems[0];
+      auto &vit_out_mem = net_vit->stages[0].output_mems[0];
+      bm_memcpy_s2d(bm_handle, vit_in_mem, (void *)patch_pixel_values_ptr);
+      net_launch(net_vit);
 
-      bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, vit_out_mem, vit_offset, patch_bytes);
+      // concatenante texting embedding and image embedding
+      int vit_out_size = bm_mem_get_device_size(vit_out_mem);
+      int dst_offset = img_offsets[i * patch_size] * HIDDEN_SIZE * type_byte;
+      bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, vit_out_mem, 0, vit_out_size);
     }
   }
 

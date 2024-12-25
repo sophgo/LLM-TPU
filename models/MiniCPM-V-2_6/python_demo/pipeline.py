@@ -2,9 +2,9 @@ import time
 import torch
 import argparse
 from PIL import Image
-import torchvision.transforms as T
+# import torchvision.transforms as T
 from transformers import AutoTokenizer, AutoProcessor
-from torchvision.transforms.functional import InterpolationMode
+# from torchvision.transforms.functional import InterpolationMode
 import chat
 import os
 
@@ -13,23 +13,23 @@ IMAGENET_MEAN = (0.5, 0.5, 0.5)
 IMAGENET_STD = (0.5, 0.5, 0.5)
 
 
-def build_transform(input_size):
-    MEAN, STD = IMAGENET_MEAN, IMAGENET_STD
-    transform = T.Compose([
-        T.Lambda(lambda img: img.convert('RGB') if img.mode != 'RGB' else img),
-        T.Resize((input_size, input_size),
-                 interpolation=InterpolationMode.BICUBIC),
-        T.ToTensor(),
-        T.Normalize(mean=MEAN, std=STD)
-    ])
-    return transform
+# def build_transform(input_size):
+#     MEAN, STD = IMAGENET_MEAN, IMAGENET_STD
+#     transform = T.Compose([
+#         T.Lambda(lambda img: img.convert('RGB') if img.mode != 'RGB' else img),
+#         T.Resize((input_size, input_size),
+#                  interpolation=InterpolationMode.BICUBIC),
+#         T.ToTensor(),
+#         T.Normalize(mean=MEAN, std=STD)
+#     ])
+#     return transform
 
 
-def load_image(image_file, input_size=448):
-    image = Image.open(image_file).convert('RGB')
-    transform = build_transform(input_size=input_size)
-    pixel_values = transform(image)
-    return pixel_values
+# def load_image(image_file, input_size=448):
+#     image = Image.open(image_file).convert('RGB')
+#     transform = build_transform(input_size=input_size)
+#     pixel_values = transform(image)
+#     return pixel_values
 
 
 class MiniCPMV():
@@ -56,25 +56,23 @@ class MiniCPMV():
         # parameters
         self.MAX_SLICE_NUMS = self.processor.image_processor.max_slice_nums
 
-    def encode(self):
-        if not self.image_str:
-            inserted_image_str = ""
-        else:
-            inserted_image_str = "(<image>./</image>)\n"
-            image = Image.open(self.image_str).convert('RGB')
+    def encode_with_image(self):
+        print("\033[31m请注意，目前不支持图片size可变，因此图片会进行resize。目标size为export_onnx时的图片size\033[0m")
+        print("\033[31m请注意，如果你export_onnx.py时使用的是其他图片size，请修改下面这行代码: single_imsize = (448, 448)\033[0m")
+        single_imsize = (448, 448)
+        inserted_image_str = "(<image>./</image>)\n"
+        images = []
+        contents = []
+        for i in range(self.patch_num):
+            images.append(Image.open(self.image_str[i]).convert('RGB').resize(single_imsize, Image.LANCZOS))
+            contents.append(inserted_image_str)
+        contents.append(self.input_str)
 
-
-        print("\033[31m请注意，目前不支持图片size可变，因此图片会进行resize。目标size为export_onnx时，image_file的图片size\033[0m")
-        print("\033[31m请注意，如果你export_onnx.py时，image_file使用的是其他图片，请修改下面这行代码\033[0m")
-        sample_image = Image.open("test0.jpg").convert('RGB')
-        image = image.resize(sample_image.size, Image.LANCZOS)
-
-        msgs = [{'role': 'user', 'content': '{}{}'.format(inserted_image_str, self.input_str)}]
+        msgs = [{'role': 'user', 'content': ''.join(contents)}]
         prompts_lists = self.processor.tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
-
         inputs = self.processor(
             prompts_lists,
-            [[image]] if image else None,
+            [images],
             max_slice_nums=self.MAX_SLICE_NUMS,
             use_image_id=None,
             return_tensors="pt",
@@ -83,9 +81,20 @@ class MiniCPMV():
         self.input_ids = inputs.input_ids[0]
         self.pixel_values = torch.cat(inputs["pixel_values"][0], dim=0).flatten().tolist()
         self.image_offsets = torch.where(self.input_ids==128244)[0].tolist()
-        self.patch_num = len(inputs["pixel_values"][0])
-
         self.input_ids = self.input_ids.tolist()
+
+    def encode(self):
+        msgs = [{'role': 'user', 'content': '{}'.format(self.input_str)}]
+        prompts_lists = self.processor.tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
+        inputs = self.processor(
+            prompts_lists,
+            [[]],
+            return_tensors="pt",
+            max_length=8192
+        )
+        self.image_offsets = []
+        self.pixel_values = []
+        self.input_ids = inputs.input_ids[0].tolist()
 
     def chat(self):
         """
@@ -104,13 +113,23 @@ class MiniCPMV():
             # Quit
             if self.input_str in ["exit", "q", "quit"]:
                 break
-            self.image_str = input("\nImage Path: ")
-            print("\nAnswer:")
+            try:
+                self.patch_num = int(input("\nImage Num: "))
+            except:
+                self.patch_num = 0
+            self.image_str = [input(f"\nImage Path {i}: ") for i in range(self.patch_num)] if self.patch_num >= 1 else []
+
             if self.image_str:
-                if not os.path.exists(self.image_str):
-                    print("Can't find image: {}".format(self.image_str))
+                missing_images = [x for x in self.image_str if not os.path.exists(x)]
+                if missing_images:
+                    print("\nMissing images: {}".format(", ".join(missing_images)))
                     continue
-            self.encode()
+                else:
+                    self.encode_with_image()
+            else:
+                self.encode()
+
+            print("\nAnswer:")
             # Chat
             first_start = time.time()
             token = self.model.forward_first(
