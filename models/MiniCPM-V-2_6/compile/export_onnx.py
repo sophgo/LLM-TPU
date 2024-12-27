@@ -170,7 +170,7 @@ class VisionTransformer(torch.nn.Module):
 
 
 def convert_vision_transformer():
-    image = Image.open(image_file).convert('RGB')
+    image = Image.open(image_file).convert('RGB').resize((448,448), Image.LANCZOS) 
     inputs = processor.image_processor([image], do_pad=True, max_slice_nums=MAX_SLICE_NUMS, return_tensors="pt")
     pixel_values = inputs["pixel_values"][0]
     for i in range(len(pixel_values)):
