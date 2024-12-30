@@ -190,10 +190,10 @@ def convert_block_cache(layer_id):
 def convert_vision_transformer():
     # make input
     x = torch.randn(max_pixels, 1176).to(dtype=torch.float32, device=device)
-    position_ids = torch.randn(x.shape[0], 2).to(dtype=torch.int32, device=device)
-    attention_mask = torch.zeros([1, x.shape[0], x.shape[0]], device=device, dtype=torch.float32)
+    position_ids = torch.randn(max_pixels, 2).to(dtype=torch.int32, device=device)
+    attention_mask = torch.zeros([1, max_pixels, max_pixels], device=device, dtype=torch.float32)
 
-    # # trace
+    # export onnx
     model = VisionTransformer()
     torch.onnx.export(
         model, (x, position_ids, attention_mask),
@@ -295,7 +295,6 @@ def convert():
     # export models
     print(f'Convert block & block_cache')
     for i in tqdm(range(NUM_LAYERS)):
-    # for i in tqdm(range(1)):
         convert_block(i)
         convert_block_cache(i)
 
@@ -384,9 +383,9 @@ def get_prefill_posid(grid_thw, vit_offsets, input_length):
     llm_grid_t = grid_thw[0][0]
     llm_grid_h = grid_thw[0][1] // config.vision_config.spatial_merge_size
     llm_grid_w = grid_thw[0][2] // config.vision_config.spatial_merge_size
-    t_position_ids = list(range(text_len, llm_grid_t+text_len)) * llm_grid_h * llm_grid_w
-    h_position_ids = [i+text_len for i in range(llm_grid_h) for _ in range(llm_grid_w)]
-    w_position_ids = list(range(text_len, llm_grid_w+text_len)) * llm_grid_h
+    t_position_ids = [i for i in range(text_len, llm_grid_t + text_len) for _ in range(llm_grid_h * llm_grid_w)]
+    h_position_ids = [i+text_len for i in range(llm_grid_h) for _ in range(llm_grid_w)] * llm_grid_t
+    w_position_ids = list(range(text_len, llm_grid_w+text_len)) * llm_grid_h * llm_grid_t
     st_idx = max(w_position_ids) + 1
     tail_text_len = input_length - valid_vit_length - text_len
     t_position_ids = list(range(text_len)) + t_position_ids + list(range(st_idx, st_idx+tail_text_len)) + [1] * (SEQ_LENGTH - input_length)
@@ -573,9 +572,8 @@ if __name__ == "__main__":
     print("\033[31m如果输入为图片时，注意resized_height与resized_width，避免resize导致图片质量损失 \033[0m")
 
 
-    test_image(path = "./../python_demo/image1.jpg", resized_height=280, resized_width=420)
-    # test_video(path = "./sample.mp4") # 如果只
-    exit()
+    # test_image(path = "./../python_demo/image1.jpg", resized_height=280, resized_width=420)
+    # test_video(path = "./sample.mp4")
 
     # convert
     convert()

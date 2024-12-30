@@ -8,29 +8,6 @@ from transformers import AutoTokenizer, AutoProcessor
 import chat
 import os
 
-# Preprocess the images
-IMAGENET_MEAN = (0.5, 0.5, 0.5)
-IMAGENET_STD = (0.5, 0.5, 0.5)
-
-
-# def build_transform(input_size):
-#     MEAN, STD = IMAGENET_MEAN, IMAGENET_STD
-#     transform = T.Compose([
-#         T.Lambda(lambda img: img.convert('RGB') if img.mode != 'RGB' else img),
-#         T.Resize((input_size, input_size),
-#                  interpolation=InterpolationMode.BICUBIC),
-#         T.ToTensor(),
-#         T.Normalize(mean=MEAN, std=STD)
-#     ])
-#     return transform
-
-
-# def load_image(image_file, input_size=448):
-#     image = Image.open(image_file).convert('RGB')
-#     transform = build_transform(input_size=input_size)
-#     pixel_values = transform(image)
-#     return pixel_values
-
 
 class MiniCPMV():
     def __init__(self, args):
