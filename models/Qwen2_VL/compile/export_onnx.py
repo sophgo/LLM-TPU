@@ -375,9 +375,9 @@ def vit_launch(pixel_values, grid_thw):
     vit_out = vit_infer(pixel_values_prefill, pos_ids_prefill, attention_mask_vit_prefill)
     return vit_out
 
-def get_prefill_posid(grid_thw, vit_offsets, input_length):
-    text_len = vit_offsets[0]
-    valid_vit_length = len(vit_offsets)
+def get_prefill_posid(grid_thw, vit_offset, token_length):
+    text_len = vit_offset[0]
+    valid_vit_length = len(vit_offset)
 
     grid_thw = grid_thw.tolist()
     llm_grid_t = grid_thw[0][0]
@@ -386,11 +386,12 @@ def get_prefill_posid(grid_thw, vit_offsets, input_length):
     t_position_ids = [i for i in range(text_len, llm_grid_t + text_len) for _ in range(llm_grid_h * llm_grid_w)]
     h_position_ids = [i+text_len for i in range(llm_grid_h) for _ in range(llm_grid_w)] * llm_grid_t
     w_position_ids = list(range(text_len, llm_grid_w+text_len)) * llm_grid_h * llm_grid_t
+
     st_idx = max(w_position_ids) + 1
-    tail_text_len = input_length - valid_vit_length - text_len
-    t_position_ids = list(range(text_len)) + t_position_ids + list(range(st_idx, st_idx+tail_text_len)) + [1] * (SEQ_LENGTH - input_length)
-    h_position_ids = list(range(text_len)) + h_position_ids + list(range(st_idx, st_idx+tail_text_len)) + [1] * (SEQ_LENGTH - input_length)
-    w_position_ids = list(range(text_len)) + w_position_ids + list(range(st_idx, st_idx+tail_text_len)) + [1] * (SEQ_LENGTH - input_length)
+    tail_text_len = token_length - valid_vit_length - text_len
+    t_position_ids = list(range(text_len)) + t_position_ids + list(range(st_idx, st_idx+tail_text_len)) + [1] * (SEQ_LENGTH - token_length)
+    h_position_ids = list(range(text_len)) + h_position_ids + list(range(st_idx, st_idx+tail_text_len)) + [1] * (SEQ_LENGTH - token_length)
+    w_position_ids = list(range(text_len)) + w_position_ids + list(range(st_idx, st_idx+tail_text_len)) + [1] * (SEQ_LENGTH - token_length)
     position_ids = torch.Tensor([t_position_ids, h_position_ids, w_position_ids]).long().reshape(3, 1, -1)
 
     max_pos = st_idx + tail_text_len - 1
@@ -433,17 +434,17 @@ def test_net_with_mask(mode, messages):
     inputs_embeds = inputs_embeds.view(1, SEQ_LENGTH, HIDDEN_SIZE)
 
     if mode == "image":
-        vit_offsets = torch.where(input_ids==config.image_token_id)[1].tolist()
+        vit_offset = torch.where(input_ids==config.image_token_id)[1].tolist()
     elif mode == "video":
-        vit_offsets = torch.where(input_ids==config.video_token_id)[1].tolist()
+        vit_offset = torch.where(input_ids==config.video_token_id)[1].tolist()
 
-    valid_vit_length = len(vit_offsets)
-    inputs_embeds[:,vit_offsets[0]:vit_offsets[0]+valid_vit_length, :] = vit_embeds[:valid_vit_length]
+    valid_vit_length = len(vit_offset)
+    inputs_embeds[:,vit_offset[0]:vit_offset[0]+valid_vit_length, :] = vit_embeds[:valid_vit_length]
 
     ID_IM_END = tokenizer.convert_tokens_to_ids("<|im_end|>")
     ID_END = tokenizer.convert_tokens_to_ids("<|end|>")
 
-    position_ids, max_pos = get_prefill_posid(grid_thw, vit_offsets, len(input_ids[0]))
+    position_ids, max_pos = get_prefill_posid(grid_thw, vit_offset, len(input_ids[0]))
     
     attention_mask = torch.ones((SEQ_LENGTH, SEQ_LENGTH)).float() * -10000.0
 
@@ -572,7 +573,7 @@ if __name__ == "__main__":
     print("\033[31m如果输入为图片时，注意resized_height与resized_width，避免resize导致图片质量损失 \033[0m")
 
 
-    # test_image(path = "./../python_demo/image1.jpg", resized_height=280, resized_width=420)
+    test_image(path = "./../python_demo/image1.jpg", resized_height=280, resized_width=420)
     # test_video(path = "./sample.mp4")
 
     # convert

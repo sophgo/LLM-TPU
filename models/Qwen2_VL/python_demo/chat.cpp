@@ -34,7 +34,8 @@ public:
   int forward_first(std::vector<int> &tokens,
                     std::vector<float> &pixel_values,
                     std::vector<int> &grid_thw,
-                    int img_offset);
+                    int vit_offset,
+                    int valid_vit_length);
   int forward_next();
 
   std::mt19937 sgen;
@@ -43,9 +44,14 @@ public:
 private:
   std::vector<int> make_vit_posid(std::vector<int>& grid_thw);
   std::vector<uint16_t> make_vit_attn_mask(std::vector<int>& grid_thw);
-  std::vector<int> make_posid();
+  std::vector<int> make_posid(
+    const std::vector<int>& grid_thw,
+    int vit_offset,
+    int valid_vit_length,
+    int token_length
+  );
 
-  void vit_launch(std::vector<float> &pixel_values, int img_offset, std::vector<int>& grid_thw, bm_device_mem_t &out_mem);
+  void vit_launch(std::vector<float> &pixel_values, int vit_offset, int valid_vit_length, std::vector<int>& grid_thw, bm_device_mem_t &out_mem);
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
   void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
@@ -57,7 +63,7 @@ public:
   int SEQLEN; // read from bmodel
   int HIDDEN_SIZE;
   int NUM_LAYERS; // read from bmodel
-  uint64_t IMAGE_BYTES;
+  uint64_t VIT_DIMS;
   std::string generation_mode;
   int MAX_PIXELS;
   int max_pos;
@@ -131,7 +137,7 @@ void Qwen2VL::init(int dev_id, std::string model_path) {
   HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[1];
   MAX_PIXELS = net_vit->stages[0].input_shapes[0].dims[0];
 
-  IMAGE_BYTES = bm_mem_get_device_size(net_vit->stages[0].input_mems[0]);
+  VIT_DIMS = net_vit->stages[0].input_shapes[0].dims[1];
   // net blocks
   for (int i = 0; i < NUM_LAYERS; i++) {
     auto block_name = "block_" + std::to_string(i);
@@ -223,14 +229,15 @@ std::vector<int> Qwen2VL::make_vit_posid(std::vector<int>& grid_thw) {
       }
   }
 
-  int valid_vit_pixels = h * w / spatial_merge_size / spatial_merge_size;
+  int valid_vit_pixels = h * w;
   std::vector<int> pos_ids(MAX_PIXELS * 2, 0);
   for (int i = 0; i < t; ++i) {
-    for (int j = 0; j < valid_vit_pixels * 2; j=j+2) {
-      pos_ids[i * valid_vit_pixels + j] = hpos_ids[j];
-      pos_ids[i * valid_vit_pixels + j + 1] = wpos_ids[j];
+    for (int j = 0; j < valid_vit_pixels; ++j) {
+      pos_ids[i * valid_vit_pixels + 2 * j] = hpos_ids[j];
+      pos_ids[i * valid_vit_pixels + 2 * j + 1] = wpos_ids[j];
     }
   }
+
   return pos_ids;
 }
 
@@ -248,16 +255,15 @@ std::vector<uint16_t> Qwen2VL::make_vit_attn_mask(std::vector<int>& grid_thw) {
 
   // Initialize attention_mask with -10000
   auto f16_mask_value = fp32_to_fp16_bits(-10000.0f);
-  std::vector<uint16_t> attention_mask(MAX_PIXELS, f16_mask_value);
+  std::vector<uint16_t> attention_mask(MAX_PIXELS * MAX_PIXELS, f16_mask_value);
 
   // Update attention_mask based on cu_seqlens
-  size_t N = static_cast<size_t>(cu_seqlens.back());
   for (size_t i = 1; i < cu_seqlens.size(); ++i) {
     int start = cu_seqlens[i - 1];
     int end = cu_seqlens[i];
     for (int row = start; row < end; ++row) {
       for (int col = start; col < end; ++col) {
-        size_t index = row * N + col;
+        size_t index = row * MAX_PIXELS + col;
         if (index < attention_mask.size()) {
             attention_mask[index] = 0;
         }
@@ -268,43 +274,127 @@ std::vector<uint16_t> Qwen2VL::make_vit_attn_mask(std::vector<int>& grid_thw) {
   return attention_mask;
 }
 
-void Qwen2VL::vit_launch(std::vector<float> &pixel_values, int img_offset, 
+void Qwen2VL::vit_launch(std::vector<float> &pixel_values, int vit_offset, int valid_vit_length,
                          std::vector<int>& grid_thw, bm_device_mem_t &out_mem) {
   d2d(dev_buffer, out_mem);
   out_mem = dev_buffer;
   // forward vision transformer
+  std::vector<float> pixel_values_pad(MAX_PIXELS * VIT_DIMS, 0);
   auto position_ids = make_vit_posid(grid_thw);
   auto attention_mask = make_vit_attn_mask(grid_thw);
+  std::copy(pixel_values.begin(), pixel_values.end(), pixel_values_pad.data());
+
+  empty_net(bm_handle, net_vit);
 
   auto &vit_in0_mem = net_vit->stages[0].input_mems[0];
   auto &vit_in1_mem = net_vit->stages[0].input_mems[1];
   auto &vit_in2_mem = net_vit->stages[0].input_mems[2];
   auto &vit_out_mem = net_vit->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, vit_in0_mem, (void *)pixel_values.data());
+  bm_memcpy_s2d(bm_handle, vit_in0_mem, (void *)pixel_values_pad.data());
   bm_memcpy_s2d(bm_handle, vit_in1_mem, (void *)position_ids.data());
   bm_memcpy_s2d(bm_handle, vit_in2_mem, (void *)attention_mask.data());
   net_launch(net_vit);
 
   // concatenante texting embedding and image embedding
-  int dst_offset = img_offset * HIDDEN_SIZE * 2;
-  int vit_size = bm_mem_get_device_size(vit_out_mem);
-  bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, vit_out_mem, 0, vit_size/2);
+  int dst_offset = vit_offset * HIDDEN_SIZE * sizeof(uint16_t);
+  int vit_size = valid_vit_length * HIDDEN_SIZE * sizeof(uint16_t);
+  bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, vit_out_mem, 0, vit_size);
 }
 
-std::vector<int> Qwen2VL::make_posid() {
+std::vector<int> Qwen2VL::make_posid(
+    const std::vector<int>& grid_thw,
+    int vit_offset,
+    int valid_vit_length,
+    int token_length
+) {
+  int text_len = vit_offset;
+
+  // Assuming grid_thw has at least one element
+  int llm_grid_t = grid_thw[0];
+  int llm_grid_h = grid_thw[1] / spatial_merge_size;
+  int llm_grid_w = grid_thw[2] / spatial_merge_size;
+
+  std::vector<int> t_position_ids;
+  std::vector<int> h_position_ids;
+  std::vector<int> w_position_ids;
+
+  // Populate t_position_ids
+  for (int i = text_len; i < llm_grid_t + text_len; ++i) {
+    for (int j = 0; j < llm_grid_h * llm_grid_w; ++j) {
+      t_position_ids.push_back(i);
+    }
+  }
+
+  // Populate h_position_ids
+  for (int _ = 0; _ < llm_grid_t; ++_) {
+    for (int i = 0; i < llm_grid_h; ++i) {
+      for (int j = 0; j < llm_grid_w; ++j) {
+        h_position_ids.push_back(i + text_len);
+      }
+    }
+  }
+
+  // Populate w_position_ids
+  for (int _ = 0; _ < llm_grid_t; ++_) {
+    for (int i = 0; i < llm_grid_h; ++i) {
+      for (int j = text_len; j < llm_grid_w + text_len; ++j) {
+        w_position_ids.push_back(j);
+      }
+    }
+  }
+
+  // Calculate starting index for tail text length
+  int st_idx = w_position_ids.back() + 1;
+  int tail_text_len = token_length - valid_vit_length - text_len;
+
+  // Prepare final position ids
   std::vector<int> position_ids;
+  position_ids.reserve(SEQLEN * 3);
+
+  // Prepare head position ids
+  std::vector<int> head_position_ids;
+  for (int i = 0; i < text_len; ++i) {
+    head_position_ids.push_back(i);
+  }
+
+  // Prepare tail position ids
+  std::vector<int> tail_position_ids;
+  for (int i = st_idx; i < st_idx + text_len; ++i) {
+    tail_position_ids.push_back(i);
+  }
+
+  // Fill position_ids for t
+  position_ids.insert(position_ids.end(), head_position_ids.begin(), head_position_ids.end()); // Fill with 0 for range text_len
+  position_ids.insert(position_ids.end(), t_position_ids.begin(), t_position_ids.end());
+  position_ids.insert(position_ids.end(), tail_position_ids.begin(), tail_position_ids.end());
+  position_ids.insert(position_ids.end(), SEQLEN - token_length, 1); // Fill with 1
+
+  // Fill position_ids for h
+  position_ids.insert(position_ids.end(), head_position_ids.begin(), head_position_ids.end()); // Fill with 0 for range text_len
+  position_ids.insert(position_ids.end(), h_position_ids.begin(), h_position_ids.end());
+  position_ids.insert(position_ids.end(), tail_position_ids.begin(), tail_position_ids.end());
+  position_ids.insert(position_ids.end(), SEQLEN - token_length, 1); // Fill with 1
+
+  // Fill position_ids for w
+  position_ids.insert(position_ids.end(), head_position_ids.begin(), head_position_ids.end()); // Fill with 0 for range text_len
+  position_ids.insert(position_ids.end(), w_position_ids.begin(), w_position_ids.end());
+  position_ids.insert(position_ids.end(), tail_position_ids.begin(), tail_position_ids.end());
+  position_ids.insert(position_ids.end(), SEQLEN - token_length, 1); // Fill with 1
+
+  max_pos = st_idx + tail_text_len - 1;
+
   return position_ids;
 }
 
 int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<float> &pixel_values, std::vector<int> &grid_thw,
-                          int img_offset) {
+                          int vit_offset, int valid_vit_length) {
   std::vector<int> input_ids(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, 0);
   std::copy(tokens.begin(), tokens.end(), input_ids.data());
 
   token_length = tokens.size(); // text input length
 
-  auto position_ids = make_posid();
+  auto position_ids = make_posid(grid_thw, vit_offset, valid_vit_length, token_length);
   for (int i = 0; i < token_length; i++) {
     for (int j = 0; j < SEQLEN; j++) {
       if (j <= i) {
@@ -322,8 +412,8 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<float> &pixel_v
   net_launch(net_embed); // prefil embedding
 
   auto start = std::chrono::high_resolution_clock::now();
-  if (pixel_values.size() * sizeof(float) == IMAGE_BYTES && img_offset > 0) {
-    vit_launch(pixel_values, img_offset, grid_thw, out_mem);
+  if (pixel_values.size() > 0) {
+    vit_launch(pixel_values, vit_offset, valid_vit_length, grid_thw, out_mem);
   }
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> duration = end - start;

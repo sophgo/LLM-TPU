@@ -194,18 +194,19 @@ process_block() {
 
 vision_transformer() {
     model_transform.py \
-    --model_name vit \
-    --model_def ../../onnx/vit/vision_transformer.onnx \
-    --mlir vit.mlir 
+        --model_name vit \
+        --model_def ../../onnx/vit/vision_transformer.onnx \
+        --mlir vit.mlir
 
     model_deploy.py \
-    --mlir vit.mlir \
-    --quantize F16 \
-    --quant_input_list 2,3 \
-    --quant_output_bf16 \
-    --high_precision \
-    --chip bm1684x \
-    --model vit.bmodel
+        --mlir vit.mlir \
+        --quantize F16 \
+        --quant_input \
+        --quant_input_list 3 \
+        --quant_output_bf16 \
+        --high_precision \
+        --chip bm1684x \
+        --model vit.bmodel
 
     rm -f *.npz
     models=${models}${outdir}'/vit.bmodel '
@@ -249,6 +250,8 @@ echo $models
 
 # Compile VIT model
 outdir=${folder}/$mode"_1dev"/vit
+
+
 mkdir -p $outdir
 pushd $outdir
 vision_transformer

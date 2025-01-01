@@ -22,10 +22,12 @@ class Qwen2VL():
         with open(args.config, 'r') as f:
             self.config = json.load(f)
         self.resized_height = args.resized_height
-        self.resize_width = args.resized_width
+        self.resized_width = args.resized_width
 
         # load model
         self.model = chat.Qwen2VL()
+        self.model.NUM_LAYERS = self.config["num_hidden_layers"]
+        self.model.spatial_merge_size = self.config["vision_config"]["spatial_merge_size"]
         self.model.init(self.device, args.model_path)
         self.model.generation_mode = args.generation_mode
         self.SEQLEN = self.model.SEQLEN
@@ -80,6 +82,7 @@ class Qwen2VL():
             padding=True,
             return_tensors="pt",
         )
+        return inputs
 
     def chat(self):
         """
@@ -93,11 +96,37 @@ class Qwen2VL():
 =================================================================""")
         # Stop Chatting with "exit" input
         while True:
-            
+            self.input_str = input("\nQuestion: ")
+            # Quit
+            if self.input_str in ["exit", "q", "quit"]:
+                break
+
+            image_or_video_str = input("\nImage or Video Path: ")
+            if not os.path.exists(image_or_video_str):
+                print("Can't find image or video: {}".format(image_or_video_str))
+                continue
+
+            image_or_video_type = input("\nImage or Video Type: ")
+            if image_or_video_type not in ["image", "video"]:
+                print("The type you input is: {}, not image or video".format(image_or_video_type))
+                continue
+            inputs = self.process(image_or_video_str, image_or_video_type)
+            print("\nAnswer:")
+
             # Chat
             first_start = time.time()
-            token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), inputs.pixel_values.flatten().tolist(),
-                                             inputs.grid_thw.squeeze(0).tolist(), image_offset)
+            if image_or_video_type == "image":
+                vit_token_list = torch.where(inputs.input_ids==self.config["image_token_id"])[1].tolist()
+                vit_offset = vit_token_list[0]
+                valid_vit_length = len(vit_token_list)
+                token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), inputs.pixel_values.flatten().tolist(),
+                                                inputs.image_grid_thw.squeeze(0).tolist(), vit_offset, valid_vit_length)
+            elif image_or_video_type == "video":
+                vit_token_list = torch.where(inputs.input_ids==self.config["video_token_id"])[1].tolist()
+                vit_offset = vit_token_list[0]
+                valid_vit_length = len(vit_token_list)
+                token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), inputs.pixel_values_videos.flatten().tolist(),
+                                                inputs.video_grid_thw.squeeze(0).tolist(), vit_offset, valid_vit_length)
             first_end = time.time()
             tok_num = 1
             # Following tokens
@@ -140,6 +169,6 @@ if __name__ == "__main__":
     parser.add_argument('-d', '--devid', type=int, default=0, help='device ID to use')
     parser.add_argument('-g', '--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
     parser.add_argument('--resized_height', type=int, default=280, help='resized height')
-    parser.add_argument('--resize_width', type=int, default=420, help='resized width')
+    parser.add_argument('--resized_width', type=int, default=420, help='resized width')
     args = parser.parse_args()
     main(args)
