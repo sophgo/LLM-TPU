@@ -524,6 +524,7 @@ PYBIND11_MODULE(chat, m) {
       .def("deinit", &Qwen2VL::deinit)
       .def_readwrite("SEQLEN", &Qwen2VL::SEQLEN) // read SEQLEN in pipeline.py
       .def_readwrite("NUM_LAYERS", &Qwen2VL::NUM_LAYERS)
+      .def_readwrite("MAX_PIXELS", &Qwen2VL::MAX_PIXELS)
       .def_readwrite("spatial_merge_size", &Qwen2VL::spatial_merge_size)
       .def_readwrite("token_length", &Qwen2VL::token_length)
       .def_readwrite("generation_mode", &Qwen2VL::generation_mode);

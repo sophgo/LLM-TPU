@@ -30,26 +30,40 @@ class Qwen2VL():
         self.model.spatial_merge_size = self.config["vision_config"]["spatial_merge_size"]
         self.model.init(self.device, args.model_path)
         self.model.generation_mode = args.generation_mode
-        self.SEQLEN = self.model.SEQLEN
+
         self.ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
         self.ID_IM_END = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
 
     def image_message(self, path):
-        print("\033[31m如果输入为图片时，注意resized_height与resized_width与export_onnx.py时的保持一致\033[0m")
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "image": path,
-                        "resized_height": self.resized_height,
-                        "resized_width": self.resized_width,
-                    },
-                    {"type": "text", "text": "Describe this image and tell a story."},
-                ],
-            }
-        ]
+        if self.resized_height != None and self.resized_width != None:
+            print("\033[31m如果输入为图片时，注意resized_height与resized_width与export_onnx.py时的保持一致\033[0m")
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "image": path,
+                            "resized_height": self.resized_height,
+                            "resized_width": self.resized_width,
+                        },
+                        {"type": "text", "text": "Describe this image and tell a story."},
+                    ],
+                }
+            ]
+        else:
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "image": path,
+                        },
+                        {"type": "text", "text": "Describe this image and tell a story."},
+                    ],
+                }
+            ]
         return messages
     
     def video_message(self, path):
@@ -82,6 +96,11 @@ class Qwen2VL():
             padding=True,
             return_tensors="pt",
         )
+        if "pixel_values" in inputs and inputs.pixel_values.shape[0] > self.model.MAX_PIXELS:
+            raise ValueError(f"The video or image that you input is {inputs.pixel_values.shape[0]}, exceed to {self.model.MAX_PIXELS}")
+        if "pixel_values_videos" in inputs and inputs.pixel_values_videos.shape[0] > self.model.MAX_PIXELS:
+            raise ValueError(f"The video or image that you input is {inputs.pixel_values_videos.shape[0]}, exceed to {self.model.MAX_PIXELS}")
+
         return inputs
 
     def chat(self):
@@ -133,7 +152,7 @@ class Qwen2VL():
             full_word_tokens = []
             text = ""
             while token not in [self.ID_IM_END, self.ID_END
-                                ] and self.model.token_length < self.SEQLEN:
+                                ] and self.model.token_length < self.model.SEQLEN:
                 full_word_tokens.append(token)
                 word = self.tokenizer.decode(full_word_tokens,
                                              skip_special_tokens=True)
@@ -168,7 +187,7 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--config', type=str, default="../compile/files/Qwen2-VL-2B-Instruct/config.json", help='path to the model config file')
     parser.add_argument('-d', '--devid', type=int, default=0, help='device ID to use')
     parser.add_argument('-g', '--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
-    parser.add_argument('--resized_height', type=int, default=280, help='resized height')
-    parser.add_argument('--resized_width', type=int, default=420, help='resized width')
+    parser.add_argument('--resized_height', type=int, help='resized height')
+    parser.add_argument('--resized_width', type=int, help='resized width')
     args = parser.parse_args()
     main(args)
