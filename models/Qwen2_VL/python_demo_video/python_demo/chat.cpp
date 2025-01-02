@@ -23,6 +23,7 @@
 #include <random>
 #include <numeric>
 #include "utils.h"
+#include <sstream>
 
 // static const uint16_t ATTENTION_MASK = 0xC61C; // -9984 by bfloat16
 static const float ATTENTION_MASK = -10000.;
@@ -449,9 +450,9 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
   auto &lm_out_mem = net_lm->stages[0].output_mems[0];
   bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
                      (token_length - 1) * bytes, bytes);
-  std::vector<uint16_t> buffer(bytes / 2);
-  bm_memcpy_d2s(bm_handle, (void *)buffer.data(), lm_in_mem);
-  gen_bf16_similarity(buffer, "ref_data.npz", "inputs_embeds");
+  // std::vector<uint16_t> buffer(bytes / 2);
+  // bm_memcpy_d2s(bm_handle, (void *)buffer.data(), lm_in_mem);
+  // gen_bf16_similarity(buffer, "ref_data.npz", "inputs_embeds");
   net_launch(net_lm);
   int token = 0;
   if (generation_mode == "greedy") {

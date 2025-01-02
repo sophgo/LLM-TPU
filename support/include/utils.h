@@ -12,7 +12,8 @@
 #pragma once
 #include <algorithm>
 #include <climits>
-
+#include <cmath>
+#include "cnpy.h"
 
 //===------------------------------------------------------------===//
 // Union & Struct
@@ -364,6 +365,159 @@ void dump_int_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
   std::cout << "-------------------------------------" << std::endl;
 
   dump_min_and_max_int(bm_handle, mem, int_to_fp32);
+}
+
+std::vector<float> vec_bf16_to_fp32(const std::vector<uint16_t> & tar) {
+  std::vector<float> tar_data(tar.size(), 0);
+  for (size_t i = 0; i < tar.size(); ++i)
+    tar_data[i] = bf16_to_fp32_value(tar[i]);
+  return tar_data;
+}
+
+std::vector<float> vec_fp16_to_fp32(const std::vector<uint16_t> & tar) {
+  std::vector<float> tar_data(tar.size(), 0);
+  for (size_t i = 0; i < tar.size(); ++i)
+    tar_data[i] = fp16_ieee_to_fp32_value(tar[i]);
+  return tar_data;
+}
+
+std::vector<float> vec_int_to_fp32(const std::vector<int> & tar) {
+  std::vector<float> tar_data(tar.size(), 0);
+  for (size_t i = 0; i < tar.size(); ++i)
+    tar_data[i] = static_cast<float>(tar[i]);
+  return tar_data;
+}
+
+void cal_similarity(const std::vector<float> & tar_data, std::string v_file, std::string v_name) {
+  std::cout << "-------------------------------------" << std::endl;
+
+  cnpy::NpyArray ref_file = cnpy::npz_load(v_file, v_name);
+  std::vector<float> ref_data = ref_file.as_vec<float>();
+  if (tar_data.size() != ref_data.size()) {
+    throw std::invalid_argument("The sizes of tar_data and ref_data do not match.");
+  }
+  std::vector<float> noise(tar_data.size(), 0);
+
+  float distance = 0, root = 0, L1_distance = 0;
+  for (size_t i = 0; i < tar_data.size(); ++i) {
+    noise[i] = ref_data[i] - tar_data[i];
+    distance += pow(tar_data[i] - ref_data[i], 2);
+    root += pow((tar_data[i] + ref_data[i]) / 2, 2);
+    L1_distance += abs(tar_data[i] - ref_data[i]);
+  }
+  distance = sqrt(distance);
+  root = sqrt(root);
+  std::cout<<"    manhattan_distance   = "<<(float)(L1_distance)<<std::endl;
+
+  std::cout<<"    euclidean_similarity   = "<<(float)(1 - distance / root)<<std::endl;
+
+  float average = 0, ss_tar = 0, ss_ref = 0, avg_ref = 0, avg_noise = 0;
+  for (size_t i = 0; i < tar_data.size(); ++i) {
+    average += tar_data[i] * ref_data[i];
+    ss_tar += pow(tar_data[i], 2);
+    ss_ref += pow(ref_data[i], 2);
+    avg_ref += ref_data[i];
+    avg_noise += noise[i];
+  }
+  average /= tar_data.size();
+  ss_tar /= tar_data.size();
+  ss_ref /= tar_data.size();
+  avg_ref /= tar_data.size();
+  avg_noise /= tar_data.size();
+  std::cout<<"    cosine_similarity      = "<<(average / sqrt(ss_tar * ss_ref))<<std::endl;
+
+  float var_ref_zero_mean = 0, var_noise_zero_mean = 0;
+  for (size_t i = 0; i < tar_data.size(); ++i) {
+    var_ref_zero_mean += pow(ref_data[i] - avg_ref, 2);
+    var_noise_zero_mean += pow(noise[i] - avg_noise, 2);
+  }
+  float sqnr = 0;
+  if (var_ref_zero_mean == 0.0 || var_noise_zero_mean == 0.0) {
+    sqnr = std::numeric_limits<float>::infinity();
+  } else {
+    sqnr = 10 * std::log10(var_ref_zero_mean / var_noise_zero_mean);
+  }
+  std::cout<<"    sqnr_similarity        = "<<sqnr<<std::endl;
+  std::cout << "-------------------------------------" << std::endl;
+
+}
+
+void gen_bf16_similarity(const std::vector<uint16_t> & tar, std::string v_file, std::string v_name) {
+  std::vector<float> tar_data = vec_bf16_to_fp32(tar);
+  cal_similarity(tar_data, v_file, v_name);
+}
+
+void gen_fp16_similarity(const std::vector<uint16_t> & tar, std::string v_file, std::string v_name) {
+  std::vector<float> tar_data = vec_fp16_to_fp32(tar);
+  cal_similarity(tar_data, v_file, v_name);
+}
+
+void gen_int_similarity(const std::vector<int> & tar, std::string v_file, std::string v_name) {
+  std::vector<float> tar_data = vec_int_to_fp32(tar);
+  cal_similarity(tar_data, v_file, v_name);
+}
+
+void gen_fp32_similarity(const std::vector<float> & tar, std::string v_file, std::string v_name) {
+  cal_similarity(tar, v_file, v_name);
+}
+
+template <typename T, int mode = 0>
+void get_similarity(const std::vector<T> & tar, std::string v_file, std::string v_name) {
+  cnpy::NpyArray ref_file = cnpy::npz_load(v_file, v_name);
+  std::vector<float> ref_data = ref_file.as_vec<float>();
+  std::vector<float> tar_data(tar.size(), 0);
+  if constexpr (std::is_same_v<T, uint16_t>) {
+    if (mode == 0)
+      for (size_t i = 0; i < tar.size(); ++i)
+        tar_data[i] = fp16_ieee_to_fp32_value(tar[i]);
+    else
+      for (size_t i = 0; i < tar.size(); ++i)
+        tar_data[i] = bf16_to_fp32_value(tar[i]);
+  } else {
+    for (size_t i = 0; i < tar.size(); ++i)
+      tar_data[i] = static_cast<float>(tar[i]);
+    // std::transform(tar.begin(), tar.end(), tar_data.begin(),
+    //     [] (T value) {return static_cast<float>(value);});
+  }
+  std::vector<float> noise(tar_data.size(), 0);
+
+  float distance = 0, root = 0;
+  for (size_t i = 0; i < tar_data.size(); ++i) {
+    noise[i] = ref_data[i] - tar_data[i];
+    distance += pow(tar_data[i] - ref_data[i], 2);
+    root += pow((tar_data[i] + ref_data[i]) / 2, 2);
+  }
+  distance = sqrt(distance);
+  root = sqrt(root);
+  std::cout<<"    euclidean_similarity   = "<<(float)(1 - distance / root)<<std::endl;
+
+  float average = 0, ss_tar = 0, ss_ref = 0, avg_ref = 0, avg_noise = 0;
+  for (size_t i = 0; i < tar.size(); ++i) {
+    average += tar_data[i] * ref_data[i];
+    ss_tar += pow(tar_data[i], 2);
+    ss_ref += pow(ref_data[i], 2);
+    avg_ref += ref_data[i];
+    avg_noise += noise[i];
+  }
+  average /= tar.size();
+  ss_tar /= tar.size();
+  ss_ref /= tar.size();
+  avg_ref /= tar.size();
+  avg_noise /= tar.size();
+  std::cout<<"    cosine_similarity      = "<<(average / sqrt(ss_tar * ss_ref))<<std::endl;
+
+  float var_ref_zero_mean = 0, var_noise_zero_mean = 0;
+  for (size_t i = 0; i < tar.size(); ++i) {
+    var_ref_zero_mean += pow(ref_data[i] - avg_ref, 2);
+    var_noise_zero_mean += pow(noise[i] - avg_noise, 2);
+  }
+  float sqnr = 0;
+  if (var_ref_zero_mean == 0.0 || var_noise_zero_mean == 0.0) {
+    sqnr = std::numeric_limits<float>::infinity();
+  } else {
+    sqnr = 10 * std::log10(var_ref_zero_mean / var_noise_zero_mean);
+  }
+  std::cout<<"    sqnr_similarity        = "<<sqnr<<std::endl;
 }
 
 //===------------------------------------------------------------===//
