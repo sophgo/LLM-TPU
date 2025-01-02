@@ -200,10 +200,10 @@ vision_transformer() {
 
     model_deploy.py \
         --mlir vit.mlir \
-        --quantize F16 \
+        --quantize BF16 \
         --quant_input \
         --quant_input_list 3 \
-        --quant_output_bf16 \
+        --quant_output \
         --high_precision \
         --chip bm1684x \
         --model vit.bmodel

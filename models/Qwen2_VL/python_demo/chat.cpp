@@ -254,8 +254,7 @@ std::vector<uint16_t> Qwen2VL::make_vit_attn_mask(std::vector<int>& grid_thw) {
   }
 
   // Initialize attention_mask with -10000
-  auto f16_mask_value = fp32_to_fp16_bits(-10000.0f);
-  std::vector<uint16_t> attention_mask(MAX_PIXELS * MAX_PIXELS, f16_mask_value);
+  std::vector<uint16_t> attention_mask(MAX_PIXELS * MAX_PIXELS, mask_value);
 
   // Update attention_mask based on cu_seqlens
   for (size_t i = 1; i < cu_seqlens.size(); ++i) {
