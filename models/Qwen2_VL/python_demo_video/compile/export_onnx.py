@@ -16,6 +16,7 @@ import torch.nn.functional as F
 from transformers import Qwen2VLForConditionalGeneration, AutoProcessor, AutoTokenizer
 from qwen_vl_utils import process_vision_info
 torch.set_grad_enabled(False)
+import numpy as np
 
 
 class Embedding(torch.nn.Module):
@@ -378,10 +379,13 @@ def test_net_with_mask():
     )
     cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
     attention_mask_vit = torch.full(
-        [1, pixel_values.shape[0], pixel_values.shape[0]], torch.finfo(torch.float32).min, device=device, dtype=torch.float32
+        [1, pixel_values.shape[0], pixel_values.shape[0]], torch.finfo(torch.float16).min, device=device, dtype=torch.float16
     )
     for i in range(1, len(cu_seqlens)):
         attention_mask_vit[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0
+    # attention_mask_vit = torch.zeros([1, pixel_values.shape[0], pixel_values.shape[0]], dtype=torch.bool)
+    # for i in range(1, len(cu_seqlens)):
+    #     attention_mask_vit[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 1
     # attention_mask_vit = torch.zeros([1, pixel_values.shape[0], pixel_values.shape[0]], device=device, dtype=torch.bool)
     # for i in range(1, len(cu_seqlens)):
     #     attention_mask_vit[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = True
@@ -416,10 +420,14 @@ def test_net_with_mask():
     pixel_values_prefill[:pixel_values.shape[0],:] = pixel_values
     pos_ids_prefill = torch.zeros([2000, 2]).to(dtype=torch.int32, device=device)
     pos_ids_prefill[:pos_ids.shape[0],:] = pos_ids
-    attention_mask_vit_prefill = torch.zeros([1, 2000, 2000], device=device, dtype=torch.bool)
+    # attention_mask_vit_prefill = torch.zeros([1, 2000, 2000], device=device, dtype=torch.bool)
+    attention_mask_vit_prefill = torch.full(
+        [1, 2000, 2000], torch.finfo(torch.float16).min, device=device, dtype=torch.float16
+    )
     attention_mask_vit_prefill[0,:pos_ids.shape[0],:pos_ids.shape[0]] = attention_mask_vit
 
     image_embeds = vit_infer(pixel_values_prefill, pos_ids_prefill, attention_mask_vit_prefill)  # [150, 1536]
+    
     # image_embeds = vit_infer(pixel_values, pos_ids, attention_mask_vit)  # [150, 1536]
     inputs_embeds = torch.zeros((1, SEQ_LENGTH, HIDDEN_SIZE)).to(device)
 
@@ -445,10 +453,12 @@ def test_net_with_mask():
     attention_mask = attention_mask.view(
         1, 1, SEQ_LENGTH, SEQ_LENGTH).to(device)
 
-
     k_cache = []
     v_cache = []
+    data_to_save = {}
     for i in tqdm(range(NUM_LAYERS)):
+        unique_name = f"tensor{i}"
+        data_to_save[unique_name] = inputs_embeds
         inputs_embeds, k, v = blocks[i](inputs_embeds.to(dtype), position_ids,
                               attention_mask.to(dtype))
         k[:, input_ids.shape[-1]:, :, :] = 0
@@ -456,6 +466,7 @@ def test_net_with_mask():
         k_cache.append(k)
         v_cache.append(v)
     inputs_embeds = inputs_embeds[:, input_ids.shape[-1] - 1:input_ids.shape[-1]].view(1, 1, HIDDEN_SIZE)
+    np.savez('ref_data.npz', **data_to_save)
     lm = LmHead()
 
     token = greedy(lm(inputs_embeds.to(dtype))).view(1)
@@ -527,5 +538,6 @@ if __name__ == "__main__":
     test_net_with_mask()
 
     # convert
-    convert()
+    # convert()
+
 

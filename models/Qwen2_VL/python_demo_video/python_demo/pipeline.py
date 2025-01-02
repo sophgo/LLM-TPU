@@ -184,8 +184,7 @@ class Qwen2VL():
         self.device = args.devid
         self.processor = AutoProcessor.from_pretrained(args.processor_path,
                                                        trust_remote_code=True)
-        self.tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path,
-                                                       trust_remote_code=True)
+        self.tokenizer = self.processor.tokenizer
         with open(args.config, 'r') as f:
             self.config = json.load(f)
 
@@ -230,6 +229,10 @@ class Qwen2VL():
             for i in range(1, len(cu_seqlens)):
                 attention_mask_vit[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0
 
+            # attention_mask_vit = torch.zeros([1, pixel_values.shape[0], pixel_values.shape[0]], dtype=torch.bool)
+            # for i in range(1, len(cu_seqlens)):
+            #     attention_mask_vit[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 1
+
             pos_ids = []
             for t, h, w in grid_thw:
                 hpos_ids = torch.arange(h).unsqueeze(1).expand(-1, w)
@@ -260,14 +263,20 @@ class Qwen2VL():
             pos_ids_prefill = torch.zeros([2000, 2]).to(dtype=torch.int32)
             pos_ids_prefill[:pos_ids.shape[0],:] = pos_ids
             attention_mask_vit_prefill = torch.zeros([1, 2000, 2000], dtype=torch.bool)
+            # attention_mask_vit_prefill = torch.full(
+            #     [1, 2000, 2000], torch.finfo(torch.float32).min, dtype=torch.float32
+            # )
             attention_mask_vit_prefill[0,:pos_ids.shape[0],:pos_ids.shape[0]] = attention_mask_vit
-
+            
+            breakpoint()
             # Chat
             first_start = time.time()
             
-            token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), position_ids.flatten().tolist(), pixel_values_prefill.flatten().tolist(),
-                                             grid_thw.flatten().tolist(), attention_mask_vit_prefill.flatten().to(dtype=torch.float32).tolist(),
-                                             image_offset, pixel_num)
+            # token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), position_ids.flatten().tolist(), pixel_values_prefill.flatten().tolist(),
+            #                                  grid_thw.flatten().tolist(), attention_mask_vit_prefill.flatten().to(dtype=torch.float32).tolist(),
+            #                                  image_offset, pixel_num)
+            token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), position_ids.flatten().tolist(), pixel_values_prefill.half().flatten().tolist(),
+                                             grid_thw.flatten().tolist(), image_offset, pixel_num)
             first_end = time.time()
             tok_num = 1
             # Following tokens
@@ -337,3 +346,5 @@ if __name__ == "__main__":
                         type=int, default=2000, help="vit sequence length")
     args = parser.parse_args()
     main(args)
+
+

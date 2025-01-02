@@ -279,6 +279,7 @@ model_transform.py \
 model_deploy.py \
   --mlir vit.mlir \
   --quantize F16 \
+  --quant_input \
   --chip bm1684x \
   --model vit.bmodel
 

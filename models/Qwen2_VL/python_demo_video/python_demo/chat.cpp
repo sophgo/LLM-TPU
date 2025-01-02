@@ -33,7 +33,10 @@ public:
   void deinit();
   int forward_first(std::vector<int> &tokens, std::vector<int> &position_id,
                     std::vector<float> &pixel_values, std::vector<int> &grid_thw,
-                    std::vector<float> &attnmask, int img_offset, int pixel_num);
+                    int img_offset, int pixel_num);
+  // int forward_first(std::vector<int> &tokens, std::vector<int> &position_id,
+  //                   std::vector<float> &pixel_values, std::vector<int> &grid_thw,
+  //                   std::vector<float> &attnmask, int img_offset, int pixel_num);
   int forward_next();
 
   std::mt19937 sgen;
@@ -47,15 +50,18 @@ private:
   uint16_t mask_value;
 
   std::vector<int> range(int start, int end);
-  std::vector<std::vector<std::vector<std::vector<int>>>> Qwen2VL::reshape_2Dto4D(
+  std::vector<std::vector<std::vector<std::vector<int>>>> reshape_2Dto4D(
     const std::vector<int>& ori, int d1, int d2, int d3, int d4
   );
   std::vector<int> get_vit_pos_ids(std::vector<int> &gird_thw);
 
+  std::vector<int> repeat_interleave(std::vector<int>& elements, std::vector<int>& repeats);
+  std::vector<int> cumsum(const std::vector<int>& elements);
+
 public:
   int token_length;
   int SEQLEN; // read from bmodel
-  int VIT_SEQLEN; // read from bmodel
+  int VIT_SEQLEN = 2000; // read from bmodel
   int HIDDEN_SIZE;
   int NUM_LAYERS; // read from bmodel
   uint64_t IMAGE_BYTES;
@@ -214,7 +220,7 @@ std::vector<std::vector<std::vector<std::vector<int>>>> Qwen2VL::reshape_2Dto4D(
 
     // std::vector<int> result(d1 * d2 * d3 * d4);
 
-    int index = 0;
+    // int index = 0;
     for (int i = 0; i < d1; ++i) {
         for (int j = 0; j < d2; ++j) {
             for (int k = 0; k < d3; ++k) {
@@ -269,8 +275,13 @@ std::vector<int> Qwen2VL::get_vit_pos_ids(std::vector<int> &grid_thw) {
                     // wpos_ids_permuted[idx] = wpos_ids[i][j][k][l];
                     pos_ids[p_idx++] = hpos_ids[i][j][k][l];
                     pos_ids[p_idx++] = wpos_ids[i][j][k][l];
-                    idx++;
-                    std::cout<< pos_ids[p_idx-2] << " " << pos_ids[p_idx-1] << " ";
+                    for (int r = 1; r < t; ++r) {
+                      idx = (p_idx - 2) + r * h * w * 2;
+                      pos_ids[idx++] = hpos_ids[i][j][k][l];
+                      pos_ids[idx++] = wpos_ids[i][j][k][l];
+                    }
+
+                    // idx++;
                 }
             }
         }
@@ -278,12 +289,30 @@ std::vector<int> Qwen2VL::get_vit_pos_ids(std::vector<int> &grid_thw) {
     return pos_ids;
 }
 
+std::vector<int> Qwen2VL::repeat_interleave(std::vector<int>& elements, std::vector<int>& repeats) {
+    std::vector<int> result;
+    for (size_t i = 0; i < elements.size(); ++i) {
+        for (int j = 0; j < repeats[i]; ++j) {
+            result.push_back(elements[i]);
+        }
+    }
+    return result;
+}
 
+std::vector<int> Qwen2VL::cumsum(const std::vector<int>& elements) {
+    std::vector<int> result(elements.size());
+    std::partial_sum(elements.begin(), elements.end(), result.begin());
+    return result;
+}
+
+// int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_ids,
+//                              std::vector<float> &pixel_values, std::vector<int> &grid_thw,
+//                              std::vector<float> &attnmask, int img_offset, int pixel_num) {
 int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_ids,
                              std::vector<float> &pixel_values, std::vector<int> &grid_thw,
-                             std::vector<float> &attnmask, int img_offset, int pixel_num) {
+                             int img_offset, int pixel_num) {
   std::vector<int> input_ids(SEQLEN, 0);
-  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, 0);
+  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, mask_value);
   std::copy(tokens.begin(), tokens.end(), input_ids.data());
   POSITION_IDS.resize(position_ids.size()/3, std::vector<int>(3));
   MAX_POS = 0;
@@ -291,6 +320,22 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
   std::vector<int> pos_ids(VIT_SEQLEN*2, 0);
 
   pos_ids = get_vit_pos_ids(grid_thw);
+
+  std::vector<int> elements = {grid_thw[1] * grid_thw[2]};
+  std::vector<int> repeats = {grid_thw[0]};
+  std::vector<int> cu_seqlens = repeat_interleave(elements, repeats);
+  cu_seqlens = cumsum(cu_seqlens);
+  cu_seqlens.insert(cu_seqlens.begin(), 0);
+  std::vector<uint16_t> attention_mask_vit(VIT_SEQLEN * VIT_SEQLEN, mask_value);
+  // std::vector<float> attention_mask_vit(VIT_SEQLEN * VIT_SEQLEN, 1);
+
+  for (size_t i = 1; i < cu_seqlens.size(); ++i) {
+      for (int j = cu_seqlens[i - 1]; j < cu_seqlens[i]; ++j) {
+          for (int k = cu_seqlens[i - 1]; k < cu_seqlens[i]; ++k) {
+              attention_mask_vit[j * 2000 + k] = 0;
+          }
+      }
+  }
 
   for (int i = 0; i < (int)POSITION_IDS.size(); ++i) {
     for (int j = 0; j < 3; ++j) {
@@ -319,7 +364,7 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
   net_launch(net_embed); // prefil embedding
 
   auto start = std::chrono::high_resolution_clock::now();
-  if (pixel_values.size() * sizeof(float) == IMAGE_BYTES && img_offset > 0) {
+  if (pixel_values.size() * sizeof(float) / 2 == IMAGE_BYTES && img_offset > 0) {
     d2d(dev_buffer, out_mem);
     out_mem = dev_buffer;
     // forward vision transformer
@@ -327,9 +372,16 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
     auto &vit_in_mem_posids = net_vit->stages[0].input_mems[1];
     auto &vit_in_mem_attnmask = net_vit->stages[0].input_mems[2];
     auto &vit_out_mem = net_vit->stages[0].output_mems[0];
-    bm_memcpy_s2d(bm_handle, vit_in_mem_pixels, (void *)pixel_values.data());
-    bm_memcpy_s2d(bm_handle, vit_in_mem_posids, (void *)grid_thw.data());
-    bm_memcpy_s2d(bm_handle, vit_in_mem_attnmask, (void *)attnmask.data());
+ 
+    std::vector<uint16_t> uint16_pixel_values(pixel_values.size(), 0);
+    for (size_t i = 0; i < pixel_values.size(); ++i)
+      uint16_pixel_values[i] = fp32_to_fp16_bits(pixel_values[i]);
+
+    bm_memcpy_s2d(bm_handle, vit_in_mem_pixels, (void *)uint16_pixel_values.data());
+//    bm_memcpy_s2d(bm_handle, vit_in_mem_pixels, (void *)pixel_values.data());
+    bm_memcpy_s2d(bm_handle, vit_in_mem_posids, (void *)pos_ids.data());
+    bm_memcpy_s2d(bm_handle, vit_in_mem_attnmask, (void *)attention_mask_vit.data());
+    // bm_memcpy_s2d(bm_handle, vit_in_mem_attnmask, (void *)attnmask.data());
     // dump_net_input_to_file(bm_handle, net_vit, "vit_input.npz");
     net_launch(net_vit);
 
@@ -349,6 +401,7 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
 
     bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, bf16_buffer, 0,
                        pixel_num * HIDDEN_SIZE * 2);
+    bm_free_device(bm_handle, bf16_buffer);
   }
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> duration = end - start;
@@ -367,9 +420,28 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
     }
     net_launch(net_blocks[idx]);
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
+    int check = bm_mem_get_device_size(out_mem);
+    std::vector<uint16_t> buffer0(check / 2);
+    bm_memcpy_d2s(bm_handle, (void *)buffer0.data(), out_mem);
+    std::stringstream v_name;
+    v_name << "tensor" << idx;
+    gen_bf16_similarity(buffer0, "ref_data.npz", v_name.str());
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1]);
     d2d(past_value[idx], net_blocks[idx]->stages[0].output_mems[2]);
   }
+  // std::vector<uint16_t> buffer0(1000);
+  // for (size_t i = 0; i < buffer0.size(); ++i) {
+  //   buffer0[i] = fp32_to_bf16_bits(1.f);
+  // }
+  // std::vector<uint16_t> buffer1(1000);
+  // for (size_t i = 0; i < buffer1.size(); ++i) {
+  //   buffer1[i] = fp32_to_fp16_bits(1.f);
+  // }
+  // std::vector<float> buffer2(1000, 1);
+
+  // gen_bf16_similarity(buffer0, "test.npz", "tensor");
+  // gen_fp16_similarity(buffer1, "test.npz", "tensor");
+  // gen_fp32_similarity(buffer2, "test.npz", "tensor");
 
   // forward lmhead
   int bytes = out_mem.size / SEQLEN;
@@ -377,6 +449,9 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
   auto &lm_out_mem = net_lm->stages[0].output_mems[0];
   bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
                      (token_length - 1) * bytes, bytes);
+  std::vector<uint16_t> buffer(bytes / 2);
+  bm_memcpy_d2s(bm_handle, (void *)buffer.data(), lm_in_mem);
+  gen_bf16_similarity(buffer, "ref_data.npz", "inputs_embeds");
   net_launch(net_lm);
   int token = 0;
   if (generation_mode == "greedy") {
@@ -463,3 +538,6 @@ PYBIND11_MODULE(chat, m) {
       .def_readwrite("vit_seqlen", &Qwen2VL::VIT_SEQLEN)
       .def_readwrite("generation_mode", &Qwen2VL::generation_mode);
 }
+
+
+
