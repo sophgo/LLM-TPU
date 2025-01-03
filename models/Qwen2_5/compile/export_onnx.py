@@ -37,7 +37,8 @@ origin_model = AutoModelForCausalLM.from_pretrained(
     model_path,
     trust_remote_code=True,
     torch_dtype=dtype,
-    device_map="auto").eval()
+    device_map="auto",
+    attn_implementation="eager").eval()
 
 for param in origin_model.parameters():
     param.requires_grad = False
