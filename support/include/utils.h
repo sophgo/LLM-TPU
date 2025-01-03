@@ -13,7 +13,6 @@
 #include <algorithm>
 #include <climits>
 #include <cmath>
-#include "cnpy.h"
 
 //===------------------------------------------------------------===//
 // Union & Struct
@@ -367,6 +366,13 @@ void dump_int_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
   dump_min_and_max_int(bm_handle, mem, int_to_fp32);
 }
 
+#ifdef DUMP_TENSOR
+#include "cnpy.h"
+
+//===------------------------------------------------------------===//
+// Calculate the similarity
+//===------------------------------------------------------------===//
+
 std::vector<float> vec_bf16_to_fp32(const std::vector<uint16_t> & tar) {
   std::vector<float> tar_data(tar.size(), 0);
   for (size_t i = 0; i < tar.size(); ++i)
@@ -461,70 +467,51 @@ void gen_fp32_similarity(const std::vector<float> & tar, std::string v_file, std
   cal_similarity(tar, v_file, v_name);
 }
 
-template <typename T, int mode = 0>
-void get_similarity(const std::vector<T> & tar, std::string v_file, std::string v_name) {
-  cnpy::NpyArray ref_file = cnpy::npz_load(v_file, v_name);
-  std::vector<float> ref_data = ref_file.as_vec<float>();
-  std::vector<float> tar_data(tar.size(), 0);
-  if constexpr (std::is_same_v<T, uint16_t>) {
-    if (mode == 0)
-      for (size_t i = 0; i < tar.size(); ++i)
-        tar_data[i] = fp16_ieee_to_fp32_value(tar[i]);
-    else
-      for (size_t i = 0; i < tar.size(); ++i)
-        tar_data[i] = bf16_to_fp32_value(tar[i]);
-  } else {
-    for (size_t i = 0; i < tar.size(); ++i)
-      tar_data[i] = static_cast<float>(tar[i]);
-    // std::transform(tar.begin(), tar.end(), tar_data.begin(),
-    //     [] (T value) {return static_cast<float>(value);});
-  }
-  std::vector<float> noise(tar_data.size(), 0);
-
-  float distance = 0, root = 0;
-  for (size_t i = 0; i < tar_data.size(); ++i) {
-    noise[i] = ref_data[i] - tar_data[i];
-    distance += pow(tar_data[i] - ref_data[i], 2);
-    root += pow((tar_data[i] + ref_data[i]) / 2, 2);
-  }
-  distance = sqrt(distance);
-  root = sqrt(root);
-  std::cout<<"    euclidean_similarity   = "<<(float)(1 - distance / root)<<std::endl;
-
-  float average = 0, ss_tar = 0, ss_ref = 0, avg_ref = 0, avg_noise = 0;
-  for (size_t i = 0; i < tar.size(); ++i) {
-    average += tar_data[i] * ref_data[i];
-    ss_tar += pow(tar_data[i], 2);
-    ss_ref += pow(ref_data[i], 2);
-    avg_ref += ref_data[i];
-    avg_noise += noise[i];
-  }
-  average /= tar.size();
-  ss_tar /= tar.size();
-  ss_ref /= tar.size();
-  avg_ref /= tar.size();
-  avg_noise /= tar.size();
-  std::cout<<"    cosine_similarity      = "<<(average / sqrt(ss_tar * ss_ref))<<std::endl;
-
-  float var_ref_zero_mean = 0, var_noise_zero_mean = 0;
-  for (size_t i = 0; i < tar.size(); ++i) {
-    var_ref_zero_mean += pow(ref_data[i] - avg_ref, 2);
-    var_noise_zero_mean += pow(noise[i] - avg_noise, 2);
-  }
-  float sqnr = 0;
-  if (var_ref_zero_mean == 0.0 || var_noise_zero_mean == 0.0) {
-    sqnr = std::numeric_limits<float>::infinity();
-  } else {
-    sqnr = 10 * std::log10(var_ref_zero_mean / var_noise_zero_mean);
-  }
-  std::cout<<"    sqnr_similarity        = "<<sqnr<<std::endl;
-}
-
 //===------------------------------------------------------------===//
 // Dump to file
 //===------------------------------------------------------------===//
-#ifdef DUMP_TENSOR
-#include "cnpy.h"
+void dump_tensor_to_file(bm_handle_t &bm_handle, bm_tensor_t &t,
+                         bm_shape_t bm_shape, const std::string &filename,
+                         bm_data_type_t tensor_type,
+                         const std::string &tensor_name) {
+  int mem_size = bm_mem_get_device_size(t.device_mem);
+  std::vector<size_t> shape(bm_shape.dims, bm_shape.dims + bm_shape.num_dims);
+  if (tensor_type == BM_FLOAT16) {
+    // F16
+    int cnt = mem_size / sizeof(uint16_t);
+    std::vector<float> data(cnt);
+    std::vector<uint16_t> buffer(cnt);
+    bm_memcpy_d2s(bm_handle, buffer.data(), t.device_mem);
+    for (size_t i = 0; i < data.size(); i++) {
+      data[i] = fp16_ieee_to_fp32_value(buffer[i]);
+    }
+    cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
+  } else if (tensor_type == BM_BFLOAT16) {
+    // BF16
+    int cnt = mem_size / sizeof(uint16_t);
+    std::vector<float> data(cnt);
+    std::vector<uint16_t> buffer(cnt);
+    bm_memcpy_d2s(bm_handle, buffer.data(), t.device_mem);
+    for (size_t i = 0; i < data.size(); i++) {
+      data[i] = bf16_to_fp32_value(buffer[i]);
+    }
+    cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
+  } else if (tensor_type == BM_INT32) {
+    // INT32
+    int cnt = mem_size / sizeof(int32_t);
+    std::vector<int> data(cnt);
+    bm_memcpy_d2s(bm_handle, data.data(), t.device_mem);
+    cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
+  } else if (tensor_type == BM_FLOAT32) {
+    // FLOAT32
+    int cnt = mem_size / sizeof(float);
+    std::vector<float> data(cnt);
+    bm_memcpy_d2s(bm_handle, data.data(), t.device_mem);
+    cnpy::npz_save(filename, tensor_name, data.data(), shape, "a");
+  } else {
+    throw std::runtime_error("Not support dtype");
+  }
+}
 
 void dump_net_input_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
                       const std::string &filename) {

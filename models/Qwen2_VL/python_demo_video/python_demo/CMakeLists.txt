@@ -7,6 +7,8 @@ endif()
 
 set(SUPPORT_DIR ${PROJECT_SOURCE_DIR}/../../support)
 
+add_definitions(-DDUMP_TENSOR)
+
 include_directories(${SUPPORT_DIR}/include)
 
 if (${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "aarch64")
@@ -19,14 +21,8 @@ elseif (${TARGET_ARCH} STREQUAL "pcie")
     message("PCIE mode, starting......")
 endif()
 
-if (CMAKE_TYPE STREQUAL "DUMP")
-    add_definitions(-DDUMP_TENSOR)
-    add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -lcnpy)
-    include_directories(${PROJECT_SOURCE_DIR}/third_party/cnpy)
-    add_subdirectory(third_party/cnpy)
-else()
-    add_definitions(-DDEBUG --std=c++17 -fPIC -Wall)
-endif()
+add_definitions(-DDEBUG --std=c++17 -fPIC -Wall)
+
 
 set(CMAKE_BUILD_TYPE "Debug")
 
@@ -37,9 +33,5 @@ file(GLOB CPP_FILES ${PROJECT_SOURCE_DIR}/*.cpp ${SUPPORT_DIR}/src/*.cpp)
 find_package(ZLIB REQUIRED)
 
 pybind11_add_module(chat ${CPP_FILES})
-if (CMAKE_TYPE STREQUAL "DUMP")
-    target_link_libraries(chat PUBLIC bmrt bmlib cnpy ZLIB::ZLIB)
-else()
-    target_link_libraries(chat PUBLIC bmrt bmlib ZLIB::ZLIB)
-endif()
+target_link_libraries(chat PUBLIC bmrt bmlib ZLIB::ZLIB)
 install(TARGETS chat DESTINATION python)
