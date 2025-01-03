@@ -358,7 +358,7 @@ std::vector<int> Qwen2VL::make_posid(
 
   // Prepare tail position ids
   std::vector<int> tail_position_ids;
-  for (int i = st_idx; i < st_idx + text_len; ++i) {
+  for (int i = st_idx; i < st_idx + tail_text_len; ++i) {
     tail_position_ids.push_back(i);
   }
 
