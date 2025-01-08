@@ -1,0 +1,9 @@
+{
+    "tasks": [
+      {
+        "name": "qwen2-vl",
+        "directory": "models/Qwen2_VL/python_demo",
+        "command": "./run.sh"
+      }
+    ]
+  }

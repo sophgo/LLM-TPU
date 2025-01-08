@@ -448,22 +448,22 @@ void cal_similarity(const std::vector<float> & tar_data, std::string v_file, std
 
 }
 
-void gen_bf16_similarity(const std::vector<uint16_t> & tar, std::string v_file, std::string v_name) {
+void npz_compare_bf16(const std::vector<uint16_t> & tar, std::string v_file, std::string v_name) {
   std::vector<float> tar_data = vec_bf16_to_fp32(tar);
   cal_similarity(tar_data, v_file, v_name);
 }
 
-void gen_fp16_similarity(const std::vector<uint16_t> & tar, std::string v_file, std::string v_name) {
+void npz_compare_fp16(const std::vector<uint16_t> & tar, std::string v_file, std::string v_name) {
   std::vector<float> tar_data = vec_fp16_to_fp32(tar);
   cal_similarity(tar_data, v_file, v_name);
 }
 
-void gen_int_similarity(const std::vector<int> & tar, std::string v_file, std::string v_name) {
+void npz_compare_int(const std::vector<int> & tar, std::string v_file, std::string v_name) {
   std::vector<float> tar_data = vec_int_to_fp32(tar);
   cal_similarity(tar_data, v_file, v_name);
 }
 
-void gen_fp32_similarity(const std::vector<float> & tar, std::string v_file, std::string v_name) {
+void npz_compare_fp32(const std::vector<float> & tar, std::string v_file, std::string v_name) {
   cal_similarity(tar, v_file, v_name);
 }
 
