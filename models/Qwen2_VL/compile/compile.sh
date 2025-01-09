@@ -2,7 +2,7 @@
 set -ex
 models=
 folder="tmp"
-quantize_args="--quantize W4BF16"
+quantize_args=""
 dyn_args=""
 name=""
 num_layers=
@@ -55,17 +55,27 @@ else
   exit 1
 fi
 
-if [ x$mode == x"int8" ]; then
+if [ x$mode == x"w8bf16" ]; then
     quantize_args="--quantize W8BF16"
+elif [ x$mode == x"w4bf16" ]; then
+    quantize_args="--quantize W4BF16 --q_group_size 64"
+elif [ x$mode == x"w8f16" ]; then
+    quantize_args="--quantize W8F16 --q_group_size 64"
+elif [ x$mode == x"w4f16" ]; then
+    quantize_args="--quantize W4F16 --q_group_size 64"
 elif [ x$mode == x"bf16" ]; then
     quantize_args="--quantize BF16"
-elif [ x$mode == x"fp16" ]; then
+elif [ x$mode == x"f16" ]; then
     quantize_args="--quantize F16"
-elif [ x$mode == x"int4" ]; then
-    quantize_args="--quantize W4BF16 --q_group_size 64"
 else
     echo "Error, unknown quantize mode"
     exit 1
+fi
+
+if [[ "$mode" == "w8bf16" || "$mode" == "w4bf16" || "$mode" == "bf16" ]]; then
+    half_quantize_args="--quantize BF16"
+elif [[ "$mode" == "w8f16" || "$mode" == "w4f16" || "$mode" == "f16" ]]; then
+    half_quantize_args="--quantize F16"
 fi
 
 timestamp=$(date "+%Y%m%d_%H%M%S")
@@ -200,7 +210,7 @@ vision_transformer() {
 
     model_deploy.py \
         --mlir vit.mlir \
-        --quantize BF16 \
+        ${half_quantize_args} \
         --quant_input \
         --quant_input_list 3 \
         --quant_output \
