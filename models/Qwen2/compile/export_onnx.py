@@ -220,7 +220,6 @@ def convert_greedy_head():
         opset_version=15)
 
 
-
 def convert_penalty_sample_head():
     model = PenaltySampleHead()
     m_logits = torch.randn(1, VOCAB_SIZE)

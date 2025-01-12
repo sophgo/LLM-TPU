@@ -10,6 +10,9 @@ import logging
 import warnings
 import argparse
 import functools
+import subprocess
+import concurrent.futures
+from datetime import datetime
 from typing import Optional, Tuple
 
 from yaspin import yaspin
@@ -17,6 +20,17 @@ from yaspin import yaspin
 import torch
 import numpy as np
 from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
+
+GREEN_COLOR = "\033[92m"  # ANSI escape code for green text
+RESET_COLOR = "\033[0m"
+
+def logging(message):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            print(message)  # 打印传入的消息
+            return func(*args, **kwargs)  # 调用原函数
+        return wrapper
+    return decorator
 
 class ModelMapper:
     def __init__(self):
@@ -216,6 +230,232 @@ class ModelMapper:
                     break
             setattr(dst, dst_attr, obj)
 
+class BmodelConverter:
+    def __init__(self, dst_path, config, args):
+        self.dst_path = dst_path
+        self.relative_onnx_path = "../onnx"
+        self.bmodel_path = os.path.join(self.dst_path, "bmodel")
+        self.hidden_size = config.hidden_size
+        self.num_layers = config.num_hidden_layers
+
+        self.chip = args.chip
+        self.quantize = args.quantize
+        self.max_workers = args.max_workers
+        self.num_device = args.num_device
+        self.tpu_mlir_path = args.tpu_mlir_path
+        self.seq_length = args.seq_length
+        if args.bmodel:
+            self.out_model = args.bmodel
+        else:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.out_model = f"{config.model_type}_{self.quantize}_seq{self.seq_length}_{timestamp}.bmodel"
+
+        self.bmodel_list = []
+        self.env = self._get_environment()
+
+    def _get_environment(self):
+        """
+        Sources the envsetup.sh script and captures the environment variables.
+        Returns a dictionary of the updated environment.
+        """
+        command = ["bash", "-c", "source envsetup.sh && env"]
+        try:
+            # Run the command in the tpu_mlir_path directory
+            proc = subprocess.Popen(
+                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=self.tpu_mlir_path, text=True
+            )
+            stdout, stderr = proc.communicate()
+            if proc.returncode != 0:
+                raise RuntimeError(f"Error sourcing envsetup.sh: {stderr}")
+
+            # Parse the environment variables
+            env = os.environ.copy()
+            for line in stdout.splitlines():
+                key, _, value = line.partition("=")
+                env[key] = value
+            return env
+        except Exception as e:
+            raise RuntimeError(f"Failed to get environment: {e}")
+
+    def run_command(self, command, env):
+        print(f"{GREEN_COLOR}Executing command: \n{' '.join(command)}{RESET_COLOR}")  # Print the command in green
+        subprocess.run(command, check=True, env=env)
+
+    def compile_lm_head(self, env, quantize):
+        name = "lm_head"
+        if os.path.exists(f"{name}.bmodel"):
+            print(f"{name}.bmodel already exists. Skipping compilation.")
+        else:
+            path = os.path.join(self.relative_onnx_path, f"{name}.pt")
+            transform_args = [
+                'model_transform.py',
+                f'--model_name {name}',
+                f'--model_def {path}',
+                f'--input_shapes [[1,{self.hidden_size}]]',
+                f'--mlir {name}.mlir'
+            ]
+            deploy_args = [
+                'model_deploy.py',
+                f'--mlir {name}.mlir',
+                f'--quantize {quantize}',
+                '--quant_input',
+                f'--chip {self.chip}',
+                f'--num_device {self.num_device}',
+                f'--model {name}.bmodel'
+            ]
+            self.run_command(['bash', '-c', ' '.join(transform_args)], env)
+            self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
+        bmodel_path = os.path.join(self.bmodel_path, f"{name}.bmodel")
+        self.bmodel_list.append(bmodel_path)
+
+    def compile_greedy_head(self, env):
+        name = "greedy_head"
+        if os.path.exists(f"{name}.bmodel"):
+            print(f"{name}.bmodel already exists. Skipping compilation.")
+        else:
+            path = os.path.join(self.relative_onnx_path, f"{name}.onnx")
+            transform_args = [
+                'model_transform.py',
+                f'--model_name {name}',
+                f'--model_def {path}',
+                f'--mlir {name}.mlir'
+            ]
+            deploy_args = [
+                'model_deploy.py',
+                f'--mlir {name}.mlir',
+                f'--chip {self.chip}',
+                f'--model {name}.bmodel'
+            ]
+            self.run_command(['bash', '-c', ' '.join(transform_args)], env)
+            self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
+        bmodel_path = os.path.join(self.bmodel_path, f"{name}.bmodel")
+        self.bmodel_list.append(bmodel_path)
+
+    def compile_penalty_head(self, env):
+        name = "penalty_sample_head"
+        if os.path.exists(f"{name}.bmodel"):
+            print(f"{name}.bmodel already exists. Skipping compilation.")
+        else:
+            path = os.path.join(self.relative_onnx_path, f"{name}.onnx")
+            transform_args = [
+                'model_transform.py',
+                f'--model_name {name}',
+                f'--model_def {path}',
+                f'--mlir {name}.mlir'
+            ]
+            deploy_args = [
+                'model_deploy.py',
+                f'--mlir {name}.mlir',
+                f'--chip {self.chip}',
+                f'--model {name}.bmodel'
+            ]
+            self.run_command(['bash', '-c', ' '.join(transform_args)], env)
+            self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
+        bmodel_path = os.path.join(self.bmodel_path, f"{name}.bmodel")
+        self.bmodel_list.append(bmodel_path)
+
+    def compile_block(self, i, env, quantize):
+        name = f"block_{i}"
+        if os.path.exists(f"{name}.bmodel"):
+            print(f"{name}.bmodel already exists. Skipping compilation.")
+        else:
+            path = os.path.join(self.relative_onnx_path, f"{name}.onnx")
+            transform_args = [
+                'model_transform.py',
+                f'--model_name {name}',
+                f'--model_def {path}',
+                f'--mlir {name}.mlir'
+            ]
+            deploy_args = [
+                'model_deploy.py',
+                f'--mlir {name}.mlir',
+                f'--quantize {quantize}',
+                '--quant_input',
+                '--quant_output',
+                f'--chip {self.chip}',
+                f'--num_device {self.num_device}',
+                f'--model {name}.bmodel'
+            ]
+            self.run_command(['bash', '-c', ' '.join(transform_args)], env)
+            self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
+        bmodel_path = os.path.join(self.bmodel_path, f"{name}.bmodel")
+        self.bmodel_list.append(bmodel_path)
+
+    def compile_block_cache(self, i, env, quantize):
+        name = f"block_cache_{i}"
+        if os.path.exists(f"{name}.bmodel"):
+            print(f"{name}.bmodel already exists. Skipping compilation.")
+        else:
+            path = os.path.join(self.relative_onnx_path, f"{name}.onnx")
+            transform_args = [
+                'model_transform.py',
+                f'--model_name {name}',
+                f'--model_def {path}',
+                f'--mlir {name}.mlir'
+            ]
+            deploy_args = [
+                'model_deploy.py',
+                f'--mlir {name}.mlir',
+                f'--quantize {quantize}',
+                '--quant_input',
+                '--quant_output',
+                f'--chip {self.chip}',
+                '--addr_mode=io_alone',
+                f'--num_device {self.num_device}',
+                f'--model {name}.bmodel'
+            ]
+            self.run_command(['bash', '-c', ' '.join(transform_args)], env)
+            self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
+        bmodel_path = os.path.join(self.bmodel_path, f"{name}.bmodel")
+        self.bmodel_list.append(bmodel_path)
+
+    def combine(self, env):
+        combine_args = [
+            'model_tool',
+            '--combine',
+            ' '.join(self.bmodel_list),
+            '-o',
+            os.path.join(self.dst_path, self.out_model)
+        ]
+        self.run_command(['bash', '-c', ' '.join(combine_args)], env)
+
+    def compile(self):
+        # Create the bmodel directory if it doesn't exist
+        os.makedirs(self.bmodel_path, exist_ok=True)
+
+        quantize = self.quantize
+        half_precision_quantize = "f16" if "f16" in self.quantize else "bf16"
+
+        # Compile heads
+        ori_path = os.getcwd()
+        os.chdir(self.bmodel_path)
+
+        self.compile_lm_head(self.env, quantize)
+        self.compile_greedy_head(self.env)
+        self.compile_penalty_head(self.env)
+
+        # Change back to the original directory
+        os.chdir(ori_path)
+
+        # Compile blocks and block caches
+        os.chdir(self.bmodel_path)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = []
+            for i in range(self.num_layers):
+                futures.append(executor.submit(self.compile_block, i, self.env, quantize))
+                futures.append(executor.submit(self.compile_block_cache, i, self.env, quantize))
+            # Wait for all threads to complete
+            for future in concurrent.futures.as_completed(futures):
+                # This will raise exceptions if any occurred during thread execution
+                future.result()
+
+        # Optionally, change back to the original directory
+        os.chdir(ori_path)
+
+        # compile all bmodel
+        self.combine(self.env)
+
 # some wrapper class for export
 class Embedding(torch.nn.Module):
     def __init__(self, embed, config):
@@ -227,11 +467,11 @@ class Embedding(torch.nn.Module):
         return self.embed(input_ids).view(-1, 1, self.hidden_size)
 
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
-    batch, num_key_value_heads, slen, head_dim = hidden_states.shape
+    batch, slen, num_key_value_heads, head_dim = hidden_states.shape
     if n_rep == 1:
         return hidden_states
-    hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
-    return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
+    hidden_states = hidden_states[:, :, :, None, :].expand(batch, slen, num_key_value_heads, n_rep, head_dim)
+    return hidden_states.reshape(batch, slen, num_key_value_heads * n_rep, head_dim)
 
 class Attention(torch.nn.Module):
     def __init__(self, attn, config):
@@ -281,12 +521,13 @@ class Attention(torch.nn.Module):
         hidden_states: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
         past_key_value: Optional[Tuple[torch.Tensor]] = None,
-        rotary_pos_emb: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         bsz, q_len, _ = hidden_states.size()
         query_states = self.q_proj(hidden_states)
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
+
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim)
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim)
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim)
@@ -295,40 +536,34 @@ class Attention(torch.nn.Module):
             kv_seq_len += past_key_value[0].shape[1]
 
         # rope
-        cos, sin = rotary_pos_emb[0], rotary_pos_emb[1]
+        cos, sin = self.rotary.cos[position_ids], self.rotary.sin[position_ids]
         query_states = self.rotary.apply_rotary_pos(query_states, cos, sin)
         key_states = self.rotary.apply_rotary_pos(key_states, cos, sin)
+        past_kv = (key_states, value_states)
+
         # kv cache
         if past_key_value is not None:
             past_key, past_value = past_key_value[0], past_key_value[1]
             key_states = torch.cat((past_key, key_states), dim=1)
             value_states = torch.cat((past_value, value_states), dim=1)
 
-        past_key_value = torch.stack((key_states, value_states))
-        query_states = query_states.transpose(1, 2)
-        key_states = key_states.permute([0, 2, 3, 1])
-        value_states = value_states.transpose(1, 2)
         # repeat k/v heads if n_kv_heads < n_heads
         key_states = repeat_kv(key_states, self.num_key_value_groups)
         value_states = repeat_kv(value_states, self.num_key_value_groups)
         #------- attention ----------
         # query_states @ key_states
-        attn_weights = torch.matmul(query_states, key_states) / math.sqrt(self.head_dim)
+        attn_weights = torch.matmul(query_states.transpose(1, 2), key_states.transpose(1, 2).transpose(2, 3)) / math.sqrt(self.head_dim)
         # attention_mask
-        if attention_mask.dtype in (torch.bool, torch.int32):
-            # chatglm
-            attn_weights.masked_fill_(attention_mask, -10000.0)
-        else:
-            attn_weights = attn_weights + attention_mask
+        attn_weights = attn_weights + attention_mask
         # upcast softmax to fp32
         attn_weights = torch.nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
         # attn_weights @ value_states
-        attn_output = torch.matmul(attn_weights, value_states)
+        attn_output = torch.matmul(attn_weights, value_states.transpose(1, 2))
 
         attn_output = attn_output.transpose(1, 2).contiguous()
         attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
         attn_output = self.o_proj(attn_output)
-        return attn_output, past_key_value
+        return attn_output, past_kv
 
 def rotate_half(x):
     x1 = x[..., : x.shape[-1] // 2]
@@ -336,7 +571,7 @@ def rotate_half(x):
     return torch.cat((-x2, x1), dim=-1)
 
 class Rotary(torch.nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, seq_length):
         super().__init__()
         self.rope_theta = config.rope_theta
         self.rotary_dim = config.head_dim
@@ -345,6 +580,10 @@ class Rotary(torch.nn.Module):
             self.rotary_dim = config.rotary_dim
         if self.model_type == 'chatglm':
             self.rotary_dim = config.head_dim // 2
+
+        self.cos, self.sin = self.init_rotary_pos_emb(seq_length)
+        self.cos = self.cos.squeeze(0)
+        self.sin = self.sin.squeeze(0)
 
     def forward(self, position_ids):
         theta = 1.0 / (self.rope_theta ** (torch.arange(0, self.rotary_dim, 2, dtype=torch.float32) / self.rotary_dim))
@@ -355,6 +594,10 @@ class Rotary(torch.nn.Module):
             rotary_pos_emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
         rotary_pos_emb = rotary_pos_emb.unsqueeze(2).unsqueeze(1)
         return rotary_pos_emb
+    
+    def init_rotary_pos_emb(self, seq_length):
+        position_ids = torch.tensor([range(seq_length)], dtype=torch.long)
+        return self.forward(position_ids)
 
     def apply_rotary_pos(self, x, cos, sin):
         if self.model_type == 'chatglm':
@@ -408,7 +651,7 @@ class Decoder(torch.nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        rotary_pos_emb: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         past_key_value: Optional[Tuple[torch.Tensor]] = None,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
@@ -419,7 +662,7 @@ class Decoder(torch.nn.Module):
         # Self Attention
         hidden_states, present_key_value = self.self_attn(
             hidden_states=hidden_states,
-            rotary_pos_emb=rotary_pos_emb,
+            position_ids=position_ids,
             attention_mask=attention_mask,
             past_key_value=past_key_value,
         )
@@ -451,10 +694,48 @@ class Lm(torch.nn.Module):
         self.hidden_size = config.hidden_size
 
     def forward(self, hidden_states):
-        breakpoint()
         hidden_states = self.final_layernorm(hidden_states)
         m_logits = self.lm(hidden_states)
         return m_logits
+
+class GreedyHead(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, m_logits):
+        _, token = torch.topk(m_logits.float(), 1)
+        return token
+
+# refs:https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py
+class PenaltySampleHead(torch.nn.Module):
+
+    def __init__(self, top_k = 50, min_tokens_to_keep = 5):
+        super().__init__()
+        self.top_k = top_k
+        self.min_tokens_to_keep = min_tokens_to_keep
+        self.keep_matrix = torch.zeros((1, self.top_k), dtype=torch.bool)
+        self.keep_matrix[0, :self.min_tokens_to_keep] = True
+
+    def forward(self, m_logits, input_ids, top_p, temperature, penalty):
+        # repeat penalty
+        logits = torch.gather(m_logits, 1, input_ids)
+        logits = torch.where(logits < 0, logits * penalty, logits / penalty)
+        m_logits.scatter_(1, input_ids, logits)
+
+        # top_k
+        logits, token = torch.topk(m_logits.float(), self.top_k)
+
+        # temperature
+        logits = logits / temperature
+
+        # top_p
+        cumulative_probs = logits.softmax(dim=1).cumsum(dim=1)
+        mask = cumulative_probs < top_p
+        mask = mask + self.keep_matrix
+        filtered_logits = torch.where(mask, logits, torch.FloatTensor([-1000.]))
+        probs = filtered_logits.softmax(dim=1)
+        return probs, token
 
 class ModelExporter(torch.nn.Module):
     '''
@@ -465,6 +746,8 @@ class ModelExporter(torch.nn.Module):
         super().__init__()
         self.init_from_args(args)
         self.load_model(args.path)
+
+        self.bmodel_converter = BmodelConverter(self.dst_path, self, args)
 
     def init_from_args(self, args):
         self.model_name = args.path
@@ -498,7 +781,7 @@ class ModelExporter(torch.nn.Module):
         else:
             self.embed = Embedding(self.embed_, self)
         # Rotary
-        self.rotary = Rotary(self)
+        self.rotary = Rotary(self, self.seq_length)
         # Blocks
         self.blocks = []
         for block in self.blocks_.children():
@@ -523,9 +806,16 @@ class ModelExporter(torch.nn.Module):
         self.rebuild_modules()
         return model_path
 
+    @logging("export_embed ...")
     def export_embed(self):
         if not hasattr(self, 'embed') or not isinstance(self.embed.embed, torch.nn.Embedding):
             return
+
+        embedding_file = f'{self.dst_path}/embedding.bin'
+        if os.path.exists(embedding_file):
+            print(f"{embedding_file} already exists. Skipping export.")
+            return
+
         import ctypes
         if self.config.torch_dtype == torch.bfloat16:
             tensor_data = self.embed.embed.weight.data.bfloat16()
@@ -533,31 +823,123 @@ class ModelExporter(torch.nn.Module):
             raise ValueError("not support now")
         data_ptr = tensor_data.untyped_storage().data_ptr()
         buffer = (ctypes.c_byte * (tensor_data.numel() * 2)).from_address(data_ptr)
-        embedding_file = f'{self.dst_path}/embedding.bin'
+        
         with open(embedding_file, 'wb') as f:
             f.write(buffer)
         return embedding_file
 
+    @logging("export_block ...")
     def export_block(self):
-        breakpoint()
         hidden_states = torch.randn((1, self.seq_length, self.hidden_size), dtype=torch.float)
         position_ids = torch.tensor([range(self.seq_length)], dtype=torch.long)
         attention_mask = torch.randn((1, 1, self.seq_length, self.seq_length), dtype=torch.float)
 
         for i, model in enumerate(self.blocks):
-            onnx_model = f'{self.dst_path}/onnx/block_{i}.onnx'
+            onnx_path = f'{self.dst_path}/onnx/block_{i}.onnx'
+            if os.path.exists(onnx_path):
+                print(f"{onnx_path} already exists. Skipping export.")
+                continue
+
             torch.onnx.export(
                 model,
                 (hidden_states, position_ids, attention_mask),
-                onnx_model,
+                onnx_path,
                 verbose=False,
                 input_names=["input_states", "position_ids", "attention_mask"],
                 output_names=["hidden_states", "past_k", "past_v"],
                 do_constant_folding=True,
                 opset_version=15,
             )
-        return onnx_model
+        return
 
+    @logging("export_block_cache ...")
+    def export_block_cache(self):
+        hidden_states = torch.randn((1, self.seq_length, self.hidden_size), dtype=torch.float)
+        position_ids = torch.tensor([range(self.seq_length)], dtype=torch.long)
+        attention_mask = torch.randn((1, 1, self.seq_length, self.seq_length), dtype=torch.float)
+
+        hidden_states = torch.randn((1, 1, self.hidden_size), dtype=torch.float)
+        position_ids = torch.tensor([range(1)], dtype=torch.long)
+        attention_mask = torch.ones(
+            (1, 1, 1, self.seq_length + 1))
+        past_k = torch.randn((1, self.seq_length, self.num_key_value_heads, self.head_dim), dtype=torch.float)
+        past_v = torch.randn((1, self.seq_length, self.num_key_value_heads, self.head_dim), dtype=torch.float)
+
+
+        for i, model in enumerate(self.blocks):
+            onnx_path = f'{self.dst_path}/onnx/block_cache_{i}.onnx'
+            if os.path.exists(onnx_path):
+                print(f"{onnx_path} already exists. Skipping export.")
+                continue
+
+            torch.onnx.export(
+                model,
+                (hidden_states, position_ids, attention_mask, (past_k, past_v)),
+                onnx_path,
+                verbose=False,
+                input_names=["input_states", "position_ids", "attention_mask", "history_k", "history_v"],
+                output_names=["hidden_states", "past_k", "past_v"],
+                do_constant_folding=True,
+                opset_version=15,
+            )
+        return
+    
+    @logging("export_lm_head ...")
+    def export_lm_head(self):
+        pt_path = f'{self.dst_path}/onnx/lm_head.pt'
+        if os.path.exists(pt_path):
+            print(f"{pt_path} already exists. Skipping export.")
+            return
+
+        model = self.lm
+        hidden_states = torch.randn((1, 1, self.hidden_size), dtype=torch.float)
+        module = torch.jit.trace(model.forward, hidden_states)
+        torch.jit.save(module, pt_path)
+        return
+
+    def export_greedy_head(self):
+        onnx_path = f'{self.dst_path}/onnx/greedy_head.onnx'
+        if os.path.exists(onnx_path):
+            print(f"{onnx_path} already exists. Skipping export.")
+            return
+
+        model = GreedyHead()
+        m_logits = torch.randn(1, self.config.vocab_size)
+        torch.onnx.export(
+            model, (m_logits),
+            onnx_path,
+            verbose=False,
+            input_names=['m_logits'],
+            output_names=['token'],
+            do_constant_folding=True,
+            opset_version=15)
+        return
+
+    def export_penalty_sample_head(self):
+        onnx_path = f'{self.dst_path}/onnx/penalty_sample_head.onnx'
+        if os.path.exists(onnx_path):
+            print(f"{onnx_path} already exists. Skipping export.")
+            return
+
+        model = PenaltySampleHead()
+        m_logits = torch.randn(1, self.config.vocab_size)
+        input_ids = torch.tensor([range(self.seq_length)])
+        top_p = torch.tensor([0.8])
+        temperature = torch.tensor([0.98])
+        penalty = torch.tensor([0.98])
+
+        torch.onnx.export(
+            model, (m_logits, input_ids, top_p, temperature, penalty),
+            onnx_path,
+            verbose=False,
+            input_names=[
+                'm_logits', 'input_ids', 'top_p', 'temperature',
+                'penalty'
+            ],
+            output_names=['probs', 'token'],
+            do_constant_folding=True,
+            opset_version=15)
+        return
 
     def export_onnx(self):
         # mkir
@@ -566,19 +948,23 @@ class ModelExporter(torch.nn.Module):
 
         self.export_embed()
         self.export_block()
-        # self.export_block_cache()
-        # self.export_lmhead()
+        self.export_block_cache()
+        self.export_lm_head()
+        self.export_greedy_head()
+        self.export_penalty_sample_head()
 
-    def check(self):
-        if self.seq_length is None:
+    def check(self, args):
+        if args.seq_length is None:
             raise ValueError("Please provide a value for --seq_length, when using the --export option.")
+        if args.export == "bmodel":
+            if args.tpu_mlir_path is None:
+                raise ValueError("Please provide a path for --tpu_mlir_path, when using the --export bmodel.")
 
     def export(self, export_type):
-        self.check()
 
-        onnx_model = self.export_onnx()
+        self.export_onnx()
         if 'bmodel' in export_type:
-            BmodelConveter(onnx_model, None, self.quant_bit, self.quant_block).export()
+            self.bmodel_converter.compile()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='llm_exporter', formatter_class=argparse.RawTextHelpFormatter)
@@ -588,10 +974,17 @@ if __name__ == '__main__':
                         '\n\t- A path to a *directory* clone from repo like `../chatglm-6b`.')
     parser.add_argument('--export', type=str, choices=["onnx", "bmodel"], default=None, help='export torch/onnx to an onnx/bmodel model.')
     parser.add_argument('--dst_path', type=str, default='./model', help='export onnx/bmodel model to path, defaut is `./model`.')
-    parser.add_argument('-s', '--seq_length', type=int, help="sequence length")
+    parser.add_argument('--bmodel', type=str, default='', help='bmodel name after model_tool --combine')
+    parser.add_argument('--seq_length', type=int, required=True, help="sequence length")
+    parser.add_argument('--chip', type=str, default="bm1684x", choices=["bm1684x", "bm1688"], help="chip")
+    parser.add_argument('--quantize', type=str, default="w4bf16", choices=["bf16", "w8bf16", "w4bf16", "f16", "w8f16", "w4f16"], help="quantize")
+    parser.add_argument('--num_device', type=int, default=1, help="num device in compiling bmodel")
+    parser.add_argument('--max_workers', type=int, default=3, help="max workers for compiling bmodel in multi-processing")
+    parser.add_argument('--tpu_mlir_path', type=str, help="tpu_mlir for compiling bmodel")
     args = parser.parse_args()
 
     model_exporter = ModelExporter(args)
 
     if args.export is not None:
+        model_exporter.check(args)
         model_exporter.export(args.export)

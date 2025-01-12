@@ -47,7 +47,7 @@ class Qwen2VL():
                             "resized_height": self.resized_height,
                             "resized_width": self.resized_width,
                         },
-                        {"type": "text", "text": "Describe this image and tell a story."},
+                        {"type": "text", "text": self.input_str},
                     ],
                 }
             ]
@@ -60,7 +60,7 @@ class Qwen2VL():
                             "type": "image",
                             "image": path,
                         },
-                        {"type": "text", "text": "Describe this image and tell a story."},
+                        {"type": "text", "text": self.input_str},
                     ],
                 }
             ]
@@ -77,7 +77,7 @@ class Qwen2VL():
                         "max_pixels": 360 * 420,
                         "fps": 1.0,
                     },
-                    {"type": "text", "text": "Describe this video."},
+                    {"type": "text", "text": self.input_str},
                 ],
             }
         ]
