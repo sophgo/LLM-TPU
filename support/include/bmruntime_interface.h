@@ -91,6 +91,9 @@ DECL_EXPORT bool bmrt_get_bmodel_data_info(const void* bmodel_data, size_t size,
 /* get net index*/
 DECL_EXPORT int bmrt_get_network_index(void* p_bmrt, const char* net_name);
 
+/* get num stage */
+DECL_EXPORT int bmrt_get_stage_size(void* p_bmrt, const char* net_name);
+
 /* --------------------------------------------------------------------------*/
 /**
  * @name    bmrt_create
@@ -309,7 +312,7 @@ DECL_EXPORT bool bmrt_load_bmodel_data_with_mem(void* p_bmrt, const void * bmode
  * @retval true    Update bmodel weight sucess.
  * @retval false   Update bmodel weight failed.
  */
-DECL_EXPORT bool bmrt_update_bmodel_weight_with_decrypt(void* p_bmrt, const char* bmodel_path, const char* update_path, const char* net_idx, const char* mem_idx, const char** weight_idx, int weight_count, decrypt_func f);
+DECL_EXPORT bool bmrt_update_bmodel_weight_with_decrypt(void *p_bmrt, const char *bmodel_path, const char *update_path, const char *net_idx, const char *mem_idx, const char **weight_idx, int weight_count, decrypt_func f);
 
 /**
  * @name    bmrt_empty_bmodel_weight_with_decrypt
@@ -330,7 +333,7 @@ DECL_EXPORT bool bmrt_update_bmodel_weight_with_decrypt(void* p_bmrt, const char
  * @retval true    Empty bmodel weight sucess.
  * @retval false   Empty bmodel weight failed.
  */
-DECL_EXPORT bool bmrt_empty_bmodel_weight_with_decrypt(void* p_bmrt, const char* bmodel_path, const char* net_idx, const char* mem_idx, const char** weight_idx, int weight_count, decrypt_func f);
+DECL_EXPORT bool bmrt_empty_bmodel_weight_with_decrypt(void *p_bmrt, const char *bmodel_path, const char *net_idx, const char *mem_idx, const char **weight_idx, int weight_count, decrypt_func f);
 
 /**
  * @name    bmrt_show_neuron_network
@@ -387,18 +390,6 @@ DECL_EXPORT const char *bmrt_get_network_name(void* p_bmrt, int index);
  * @retval  bm_net_info_t*        Pointer to net info, needn't free by user; if net name not found, will return NULL.
  */
 DECL_EXPORT const bm_net_info_t* bmrt_get_network_info(void* p_bmrt, const char* net_name);
-
-/**
- * @name    bmrt_get_stage_size
- * @brief   To get network stage size
- * @ingroup bmruntime
- *
- * @param [in]     p_bmrt         Bmruntime that had been created
- * @param [in]     net_name       Network name
- *
- * @retval  int                   Stage size; if net name not found, will return -1.
- */
-DECL_EXPORT int bmrt_get_stage_size(void* p_bmrt, const char* net_name);
 
 /**
  * @name    bmrt_get_stage_index
@@ -679,7 +670,8 @@ DECL_EXPORT bool bmrt_launch_data_multi_thread(void* p_bmrt, const char* net_nam
  *
  * This API only used for multi-cores arch runtime, need call before bmrt_launch_tensor_multi_cores API.
  * After calling this API, the memory during neuron network inference is pre-allocated, can reduce first bmrt_launch_tensor_multi_cores API time cost.
- * If no use this API, is also OK, bmrt will auto alloc compute memory during first launch tensor.
+ * If no use this API or bmrt_pre_alloc_mem, is also OK, bmrt will auto alloc compute memory during first launch tensor.
+ * If using bmrt_pre_alloc_neuron_multi_cores, do not use bmrt_pre_alloc_mem any more.
  *
  * @param [in]    p_bmrt            Bmruntime that had been created
  * @param [in]    net_name          The name of the neuron network
@@ -696,6 +688,27 @@ DECL_EXPORT bool bmrt_pre_alloc_neuron_multi_cores(
     int stage_idx,
     const int *core_list,
     int core_num);
+
+/**
+ * @name    bmrt_pre_alloc_mem
+ * @brief   To pre-allocate the neuron network compute memory during multi-cores arch inference.
+ * @ingroup bmruntime
+ *
+ * This API only used for multi-cores arch runtime, need call before bmrt_launch_tensor_multi_cores API.
+ * After calling this API, the memory during neuron network inference is pre-allocated, can reduce first bmrt_launch_tensor_multi_cores API time cost.
+ * If no use this API or bmrt_pre_alloc_neuron_multi_cores, is also OK, bmrt will auto alloc compute memory during first launch tensor.
+ * If using bmrt_pre_alloc_mem, do not use bmrt_pre_alloc_neuron_multi_cores any more.
+ * Instant of bmrt_pre_alloc_neuron_multi_cores, pre-allocated neuron memory do not bound with core list any more.
+ *
+ * @param [in]    p_bmrt            Bmruntime that had been created
+ * @param [in]    net_name          The name of the neuron network
+ *
+ * @retval true    Pre-allocate success.
+ * @retval false   Pre-allocate failed.
+ */
+DECL_EXPORT bool bmrt_pre_alloc_mem(
+    void *p_bmrt,
+    const char* net_name);
 
 /**
  * @name    bmrt_pre_alloc_mem_multi_thread
