@@ -16,7 +16,6 @@ from tqdm import tqdm
 from datetime import datetime
 from typing import Optional, Tuple
 
-from yaspin import yaspin
 
 import onnx
 import torch
@@ -558,6 +557,7 @@ class Attention(torch.nn.Module):
                     self.q_proj.bias.data = qb
                     self.k_proj.bias.data = kb
                     self.v_proj.bias.data = vb
+            del self.qkv_proj
 
     def forward(
         self,
@@ -872,7 +872,7 @@ class ModelExporter(torch.nn.Module):
             return
 
         import ctypes
-        if self.config.torch_dtype == torch.bfloat16:
+        if self.config.torch_dtype == torch.bfloat16 or self.config.bf16 == True:
             tensor_data = self.embed.embed.weight.data.bfloat16()
         else:
             raise ValueError("not support now")
