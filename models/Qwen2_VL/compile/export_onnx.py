@@ -85,13 +85,17 @@ class VisionTransformer(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.rotary_pos_emb_full = ViT.rotary_pos_emb(VISION_LENGTH) # max_grid_size << VISION_LENGTH
+        self.cos = self.rotary_pos_emb_full.cos().unsqueeze(1).repeat(1, 1, 2)
+        self.sin = self.rotary_pos_emb_full.sin().unsqueeze(1).repeat(1, 1, 2)
 
     def forward(self, hidden_states, position_ids, attention_mask):
         hidden_states = ViT.patch_embed(hidden_states)
-        rotary_pos_emb = self.rotary_pos_emb_full[position_ids].flatten(1)
+        self.cos = self.cos[position_ids].flatten(1).unsqueeze(1).unsqueeze(0)
+        self.sin = self.sin[position_ids].flatten(1).unsqueeze(1).unsqueeze(0)
 
+        # hidden_states = ViT.blocks[0](hidden_states, attention_mask=attention_mask, rotary_pos_emb=(self.cos, self.sin))
         for blk in ViT.blocks:
-            hidden_states = blk(hidden_states, attention_mask=attention_mask, rotary_pos_emb=rotary_pos_emb)
+            hidden_states = blk(hidden_states, attention_mask=attention_mask, rotary_pos_emb=(self.cos, self.sin))
         hidden_states = ViT.merger(hidden_states)
         return hidden_states
 
@@ -573,7 +577,7 @@ if __name__ == "__main__":
     print("\033[31m如果输入为图片时，注意resized_height与resized_width，避免resize导致图片质量损失 \033[0m")
 
 
-    test_image(path = "./../python_demo/image1.jpg", resized_height=280, resized_width=420)
+    # test_image(path = "./../python_demo/image1.jpg", resized_height=280, resized_width=420)
     # test_video(path = "./sample.mp4")
 
     # convert

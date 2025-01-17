@@ -285,13 +285,11 @@ def apply_multimodal_rotary_pos_emb(q, k, cos, sin, mrope_section, position_ids,
     return q_embed, k_embed
 
 
-def apply_rotary_pos_emb_vision(tensor: torch.Tensor, freqs: torch.Tensor) -> torch.Tensor:
+def apply_rotary_pos_emb_vision(tensor: torch.Tensor, rotary_pos_emb: torch.Tensor) -> torch.Tensor:
+    cos, sin = rotary_pos_emb
+
     orig_dtype = tensor.dtype
     tensor = tensor.float()
-    cos = freqs.cos()
-    sin = freqs.sin()
-    cos = cos.unsqueeze(1).repeat(1, 1, 2).unsqueeze(0).float()
-    sin = sin.unsqueeze(1).repeat(1, 1, 2).unsqueeze(0).float()
     output = (tensor * cos) + (rotate_half(tensor) * sin)
     output = output.to(orig_dtype)
     return output
@@ -375,8 +373,8 @@ class VisionAttention(nn.Module):
     ) -> torch.Tensor:
         seq_length = hidden_states.shape[0]
         q, k, v = self.qkv(hidden_states).reshape(seq_length, 3, self.num_heads, -1).permute(1, 0, 2, 3).unbind(0)
-        q = apply_rotary_pos_emb_vision(q.unsqueeze(0), rotary_pos_emb).squeeze(0)
-        k = apply_rotary_pos_emb_vision(k.unsqueeze(0), rotary_pos_emb).squeeze(0)
+        q = apply_rotary_pos_emb_vision(q.unsqueeze(0), rotary_pos_emb)
+        k = apply_rotary_pos_emb_vision(k.unsqueeze(0), rotary_pos_emb)
 
         # attention_mask = torch.full(
         #     [1, seq_length, seq_length], torch.finfo(q.dtype).min, device=q.device, dtype=q.dtype
@@ -384,14 +382,11 @@ class VisionAttention(nn.Module):
         # for i in range(1, len(cu_seqlens)):
         #     attention_mask[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0
 
-        q = q.transpose(0, 1)
-        k = k.transpose(0, 1)
-        v = v.transpose(0, 1)
-        attn_weights = torch.matmul(q, k.transpose(1, 2)) / math.sqrt(self.head_dim)
+        attn_weights = torch.matmul(q.transpose(1, 2), k.transpose(1, 2).transpose(2, 3)) / math.sqrt(self.head_dim)
         attn_weights = attn_weights + attention_mask
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(q.dtype)
-        attn_output = torch.matmul(attn_weights, v)
-        attn_output = attn_output.transpose(0, 1)
+        attn_output = torch.matmul(attn_weights, v.unsqueeze(0).transpose(1, 2))
+        attn_output = attn_output.transpose(1, 2)
         attn_output = attn_output.reshape(seq_length, -1)
         attn_output = self.proj(attn_output)
         return attn_output
