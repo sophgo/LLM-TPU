@@ -13,8 +13,8 @@ class Model:
         # preprocess parameters, such as prompt & tokenizer
         # devid
         self.devices = [int(d) for d in args.devid.split(",")]
-        config_path = os.path.join(args.path, "config.json")
-        tokenizer_path = os.path.join(args.path, "tokenizer")
+        config_path = os.path.join(args.dir_path, "config.json")
+        tokenizer_path = os.path.join(args.dir_path, "tokenizer")
 
         # load tokenizer
         print("Load " + tokenizer_path + " ...")
@@ -47,7 +47,7 @@ class Model:
         self.model.repeat_last_n = args.repeat_last_n
         self.model.max_new_tokens = args.max_new_tokens
         self.model.generation_mode = args.generation_mode
-        self.model.embedding_path = os.path.join(args.path, "embedding.bin")
+        self.model.embedding_path = os.path.join(args.dir_path, "embedding.bin")
         self.model.NUM_LAYERS = self.config["num_hidden_layers"]
 
         self.enable_history = args.enable_history
@@ -161,7 +161,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-p", "--path", type=str, default="./model", help="path to the config/embedding/tokenizer")
+    parser.add_argument("-p", "--dir_path", type=str, default="./tmp", help="dir path to the config/embedding/tokenizer")
     parser.add_argument('-b', '--model_path', type=str, required=True, help='path to the bmodel file')
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
     parser.add_argument('--temperature', type=float, default=1.0, help='temperature scaling factor for the likelihood distribution')

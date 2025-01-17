@@ -195,6 +195,7 @@ class ModelMapper:
             'embed_': 'model.embed_tokens',
             'blocks_': 'model.layers',
             'final_layernorm_': 'model.norm',
+            'visual_model': 'visual'
         }
         self.default_decoder = {
             'self_attn': 'self_attn',
@@ -856,12 +857,12 @@ class Visual(torch.nn.Module):
         self.load()
 
     @staticmethod
-    def get_visual(model_type):
+    def get_visual(model_type, visual_model, base):
         visual_models = {
             'qwen2_vl': Qwen2Visual,
         }
         if model_type in visual_models:
-            return visual_models[model_type]
+            return visual_models[model_type](visual_model, base)
         return None
 
     def get_model_map(self):
@@ -926,11 +927,12 @@ class VisionRotary(torch.nn.Module):
 
 
 class Qwen2Visual(Visual):
-    def __init__(self, visual, base):
-        super().__init__(visual, base)
+    def __init__(self, visual_model, base):
+        super().__init__(visual_model, base)
 
     def load(self):
         # load model
+        self.mlp_ratio = self.visual_config.mlp_ratio
         self.hidden_size = self.visual_config.embed_dim
         self.num_attention_heads = self.visual_config.num_heads
         self.num_key_value_heads = self.visual_config.num_heads
@@ -950,9 +952,8 @@ class Qwen2Visual(Visual):
 
         hidden_states = self.patch_embed(flatten_patches)
         for blk in self.blocks:
-            hidden_states, _ = blk(hidden_states, rotary_pos_emb=(self.cos, self.sin), attention_mask=attention_mask)
-        image_embeds = self.merger(hidden_states)
-        image_embeds = image_embeds.unsqueeze(1)
+            hidden_states, _ = self.blocks[0](hidden_states, rotary_pos_emb=(self.cos, self.sin), attention_mask=attention_mask)
+        image_embeds = self.merger.mlp(self.merger.ln_q(hidden_states).view(1, -1, self.hidden_size * self.mlp_ratio))
         return image_embeds
 
     def export(self, onnx_path):
@@ -1039,7 +1040,7 @@ class ModelExporter(torch.nn.Module):
         # Lmhead
         self.lm = Lm(self.lm_, self.final_layernorm_, self)
         # Visual
-        self.visual = Visual.get_visual(self.model_type)(self.model.visual, self)
+        self.visual = Visual.get_visual(self.model_type, self.visual_model, self)
 
     def load_model(self, model_path):
         self.load_pretrained(model_path)
@@ -1240,6 +1241,9 @@ class ModelExporter(torch.nn.Module):
         onnx_path = os.path.join(self.out_dir, "onnx")
         os.makedirs(onnx_path, exist_ok=True)
 
+        if self.visual is not None:
+            self.export_visual(onnx_path)
+
         self.export_config()
         self.export_tokenizer()
         self.export_embed()
@@ -1248,15 +1252,13 @@ class ModelExporter(torch.nn.Module):
         self.export_lm_head()
         self.export_greedy_head()
         self.export_penalty_sample_head()
-        if self.model.visual is not None:
-            self.export_visual(onnx_path)
 
     def check(self, args):
         if args.seq_length is None:
             raise ValueError("Please provide a value for --seq_length, when using the --export option.")
         if args.tpu_mlir_path is None:
             raise ValueError("Please provide a path for --tpu_mlir_path, when using the --export bmodel.")
-        if self.model.visual is not None and self.visual_length is None:
+        if self.visual is not None and self.visual_length is None:
             raise ValueError("Please provide a path for --tpu_mlir_path, when using the --export bmodel.")
 
     def export(self):
@@ -1267,7 +1269,7 @@ class ModelExporter(torch.nn.Module):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='llm_exporter', formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-t', '--torch_path', type=str, required=True, help='torch path, like ./Qwen2-VL-2B-Instruct')
-    parser.add_argument('--out_dir', type=str, default='./tmp', help='export onnx/bmodel model to path, defaut is `./model`.')
+    parser.add_argument('--out_dir', type=str, default='./tmp', help='export onnx/bmodel model to path, defaut is `./model`')
     parser.add_argument('--out_bmodel', type=str, default='', help='bmodel name after model_tool --combine')
     parser.add_argument('--seq_length', type=int, required=True, help="sequence length")
     parser.add_argument('--visual_length', type=int, help="visual length for vision transformer")
@@ -1276,7 +1278,8 @@ if __name__ == '__main__':
     parser.add_argument('--num_device', type=int, default=1, help="num device in compiling bmodel")
     parser.add_argument('--max_workers', type=int, default=3, help="max workers for compiling bmodel in multi-processing")
     parser.add_argument('--tpu_mlir_path', type=str, help="tpu_mlir for compiling bmodel")
-    parser.add_argument('--export_type', type=str, choices=["onnx", "bmodel"], default="bmodel", help='export torch/onnx to an onnx/bmodel model.')
+    parser.add_argument('--export_type', type=str, choices=["onnx", "bmodel"], default="bmodel", help='export torch/onnx to an onnx/bmodel model')
+    parser.add_argument('--debug', type=int, choices=[0, 1], default=0, help='debug mode')
     args = parser.parse_args()
 
     model_exporter = ModelExporter(args)
