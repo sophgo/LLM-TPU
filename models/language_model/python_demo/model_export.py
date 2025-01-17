@@ -21,9 +21,10 @@ import onnx
 import torch
 import numpy as np
 from onnx import numpy_helper
-from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModel, AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 GREEN_COLOR = "\033[92m"  # ANSI escape code for green text
+RED_COLOR = "\033[91m"
 RESET_COLOR = "\033[0m"
 
 def logging(message):
@@ -42,14 +43,9 @@ class ModelMapper:
 
     def get_map(self, config):
         model_type = config.model_type
-        if model_type == 'chatglm':
-            if hasattr(config, 'vocab_size') and config.vocab_size == 130528:
-                model_type = 'chatglm'
-            else:
-                model_type = 'chatglm2'
         if model_type in self.mapper:
-            return model_type, self.mapper[model_type]
-        return model_type, self.default_map
+            return self.mapper[model_type]
+        return self.default_map
 
     def regist(self, model_type, model_map):
         assert('config' in model_map and
@@ -283,12 +279,13 @@ class OnnxRebuild:
         old_init.CopyFrom(new_init)
 
 class BmodelConverter:
-    def __init__(self, dst_path, config, args):
-        self.dst_path = dst_path
+    def __init__(self, out_dir, config, args):
+        self.out_dir = out_dir
         self.relative_onnx_path = "../onnx"
-        self.bmodel_path = os.path.join(self.dst_path, "bmodel")
+        self.bmodel_path = os.path.join(self.out_dir, "bmodel")
         self.hidden_size = config.hidden_size
         self.num_layers = config.num_hidden_layers
+        self.visual = config.visual
 
         self.chip = args.chip
         self.quantize = args.quantize
@@ -296,11 +293,11 @@ class BmodelConverter:
         self.num_device = args.num_device
         self.tpu_mlir_path = args.tpu_mlir_path
         self.seq_length = args.seq_length
-        if args.bmodel:
-            self.out_model = args.bmodel
+        if args.out_bmodel:
+            self.out_bmodel = args.out_bmodel
         else:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.out_model = f"{config.model_type}_{self.quantize}_seq{self.seq_length}_{timestamp}.bmodel"
+            self.out_bmodel = f"{config.model_type}_{self.quantize}_seq{self.seq_length}_{timestamp}.bmodel"
 
         self.env = self._get_environment()
 
@@ -329,8 +326,15 @@ class BmodelConverter:
             raise RuntimeError(f"Failed to get environment: {e}")
 
     def run_command(self, command, env):
-        print(f"{GREEN_COLOR}Executing command: \n{' '.join(command)}{RESET_COLOR}")  # Print the command in green
-        subprocess.run(command, check=True, env=env)
+        try:
+            print(f"{GREEN_COLOR}Executing command: \n{' '.join(command)}{RESET_COLOR}")  # Print the command in green
+            subprocess.run(command, check=True, env=env)
+        except subprocess.CalledProcessError as e:
+            # Print the error message in red
+            print(f"{RED_COLOR}Error: Command failed with return code {e.returncode}{RESET_COLOR}")
+            print(f"{RED_COLOR}Failed command: {' '.join(command)}{RESET_COLOR}")
+            # Exit the program with the same return code as the failed command
+            sys.exit(e.returncode)
 
     def compile_lm_head(self, env, quantize):
         name = "lm_head"
@@ -450,11 +454,41 @@ class BmodelConverter:
             self.run_command(['bash', '-c', ' '.join(transform_args)], env)
             self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
 
+    def compile_vit(self, env, half_precision_quantize):
+        if self.visual is None:
+            return
+        name = f"vit"
+        if os.path.exists(f"{name}.bmodel"):
+            print(f"{name}.bmodel already exists. Skipping compilation.")
+        else:
+            path = os.path.join(self.relative_onnx_path, "vit", f"{name}.onnx")
+            transform_args = [
+                'model_transform.py',
+                f'--model_name {name}',
+                f'--model_def {path}',
+                f'--mlir {name}.mlir'
+            ]
+            deploy_args = [
+                'model_deploy.py',
+                f'--mlir {name}.mlir',
+                f'--quantize {half_precision_quantize}',
+                '--quant_input',
+                '--quant_input_list 3',
+                '--quant_output',
+                f'--chip {self.chip}',
+                f'--num_device {self.num_device}',
+                f'--model {name}.bmodel'
+            ]
+            self.run_command(['bash', '-c', ' '.join(transform_args)], env)
+            self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
+
     def combine(self, env):
         bmodel_list = []
         for i in range(self.num_layers):
             bmodel_list = bmodel_list + [f"block_{i}.bmodel", f"block_cache_{i}.bmodel"]
         bmodel_list += ["lm_head.bmodel", "greedy_head.bmodel", "penalty_sample_head.bmodel"]
+        if self.visual is not None:
+            bmodel_list += ["vit.bmodel"]
 
         bmodel_list = [os.path.join(self.bmodel_path, b) for b in bmodel_list]
 
@@ -463,7 +497,7 @@ class BmodelConverter:
             '--combine',
             ' '.join(bmodel_list),
             '-o',
-            os.path.join(self.dst_path, self.out_model)
+            os.path.join(self.out_dir, self.out_bmodel)
         ]
         self.run_command(['bash', '-c', ' '.join(combine_args)], env)
 
@@ -477,6 +511,9 @@ class BmodelConverter:
         # Compile heads
         ori_path = os.getcwd()
         os.chdir(self.bmodel_path)
+
+        # vit
+        self.compile_vit(self.env, half_precision_quantize)
 
         self.compile_lm_head(self.env, quantize)
         self.compile_greedy_head(self.env)
@@ -530,9 +567,12 @@ class Attention(torch.nn.Module):
             split_sizes = [self.hidden_size] * 3
             if self.qkv_proj.weight.shape[0] != self.hidden_size * 3:
                 # M/GQA
-                qkv_hidden_size = self.qkv_proj.weight.shape[0]
-                kv_hidden_size = (qkv_hidden_size - self.hidden_size) // 2
-                split_sizes = [self.hidden_size, kv_hidden_size, kv_hidden_size]
+                split_sizes = [
+                    self.num_heads * self.head_dim,           # q_size
+                    self.num_key_value_heads * self.head_dim, # k_size
+                    self.num_key_value_heads * self.head_dim  # v_size
+                ]
+
             self.q_proj = torch.nn.Linear(self.hidden_size, split_sizes[0])
             self.k_proj = torch.nn.Linear(self.hidden_size, split_sizes[1])
             self.v_proj = torch.nn.Linear(self.hidden_size, split_sizes[2])
@@ -557,6 +597,16 @@ class Attention(torch.nn.Module):
                     self.q_proj.bias.data = qb
                     self.k_proj.bias.data = kb
                     self.v_proj.bias.data = vb
+                else:
+                    self.q_proj.bias.data = torch.zeros(split_sizes[0])
+                    self.k_proj.bias.data = torch.zeros(split_sizes[1])
+                    self.v_proj.bias.data = torch.zeros(split_sizes[2])
+            self.q_proj.weight.requires_grad = False
+            self.k_proj.weight.requires_grad = False
+            self.v_proj.weight.requires_grad = False
+            self.q_proj.bias.requires_grad = False
+            self.k_proj.bias.requires_grad = False
+            self.v_proj.bias.requires_grad = False
             del self.qkv_proj
 
     def forward(
@@ -565,6 +615,7 @@ class Attention(torch.nn.Module):
         attention_mask: Optional[torch.Tensor] = None,
         past_key_value: Optional[Tuple[torch.Tensor]] = None,
         position_ids: Optional[torch.Tensor] = None,
+        rotary_pos_emb: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         bsz, q_len, _ = hidden_states.size()
         query_states = self.q_proj(hidden_states)
@@ -579,7 +630,10 @@ class Attention(torch.nn.Module):
             kv_seq_len += past_key_value[0].shape[1]
 
         # rope
-        cos, sin = self.rotary.cos[position_ids], self.rotary.sin[position_ids]
+        if rotary_pos_emb is None:
+            cos, sin = self.rotary.cos[position_ids], self.rotary.sin[position_ids]
+        else:
+            cos, sin = rotary_pos_emb
         query_states = self.rotary.apply_rotary_pos(query_states, cos, sin)
         key_states = self.rotary.apply_rotary_pos(key_states, cos, sin)
         past_kv = (key_states, value_states)
@@ -614,8 +668,9 @@ def rotate_half(x):
     return torch.cat((-x2, x1), dim=-1)
 
 class Rotary(torch.nn.Module):
-    def __init__(self, config, seq_length):
+    def __init__(self, config):
         super().__init__()
+        self.seq_length = config.seq_length
         self.rope_theta = config.rope_theta
         self.rotary_dim = config.head_dim
         self.model_type = config.model_type
@@ -624,11 +679,12 @@ class Rotary(torch.nn.Module):
         if self.model_type == 'chatglm':
             self.rotary_dim = config.head_dim // 2
 
-        self.cos, self.sin = self.init_rotary_pos_emb(seq_length)
+        self.cos, self.sin = self.init_rotary_pos_emb(self.seq_length)
         self.cos = self.cos.squeeze(0)
         self.sin = self.sin.squeeze(0)
 
-    def forward(self, position_ids):
+    def init_rotary_pos_emb(self, seq_length):
+        position_ids = torch.tensor([range(seq_length)], dtype=torch.long)
         theta = 1.0 / (self.rope_theta ** (torch.arange(0, self.rotary_dim, 2, dtype=torch.float32) / self.rotary_dim))
         position_ids = position_ids.float().reshape(-1, 1)
         idx_theta = position_ids * theta
@@ -637,10 +693,6 @@ class Rotary(torch.nn.Module):
             rotary_pos_emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
         rotary_pos_emb = rotary_pos_emb.unsqueeze(2).unsqueeze(1)
         return rotary_pos_emb
-    
-    def init_rotary_pos_emb(self, seq_length):
-        position_ids = torch.tensor([range(seq_length)], dtype=torch.long)
-        return self.forward(position_ids)
 
     def apply_rotary_pos(self, x, cos, sin):
         if self.model_type == 'chatglm':
@@ -697,6 +749,7 @@ class Decoder(torch.nn.Module):
         position_ids: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         past_key_value: Optional[Tuple[torch.Tensor]] = None,
+        rotary_pos_emb: Optional[Tuple[torch.Tensor]] = None,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         hidden_states = hidden_states.view(1, -1, self.hidden_size)
         residual = hidden_states
@@ -708,6 +761,7 @@ class Decoder(torch.nn.Module):
             position_ids=position_ids,
             attention_mask=attention_mask,
             past_key_value=past_key_value,
+            rotary_pos_emb=rotary_pos_emb
         )
         # Fully Connected
         if self.alpha != 1.0:
@@ -780,6 +834,143 @@ class PenaltySampleHead(torch.nn.Module):
         probs = filtered_logits.softmax(dim=1)
         return probs, token
 
+# visual start
+class Visual(torch.nn.Module):
+    def __init__(self, visual_model, base):
+        super().__init__()
+        self.model_type = base.model_type
+        self.visual_model = visual_model.eval()
+        self.embed_ = base.embed
+        self.tokenizer = base.tokenizer
+        self.config = base.config
+        self.visual_config = self.config.vision_config
+        self.visual_length = base.visual_length
+        self.rope_theta = base.rope_theta
+
+        self.hidden_size = self.visual_config.embed_dim
+        self.num_attention_heads = self.visual_config.num_heads
+        self.num_key_value_heads = self.visual_config.num_heads
+        self.head_dim = self.hidden_size // self.num_attention_heads
+        self.rotary = VisionRotary(self)
+        self.model_map = self.get_model_map()
+        self.load()
+
+    @staticmethod
+    def get_visual(model_type):
+        visual_models = {
+            'qwen2_vl': Qwen2Visual,
+        }
+        if model_type in visual_models:
+            return visual_models[model_type]
+        return None
+
+    def get_model_map(self):
+        if self.model_type == "qwen2_vl":
+            model_map = {
+                'decoder': {
+                    'self_attn': 'attn',
+                    'mlp': 'mlp',
+                    'input_layernorm': 'norm1',
+                    'post_attention_layernorm': 'norm2'
+                },
+                'attention': {
+                    'qkv_proj': 'qkv',
+                    'o_proj': 'proj'
+                }
+            }
+        return model_map
+
+    def export(self, onnx_path):
+        raise NotImplementedError
+
+    def load(self):
+        raise NotImplementedError
+
+    def forward(self, images):
+        raise NotImplementedError
+
+class VisionRotary(torch.nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.visual_length = config.visual_length
+        self.rope_theta = config.rope_theta
+        self.rotary_dim = config.head_dim
+        self.model_type = config.model_type
+        if hasattr(config, 'rotary_dim'):
+            self.rotary_dim = config.rotary_dim
+        if self.model_type == 'chatglm':
+            self.rotary_dim = config.head_dim // 2
+        self.inv_freq = config.visual_model.rotary_pos_emb.inv_freq
+        self.cos, self.sin = self.init_rotary_pos_emb(self.visual_length)
+
+    def init_rotary_pos_emb(self, visual_length):
+        if self.model_type == "qwen2_vl":
+            seq = torch.arange(visual_length)
+            freqs = torch.outer(seq, self.inv_freq)
+            self.cos = freqs.cos().unsqueeze(1).repeat(1, 1, 2)
+            self.sin = freqs.sin().unsqueeze(1).repeat(1, 1, 2)
+        return (self.cos, self.sin)
+
+    def llama_rotary_pos(self, x, cos, sin):
+        x = (x * cos) + (rotate_half(x) * sin)
+        return x
+
+    def apply_rotary_pos(self, x, cos, sin):
+        if self.model_type == 'chatglm':
+            return self.chatglm_rotary_pos(x, cos, sin)
+        if self.model_type == 'chatglm2':
+            return self.chatglm2_rotary_pos(x, cos, sin)
+        if self.model_type == 'phi-msft':
+            return self.phi_rotary_pos(x, cos, sin)
+        return self.llama_rotary_pos(x, cos, sin)
+
+
+class Qwen2Visual(Visual):
+    def __init__(self, visual, base):
+        super().__init__(visual, base)
+
+    def load(self):
+        # load model
+        self.hidden_size = self.visual_config.embed_dim
+        self.num_attention_heads = self.visual_config.num_heads
+        self.num_key_value_heads = self.visual_config.num_heads
+        self.head_dim = self.hidden_size // self.num_attention_heads
+        self.rotary_dim = self.head_dim // 2
+        self.patch_embed = self.visual_model.patch_embed
+        self.blocks = []
+        for block in self.visual_model.blocks.children():
+            self.blocks.append(Decoder(block, self))
+        self.merger = self.visual_model.merger
+        self.spatial_merge_size = self.visual_config.spatial_merge_size
+        self.max_pixels = self.visual_length * self.spatial_merge_size * self.spatial_merge_size
+
+    def forward(self, flatten_patches, position_ids, attention_mask):
+        self.cos = self.rotary.cos[position_ids].flatten(1).unsqueeze(1).unsqueeze(0)
+        self.sin = self.rotary.sin[position_ids].flatten(1).unsqueeze(1).unsqueeze(0)
+
+        hidden_states = self.patch_embed(flatten_patches)
+        for blk in self.blocks:
+            hidden_states, _ = blk(hidden_states, rotary_pos_emb=(self.cos, self.sin), attention_mask=attention_mask)
+        image_embeds = self.merger(hidden_states)
+        image_embeds = image_embeds.unsqueeze(1)
+        return image_embeds
+
+    def export(self, onnx_path):
+        patch = torch.randn(self.max_pixels, 1176).to(dtype=torch.float32)
+        position_ids = torch.randn(self.max_pixels, 2).to(dtype=torch.int32)
+        attention_mask = torch.zeros([1, self.max_pixels, self.max_pixels], dtype=torch.float32)
+
+        torch.onnx.export(
+            self, (patch, position_ids, attention_mask),
+            onnx_path,
+            verbose=False,
+            input_names=['input_states', 'position_ids', 'attention_mask'],
+            output_names=['hidden_states'],
+            do_constant_folding=True,
+            opset_version=15
+        )
+        return
+
 class ModelExporter(torch.nn.Module):
     '''
     Base class for all llm model export. Inherits from [`torch.nn.Module`].
@@ -788,25 +979,41 @@ class ModelExporter(torch.nn.Module):
     def __init__(self, args):
         super().__init__()
         self.init_from_args(args)
-        self.load_model(args.path)
+        self.load_model(args.torch_path)
 
-        self.bmodel_converter = BmodelConverter(self.dst_path, self, args)
+        self.bmodel_converter = BmodelConverter(self.out_dir, self, args)
 
     def init_from_args(self, args):
-        self.model_name = args.path
         self.seq_length = args.seq_length
-        self.dst_path = args.dst_path
+        self.visual_length = args.visual_length
+        self.out_dir = args.out_dir
+        self.export_type = args.export_type
 
-        os.makedirs(self.dst_path, exist_ok=True)
+        os.makedirs(self.out_dir, exist_ok=True)
         
 
     def load_pretrained(self, model_path: str):
+        self.config = AutoConfig.from_pretrained(model_path)
+        self.model_type = self.config.model_type
+
         self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-        try:
-            self.model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True).float().eval()
-        except:
-            self.model = AutoModel.from_pretrained(model_path, trust_remote_code=True).float().eval()
-        self.config = self.model.config
+        if 'qwen2_vl' == self.model_type:
+            from transformers import Qwen2VLForConditionalGeneration
+            self.model = Qwen2VLForConditionalGeneration.from_pretrained(model_path)
+        elif 'mllama' == self.model_type:
+            from transformers import MllamaForConditionalGeneration
+            self.model = MllamaForConditionalGeneration.from_pretrained(model_path)
+        elif 'llama' == self.model_type:
+            from transformers import LlamaForCausalLM
+            self.model = LlamaForCausalLM.from_pretrained(model_path, trust_remote_code=True)
+        else:
+            try:
+                self.model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True)
+            except:
+                self.model = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+        self.model = self.model.cpu().float().eval()
+        for param in self.model.parameters():
+                param.requires_grad = False
 
     def rebuild_config(self):
         if not hasattr(self, 'num_key_value_heads') or self.num_key_value_heads is None:
@@ -824,19 +1031,21 @@ class ModelExporter(torch.nn.Module):
         else:
             self.embed = Embedding(self.embed_, self)
         # Rotary
-        self.rotary = Rotary(self, self.seq_length)
+        self.rotary = Rotary(self)
         # Blocks
         self.blocks = []
         for block in self.blocks_.children():
             self.blocks.append(Decoder(block, self))
         # Lmhead
         self.lm = Lm(self.lm_, self.final_layernorm_, self)
+        # Visual
+        self.visual = Visual.get_visual(self.model_type)(self.model.visual, self)
 
     def load_model(self, model_path):
         self.load_pretrained(model_path)
 
         model_mapper = ModelMapper()
-        self.model_type, self.model_map = model_mapper.get_map(self.model.config)
+        self.model_map = model_mapper.get_map(self.model.config)
 
         # load config
         ModelMapper.do_map(self, self.model.config, self.model_map['config'])
@@ -852,13 +1061,13 @@ class ModelExporter(torch.nn.Module):
     @logging("export_config ...")
     def export_config(self):
         config_dict = self.config.to_dict()
-        with open(f'{self.dst_path}/config.json', "w") as f:
+        with open(f'{self.out_dir}/config.json', "w") as f:
             json.dump(config_dict, f, indent=4)
         return
     
     @logging("export_tokenizer ...")
     def export_tokenizer(self):
-        self.tokenizer.save_pretrained(f'{self.dst_path}/tokenizer')
+        self.tokenizer.save_pretrained(f'{self.out_dir}/tokenizer')
         return
 
     @logging("export_embed ...")
@@ -866,7 +1075,7 @@ class ModelExporter(torch.nn.Module):
         if not hasattr(self, 'embed') or not isinstance(self.embed.embed, torch.nn.Embedding):
             return
 
-        embedding_file = f'{self.dst_path}/embedding.bin'
+        embedding_file = f'{self.out_dir}/embedding.bin'
         if os.path.exists(embedding_file):
             print(f"{embedding_file} already exists. Skipping export.")
             return
@@ -892,7 +1101,7 @@ class ModelExporter(torch.nn.Module):
         rebuilder = OnnxRebuild()
         for i in tqdm(range(len(self.blocks))):
             model = self.blocks[i]
-            onnx_path = f'{self.dst_path}/onnx/block_{i}.onnx'
+            onnx_path = f'{self.out_dir}/onnx/block_{i}.onnx'
             if os.path.exists(onnx_path):
                 print(f"{onnx_path} already exists. Skipping export.")
                 continue
@@ -910,7 +1119,7 @@ class ModelExporter(torch.nn.Module):
                 )
             else:
                 rebuilder.rebuild_weights(
-                    ref_path=f'{self.dst_path}/onnx/block_0.onnx', 
+                    ref_path=f'{self.out_dir}/onnx/block_0.onnx',
                     torch_model=model,
                     save_path=onnx_path
                 )
@@ -932,7 +1141,7 @@ class ModelExporter(torch.nn.Module):
         rebuilder = OnnxRebuild()
         for i in tqdm(range(len(self.blocks))):
             model = self.blocks[i]
-            onnx_path = f'{self.dst_path}/onnx/block_cache_{i}.onnx'
+            onnx_path = f'{self.out_dir}/onnx/block_cache_{i}.onnx'
             if os.path.exists(onnx_path):
                 print(f"{onnx_path} already exists. Skipping export.")
                 continue
@@ -950,7 +1159,7 @@ class ModelExporter(torch.nn.Module):
                 )
             else:
                 rebuilder.rebuild_weights(
-                    ref_path=f'{self.dst_path}/onnx/block_cache_0.onnx', 
+                    ref_path=f'{self.out_dir}/onnx/block_cache_0.onnx',
                     torch_model=model,
                     save_path=onnx_path
                 )
@@ -958,7 +1167,7 @@ class ModelExporter(torch.nn.Module):
     
     @logging("export_lm_head ...")
     def export_lm_head(self):
-        pt_path = f'{self.dst_path}/onnx/lm_head.pt'
+        pt_path = f'{self.out_dir}/onnx/lm_head.pt'
         if os.path.exists(pt_path):
             print(f"{pt_path} already exists. Skipping export.")
             return
@@ -969,8 +1178,9 @@ class ModelExporter(torch.nn.Module):
         torch.jit.save(module, pt_path)
         return
 
+    @logging("export_greedy_head ...")
     def export_greedy_head(self):
-        onnx_path = f'{self.dst_path}/onnx/greedy_head.onnx'
+        onnx_path = f'{self.out_dir}/onnx/greedy_head.onnx'
         if os.path.exists(onnx_path):
             print(f"{onnx_path} already exists. Skipping export.")
             return
@@ -987,8 +1197,9 @@ class ModelExporter(torch.nn.Module):
             opset_version=15)
         return
 
+    @logging("export_penalty_sample_head ...")
     def export_penalty_sample_head(self):
-        onnx_path = f'{self.dst_path}/onnx/penalty_sample_head.onnx'
+        onnx_path = f'{self.out_dir}/onnx/penalty_sample_head.onnx'
         if os.path.exists(onnx_path):
             print(f"{onnx_path} already exists. Skipping export.")
             return
@@ -1013,9 +1224,20 @@ class ModelExporter(torch.nn.Module):
             opset_version=15)
         return
 
+    @logging("export_visual...")
+    def export_visual(self, onnx_path):
+        dir_path = os.path.join(onnx_path, "vit")
+        os.makedirs(dir_path, exist_ok=True)
+
+        onnx_path = os.path.join(dir_path, "vit.onnx")
+        if os.path.exists(onnx_path):
+            print(f"{onnx_path} already exists. Skipping export.")
+            return
+        return self.visual.export(onnx_path)
+
     def export_onnx(self):
         # mkir
-        onnx_path = os.path.join(self.dst_path, "onnx")
+        onnx_path = os.path.join(self.out_dir, "onnx")
         os.makedirs(onnx_path, exist_ok=True)
 
         self.export_config()
@@ -1026,39 +1248,38 @@ class ModelExporter(torch.nn.Module):
         self.export_lm_head()
         self.export_greedy_head()
         self.export_penalty_sample_head()
+        if self.model.visual is not None:
+            self.export_visual(onnx_path)
 
     def check(self, args):
         if args.seq_length is None:
             raise ValueError("Please provide a value for --seq_length, when using the --export option.")
-        if args.export == "bmodel":
-            if args.tpu_mlir_path is None:
-                raise ValueError("Please provide a path for --tpu_mlir_path, when using the --export bmodel.")
+        if args.tpu_mlir_path is None:
+            raise ValueError("Please provide a path for --tpu_mlir_path, when using the --export bmodel.")
+        if self.model.visual is not None and self.visual_length is None:
+            raise ValueError("Please provide a path for --tpu_mlir_path, when using the --export bmodel.")
 
-    def export(self, export_type):
-
+    def export(self):
         self.export_onnx()
-        if 'bmodel' in export_type:
+        if self.export_type == "bmodel":
             self.bmodel_converter.compile()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='llm_exporter', formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('--path', type=str, required=True,
-                        help='path(`str` or `os.PathLike`):\nCan be either:'
-                        '\n\t- A string, the *model id* of a pretrained model like `THUDM/chatglm-6b`. [TODO]'
-                        '\n\t- A path to a *directory* clone from repo like `../chatglm-6b`.')
-    parser.add_argument('--export', type=str, choices=["onnx", "bmodel"], default=None, help='export torch/onnx to an onnx/bmodel model.')
-    parser.add_argument('--dst_path', type=str, default='./model', help='export onnx/bmodel model to path, defaut is `./model`.')
-    parser.add_argument('--bmodel', type=str, default='', help='bmodel name after model_tool --combine')
+    parser.add_argument('-t', '--torch_path', type=str, required=True, help='torch path, like ./Qwen2-VL-2B-Instruct')
+    parser.add_argument('--out_dir', type=str, default='./tmp', help='export onnx/bmodel model to path, defaut is `./model`.')
+    parser.add_argument('--out_bmodel', type=str, default='', help='bmodel name after model_tool --combine')
     parser.add_argument('--seq_length', type=int, required=True, help="sequence length")
+    parser.add_argument('--visual_length', type=int, help="visual length for vision transformer")
     parser.add_argument('--chip', type=str, default="bm1684x", choices=["bm1684x", "bm1688"], help="chip")
     parser.add_argument('--quantize', type=str, default="w4bf16", choices=["bf16", "w8bf16", "w4bf16", "f16", "w8f16", "w4f16"], help="quantize")
     parser.add_argument('--num_device', type=int, default=1, help="num device in compiling bmodel")
     parser.add_argument('--max_workers', type=int, default=3, help="max workers for compiling bmodel in multi-processing")
     parser.add_argument('--tpu_mlir_path', type=str, help="tpu_mlir for compiling bmodel")
+    parser.add_argument('--export_type', type=str, choices=["onnx", "bmodel"], default="bmodel", help='export torch/onnx to an onnx/bmodel model.')
     args = parser.parse_args()
 
     model_exporter = ModelExporter(args)
 
-    if args.export is not None:
-        model_exporter.check(args)
-        model_exporter.export(args.export)
+    model_exporter.check(args)
+    model_exporter.export()
