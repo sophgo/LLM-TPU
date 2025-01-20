@@ -21,7 +21,8 @@ import onnx
 import torch
 import numpy as np
 from onnx import numpy_helper
-from transformers import AutoModel, AutoConfig, AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModel, AutoModelForCausalLM
+from transformers import AutoConfig, AutoTokenizer, AutoProcessor
 
 GREEN_COLOR = "\033[92m"  # ANSI escape code for green text
 RED_COLOR = "\033[91m"
@@ -985,6 +986,7 @@ class ModelExporter(torch.nn.Module):
         self.bmodel_converter = BmodelConverter(self.out_dir, self, args)
 
     def init_from_args(self, args):
+        self.torch_path = args.torch_path
         self.seq_length = args.seq_length
         self.visual_length = args.visual_length
         self.out_dir = args.out_dir
@@ -1069,6 +1071,12 @@ class ModelExporter(torch.nn.Module):
     @logging("export_tokenizer ...")
     def export_tokenizer(self):
         self.tokenizer.save_pretrained(f'{self.out_dir}/tokenizer')
+        return
+
+    @logging("export_processor ...")
+    def export_processor(self):
+        self.processor = AutoProcessor.from_pretrained(self.torch_path, trust_remote_code=True)
+        self.processor.save_pretrained(f'{self.out_dir}/processor')
         return
 
     @logging("export_embed ...")
@@ -1242,6 +1250,7 @@ class ModelExporter(torch.nn.Module):
         os.makedirs(onnx_path, exist_ok=True)
 
         if self.visual is not None:
+            self.export_processor()
             self.export_visual(onnx_path)
 
         self.export_config()
@@ -1269,12 +1278,12 @@ class ModelExporter(torch.nn.Module):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='llm_exporter', formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-t', '--torch_path', type=str, required=True, help='torch path, like ./Qwen2-VL-2B-Instruct')
-    parser.add_argument('--out_dir', type=str, default='./tmp', help='export onnx/bmodel model to path, defaut is `./model`')
+    parser.add_argument('--out_dir', type=str, default='./tmp', help='export onnx/bmodel model to path, defaut is `./tmp`')
     parser.add_argument('--out_bmodel', type=str, default='', help='bmodel name after model_tool --combine')
     parser.add_argument('--seq_length', type=int, required=True, help="sequence length")
     parser.add_argument('--visual_length', type=int, help="visual length for vision transformer")
     parser.add_argument('--chip', type=str, default="bm1684x", choices=["bm1684x", "bm1688"], help="chip")
-    parser.add_argument('--quantize', type=str, default="w4bf16", choices=["bf16", "w8bf16", "w4bf16", "f16", "w8f16", "w4f16"], help="quantize")
+    parser.add_argument('--quantize', type=str, required=True, choices=["bf16", "w8bf16", "w4bf16", "f16", "w8f16", "w4f16"], help="quantize")
     parser.add_argument('--num_device', type=int, default=1, help="num device in compiling bmodel")
     parser.add_argument('--max_workers', type=int, default=3, help="max workers for compiling bmodel in multi-processing")
     parser.add_argument('--tpu_mlir_path', type=str, help="tpu_mlir for compiling bmodel")
