@@ -508,7 +508,7 @@ class BmodelConverter:
         os.makedirs(self.bmodel_path, exist_ok=True)
 
         quantize = self.quantize
-        half_precision_quantize = "f16" if "f16" in self.quantize else "bf16"
+        half_precision_quantize = "bf16" if "bf16" in self.quantize else "f16"
 
         # Compile heads
         ori_path = os.getcwd()
@@ -846,6 +846,10 @@ class Visual(torch.nn.Module):
         self.tokenizer = base.tokenizer
         self.config = base.config
         self.visual_config = self.config.vision_config
+
+        if self.visual_length is None or self.visual_length <= 0:
+            raise ValueError("Please provide a int number for --visual_length, when converting Vision Language Model.")
+
         self.visual_length = base.visual_length
         self.rope_theta = base.rope_theta
 
@@ -864,6 +868,8 @@ class Visual(torch.nn.Module):
         }
         if model_type in visual_models:
             return visual_models[model_type](visual_model, base)
+        else:
+            raise NotImplementedError("Not support now")
         return None
 
     def get_model_map(self):
@@ -991,6 +997,8 @@ class ModelExporter(torch.nn.Module):
         self.visual_length = args.visual_length
         self.out_dir = args.out_dir
         self.export_type = args.export_type
+        self.quantize = args.quantize
+        self.half_precision_quantize = "bf16" if "bf16" in self.quantize else "f16"
 
         os.makedirs(self.out_dir, exist_ok=True)
         
@@ -1042,7 +1050,8 @@ class ModelExporter(torch.nn.Module):
         # Lmhead
         self.lm = Lm(self.lm_, self.final_layernorm_, self)
         # Visual
-        self.visual = Visual.get_visual(self.model_type, self.visual_model, self)
+        if hasattr(self, 'visual_model'):
+            self.visual = Visual.get_visual(self.model_type, self.visual_model, self)
 
     def load_model(self, model_path):
         self.load_pretrained(model_path)
@@ -1091,9 +1100,16 @@ class ModelExporter(torch.nn.Module):
 
         import ctypes
         if self.config.torch_dtype == torch.bfloat16 or self.config.bf16 == True:
-            tensor_data = self.embed.embed.weight.data.bfloat16()
+            tensor_data = self.embed.embed.weight.data.to(torch.bfloat16)
+        elif self.config.torch_dtype == torch.float16 or self.config.fp16 == True:
+            tensor_data = self.embed.embed.weight.data.to(torch.float16)
         else:
-            raise ValueError("not support now")
+            if self.half_precision_quantize == "bf16":
+                tensor_data = self.embed.embed.weight.data.to(torch.bfloat16)
+            elif self.half_precision_quantize == "bf16":
+                tensor_data = self.embed.embed.weight.data.to(torch.float16)
+            else:
+                raise NotImplementedError("Not support now")
         data_ptr = tensor_data.untyped_storage().data_ptr()
         buffer = (ctypes.c_byte * (tensor_data.numel() * 2)).from_address(data_ptr)
         
@@ -1267,13 +1283,12 @@ class ModelExporter(torch.nn.Module):
             raise ValueError("Please provide a value for --seq_length, when using the --export option.")
         if args.tpu_mlir_path is None:
             raise ValueError("Please provide a path for --tpu_mlir_path, when using the --export bmodel.")
-        if self.visual is not None and self.visual_length is None:
-            raise ValueError("Please provide a path for --tpu_mlir_path, when using the --export bmodel.")
 
     def export(self):
         self.export_onnx()
         if self.export_type == "bmodel":
             self.bmodel_converter.compile()
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='llm_exporter', formatter_class=argparse.RawTextHelpFormatter)

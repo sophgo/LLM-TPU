@@ -11,7 +11,6 @@ import chat
 class Model:
     def __init__(self, args):
         # preprocess parameters, such as prompt & tokenizer
-        # devid
         self.devices = [int(d) for d in args.devid.split(",")]
         config_path = os.path.join(args.dir_path, "config.json")
         tokenizer_path = os.path.join(args.dir_path, "tokenizer")
@@ -28,11 +27,42 @@ class Model:
 
         # warm up
         self.tokenizer.decode([0])
-        self.EOS = self.tokenizer.eos_token_id
 
+        # Initialize model-specific mapper dynamically
+        self.model_type = self.config['model_type']
+        self.model_mapper = self.get_model_mapper(self.model_type)
+        self.EOS = self.model_mapper['eos_token_id']
+        self.append_history = self.model_mapper["append_history"]
+        self.apply_chat_template = self.model_mapper["apply_chat_template"]
+
+        # Initialize model
         self.model = chat.Model()
         self.init_params(args)
         self.load_model(args.model_path, read_bmodel=True)
+
+    def get_model_mapper(self, model_type):
+        """Abstract model-specific mapper into a dictionary."""
+        if model_type == "qwen2":
+            model_mapper = {
+                "eos_token_id": self.tokenizer.eos_token_id,
+                "history_init": [{"role": "system", "content": "You are a helpful assistant."}],
+                "append_history": lambda history, input_str: history.append(
+                    {"role": "user", "content": input_str}
+                ),
+                "apply_chat_template": lambda history: self.tokenizer.apply_chat_template(
+                    history, tokenize=False, add_generation_prompt=True
+                ),
+            }
+        elif model_type == "qwen":
+            model_mapper = {
+                "eos_token_id": self.tokenizer.im_end_id,
+                "history_init": ["<|im_start|>system\nYou are a helpful assistant."],
+                "append_history": lambda history, input_str: history.append(
+                    "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n".format(input_str)
+                ),
+                "apply_chat_template": lambda history: "".join(history),
+            }
+        return model_mapper
 
     def load_model(self, model_path, read_bmodel):
         load_start = time.time()
@@ -51,24 +81,21 @@ class Model:
         self.model.NUM_LAYERS = self.config["num_hidden_layers"]
 
         self.enable_history = args.enable_history
-        self.system_prompt = "You are a helpful assistant."
-        self.history = [{"role": "system", "content": self.system_prompt}]
+        self.init_history()
 
-    def clear(self):
-        self.history = [{"role": "system", "content": self.system_prompt}]
+    def init_history(self):
+        self.history = self.model_mapper["history_init"]
 
     def update_history(self):
         if self.model.total_length >= self.model.SEQLEN:
             print("... (reach the maximal length)", flush=True, end="")
-            self.history = [{"role": "system", "content": self.system_prompt}]
+            self.init_history()
         else:
             self.history.append({"role": "assistant", "content": self.answer_cur})
 
     def encode_tokens(self):
-        self.history.append({"role": "user", "content": self.input_str})
-        text = self.tokenizer.apply_chat_template(
-            self.history, tokenize=False, add_generation_prompt=True
-        )
+        self.append_history(self.history, self.input_str)
+        text = self.apply_chat_template(self.history)
         tokens = self.tokenizer(text).input_ids
         return tokens
 
@@ -91,7 +118,7 @@ class Model:
                 break
             # New Chat
             elif self.input_str in ["clear", "new"]:
-                self.clear()
+                self.init_history()
             # Chat
             else:
                 tokens = self.encode_tokens()
@@ -149,7 +176,7 @@ class Model:
             self.answer_cur = self.tokenizer.decode(self.answer_token)
             self.update_history()
         else:
-            self.clear()
+            self.init_history()
 
         print()
         print(f"FTL: {first_duration:.3f} s")
