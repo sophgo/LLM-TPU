@@ -22,7 +22,10 @@
 #include <inttypes.h>
 #include <random>
 #include <numeric>
+
 #include "utils.h"
+#include "cv_utils.h"
+#include "PillowResize.h"
 
 // static const uint16_t ATTENTION_MASK = 0xC61C; // -9984 by bfloat16
 static const float ATTENTION_MASK = -10000.;
@@ -37,6 +40,7 @@ public:
                     int vit_offset,
                     int valid_vit_length);
   int forward_next();
+  void preprocess_image(std::string &image_path);
 
   std::mt19937 sgen;
   Qwen2VL() : sgen(std::random_device()()) {};
@@ -385,6 +389,15 @@ std::vector<int> Qwen2VL::make_posid(
   return position_ids;
 }
 
+void Qwen2VL::preprocess_image(std::string &image_path) {
+  std::vector<cv::Mat> images;
+  opencv_read_image(images, image_path);
+  auto resized_image = bicubic_resize(images[0], 480, 480);
+  return ;
+}
+
+
+
 int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<float> &pixel_values, std::vector<int> &grid_thw,
                           int vit_offset, int valid_vit_length) {
   std::vector<int> input_ids(SEQLEN, 0);
@@ -520,6 +533,7 @@ PYBIND11_MODULE(chat, m) {
       .def("init", &Qwen2VL::init)
       .def("forward_first", &Qwen2VL::forward_first)
       .def("forward_next", &Qwen2VL::forward_next)
+      .def("preprocess_image", &Qwen2VL::preprocess_image)
       .def("deinit", &Qwen2VL::deinit)
       .def_readwrite("SEQLEN", &Qwen2VL::SEQLEN) // read SEQLEN in pipeline.py
       .def_readwrite("NUM_LAYERS", &Qwen2VL::NUM_LAYERS)

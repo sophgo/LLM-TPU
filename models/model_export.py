@@ -847,8 +847,8 @@ class Visual(torch.nn.Module):
         self.config = base.config
         self.visual_config = self.config.vision_config
 
-        if self.visual_length is None or self.visual_length <= 0:
-            raise ValueError("Please provide a int number for --visual_length, when converting Vision Language Model.")
+        if not hasattr(base, 'visual_length') or base.visual_length <= 0:
+            raise ValueError("Please provide a int number above zero for --visual_length, when converting Vision Language Model.")
 
         self.visual_length = base.visual_length
         self.rope_theta = base.rope_theta
@@ -999,6 +999,8 @@ class ModelExporter(torch.nn.Module):
         self.export_type = args.export_type
         self.quantize = args.quantize
         self.half_precision_quantize = "bf16" if "bf16" in self.quantize else "f16"
+        self.visual = None
+        self.visual_model = None
 
         os.makedirs(self.out_dir, exist_ok=True)
         
@@ -1050,7 +1052,7 @@ class ModelExporter(torch.nn.Module):
         # Lmhead
         self.lm = Lm(self.lm_, self.final_layernorm_, self)
         # Visual
-        if hasattr(self, 'visual_model'):
+        if self.visual_model is not None:
             self.visual = Visual.get_visual(self.model_type, self.visual_model, self)
 
     def load_model(self, model_path):
@@ -1099,9 +1101,9 @@ class ModelExporter(torch.nn.Module):
             return
 
         import ctypes
-        if self.config.torch_dtype == torch.bfloat16 or self.config.bf16 == True:
+        if self.config.torch_dtype == torch.bfloat16:
             tensor_data = self.embed.embed.weight.data.to(torch.bfloat16)
-        elif self.config.torch_dtype == torch.float16 or self.config.fp16 == True:
+        elif self.config.torch_dtype == torch.float16:
             tensor_data = self.embed.embed.weight.data.to(torch.float16)
         else:
             if self.half_precision_quantize == "bf16":

@@ -18,7 +18,7 @@ class Model:
         # load tokenizer
         print("Load " + tokenizer_path + " ...")
         self.tokenizer = AutoTokenizer.from_pretrained(
-            tokenizer_path, trust_remote_code=True
+            tokenizer_path, trust_remote_code=True, use_fast=False
         )
 
         # config
@@ -30,39 +30,54 @@ class Model:
 
         # Initialize model-specific mapper dynamically
         self.model_type = self.config['model_type']
-        self.model_mapper = self.get_model_mapper(self.model_type)
-        self.EOS = self.model_mapper['eos_token_id']
-        self.append_history = self.model_mapper["append_history"]
-        self.apply_chat_template = self.model_mapper["apply_chat_template"]
+        self.map(self.model_type)
 
         # Initialize model
         self.model = chat.Model()
         self.init_params(args)
         self.load_model(args.model_path, read_bmodel=True)
 
-    def get_model_mapper(self, model_type):
+    def map(self, model_type):
         """Abstract model-specific mapper into a dictionary."""
         if model_type == "qwen2":
-            model_mapper = {
-                "eos_token_id": self.tokenizer.eos_token_id,
-                "history_init": [{"role": "system", "content": "You are a helpful assistant."}],
-                "append_history": lambda history, input_str: history.append(
-                    {"role": "user", "content": input_str}
-                ),
-                "apply_chat_template": lambda history: self.tokenizer.apply_chat_template(
-                    history, tokenize=False, add_generation_prompt=True
-                ),
-            }
+            self.EOS = self.tokenizer.eos_token_id
+            self.append_user = lambda history, input_str: history.append(
+                {"role": "user", "content": input_str}
+            )
+            self.append_assistant = lambda history, answer_str: history.append(
+                {"role": "assistant", "content": answer_str}
+            )
+            self.apply_chat_template = lambda history: self.tokenizer.apply_chat_template(
+                history, tokenize=False, add_generation_prompt=True
+            )
+            self.history_init = [{"role": "system", "content": "You are a helpful assistant."}]
         elif model_type == "qwen":
-            model_mapper = {
-                "eos_token_id": self.tokenizer.im_end_id,
-                "history_init": ["<|im_start|>system\nYou are a helpful assistant."],
-                "append_history": lambda history, input_str: history.append(
-                    "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n".format(input_str)
-                ),
-                "apply_chat_template": lambda history: "".join(history),
-            }
-        return model_mapper
+            self.EOS = self.tokenizer.im_end_id
+            self.append_user = lambda history, input_str: history.append(
+                "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n".format(input_str)
+            )
+            self.append_user = lambda history, answer_str: history.append(answer_str)
+            self.apply_chat_template = lambda history: "".join(history)
+            self.history_init = ["<|im_start|>system\nYou are a helpful assistant."]
+        elif model_type == "llama":
+            system_prompt = "<s>[INST] <<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. " \
+                            "Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. " \
+                            "Please ensure that your responses are socially unbiased and positive in nature. " \
+                            "If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. " \
+                            "If you don't know the answer to a question, please don't share false information.\n<</SYS>>\n\n"
+            self.EOS = self.tokenizer.eos_token_id
+            self.append_user = lambda history, input_str: history.append(
+                "{} [/INST] ".format(input_str)
+            )
+            self.append_assistant = lambda history, answer_str: history.append(
+                "{} </s><s>[INST] ".format(answer_str)
+            )
+            self.apply_chat_template = lambda history: "".join(history)
+            self.history_init = [system_prompt]
+            self.tokenizer.add_prefix_space = False
+        else:
+            raise NotImplementedError(f"{model_type} not support now")
+        return
 
     def load_model(self, model_path, read_bmodel):
         load_start = time.time()
@@ -84,17 +99,17 @@ class Model:
         self.init_history()
 
     def init_history(self):
-        self.history = self.model_mapper["history_init"]
+        self.history = self.history_init
 
     def update_history(self):
         if self.model.total_length >= self.model.SEQLEN:
             print("... (reach the maximal length)", flush=True, end="")
             self.init_history()
         else:
-            self.history.append({"role": "assistant", "content": self.answer_cur})
+            self.append_assistant(self.history, self.answer_cur)
 
     def encode_tokens(self):
-        self.append_history(self.history, self.input_str)
+        self.append_user(self.history, self.input_str)
         text = self.apply_chat_template(self.history)
         tokens = self.tokenizer(text).input_ids
         return tokens

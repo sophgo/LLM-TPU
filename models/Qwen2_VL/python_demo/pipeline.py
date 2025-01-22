@@ -85,6 +85,10 @@ class Qwen2VL():
 
     def process(self, path, type):
         messages = self.image_message(path) if type == "image" else self.video_message(path)
+        t1 = time.time()
+        self.model.preprocess_image(path)
+        t2 = time.time()
+        breakpoint()
         text = self.processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
