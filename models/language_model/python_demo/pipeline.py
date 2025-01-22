@@ -29,7 +29,7 @@ class Model:
         self.tokenizer.decode([0])
 
         # Initialize model-specific mapper dynamically
-        self.model_type = self.config['model_type']
+        self.model_type = args.model_type if args.model_type else self.config['model_type']
         self.map(self.model_type)
 
         # Initialize model
@@ -56,7 +56,7 @@ class Model:
             self.append_user = lambda history, input_str: history.append(
                 "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n".format(input_str)
             )
-            self.append_user = lambda history, answer_str: history.append(answer_str)
+            self.append_assistant = lambda history, answer_str: history.append(answer_str)
             self.apply_chat_template = lambda history: "".join(history)
             self.history_init = ["<|im_start|>system\nYou are a helpful assistant."]
         elif model_type == "llama":
@@ -71,6 +71,18 @@ class Model:
             )
             self.append_assistant = lambda history, answer_str: history.append(
                 "{} </s><s>[INST] ".format(answer_str)
+            )
+            self.apply_chat_template = lambda history: "".join(history)
+            self.history_init = [system_prompt]
+            self.tokenizer.add_prefix_space = False
+        elif model_type == "lwm":
+            system_prompt = "You are a helpful assistant. "
+            self.EOS = self.tokenizer.eos_token_id
+            self.append_user = lambda history, input_str: history.append(
+                "USER: {} ASSISTANT: ".format(input_str)
+            )
+            self.append_assistant = lambda history, answer_str: history.append(
+                "{} ".format(answer_str)
             )
             self.apply_chat_template = lambda history: "".join(history)
             self.history_init = [system_prompt]
@@ -213,5 +225,6 @@ if __name__ == "__main__":
     parser.add_argument('--max_new_tokens', type=int, default=1024, help='max new token length to generate')
     parser.add_argument('--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
     parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory")
+    parser.add_argument('--model_type', type=str, help="model type")
     args = parser.parse_args()
     main(args)
