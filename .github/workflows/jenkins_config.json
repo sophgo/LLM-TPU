@@ -1,0 +1,10 @@
+{
+  "tasks": [
+    {
+      "name": "qwen",
+      "model_name": "Qwen-7B-Chat",
+      "seq_length": "2048",
+      "quantize": "w4bf16"
+    }
+  ]
+}
