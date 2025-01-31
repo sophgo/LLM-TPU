@@ -13,24 +13,18 @@ class Model:
         # preprocess parameters, such as prompt & tokenizer
         self.devices = [int(d) for d in args.devid.split(",")]
         config_path = os.path.join(args.dir_path, "config.json")
-        tokenizer_path = os.path.join(args.dir_path, "tokenizer")
-
-        # load tokenizer
-        print("Load " + tokenizer_path + " ...")
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            tokenizer_path, trust_remote_code=True, use_fast=False
-        )
+        self.tokenizer_path = os.path.join(args.dir_path, "tokenizer")
 
         # config
         with open(config_path, 'r') as file:
             self.config = json.load(file)
 
-        # warm up
-        self.tokenizer.decode([0])
-
         # Initialize model-specific mapper dynamically
         self.model_type = args.model_type if args.model_type else self.config['model_type']
         self.map(self.model_type)
+
+        # warm up
+        self.tokenizer.decode([0])
 
         # Initialize model
         self.model = chat.Model()
@@ -40,6 +34,7 @@ class Model:
     def map(self, model_type):
         """Abstract model-specific mapper into a dictionary."""
         if model_type == "qwen2":
+            self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
             self.EOS = self.tokenizer.eos_token_id
             self.append_user = lambda history, input_str: history.append(
                 {"role": "user", "content": input_str}
@@ -52,6 +47,7 @@ class Model:
             )
             self.history_init = [{"role": "system", "content": "You are a helpful assistant."}]
         elif model_type == "qwen":
+            self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
             self.EOS = self.tokenizer.im_end_id
             self.append_user = lambda history, input_str: history.append(
                 "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n".format(input_str)
@@ -60,6 +56,7 @@ class Model:
             self.apply_chat_template = lambda history: "".join(history)
             self.history_init = ["<|im_start|>system\nYou are a helpful assistant."]
         elif model_type == "llama":
+            self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True, use_fast=False)
             system_prompt = "<s>[INST] <<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. " \
                             "Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. " \
                             "Please ensure that your responses are socially unbiased and positive in nature. " \
@@ -76,6 +73,7 @@ class Model:
             self.history_init = [system_prompt]
             self.tokenizer.add_prefix_space = False
         elif model_type == "lwm":
+            self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
             system_prompt = "You are a helpful assistant. "
             self.EOS = self.tokenizer.eos_token_id
             self.append_user = lambda history, input_str: history.append(
