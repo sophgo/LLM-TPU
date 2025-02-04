@@ -18,13 +18,13 @@
   - [常见问题](#常见问题)
   - [资料链接](#资料链接)
 
-# 介绍
-
-本项目实现算能BM1684X芯片部署各类开源`生成式AI模型`，其中以LLM为主。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到PCIE环境或者SoC环境。在知乎上写了一篇解读，以`ChatGLM2-6B`为例，方便大家理解源码：[ChatGLM2流程解析与TPU-MLIR部署](https://zhuanlan.zhihu.com/p/641975976)
-
 # 最近更新！ 🔥🔥🔥
 
 - 🚀 **DeepSeek时刻！！**: 我们适配了 **DeepSeek-R1-Distill-Qwen-1.5B** 和 **DeepSeek-R1-Distill-Qwen-7B**的适配，详情见[language_model/python_demo](./models/language_model/python_demo/)。
+
+# 介绍
+
+本项目实现算能BM1684X芯片部署各类开源`生成式AI模型`，其中以LLM为主。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到PCIE环境或者SoC环境。在知乎上写了一篇解读，以`ChatGLM2-6B`为例，方便大家理解源码：[ChatGLM2流程解析与TPU-MLIR部署](https://zhuanlan.zhihu.com/p/641975976)
 
 ## 模型介绍
 已部署过的模型如下（按照首字母顺序排列）：
