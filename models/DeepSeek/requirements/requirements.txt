@@ -1,2 +1,0 @@
-sophon-3.7.0-py3-none-any.whl
-transformers==4.38.2
