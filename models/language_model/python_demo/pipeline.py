@@ -45,7 +45,7 @@ class Model:
             self.apply_chat_template = lambda history: self.tokenizer.apply_chat_template(
                 history, tokenize=False, add_generation_prompt=True
             )
-            self.history_init = [{"role": "system", "content": "You are a helpful assistant."}]
+            self.system_prompt = {"role": "system", "content": "You are a helpful assistant."}
         elif model_type == "qwen":
             self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
             self.EOS = self.tokenizer.im_end_id
@@ -54,14 +54,14 @@ class Model:
             )
             self.append_assistant = lambda history, answer_str: history.append(answer_str)
             self.apply_chat_template = lambda history: "".join(history)
-            self.history_init = ["<|im_start|>system\nYou are a helpful assistant."]
+            self.system_prompt = "<|im_start|>system\nYou are a helpful assistant."
         elif model_type == "llama":
             self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True, use_fast=False)
-            system_prompt = "<s>[INST] <<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. " \
-                            "Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. " \
-                            "Please ensure that your responses are socially unbiased and positive in nature. " \
-                            "If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. " \
-                            "If you don't know the answer to a question, please don't share false information.\n<</SYS>>\n\n"
+            self.system_prompt = "<s>[INST] <<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. " \
+                                 "Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. " \
+                                 "Please ensure that your responses are socially unbiased and positive in nature. " \
+                                 "If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. " \
+                                 "If you don't know the answer to a question, please don't share false information.\n<</SYS>>\n\n"
             self.EOS = self.tokenizer.eos_token_id
             self.append_user = lambda history, input_str: history.append(
                 "{} [/INST] ".format(input_str)
@@ -70,11 +70,10 @@ class Model:
                 "{} </s><s>[INST] ".format(answer_str)
             )
             self.apply_chat_template = lambda history: "".join(history)
-            self.history_init = [system_prompt]
             self.tokenizer.add_prefix_space = False
         elif model_type == "lwm":
             self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
-            system_prompt = "You are a helpful assistant. "
+            self.system_prompt = "You are a helpful assistant."
             self.EOS = self.tokenizer.eos_token_id
             self.append_user = lambda history, input_str: history.append(
                 "USER: {} ASSISTANT: ".format(input_str)
@@ -83,7 +82,6 @@ class Model:
                 "{} ".format(answer_str)
             )
             self.apply_chat_template = lambda history: "".join(history)
-            self.history_init = [system_prompt]
             self.tokenizer.add_prefix_space = False
         else:
             raise NotImplementedError(f"{model_type} not support now")
@@ -109,7 +107,7 @@ class Model:
         self.init_history()
 
     def init_history(self):
-        self.history = self.history_init
+        self.history = [self.system_prompt]
 
     def update_history(self):
         if self.model.total_length >= self.model.SEQLEN:
