@@ -22,7 +22,6 @@
   - [Q18：`torch.onnx.errors.UnsupportedOperatorError`](#q18torchonnxerrorsunsupportedoperatorerror)
   - [Q19：`NameError: name 'Extension' is not defined`](#q19nameerror-name-extension-is-not-defined)
   - [Q20：`unzip: short read`](#q20unzip-short-read)
-- [资料链接](#资料链接)
 
 ---
 
