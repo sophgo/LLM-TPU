@@ -35,7 +35,7 @@ class Model:
         """Abstract model-specific mapper into a dictionary."""
         if model_type == "qwen2":
             self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
-            self.EOS = self.tokenizer.eos_token_id
+            self.EOS = [self.tokenizer.eos_token_id]
             self.append_user = lambda history, input_str: history.append(
                 {"role": "user", "content": input_str}
             )
@@ -48,7 +48,7 @@ class Model:
             self.system_prompt = {"role": "system", "content": "You are a helpful assistant."}
         elif model_type == "qwen":
             self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
-            self.EOS = self.tokenizer.im_end_id
+            self.EOS = [self.tokenizer.im_end_id]
             self.append_user = lambda history, input_str: history.append(
                 "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n".format(input_str)
             )
@@ -62,7 +62,7 @@ class Model:
                                  "Please ensure that your responses are socially unbiased and positive in nature. " \
                                  "If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. " \
                                  "If you don't know the answer to a question, please don't share false information.\n<</SYS>>\n\n"
-            self.EOS = self.tokenizer.eos_token_id
+            self.EOS = [self.tokenizer.eos_token_id]
             self.append_user = lambda history, input_str: history.append(
                 "{} [/INST] ".format(input_str)
             )
@@ -71,10 +71,23 @@ class Model:
             )
             self.apply_chat_template = lambda history: "".join(history)
             self.tokenizer.add_prefix_space = False
+        elif model_type == "llama3":
+            self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
+            self.system_prompt = {"role": "system", "content": "You are a helpful assistant."}
+            self.EOS = [self.tokenizer.eos_token_id, self.tokenizer.convert_tokens_to_ids("<|eot_id|>")]
+            self.append_user = lambda history, input_str: history.append(
+                {"role": "user", "content": input_str}
+            )
+            self.append_assistant = lambda history, answer_str: history.append(
+                {"role": "assistant", "content": answer_str}
+            )
+            self.apply_chat_template = lambda history: self.tokenizer.apply_chat_template(
+                history, tokenize=False, add_generation_prompt=True
+            )
         elif model_type == "lwm":
             self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
             self.system_prompt = "You are a helpful assistant."
-            self.EOS = self.tokenizer.eos_token_id
+            self.EOS = [self.tokenizer.eos_token_id]
             self.append_user = lambda history, input_str: history.append(
                 "USER: {} ASSISTANT: ".format(input_str)
             )
@@ -176,7 +189,7 @@ class Model:
         first_end = time.time()
         # Following tokens
         full_word_tokens = []
-        while token != self.EOS and self.model.total_length < self.model.SEQLEN:
+        while token not in self.EOS and self.model.total_length < self.model.SEQLEN:
             full_word_tokens.append(token)
             word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
             if "�" in word:
