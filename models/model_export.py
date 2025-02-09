@@ -299,7 +299,12 @@ class BmodelConverter:
             self.out_bmodel = args.out_bmodel
         else:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.out_bmodel = f"{config.model_type}_{self.quantize}_seq{self.seq_length}_{timestamp}.bmodel"
+            self.out_bmodel = f"{config.model_type}_{self.quantize}_seq{self.seq_length}_{self.chip}_{timestamp}.bmodel"
+
+        if self.chip == "bm1688":
+            self.num_core = 2
+        else:
+            self.num_core = 1
 
         self.env = self._get_environment()
 
@@ -357,6 +362,7 @@ class BmodelConverter:
                 f'--quantize {quantize}',
                 '--quant_input',
                 f'--chip {self.chip}',
+                f'--num_core {self.num_core}',
                 f'--num_device {self.num_device}',
                 f'--model {name}.bmodel'
             ]
@@ -424,6 +430,7 @@ class BmodelConverter:
                 '--quant_input',
                 '--quant_output',
                 f'--chip {self.chip}',
+                f'--num_core {self.num_core}',
                 f'--num_device {self.num_device}',
                 f'--model {name}.bmodel'
             ]
@@ -450,6 +457,7 @@ class BmodelConverter:
                 '--quant_output',
                 f'--chip {self.chip}',
                 '--addr_mode=io_alone',
+                f'--num_core {self.num_core}',
                 f'--num_device {self.num_device}',
                 f'--model {name}.bmodel'
             ]
@@ -478,6 +486,7 @@ class BmodelConverter:
                 '--quant_input_list 3',
                 '--quant_output',
                 f'--chip {self.chip}',
+                f'--num_core {self.num_core}',
                 f'--num_device {self.num_device}',
                 f'--model {name}.bmodel'
             ]
@@ -1299,7 +1308,7 @@ if __name__ == '__main__':
     parser.add_argument('--out_bmodel', type=str, default='', help='bmodel name after model_tool --combine')
     parser.add_argument('--seq_length', type=int, required=True, help="sequence length")
     parser.add_argument('--visual_length', type=int, help="visual length for vision transformer")
-    parser.add_argument('--chip', type=str, default="bm1684x", choices=["bm1684x", "bm1688"], help="chip")
+    parser.add_argument('--chip', type=str, default="bm1684x", choices=["bm1684x", "bm1688", "cv186ah"], help="chip")
     parser.add_argument('--quantize', type=str, required=True, choices=["bf16", "w8bf16", "w4bf16", "f16", "w8f16", "w4f16"], help="quantize")
     parser.add_argument('--num_device', type=int, default=1, help="num device in compiling bmodel")
     parser.add_argument('--max_workers', type=int, default=3, help="max workers for compiling bmodel in multi-processing")

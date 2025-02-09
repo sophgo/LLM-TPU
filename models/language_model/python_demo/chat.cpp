@@ -31,36 +31,48 @@ static const float ATTENTION_MASK = -10000.;
 
 class Model {
 public:
-  void load_bmodel(const std::vector<int> &devices,
-                   const std::string &model_path);
-  void init_nets();
-  void init_params();
-
+  // Initialization
   void init(const std::vector<int> &devid, const std::string &model_path,
             bool read_bmodel = true);
   void deinit();
-  int forward_first(std::vector<int> &tokens);
+
+  // Inference Functions
+  int forward_first(const std::vector<int> &tokens,
+                    const std::vector<float> &pixel_values = {},
+                    const std::vector<int> &grid_thw = {}, int vit_offset = 0,
+                    int valid_vit_length = 0);
   int forward_next();
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
+  // Image Processing
+  std::vector<float> preprocess_image(const std::string &image_path);
+
   std::mt19937 sgen;
+  bool vision_enabled = false;
   Model();
   ~Model();
 
 private:
-  // d2d
-  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
-  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, size_t offset);
-  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, size_t offset,
-                  size_t size);
+  // Internal Utilities
+  void load_bmodel(const std::vector<int> &devices,
+                   const std::string &model_path);
+  void init_network();
+  void init_parameter();
+  void make_in_tensors();
+  void free_in_tensors();
 
-  // infernece
+  // Core Inference Functions
+  void vit_launch(const std::vector<float> &pixel_values, int vit_offset,
+                  int valid_vit_length, const std::vector<int> &grid_thw,
+                  bm_device_mem_t &out_mem);
+  void net_launch(const bm_net_info_t *net, int stage = 0);
+  void dynamic_net_launch(const bm_net_info_t *net, int token_length,
+                          int stage_idx = 0);
+  void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
+                   int this_stage_idx);
+  int sample_token(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   std::vector<uint16_t>
   load_and_infer_embedding(const std::vector<int> &tokens);
-  void net_launch(const bm_net_info_t *net, int stage_idx);
-  void dynamic_net_launch(const bm_net_info_t *net, int token_length,
-                          int stage_idx);
-
   bm_device_mem_t embedding_launch(const bm_net_info_t *net0,
                                    const bm_net_info_t *net1,
                                    const std::vector<int> &tokens);
@@ -68,19 +80,21 @@ private:
                             const bm_device_mem_t &out_mem, size_t offset,
                             size_t size);
 
-  // tensors
-  void make_in_tensors();
-  void free_in_tensors();
-
-  // sample
-  void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
-                   int stage_idx);
+  // Sample Functions
   int greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   int penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
                      std::vector<int> &input_tokens, int &token_length);
 
+  // Helper Functions
+  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
+  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, size_t offset);
+  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, size_t offset,
+                  size_t size);
+  std::vector<int> make_posid(const std::vector<int> &grid_thw, int vit_offset,
+                              int valid_vit_length, int token_length);
+  std::vector<uint16_t> create_attention_mask(int seq_len);
+
 public:
-  bool io_alone;
   bool is_dynamic;
   uint32_t prefill_reuse;
   std::vector<int> total_tokens;
@@ -89,14 +103,20 @@ public:
   bool make_in_tensors_flag;
 
   // model
+  Config config;
+  std::string model_type;
   int hidden_bytes;
   int kv_bytes;
-  int prefill_length;
   int total_length;
   int SEQLEN;
   int NUM_LAYERS;
   int MAX_PREFILL_LENGTH;
   int BATCH_SIZE;
+
+  // vit config
+  int MAX_PIXELS;
+  int VIT_DIMS;
+  int spatial_merge_size;
 
   // generation
   float temperature;
@@ -115,6 +135,8 @@ private:
   const bm_net_info_t *net_embed;
   const bm_net_info_t *net_embed_cache;
   const bm_net_info_t *net_lm, *net_greedy_head, *net_penalty_sample_head;
+  const bm_net_info_t *net_vit;
+  bm_device_mem_t dev_buffer;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
   bm_tensor_t inputs_pid, next_pid;
@@ -134,11 +156,12 @@ Model::Model() {
   embedding_path = "";
 
   // length
-  prefill_length = 0;
   total_length = 0;
   SEQLEN = 0;
   NUM_LAYERS = 0;
   MAX_PREFILL_LENGTH = 0;
+  MAX_PIXELS = 0;
+  VIT_DIMS = 0;
 
   //
   sgen = std::mt19937(std::random_device()());
@@ -172,25 +195,10 @@ void Model::deinit() {
 
 Model::~Model() { deinit(); }
 
-static inline void ASSERT(bool ret) {
-  if (!ret) {
-    throw std::runtime_error("runtime error");
-  }
-}
-
 static inline void ASSERT(bool ret, std::string message) {
   if (!ret) {
     throw std::runtime_error(message);
   }
-}
-
-void Model::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
-  bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(dst));
-}
-
-void Model::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, size_t offset) {
-  bm_memcpy_d2d_byte(bm_handle, dst, offset, src, 0,
-                     bm_mem_get_device_size(src));
 }
 
 void Model::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, size_t offset,
@@ -199,30 +207,29 @@ void Model::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, size_t offset,
 }
 
 void Model::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
-                        int stage_idx) {
+                        int this_stage_idx) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
   std::vector<bm_tensor_t> out_tensors(net->output_num);
 
   bmrt_tensor_with_device(&in_tensors[0], logits_mem, net->input_dtypes[0],
-                          net->stages[stage_idx].input_shapes[0]);
+                          net->stages[this_stage_idx].input_shapes[0]);
 
   for (int i = 1; i < net->input_num; i++) {
     bmrt_tensor_with_device(
-        &in_tensors[i], net->stages[stage_idx].input_mems[i],
-        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
+        &in_tensors[i], net->stages[this_stage_idx].input_mems[i],
+        net->input_dtypes[i], net->stages[this_stage_idx].input_shapes[i]);
   }
   for (int i = 0; i < net->output_num; i++) {
     bmrt_tensor_with_device(
-        &out_tensors[i], net->stages[stage_idx].output_mems[i],
-        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
+        &out_tensors[i], net->stages[this_stage_idx].output_mems[i],
+        net->output_dtypes[i], net->stages[this_stage_idx].output_shapes[i]);
   }
 
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
-  if (!ret) {
-    throw std::runtime_error("can not inference bmodel");
-  }
+
+  ASSERT(ret == true, "can not inference bmodel");
   bm_thread_sync(bm_handle);
 }
 
@@ -243,9 +250,8 @@ void Model::net_launch(const bm_net_info_t *net, int stage_idx) {
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
-  if (!ret) {
-    throw std::runtime_error("can not inference bmodel");
-  }
+
+  ASSERT(ret == true, "can not inference bmodel");
   bm_thread_sync(bm_handle);
 }
 
@@ -274,51 +280,36 @@ void Model::dynamic_net_launch(const bm_net_info_t *net, int token_length,
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
-  if (!ret) {
-    throw std::runtime_error("can not inference bmodel");
-  }
+
+  ASSERT(ret == true, "can not inference bmodel");
   bm_thread_sync(bm_handle);
 }
 
 void Model::load_bmodel(const std::vector<int> &devices,
                         const std::string &model_path) {
-  // request bm_handle
-  std::cout << "Device [ ";
-  for (auto d : devices) {
-    std::cout << d << " ";
-  }
-  std::cout << "] loading ....\n";
-  for (auto d : devices) {
-    bm_handle_t h;
-    bm_status_t status = bm_dev_request(&h, d);
-    if (BM_SUCCESS != status) {
-      throw std::runtime_error("can not create handle");
-    }
-    handles.push_back(h);
-  }
-  bm_handle = handles[0];
+  // Device Initialization
+  std::cout << "Initializing devices...\n";
+  std::cout << "Device [ " << devices[0] << " ] loading .....\n";
+  bm_status_t status = bm_dev_request(&bm_handle, devices[0]);
+  ASSERT(status == BM_SUCCESS, "can not create handle");
 
   // create bmruntime
-#ifdef SOC_TARGET
-  p_bmrt = bmrt_create(handles[0]);
-#else
-  p_bmrt = bmrt_create_ex(handles.data(), handles.size());
-#endif
-  if (NULL == p_bmrt) {
-    throw std::runtime_error("can not create bmrt");
-  }
+  p_bmrt = bmrt_create(bm_handle);
+  ASSERT(p_bmrt != NULL, "can not create bmrt");
+
+  std::string board_name(256, '\0');
+  ;
+  bm_get_board_name(bm_handle, &board_name[0]);
 
   // load bmodel by file
   printf("Model[%s] loading ....\n", model_path.c_str());
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
 
-  if (!ret) {
-    throw std::runtime_error("can not load bmodel correctly");
-  }
+  ASSERT(ret == true, "can not load bmodel correctly");
   printf("Done!\n");
 }
 
-void Model::init_nets() {
+void Model::init_network() {
   // net embed and lm_head
   ASSERT(bmrt_get_network_index(p_bmrt, "embedding") != -1 ||
              !embedding_path.empty(),
@@ -343,7 +334,19 @@ void Model::init_nets() {
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
   }
 
-  // convert attention to uint16_t
+  // Vision Components
+  if (bmrt_get_network_index(p_bmrt, "vit") != -1) {
+    vision_enabled = true;
+    net_vit = bmrt_get_network_info(p_bmrt, "vit");
+    MAX_PIXELS = net_vit->stages[0].input_shapes[0].dims[0];
+    VIT_DIMS = net_vit->stages[0].input_shapes[0].dims[1];
+    auto status = bm_malloc_device_byte(
+        bm_handle, &dev_buffer,
+        bm_mem_get_device_size(net_embed->stages[0].output_mems[0]));
+    ASSERT(status == BM_SUCCESS, "malloc memory failed");
+  }
+
+  // Mask Value Setup
   if (net_blocks[0]->input_dtypes[0] == BM_FLOAT16) {
     mask_value = fp32_to_fp16_bits(ATTENTION_MASK);
   } else if (net_blocks[0]->input_dtypes[0] == BM_BFLOAT16) {
@@ -355,7 +358,7 @@ void Model::init_nets() {
   }
 }
 
-void Model::init_params() {
+void Model::init_parameter() {
   auto stage_size = bmrt_get_stage_size(p_bmrt, "block_0");
   if (stage_idx < 0 || stage_idx >= stage_size) {
     throw std::runtime_error("Invalid stage idx");
@@ -363,8 +366,6 @@ void Model::init_params() {
 
   // read parameters from bmodel
   is_dynamic = net_blocks[0]->is_dynamic;
-  auto addr_mode = net_blocks_cache[0]->addr_mode;
-  io_alone = addr_mode == 1;
   hidden_bytes = bm_mem_get_device_size(
       net_blocks_cache[0]->stages[stage_idx].output_mems[0]);
   kv_bytes = bm_mem_get_device_size(
@@ -383,7 +384,7 @@ void Model::init_params() {
 
   // declare tmemory location for kvcache
   for (int i = 0; i < NUM_LAYERS; i++) {
-    ASSERT(net_blocks_cache[i]->addr_mode == 1);
+    ASSERT(net_blocks_cache[i]->addr_mode == 1, "");
     past_key[i] = net_blocks_cache[i]->stages[stage_idx].input_mems[3];
     past_value[i] = net_blocks_cache[i]->stages[stage_idx].input_mems[4];
   }
@@ -398,25 +399,25 @@ void Model::make_in_tensors() {
   ret = bmrt_tensor_ex(&inputs_pid, p_bmrt, net_blocks[0]->input_loc_devices[1],
                        net_blocks[0]->input_dtypes[1],
                        net_blocks[0]->stages[stage_idx].input_shapes[1]);
-  ASSERT(true == ret);
+  ASSERT(true == ret, "malloc tensor failed");
 
   ret = bmrt_tensor_ex(&inputs_attention, p_bmrt,
                        net_blocks[0]->input_loc_devices[2],
                        net_blocks[0]->input_dtypes[2],
                        net_blocks[0]->stages[stage_idx].input_shapes[2]);
-  ASSERT(true == ret);
+  ASSERT(true == ret, "malloc tensor failed");
 
   ret = bmrt_tensor_ex(&next_pid, p_bmrt,
                        net_blocks_cache[0]->input_loc_devices[1],
                        net_blocks_cache[0]->input_dtypes[1],
                        net_blocks_cache[0]->stages[stage_idx].input_shapes[1]);
-  ASSERT(true == ret);
+  ASSERT(true == ret, "malloc tensor failed");
 
   ret = bmrt_tensor_ex(&next_attention, p_bmrt,
                        net_blocks_cache[0]->input_loc_devices[2],
                        net_blocks_cache[0]->input_dtypes[2],
                        net_blocks_cache[0]->stages[stage_idx].input_shapes[2]);
-  ASSERT(true == ret);
+  ASSERT(true == ret, "malloc tensor failed");
 
   make_in_tensors_flag = true;
 }
@@ -428,11 +429,11 @@ void Model::init(const std::vector<int> &devices, const std::string &model_path,
     load_bmodel(devices, model_path);
 
     // step2 : init nets
-    init_nets();
+    init_network();
   }
 
   // step3 : init parameters
-  init_params();
+  init_parameter();
 
   // step4 : make in tensors
   make_in_tensors();
@@ -502,8 +503,7 @@ Model::load_and_infer_embedding(const std::vector<int> &tokens) {
 
   std::vector<uint16_t> buffer(size * embedding_dim);
   for (int i = 0; i < std::min(size, total_length); i++) {
-    long long start_position =
-        (long long)tokens[i] * embedding_bytes;
+    long long start_position = (long long)tokens[i] * embedding_bytes;
     file.seekg(start_position, std::ios::beg);
     if (file.fail()) {
       throw std::runtime_error("File size is not correct\n");
@@ -540,6 +540,35 @@ bm_device_mem_t Model::embedding_launch(const bm_net_info_t *net0,
   return out_mem;
 }
 
+void Model::vit_launch(const std::vector<float> &pixel_values, int vit_offset,
+                       int valid_vit_length, const std::vector<int> &grid_thw,
+                       bm_device_mem_t &out_mem) {
+  empty(bm_handle, dev_buffer);
+  d2d(dev_buffer, out_mem, 0, total_length * hidden_bytes);
+  out_mem = dev_buffer;
+  // forward vision transformer
+  std::vector<float> pixel_values_pad(MAX_PIXELS * VIT_DIMS, 0);
+  auto position_id = make_vit_position_id(config);
+  auto attention_mask = make_vit_attention_mask(config);
+  std::copy(pixel_values.begin(), pixel_values.end(), pixel_values_pad.data());
+
+  empty_net(bm_handle, net_vit);
+
+  auto &vit_in0_mem = net_vit->stages[0].input_mems[0];
+  auto &vit_in1_mem = net_vit->stages[0].input_mems[1];
+  auto &vit_in2_mem = net_vit->stages[0].input_mems[2];
+  auto &vit_out_mem = net_vit->stages[0].output_mems[0];
+  bm_memcpy_s2d(bm_handle, vit_in0_mem, (void *)pixel_values_pad.data());
+  bm_memcpy_s2d(bm_handle, vit_in1_mem, (void *)position_id.data());
+  bm_memcpy_s2d(bm_handle, vit_in2_mem, (void *)attention_mask.data());
+  net_launch(net_vit);
+
+  // concatenante texting embedding and image embedding
+  int dst_offset = vit_offset * hidden_bytes;
+  int vit_size = valid_vit_length * hidden_bytes;
+  bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, vit_out_mem, 0, vit_size);
+}
+
 bm_device_mem_t Model::lm_launch(const bm_net_info_t *net,
                                  const bm_device_mem_t &out_mem, size_t offset,
                                  size_t size) {
@@ -550,32 +579,27 @@ bm_device_mem_t Model::lm_launch(const bm_net_info_t *net,
   return lm_out_mem;
 }
 
-int Model::forward_first(std::vector<int> &tokens) {
-  if ((int)tokens.size() >= MAX_PREFILL_LENGTH) {
-    throw std::runtime_error(
-        "the sequence length you input exceeds MAX_PREFILL_LENGTH");
-  }
+int Model::forward_first(const std::vector<int> &tokens,
+                         const std::vector<float> &pixel_values,
+                         const std::vector<int> &grid_thw, int vit_offset,
+                         int valid_vit_length) {
+  ASSERT((int)tokens.size() < MAX_PREFILL_LENGTH,
+         "the sequence length you input exceeds MAX_PREFILL_LENGTH");
+
   std::vector<int> first_tokens(MAX_PREFILL_LENGTH, 0);
-  std::vector<int> position_id(MAX_PREFILL_LENGTH, 0);
-  std::vector<uint16_t> attention_mask(MAX_PREFILL_LENGTH * MAX_PREFILL_LENGTH,
-                                       mask_value);
-  // std::fill(total_tokens.begin(), total_tokens.end(), 0);
   std::copy(tokens.begin(), tokens.end(), total_tokens.data());
   std::copy(tokens.begin(), tokens.end(), first_tokens.data());
 
   total_length = tokens.size();
-  prefill_length = 0;
 
-  for (int i = 0; i < total_length; i++) {
-    position_id[i] = i;
-  }
-  for (int i = 0; i < total_length; i++) {
-    for (int j = 0; j < MAX_PREFILL_LENGTH; j++) {
-      if (j <= i) {
-        attention_mask[i * MAX_PREFILL_LENGTH + j] = 0;
-      }
-    }
-  }
+  config = {model_type,         SEQLEN,
+            MAX_PREFILL_LENGTH, total_length,
+            mask_value,         0,
+            MAX_PIXELS,         grid_thw,
+            vit_offset,         valid_vit_length,
+            spatial_merge_size};
+  auto position_id = make_position_id(config);
+  auto attention_mask = make_attention_mask(config);
 
   // empty
   for (int i = 0; i < NUM_LAYERS; i++) {
@@ -585,6 +609,11 @@ int Model::forward_first(std::vector<int> &tokens) {
 
   // forward embeding
   auto out_mem = embedding_launch(net_embed, net_blocks[0], first_tokens);
+
+  // forward vit
+  if (vision_enabled && !pixel_values.empty()) {
+    vit_launch(pixel_values, vit_offset, valid_vit_length, grid_thw, out_mem);
+  }
 
   // forward blocks
   // make in tensors
@@ -645,7 +674,8 @@ int Model::forward_next() {
   for (int i = total_length - 1; i < SEQLEN; i++) {
     attention_mask[i] = mask_value;
   }
-  int32_t position_id = total_length - 1;
+  config.total_length = total_length;
+  auto position_id = make_next_position_id(config);
 
   // embedding
   std::vector<int> cur_tokens = {cur_token};
@@ -654,7 +684,7 @@ int Model::forward_next() {
 
   // blocks
   // move psition_id & attention_mask to device
-  bm_memcpy_s2d(bm_handle, next_pid.device_mem, &position_id);
+  bm_memcpy_s2d(bm_handle, next_pid.device_mem, (void *)position_id.data());
   bm_memcpy_s2d(bm_handle, next_attention.device_mem,
                 (void *)attention_mask.data());
   int token_offset = (total_length - 1) * kv_bytes;
@@ -669,7 +699,7 @@ int Model::forward_next() {
 
     // move to device
     // empty(bm_handle, in0_mem);
-    d2d(in0_mem, out_mem);
+    d2d(in0_mem, out_mem, 0, hidden_bytes);
     in1_mem = next_pid.device_mem;
     in2_mem = next_attention.device_mem;
 
@@ -726,14 +756,20 @@ PYBIND11_MODULE(chat, m) {
   pybind11::class_<Model>(m, "Model")
       .def(pybind11::init<>())
       .def("init", &Model::init)
-      .def("forward_first", &Model::forward_first)
+      .def("forward_first", &Model::forward_first, pybind11::arg("tokens"),
+           pybind11::arg("pixel_values") = std::vector<float>{},
+           pybind11::arg("grid_thw") = std::vector<int>{},
+           pybind11::arg("vit_offset") = 0,
+           pybind11::arg("valid_vit_length") = 0)
       .def("forward_next", &Model::forward_next)
       .def("deinit", &Model::deinit)
-      .def_readwrite("SEQLEN", &Model::SEQLEN) // read SEQLEN in pipeline.py
-      .def_readwrite("NUM_LAYERS", &Model::NUM_LAYERS) // read SEQLEN in pipeline.py
+      .def_readwrite("model_type", &Model::model_type)
+      .def_readwrite("SEQLEN", &Model::SEQLEN)
+      .def_readwrite("NUM_LAYERS", &Model::NUM_LAYERS)
       .def_readwrite("MAX_PREFILL_LENGTH", &Model::MAX_PREFILL_LENGTH)
+      .def_readwrite("MAX_PIXELS", &Model::MAX_PIXELS)
+      .def_readwrite("spatial_merge_size", &Model::spatial_merge_size)
       .def_readwrite("total_length", &Model::total_length)
-      .def_readwrite("prefill_length", &Model::prefill_length)
       .def_readwrite("temperature", &Model::temperature)
       .def_readwrite("top_p", &Model::top_p)
       .def_readwrite("repeat_penalty", &Model::repeat_penalty)

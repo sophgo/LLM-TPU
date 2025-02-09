@@ -10,30 +10,30 @@
  *
  *****************************************************************************/
 #pragma once
+#include "cnpy.h"
 #include <algorithm>
 #include <climits>
 #include <cmath>
-#include "cnpy.h"
 
 //===------------------------------------------------------------===//
 // Union & Struct
 //===------------------------------------------------------------===//
 typedef union {
-    uint16_t bits;
-    struct {
-        uint16_t frac : 10; // mantissa
-        uint16_t exp  : 5;  // exponent
-        uint16_t sign : 1;  // sign
-    } format;
+  uint16_t bits;
+  struct {
+    uint16_t frac : 10; // mantissa
+    uint16_t exp : 5;   // exponent
+    uint16_t sign : 1;  // sign
+  } format;
 } fp16;
 
 typedef union {
-    uint16_t bits;
-    struct {
-        uint16_t frac : 7; // mantissa
-        uint16_t exp  : 8; // exponent
-        uint16_t sign : 1; // sign 
-    } format;
+  uint16_t bits;
+  struct {
+    uint16_t frac : 7; // mantissa
+    uint16_t exp : 8;  // exponent
+    uint16_t sign : 1; // sign
+  } format;
 } bf16;
 
 typedef union {
@@ -53,7 +53,6 @@ typedef struct {
   uint32_t binary_size;
   uint32_t reserved[12];
 } __attribute__((packed)) MODEL_HEADER_T;
-
 
 //===------------------------------------------------------------===//
 // Type Convert Func
@@ -204,91 +203,90 @@ uint16_t fp32_to_uint16(float value, bm_data_type_t tensor_type) {
   return uint16_value;
 }
 
-
 //===------------------------------------------------------------===//
 // Dump Func
 //===------------------------------------------------------------===//
-float int_to_fp32(int int_val) {
-  return static_cast<float>(int_val);
+float int_to_fp32(int int_val) { return static_cast<float>(int_val); }
+
+float float_to_fp32(float float_val) { return float_val; }
+
+void calculate_min_and_max(const std::vector<float> &data) {
+  if (data.empty()) {
+    std::cout << "No data to process." << std::endl;
+    return;
+  }
+  auto min_it = std::min_element(data.begin(), data.end());
+  auto max_it = std::max_element(data.begin(), data.end());
+  std::cout << "min_value: " << *min_it << std::endl;
+  std::cout << "max_value: " << *max_it << std::endl;
 }
 
-float float_to_fp32(float float_val) {
-  return float_val;
+void dump_min_and_max_bf16(bm_handle_t bm_handle, bm_device_mem_t mem,
+                           uint32_t (*converter)(uint16_t)) {
+  size_t mem_size = bm_mem_get_device_size(mem);
+  int ele_count = mem_size / sizeof(uint16_t);
+  std::vector<uint16_t> data(ele_count);
+  std::vector<float> fp32_data(ele_count);
+
+  bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, mem_size, 0);
+
+  for (int i = 0; i < ele_count; i++) {
+    fp32 t;
+    t.bits = converter(data[i]);
+    fp32_data[i] = t.fval;
+  }
+
+  calculate_min_and_max(fp32_data);
 }
 
-void calculate_min_and_max(const std::vector<float>& data) {
-    if (data.empty()) {
-        std::cout << "No data to process." << std::endl;
-        return;
-    }
-    auto min_it = std::min_element(data.begin(), data.end());
-    auto max_it = std::max_element(data.begin(), data.end());
-    std::cout << "min_value: " << *min_it << std::endl;
-    std::cout << "max_value: " << *max_it << std::endl;
+void dump_min_and_max_fp16(bm_handle_t bm_handle, bm_device_mem_t mem,
+                           uint32_t (*converter)(uint16_t)) {
+  size_t mem_size = bm_mem_get_device_size(mem);
+  int ele_count = mem_size / sizeof(uint16_t);
+  std::vector<uint16_t> data(ele_count);
+  std::vector<float> fp32_data(ele_count);
+
+  bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, mem_size, 0);
+
+  for (int i = 0; i < ele_count; i++) {
+    fp32 t;
+    t.bits = converter(data[i]);
+    fp32_data[i] = t.fval;
+  }
+
+  calculate_min_and_max(fp32_data);
 }
 
-void dump_min_and_max_bf16(bm_handle_t bm_handle, bm_device_mem_t mem, uint32_t (*converter)(uint16_t)) {
-    size_t mem_size = bm_mem_get_device_size(mem);
-    int ele_count = mem_size / sizeof(uint16_t);
-    std::vector<uint16_t> data(ele_count);
-    std::vector<float> fp32_data(ele_count);
+void dump_min_and_max_int(bm_handle_t bm_handle, bm_device_mem_t mem,
+                          float (*converter)(int)) {
+  size_t mem_size = bm_mem_get_device_size(mem);
+  int ele_count = mem_size / sizeof(int);
+  std::vector<int> data(ele_count);
+  std::vector<float> fp32_data(ele_count);
 
-    bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, mem_size, 0);
+  bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, mem_size, 0);
 
-    for (int i = 0; i < ele_count; i++) {
-        fp32 t;
-        t.bits = converter(data[i]);
-        fp32_data[i] = t.fval;
-    }
+  for (int i = 0; i < ele_count; i++) {
+    fp32_data[i] = converter(data[i]);
+  }
 
-    calculate_min_and_max(fp32_data);
+  calculate_min_and_max(fp32_data);
 }
 
-void dump_min_and_max_fp16(bm_handle_t bm_handle, bm_device_mem_t mem, uint32_t (*converter)(uint16_t)) {
-    size_t mem_size = bm_mem_get_device_size(mem);
-    int ele_count = mem_size / sizeof(uint16_t);
-    std::vector<uint16_t> data(ele_count);
-    std::vector<float> fp32_data(ele_count);
+void dump_min_and_max_fp32(bm_handle_t bm_handle, bm_device_mem_t mem,
+                           float (*converter)(float)) {
+  size_t mem_size = bm_mem_get_device_size(mem);
+  int ele_count = mem_size / sizeof(float);
+  std::vector<float> data(ele_count);
+  std::vector<float> fp32_data(ele_count);
 
-    bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, mem_size, 0);
+  bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, mem_size, 0);
 
-    for (int i = 0; i < ele_count; i++) {
-        fp32 t;
-        t.bits = converter(data[i]);
-        fp32_data[i] = t.fval;
-    }
+  for (int i = 0; i < ele_count; i++) {
+    fp32_data[i] = converter(data[i]);
+  }
 
-    calculate_min_and_max(fp32_data);
-}
-
-void dump_min_and_max_int(bm_handle_t bm_handle, bm_device_mem_t mem, float (*converter)(int)) {
-    size_t mem_size = bm_mem_get_device_size(mem);
-    int ele_count = mem_size / sizeof(int);
-    std::vector<int> data(ele_count);
-    std::vector<float> fp32_data(ele_count);
-
-    bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, mem_size, 0);
-
-    for (int i = 0; i < ele_count; i++) {
-        fp32_data[i] = converter(data[i]);
-    }
-
-    calculate_min_and_max(fp32_data);
-}
-
-void dump_min_and_max_fp32(bm_handle_t bm_handle, bm_device_mem_t mem, float (*converter)(float)) {
-    size_t mem_size = bm_mem_get_device_size(mem);
-    int ele_count = mem_size / sizeof(float);
-    std::vector<float> data(ele_count);
-    std::vector<float> fp32_data(ele_count);
-
-    bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, mem_size, 0);
-
-    for (int i = 0; i < ele_count; i++) {
-        fp32_data[i] = converter(data[i]);
-    }
-
-    calculate_min_and_max(fp32_data);
+  calculate_min_and_max(fp32_data);
 }
 
 void dump_bf16_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
@@ -297,7 +295,7 @@ void dump_bf16_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
   size = std::min(size, static_cast<int>(mem_size));
   int ele_count = size / sizeof(uint16_t);
   assert(mem_size < INT_MAX);
-  
+
   std::vector<uint16_t> data(ele_count);
   bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, size, offset);
   std::cout << "-------------------------------------" << std::endl;
@@ -317,7 +315,7 @@ void dump_fp16_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
   size = std::min(size, static_cast<int>(mem_size));
   int ele_count = size / sizeof(uint16_t);
   assert(mem_size < INT_MAX);
-  
+
   std::vector<uint16_t> data(ele_count);
   bm_memcpy_d2s_partial_offset(bm_handle, data.data(), mem, size, offset);
   std::cout << "-------------------------------------" << std::endl;
@@ -367,7 +365,6 @@ void dump_int_tensor(bm_handle_t bm_handle, bm_device_mem_t mem, int offset,
   dump_min_and_max_int(bm_handle, mem, int_to_fp32);
 }
 
-
 //===------------------------------------------------------------===//
 // Calculate the similarity
 //===------------------------------------------------------------===//
@@ -393,7 +390,8 @@ std::vector<float> vec_int_to_fp32(const std::vector<int> &tar) {
   return data;
 }
 
-void cal_similarity(const std::vector<float> &data, std::vector<float> &ref_data) {
+void cal_similarity(const std::vector<float> &data,
+                    std::vector<float> &ref_data) {
   std::cout << "-------------------------------------" << std::endl;
   if (data.size() != ref_data.size()) {
     throw std::invalid_argument("The sizes of data and ref_data do not match.");
@@ -409,9 +407,11 @@ void cal_similarity(const std::vector<float> &data, std::vector<float> &ref_data
   }
   distance = sqrt(distance);
   root = sqrt(root);
-  std::cout<<"    manhattan_distance   = "<<(float)(L1_distance)<<std::endl;
+  std::cout << "    manhattan_distance   = " << (float)(L1_distance)
+            << std::endl;
 
-  std::cout<<"    euclidean_similarity   = "<<(float)(1 - distance / root)<<std::endl;
+  std::cout << "    euclidean_similarity   = " << (float)(1 - distance / root)
+            << std::endl;
 
   float average = 0, ss_tar = 0, ss_ref = 0, avg_ref = 0, avg_noise = 0;
   for (size_t i = 0; i < data.size(); ++i) {
@@ -426,7 +426,8 @@ void cal_similarity(const std::vector<float> &data, std::vector<float> &ref_data
   ss_ref /= data.size();
   avg_ref /= data.size();
   avg_noise /= data.size();
-  std::cout<<"    cosine_similarity      = "<<(average / sqrt(ss_tar * ss_ref))<<std::endl;
+  std::cout << "    cosine_similarity      = "
+            << (average / sqrt(ss_tar * ss_ref)) << std::endl;
 
   float var_ref_zero_mean = 0, var_noise_zero_mean = 0;
   for (size_t i = 0; i < data.size(); ++i) {
@@ -439,11 +440,12 @@ void cal_similarity(const std::vector<float> &data, std::vector<float> &ref_data
   } else {
     sqnr = 10 * std::log10(var_ref_zero_mean / var_noise_zero_mean);
   }
-  std::cout<<"    sqnr_similarity        = "<<sqnr<<std::endl;
+  std::cout << "    sqnr_similarity        = " << sqnr << std::endl;
   std::cout << "-------------------------------------" << std::endl;
 }
 
-void compare_bf16_similarity(bm_handle_t &bm_handle, bm_device_mem_t &mem, std::vector<float> &ref_data) {
+void compare_bf16_similarity(bm_handle_t &bm_handle, bm_device_mem_t &mem,
+                             std::vector<float> &ref_data) {
   int mem_size = bm_mem_get_device_size(mem);
   int cnt = mem_size / sizeof(uint16_t);
   std::vector<uint16_t> buffer(cnt);
@@ -452,7 +454,8 @@ void compare_bf16_similarity(bm_handle_t &bm_handle, bm_device_mem_t &mem, std::
   cal_similarity(data, ref_data);
 }
 
-void compare_fp16_similarity(bm_handle_t &bm_handle, bm_device_mem_t &mem, std::vector<float> &ref_data) {
+void compare_fp16_similarity(bm_handle_t &bm_handle, bm_device_mem_t &mem,
+                             std::vector<float> &ref_data) {
   int mem_size = bm_mem_get_device_size(mem);
   int cnt = mem_size / sizeof(uint16_t);
   std::vector<uint16_t> buffer(cnt);
@@ -461,7 +464,8 @@ void compare_fp16_similarity(bm_handle_t &bm_handle, bm_device_mem_t &mem, std::
   cal_similarity(data, ref_data);
 }
 
-void compare_int_similarity(bm_handle_t &bm_handle, bm_device_mem_t &mem, std::vector<float> &ref_data) {
+void compare_int_similarity(bm_handle_t &bm_handle, bm_device_mem_t &mem,
+                            std::vector<float> &ref_data) {
   int mem_size = bm_mem_get_device_size(mem);
   int cnt = mem_size / sizeof(int32_t);
   std::vector<int> buffer(cnt);
@@ -470,7 +474,8 @@ void compare_int_similarity(bm_handle_t &bm_handle, bm_device_mem_t &mem, std::v
   cal_similarity(data, ref_data);
 }
 
-void compare_fp32_similarity(bm_handle_t &bm_handle, bm_device_mem_t &mem, std::vector<float> &ref_data) {
+void compare_fp32_similarity(bm_handle_t &bm_handle, bm_device_mem_t &mem,
+                             std::vector<float> &ref_data) {
   int mem_size = bm_mem_get_device_size(mem);
   int cnt = mem_size / sizeof(float);
   std::vector<float> data(cnt);
@@ -478,7 +483,9 @@ void compare_fp32_similarity(bm_handle_t &bm_handle, bm_device_mem_t &mem, std::
   cal_similarity(data, ref_data);
 }
 
-void compare_similarity(bm_handle_t &bm_handle, bm_device_mem_t &mem, bm_data_type_t &tensor_type, std::string v_file, std::string v_name) {
+void compare_similarity(bm_handle_t &bm_handle, bm_device_mem_t &mem,
+                        bm_data_type_t &tensor_type, std::string v_file,
+                        std::string v_name) {
   cnpy::NpyArray ref_file = cnpy::npz_load(v_file, v_name);
   std::vector<float> ref_data = ref_file.as_vec<float>();
 
@@ -493,8 +500,9 @@ void compare_similarity(bm_handle_t &bm_handle, bm_device_mem_t &mem, bm_data_ty
   }
 }
 
-void compare_in_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                    std::string filename, const std::vector<std::string> &names = std::vector<std::string>()) {
+void compare_in_net(
+    bm_handle_t &bm_handle, const bm_net_info_t *net, std::string filename,
+    const std::vector<std::string> &names = std::vector<std::string>()) {
   std::vector<bm_tensor_t> tensors(net->output_num);
 
   for (int i = 0; i < net->output_num; i++) {
@@ -502,15 +510,18 @@ void compare_in_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
                             net->output_dtypes[i],
                             net->stages[0].output_shapes[i]);
     if (names.size() == 0) {
-      compare_similarity(bm_handle, tensors[i].device_mem, net->input_dtypes[i], filename, "input_" + std::to_string(i));
+      compare_similarity(bm_handle, tensors[i].device_mem, net->input_dtypes[i],
+                         filename, "input_" + std::to_string(i));
     } else {
-      compare_similarity(bm_handle, tensors[i].device_mem, net->input_dtypes[i], filename, names[i]);
+      compare_similarity(bm_handle, tensors[i].device_mem, net->input_dtypes[i],
+                         filename, names[i]);
     }
   }
 }
 
-void compare_out_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                     std::string filename, const std::vector<std::string> &names = std::vector<std::string>()) {
+void compare_out_net(
+    bm_handle_t &bm_handle, const bm_net_info_t *net, std::string filename,
+    const std::vector<std::string> &names = std::vector<std::string>()) {
   std::vector<bm_tensor_t> tensors(net->output_num);
 
   for (int i = 0; i < net->output_num; i++) {
@@ -518,9 +529,11 @@ void compare_out_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
                             net->output_dtypes[i],
                             net->stages[0].output_shapes[i]);
     if (names.size() == 0) {
-      compare_similarity(bm_handle, tensors[i].device_mem, net->input_dtypes[i], filename, "output_" + std::to_string(i));
+      compare_similarity(bm_handle, tensors[i].device_mem, net->input_dtypes[i],
+                         filename, "output_" + std::to_string(i));
     } else {
-      compare_similarity(bm_handle, tensors[i].device_mem, net->input_dtypes[i], filename, names[i]);
+      compare_similarity(bm_handle, tensors[i].device_mem, net->input_dtypes[i],
+                         filename, names[i]);
     }
   }
 }
@@ -572,7 +585,7 @@ void dump_tensor_to_file(bm_handle_t &bm_handle, bm_tensor_t &t,
 }
 
 void dump_net_input_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                      const std::string &filename) {
+                            const std::string &filename) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
 
   for (int i = 0; i < net->input_num; i++) {
@@ -587,7 +600,7 @@ void dump_net_input_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
 }
 
 void dump_net_output_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                      const std::string &filename) {
+                             const std::string &filename) {
   std::vector<bm_tensor_t> out_tensors(net->output_num);
 
   for (int i = 0; i < net->output_num; i++) {
@@ -607,7 +620,6 @@ void dump_net_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
   dump_net_output_to_file(bm_handle, net, filename);
 }
 
-
 //===------------------------------------------------------------===//
 // Empty Func
 //===------------------------------------------------------------===//
@@ -617,19 +629,261 @@ void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
   assert(BM_SUCCESS == ret);
 }
 
-void empty_in_net(bm_handle_t &bm_handle, const bm_net_info_t *net, int stage_idx = 0) {
+void empty_in_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+                  int stage_idx = 0) {
   for (int i = 0; i < net->input_num; i++) {
     empty(bm_handle, net->stages[stage_idx].input_mems[i]);
   }
 }
 
-void empty_out_net(bm_handle_t &bm_handle, const bm_net_info_t *net, int stage_idx = 0) {
+void empty_out_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+                   int stage_idx = 0) {
   for (int i = 0; i < net->output_num; i++) {
     empty(bm_handle, net->stages[stage_idx].output_mems[i]);
   }
 }
 
-void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net, int stage_idx = 0) {
+void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+               int stage_idx = 0) {
   empty_in_net(bm_handle, net, stage_idx);
   empty_out_net(bm_handle, net, stage_idx);
+}
+
+//===------------------------------------------------------------===//
+// Config
+//===------------------------------------------------------------===//
+struct Config {
+  std::string model_type;
+  int SEQLEN;
+  int MAX_PREFILL_LENGTH;
+  int total_length;
+  uint16_t mask_value;
+
+  // vit config
+  int max_pos;
+  int MAX_PIXELS;
+  std::vector<int> grid_thw;
+  int vit_offset;
+  int valid_vit_length;
+  int spatial_merge_size;
+};
+
+//===------------------------------------------------------------===//
+// Make ViT position_id & attention_mask
+//===------------------------------------------------------------===//
+std::vector<int> make_vit_position_id(const Config &config) {
+  std::vector<int> pos_ids;
+  if (config.model_type == "qwen2_vl") {
+    int t = config.grid_thw[0];
+    int h = config.grid_thw[1];
+    int w = config.grid_thw[2];
+
+    // generate hpos_ids
+    std::vector<int> hpos_ids;
+    for (int n = 0; n < h; n += config.spatial_merge_size) {
+      for (int _ = 0; _ < w / config.spatial_merge_size; ++_) {
+        hpos_ids.push_back(n);
+        hpos_ids.push_back(n);
+        hpos_ids.push_back(n + 1);
+        hpos_ids.push_back(n + 1);
+      }
+    }
+
+    // generate wpos_ids
+    std::vector<int> wpos_ids;
+    for (int _ = 0; _ < h / config.spatial_merge_size; ++_) {
+      for (int e = 0; e < w; e += config.spatial_merge_size) {
+        wpos_ids.push_back(e);
+        wpos_ids.push_back(e + 1);
+        wpos_ids.push_back(e);
+        wpos_ids.push_back(e + 1);
+      }
+    }
+
+    int valid_vit_pixels = h * w;
+    pos_ids.resize(config.MAX_PIXELS * 2, 0);
+    for (int i = 0; i < t; ++i) {
+      for (int j = 0; j < valid_vit_pixels; ++j) {
+        pos_ids[i * valid_vit_pixels + 2 * j] = hpos_ids[j];
+        pos_ids[i * valid_vit_pixels + 2 * j + 1] = wpos_ids[j];
+      }
+    }
+  } else {
+    throw std::runtime_error("not support now");
+  }
+
+  return pos_ids;
+}
+
+std::vector<uint16_t> make_vit_attention_mask(const Config &config) {
+  std::vector<uint16_t> attention_mask;
+  if (config.model_type == "qwen2_vl") {
+    // Extract t, h, w from config.grid_thw
+    int t = config.grid_thw[0];
+    int h = config.grid_thw[1];
+    int w = config.grid_thw[2];
+
+    // Compute cu_seqlens
+    std::vector<int> cu_seqlens(t + 1, 0);
+    for (int i = 0; i <= t; ++i) {
+      cu_seqlens[i] = h * w * i;
+    }
+
+    // Initialize attention_mask with -10000
+    attention_mask.resize(config.MAX_PIXELS * config.MAX_PIXELS,
+                          config.mask_value);
+
+    // Update attention_mask based on cu_seqlens
+    for (size_t i = 1; i < cu_seqlens.size(); ++i) {
+      int start = cu_seqlens[i - 1];
+      int end = cu_seqlens[i];
+      for (int row = start; row < end; ++row) {
+        for (int col = start; col < end; ++col) {
+          size_t index = row * config.MAX_PIXELS + col;
+          if (index < attention_mask.size()) {
+            attention_mask[index] = 0;
+          }
+        }
+      }
+    }
+  } else {
+    throw std::runtime_error("not support now");
+  }
+
+  return attention_mask;
+}
+
+//===------------------------------------------------------------===//
+// Make LLM position_id & attention_mask (Prefill Phase)
+//===------------------------------------------------------------===//
+std::vector<int> make_position_id(Config &config) {
+  std::vector<int> position_id;
+  if (config.model_type == "qwen2_vl") {
+    int text_len = config.vit_offset;
+
+    // Assuming config.grid_thw has at least one element
+    int llm_grid_t = config.grid_thw[0];
+    int llm_grid_h = config.grid_thw[1] / config.spatial_merge_size;
+    int llm_grid_w = config.grid_thw[2] / config.spatial_merge_size;
+
+    std::vector<int> t_position_id;
+    std::vector<int> h_position_id;
+    std::vector<int> w_position_id;
+
+    // Populate t_position_id
+    for (int i = text_len; i < llm_grid_t + text_len; ++i) {
+      for (int j = 0; j < llm_grid_h * llm_grid_w; ++j) {
+        t_position_id.push_back(i);
+      }
+    }
+
+    // Populate h_position_id
+    for (int _ = 0; _ < llm_grid_t; ++_) {
+      for (int i = 0; i < llm_grid_h; ++i) {
+        for (int j = 0; j < llm_grid_w; ++j) {
+          h_position_id.push_back(i + text_len);
+        }
+      }
+    }
+
+    // Populate w_position_id
+    for (int _ = 0; _ < llm_grid_t; ++_) {
+      for (int i = 0; i < llm_grid_h; ++i) {
+        for (int j = text_len; j < llm_grid_w + text_len; ++j) {
+          w_position_id.push_back(j);
+        }
+      }
+    }
+
+    // Calculate starting index for tail text length
+    int st_idx = w_position_id.back() + 1;
+    int tail_text_len =
+        config.total_length - config.valid_vit_length - text_len;
+
+    // Prepare final position ids
+    position_id.reserve(config.SEQLEN * 3);
+
+    // Prepare head position ids
+    std::vector<int> head_position_id;
+    for (int i = 0; i < text_len; ++i) {
+      head_position_id.push_back(i);
+    }
+
+    // Prepare tail position ids
+    std::vector<int> tail_position_id;
+    for (int i = st_idx; i < st_idx + tail_text_len; ++i) {
+      tail_position_id.push_back(i);
+    }
+
+    // Fill position_id for t
+    position_id.insert(
+        position_id.end(), head_position_id.begin(),
+        head_position_id.end()); // Fill with 0 for range text_len
+    position_id.insert(position_id.end(), t_position_id.begin(),
+                       t_position_id.end());
+    position_id.insert(position_id.end(), tail_position_id.begin(),
+                       tail_position_id.end());
+    position_id.insert(position_id.end(), config.SEQLEN - config.total_length,
+                       1); // Fill with 1
+
+    // Fill position_id for h
+    position_id.insert(
+        position_id.end(), head_position_id.begin(),
+        head_position_id.end()); // Fill with 0 for range text_len
+    position_id.insert(position_id.end(), h_position_id.begin(),
+                       h_position_id.end());
+    position_id.insert(position_id.end(), tail_position_id.begin(),
+                       tail_position_id.end());
+    position_id.insert(position_id.end(), config.SEQLEN - config.total_length,
+                       1); // Fill with 1
+
+    // Fill position_id for w
+    position_id.insert(
+        position_id.end(), head_position_id.begin(),
+        head_position_id.end()); // Fill with 0 for range text_len
+    position_id.insert(position_id.end(), w_position_id.begin(),
+                       w_position_id.end());
+    position_id.insert(position_id.end(), tail_position_id.begin(),
+                       tail_position_id.end());
+    position_id.insert(position_id.end(), config.SEQLEN - config.total_length,
+                       1); // Fill with 1
+
+    config.max_pos = st_idx + tail_text_len - 1;
+  } else {
+    position_id.resize(config.MAX_PREFILL_LENGTH, 0);
+    for (int i = 0; i < config.total_length; i++) {
+      position_id[i] = i;
+    }
+  }
+
+  return position_id;
+}
+
+std::vector<uint16_t> make_attention_mask(const Config &config) {
+  std::vector<uint16_t> attention_mask(
+      config.MAX_PREFILL_LENGTH * config.MAX_PREFILL_LENGTH, config.mask_value);
+  for (int i = 0; i < config.total_length; i++) {
+    for (int j = 0; j < config.MAX_PREFILL_LENGTH; j++) {
+      if (j <= i) {
+        attention_mask[i * config.MAX_PREFILL_LENGTH + j] = 0;
+      }
+    }
+  }
+
+  return attention_mask;
+}
+
+//===------------------------------------------------------------===//
+// Make LLM position_id & attention_mask (Decode Phase)
+//===------------------------------------------------------------===//
+std::vector<int> make_next_position_id(Config &config) {
+  std::vector<int> position_id;
+  if (config.model_type == "qwen2_vl") {
+    config.max_pos += 1;
+    position_id = {config.max_pos, config.max_pos, config.max_pos};
+  } else {
+    position_id = {config.total_length - 1};
+  }
+
+  return position_id;
 }
