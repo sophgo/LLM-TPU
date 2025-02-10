@@ -6,7 +6,6 @@ import argparse
 from transformers import AutoTokenizer
 
 import sys
-import chat
 
 class Model:
     def __init__(self, args):
@@ -21,21 +20,22 @@ class Model:
 
         # Initialize model-specific mapper dynamically
         self.model_type = args.model_type if args.model_type else self.config['model_type']
-        self.map(self.model_type)
+        self.map(self.model_type, self.tokenizer_path)
 
         # warm up
         self.tokenizer.decode([0])
 
         # Initialize model
+        import chat
         self.model = chat.Model()
         self.init_params(args)
         self.load_model(args.model_path, read_bmodel=True)
 
-    def map(self, model_type):
+    def map(self, model_type, tokenizer_path):
         """Abstract model-specific mapper into a dictionary."""
         if model_type == "qwen2":
-            self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
-            self.EOS = [self.tokenizer.eos_token_id]
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
+            self.EOS = self.tokenizer.eos_token_id
             self.append_user = lambda history, input_str: history.append(
                 {"role": "user", "content": input_str}
             )
@@ -47,8 +47,8 @@ class Model:
             )
             self.system_prompt = {"role": "system", "content": "You are a helpful assistant."}
         elif model_type == "qwen":
-            self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
-            self.EOS = [self.tokenizer.im_end_id]
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
+            self.EOS = self.tokenizer.im_end_id
             self.append_user = lambda history, input_str: history.append(
                 "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n".format(input_str)
             )
@@ -56,7 +56,7 @@ class Model:
             self.apply_chat_template = lambda history: "".join(history)
             self.system_prompt = "<|im_start|>system\nYou are a helpful assistant."
         elif model_type == "llama":
-            self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True, use_fast=False)
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True, use_fast=False)
             self.system_prompt = "<s>[INST] <<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. " \
                                  "Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. " \
                                  "Please ensure that your responses are socially unbiased and positive in nature. " \
@@ -72,7 +72,7 @@ class Model:
             self.apply_chat_template = lambda history: "".join(history)
             self.tokenizer.add_prefix_space = False
         elif model_type == "llama3":
-            self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
             self.system_prompt = {"role": "system", "content": "You are a helpful assistant."}
             self.EOS = [self.tokenizer.eos_token_id, self.tokenizer.convert_tokens_to_ids("<|eot_id|>")]
             self.append_user = lambda history, input_str: history.append(
@@ -85,7 +85,7 @@ class Model:
                 history, tokenize=False, add_generation_prompt=True
             )
         elif model_type == "lwm":
-            self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
             self.system_prompt = "You are a helpful assistant."
             self.EOS = [self.tokenizer.eos_token_id]
             self.append_user = lambda history, input_str: history.append(
@@ -188,6 +188,7 @@ class Model:
         token = self.model.forward_first(tokens)
         first_end = time.time()
         # Following tokens
+        total_tokens = [tokens]
         full_word_tokens = []
         while token not in self.EOS and self.model.total_length < self.model.SEQLEN:
             full_word_tokens.append(token)
