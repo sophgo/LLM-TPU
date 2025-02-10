@@ -103,7 +103,7 @@ class TestNetWithMask(ModelExporter):
             self.dtype = torch.float
         else:
             os.environ['CUDA_VISIBLE_DEVICES'] = "0"
-            if self.model_type in ["qwen2"]:
+            if self.model_type in ["qwen2", "qwen2.5"]:
                 self.dtype = torch.bfloat16
             else:
                 raise ValueError(f"{self.model_type} not support now")
@@ -214,7 +214,9 @@ class TestNetWithMask(ModelExporter):
         print(word, end="")
 
         # decoding
-        while int(token) != self.EOS and token_len < self.seq_length:
+        ID_IM_END = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
+        ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
+        while int(token) not in self.EOS and token_len < self.seq_length:
             token_len += 1
             input_id = torch.tensor([token]).to(self.device)
             hidden_states = self.embed(input_id).view(1, 1, self.HIDDEN_SIZE)
@@ -237,7 +239,7 @@ class TestNetWithMask(ModelExporter):
         
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='llm_exporter', formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(description='module_flow_test', formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-t', '--torch_path', type=str, required=True, help='torch path, like ./Qwen2-VL-2B-Instruct')
     parser.add_argument('--seq_length', type=int, required=True, help="sequence length")
     parser.add_argument('--visual_length', type=int, default=1024, help="visual length for vision transformer")

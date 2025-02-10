@@ -35,7 +35,7 @@ class Model:
         """Abstract model-specific mapper into a dictionary."""
         if model_type == "qwen2":
             self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
-            self.EOS = self.tokenizer.eos_token_id
+            self.EOS = [self.tokenizer.eos_token_id]
             self.append_user = lambda history, input_str: history.append(
                 {"role": "user", "content": input_str}
             )
@@ -46,9 +46,24 @@ class Model:
                 history, tokenize=False, add_generation_prompt=True
             )
             self.system_prompt = {"role": "system", "content": "You are a helpful assistant."}
+        elif model_type == "qwen2.5":
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
+            ID_IM_END = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
+            ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
+            self.EOS = [self.tokenizer.eos_token_id, ID_IM_END, ID_END]
+            self.append_user = lambda history, input_str: history.append(
+                {"role": "user", "content": input_str}
+            )
+            self.append_assistant = lambda history, answer_str: history.append(
+                {"role": "assistant", "content": answer_str}
+            )
+            self.apply_chat_template = lambda history: self.tokenizer.apply_chat_template(
+                history, tokenize=False, add_generation_prompt=True
+            )
+            self.system_prompt = {"role": "system", "content": "You are Qwen, created by Alibaba Cloud. You are a helpful assistant."}
         elif model_type == "qwen":
             self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
-            self.EOS = self.tokenizer.im_end_id
+            self.EOS = [self.tokenizer.im_end_id]
             self.append_user = lambda history, input_str: history.append(
                 "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n".format(input_str)
             )
@@ -188,7 +203,6 @@ class Model:
         token = self.model.forward_first(tokens)
         first_end = time.time()
         # Following tokens
-        total_tokens = [tokens]
         full_word_tokens = []
         while token not in self.EOS and self.model.total_length < self.model.SEQLEN:
             full_word_tokens.append(token)
