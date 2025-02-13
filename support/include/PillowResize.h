@@ -14,33 +14,54 @@
 * limitations under the License.
 */
 
-#ifndef PILLOWRESIZE_H
-#define PILLOWRESIZE_H
+#ifndef PILLOWRESIZE_HPP
+#define PILLOWRESIZE_HPP
 
 #include <array>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <vector>
-
-#ifdef _WIN32
-#define _USE_MATH_DEFINES
-#endif
+#include <cstring>
 #include <cmath>
+#include <algorithm>
+#include <stdexcept>
+#include <cstdlib>
+#include <cmath>
+#include <cstring>
 
-#include <opencv2/opencv.hpp>
+enum PixelType {
+    UINT8,
+    INT8,
+    UINT16,
+    INT16,
+    INT32,
+    FLOAT32
+};
+
+typedef struct ResizeMat_s {
+    unsigned short  width;
+    unsigned short  height;
+    unsigned short  channels;
+    unsigned long   data;
+    PixelType       pixel_type;
+} ResizeMat;
 
 /**
- * \brief PillowResize 类，将 Pillow 库的 resize 方法移植到 OpenCV 上。
- * 实现仅依赖于 OpenCV，因此所有 Pillow 代码都已转换为使用 cv::Mat 和 OpenCV 结构。
- * 由于 Pillow 不支持所有 cv::Mat 类型，此实现扩展了对几乎所有 OpenCV 像素类型的支持。
+ * \brief PillowResize Porting of the resize methods from Pillow library
+ * (https://github.com/python-pillow/Pillow).
+ * The implementation depends only on OpenCV, so all Pillow code has been
+ * converted to use cv::Mat and OpenCV structures.
+ * Since Pillow does not support natively all cv::Mat types, this implementation
+ * extends the support to almost all OpenCV pixel types.
  */
 class PillowResize {
 protected:
     /**
-     * \brief precision_bits 8 位精度。滤波器可能有负值区域。
-     * 在某些情况下，系数之和将为负值，或者大于 1.0。
-     * 这就是为什么我们需要额外的两位用于溢出和整数类型。
+     * \brief precision_bits 8 bits for result. Filter can have negative areas.
+     * In one case the sum of the coefficients will be negative,
+     * in the other it will be more than 1.0. That is why we need
+     * two extra bits for overflow and int type.
      */
     static constexpr uint32_t precision_bits = 32 - 8 - 2;
 
@@ -51,33 +72,34 @@ protected:
     static constexpr double lanczos_filter_support = 3.;
 
     /**
-     * \brief Filter 抽象类，用于处理不同插值方法使用的滤波器。
+     * \brief Filter Abstract class to handle the filters used by
+     * the different interpolation methods.
      */
     class Filter {
     private:
-        double _support; /** 支持区域大小（重采样滤波器的长度）。 */
+        double _support; /** Support size (length of resampling filter). */
 
     public:
         /**
-         * \brief 构造函数。
-         * 
-         * \param[in] support 支持区域大小。
+         * \brief Construct a new Filter object.
+         *
+         * \param[in] support Support size (length of resampling filter).
          */
         explicit Filter(double support) : _support{support} {};
 
         /**
-         * \brief filter 应用滤波器。
-         * 
-         * \param[in] x 输入值。
-         * 
-         * \return 滤波后的值。
+         * \brief filter Apply filter.
+         *
+         * \param[in] x Input value.
+         *
+         * \return Processed value by the filter.
          */
         [[nodiscard]] virtual double filter(double x) const = 0;
 
         /**
-         * \brief support 获取支持区域大小。
-         * 
-         * \return 支持区域大小。
+         * \brief support Get support size.
+         *
+         * \return support size.
          */
         [[nodiscard]] double support() const { return _support; };
     };
@@ -173,16 +195,17 @@ protected:
 
 #if __cplusplus >= 201703L
     /**
-     * \brief _lut 生成查找表。
+     * \brief _lut Generate lookup table.
      * \reference https://joelfilho.com/blog/2020/compile_time_lookup_tables_in_cpp/
-     * 
-     * \tparam Length 表的元素数量。
-     * \param[in] f 用于生成表中每个元素的函数对象。
-     * 
-     * \return 长度为 Length 的数组，类型由 Generator 的输出确定。
+     *
+     * \tparam Length Number of table elements.
+     * \param[in] f Functor called to generate each elements in the table.
+     *
+     * \return An array of length Length with type deduced from Generator output.
      */
     template <size_t Length, typename Generator>
-    static constexpr auto _lut(Generator&& f) {
+    static constexpr auto _lut(Generator&& f)
+    {
         using content_type = decltype(f(size_t{0}));
         std::array<content_type, Length> arr{};
         for (size_t i = 0; i < Length; ++i) {
@@ -192,10 +215,10 @@ protected:
     }
 
     /**
-     * \brief _clip8_lut Clip 查找表。
-     * 
-     * \tparam Length 表的元素数量。
-     * \tparam min_val 表的起始元素值。
+     * \brief _clip8_lut Clip lookup table.
+     *
+     * \tparam Length Number of table elements.
+     * \tparam min_val Value of the starting element.
      */
     template <size_t Length, intmax_t min_val>
     static inline constexpr auto _clip8_lut =
@@ -212,16 +235,17 @@ protected:
 #endif
 
     /**
-     * \brief _clip8 优化的裁剪函数。
-     * 
-     * \param[in] in 输入值。
-     * 
-     * \return 裁剪后的值。
+     * \brief _clip8 Optimized clip function.
+     *
+     * \param[in] in input value.
+     *
+     * \return Clipped value.
      */
-    [[nodiscard]] static uint8_t _clip8(double in) {
+    [[nodiscard]] static uint8_t _clip8(double in)
+    {
 #if __cplusplus >= 201703L
-        // 使用查找表来加速裁剪方法。
-        // 处理从 -640 到 639 的值。
+        // Lookup table to speed up clip method.
+        // Handles values from -640 to 639.
         const uint8_t* clip8_lookups =
             &_clip8_lut<1280, -640>[640];    // NOLINT
         // NOLINTNEXTLINE
@@ -239,45 +263,36 @@ protected:
     }
 
     /**
-     * \brief _roundUp 取整函数。
-     * 输出值将被转换为类型 T。
-     *      
-     * \param[in] f 输入值。
-     * 
-     * \return 四舍五入后的值。
+     * \brief _roundUp Round function.
+     * The output value will be cast to type T.
+     *
+     * \param[in] f Input value.
+     *
+     * \return Rounded value.
      */
     template <typename T>
-    [[nodiscard]] static T _roundUp(double f) {
+    [[nodiscard]] static T _roundUp(double f)
+    {
         return static_cast<T>(std::round(f));
     }
 
-    /**
-     * \brief _getPixelType 返回矩阵元素的类型。
-     * 如果矩阵具有多个通道，该函数返回元素的类型，而不包含通道信息。
-     * 例如，如果类型为 CV_16SC3，该函数返回 CV_16S。
-     * 
-     * \param[in] img 输入图像。
-     * 
-     * \return 矩阵元素类型。
-     */
-    [[nodiscard]] static int32_t _getPixelType(const cv::Mat& img) {
-        return img.type() & CV_MAT_DEPTH_MASK;    // NOLINT
-    }
 
     /**
-     * \brief _precomputeCoeffs 计算一维插值系数。
-     * 如果有一个图像（或二维矩阵），调用该方法两次，以分别计算行和列的系数。
-     * 系数针对范围 [0, out_size) 中的每个元素计算。
-     * 
-     * \param[in] in_size 输入大小（例如图像宽度或高度）。
-     * \param[in] in0 输入起始索引。
-     * \param[in] in1 输入结束索引。
-     * \param[in] out_size 输出大小。
-     * \param[in] filterp 滤波器对象的指针。
-     * \param[out] bounds 边界向量。边界是 xmin 和 xmax 的一对值。
-     * \param[out] kk 系数向量。每个元素对应函数返回的一组系数。
-     * 
-     * \return 滤波器系数的大小。
+     * \brief _precomputeCoeffs Compute 1D interpolation coefficients.
+     * If you have an image (or a 2D matrix), call the method twice to compute
+     * the coefficients for row and column either.
+     * The coefficients are computed for each element in range [0, out_size).
+     *
+     * \param[in] in_size Input size (e.g. image width or height).
+     * \param[in] in0 Input starting index.
+     * \param[in] in1 Input last index.
+     * \param[in] out_size Output size.
+     * \param[in] filterp Pointer to a Filter object.
+     * \param[out] bounds Bounds vector. A bound is a pair of xmin and xmax.
+     * \param[out] kk Coefficients vector. To each elements corresponds a number of
+     * coefficients returned by the function.
+     *
+     * \return Size of the filter coefficients.
      */
     [[nodiscard]] static int32_t _precomputeCoeffs(
         int32_t in_size,
@@ -286,30 +301,31 @@ protected:
         int32_t out_size,
         const std::shared_ptr<Filter>& filterp,
         std::vector<int32_t>& bounds,
-        std::vector<double>& kk) {
-        // 准备水平拉伸。
+        std::vector<double>& kk)
+    {
+        // Prepare for horizontal stretch.
         const double scale = (in1 - in0) / static_cast<double>(out_size);
         double filterscale = scale;
         if (filterscale < 1.0) {
             filterscale = 1.0;
         }
 
-        // 确定支持区域大小（重采样滤波器的长度）。
+        // Determine support size (length of resampling filter).
         const double support = filterp->support() * filterscale;
 
-        // 最大系数数量。
+        // Maximum number of coeffs.
         const auto k_size = static_cast<int32_t>(ceil(support)) * 2 + 1;
 
-        // 检查溢出
+        // Check for overflow
         if (out_size >
             INT32_MAX / (k_size * static_cast<int32_t>(sizeof(double)))) {
             throw std::runtime_error("Memory error");
         }
 
-        // 系数缓冲区。
+        // Coefficient buffer.
         kk.resize(out_size * k_size);
 
-        // 边界向量。
+        // Bounds vector.
         bounds.resize(out_size * 2);
 
         int32_t x = 0;
@@ -318,12 +334,12 @@ protected:
             double center = in0 + (xx + half_pixel) * scale;
             double ww = 0.0;
             double ss = 1.0 / filterscale;
-            // 取整值。
+            // Round the value.
             auto xmin = static_cast<int32_t>(center - support + half_pixel);
             if (xmin < 0) {
                 xmin = 0;
             }
-            // 取整值。
+            // Round the value.
             auto xmax = static_cast<int32_t>(center + support + half_pixel);
             if (xmax > in_size) {
                 xmax = in_size;
@@ -340,7 +356,7 @@ protected:
                     k[x] /= ww;    // NOLINT
                 }
             }
-            // 如果 xmax 之后的值被使用，剩余的值应保持为空。
+            // Remaining values should stay empty if they are used despite of xmax.
             for (; x < k_size; ++x) {
                 k[x] = 0;    // NOLINT
             }
@@ -351,14 +367,15 @@ protected:
     }
 
     /**
-     * \brief _normalizeCoeffs8bpc 为每像素 8 位的矩阵归一化系数。
-     * 
-     * \param[in] prekk 滤波器系数。
-     * 
-     * \return 归一化的滤波器系数。
+     * \brief _normalizeCoeffs8bpc Normalize coefficients for 8 bit per pixel matrix.
+     *
+     * \param[in] prekk Filter coefficients.
+     *
+     * \return Filter coefficients normalized.
      */
     [[nodiscard]] static std::vector<double> _normalizeCoeffs8bpc(
-        const std::vector<double>& prekk) {
+        const std::vector<double>& prekk)
+    {
         std::vector<double> kk;
         kk.reserve(prekk.size());
 
@@ -376,81 +393,6 @@ protected:
         return kk;
     }
 
-    /**
-     * \brief _resampleHorizontal 在水平轴上应用重采样。
-     * 根据 cv::Mat::type() 的返回值，调用具有正确像素类型的 _resampleHorizontal。
-     * 
-     * \param[in, out] im_out 输出调整大小的矩阵。
-     *                        矩阵必须事先使用正确的大小进行初始化。
-     * \param[in] im_in 输入矩阵。
-     * \param[in] offset 垂直偏移量（源图像中第一个使用的行）。
-     * \param[in] ksize 插值滤波器大小。
-     * \param[in] bounds 插值滤波器边界（要考虑的最小和最大列的值）。
-     * \param[in] prekk 插值滤波器系数。
-     */
-    static void _resampleHorizontal(cv::Mat& im_out,
-                                    const cv::Mat& im_in,
-                                    int32_t offset,
-                                    int32_t ksize,
-                                    const std::vector<int32_t>& bounds,
-                                    const std::vector<double>& prekk) {
-        // 检查像素类型并确定像素大小（元素大小 * 通道数）。
-        switch (_getPixelType(im_in)) {
-            case CV_8U:
-                _resampleHorizontal<uint8_t>(
-                    im_out, im_in, offset, ksize, bounds, prekk,
-                    _normalizeCoeffs8bpc,
-                    static_cast<double>(1U << (precision_bits - 1U)), _clip8);
-                break;
-            case CV_8S:
-                _resampleHorizontal<int8_t>(im_out, im_in, offset, ksize,
-                                            bounds, prekk, nullptr, 0.,
-                                            _roundUp<int8_t>);
-                break;
-            case CV_16U:
-                _resampleHorizontal<uint16_t>(im_out, im_in, offset, ksize,
-                                              bounds, prekk);
-                break;
-            case CV_16S:
-                _resampleHorizontal<int16_t>(im_out, im_in, offset, ksize,
-                                             bounds, prekk, nullptr, 0.,
-                                             _roundUp<int16_t>);
-                break;
-            case CV_32S:
-                _resampleHorizontal<int32_t>(im_out, im_in, offset, ksize,
-                                             bounds, prekk, nullptr, 0.,
-                                             _roundUp<int32_t>);
-                break;
-            case CV_32F:
-                _resampleHorizontal<float>(im_out, im_in, offset, ksize,
-                                           bounds, prekk);
-                break;
-            default:
-                throw std::runtime_error("Pixel type not supported");
-        }
-    }
-
-    /**
-     * \brief _resampleVertical 在垂直轴上应用重采样。
-     * 根据 cv::Mat::type() 的返回值，调用具有正确像素类型的 _resampleVertical。
-     * 
-     * \param[in, out] im_out 输出调整大小的矩阵。
-     *                        矩阵必须事先使用正确的大小进行初始化。
-     * \param[in] im_in 输入矩阵。
-     * \param[in] ksize 插值滤波器大小。
-     * \param[in] bounds 插值滤波器边界（要考虑的最小和最大行的值）。
-     * \param[in] prekk 插值滤波器系数。
-     */
-    static void _resampleVertical(cv::Mat& im_out,
-                                  const cv::Mat& im_in,
-                                  int32_t ksize,
-                                  const std::vector<int32_t>& bounds,
-                                  const std::vector<double>& prekk) {
-        im_out = im_out.t();
-        _resampleHorizontal(im_out, im_in.t(), 0, ksize, bounds, prekk);
-        im_out = im_out.t();
-    }
-
     using preprocessCoefficientsFn =
         std::vector<double> (*)(const std::vector<double>&);
 
@@ -458,51 +400,53 @@ protected:
     using outMapFn = T (*)(double);
 
     /**
-     * \brief _resampleHorizontal 在水平轴上应用重采样。
-     *      
-     * \param[in, out] im_out 输出调整大小的矩阵。
-     *                        矩阵必须事先使用正确的大小进行初始化。
-     * \param[in] im_in 输入矩阵。
-     * \param[in] offset 垂直偏移量（源图像中第一个使用的行）。
-     * \param[in] ksize 插值滤波器大小。
-     * \param[in] bounds 插值滤波器边界（滤波器要考虑的最小和最大像素的索引）。
-     * \param[in] prekk 插值滤波器系数。
-     * \param[in] preprocessCoefficients 用于处理滤波器系数的函数。
-     * \param[in] init_buffer 像素缓冲区的初始值（默认值：0.0）。
-     * \param[in] outMap 用于将插值后像素值转换为输出像素的函数。
+     * \brief _resampleHorizontal Apply resample along the horizontal axis.
+     *
+     * \param[in, out] im_out Output resized matrix.
+     *                       The matrix has to be previously initialized with right size.
+     * \param[in] im_in Input matrix.
+     * \param[in] offset Vertical offset (first used row in the source image).
+     * \param[in] ksize Interpolation filter size.
+     * \param[in] bounds Interpolation filter bounds (index of min and max pixel
+     *                   to be considered by the filter).
+     * \param[in] prekk Interpolation filter coefficients.
+     * \param[in] preprocessCoefficients Function used to process the filter coefficients.
+     * \param[in] init_buffer Initial value of pixel buffer (default: 0.0).
+     * \param[in] outMap Function used to convert the value of the pixel after
+     *                   the interpolation into the output pixel.
      */
     template <typename T>
-    static void _resampleHorizontal(
-        cv::Mat& im_out,
-        const cv::Mat& im_in,
+    static void _resampleHorizontalImpl(
+        ResizeMat im_out,
+        const ResizeMat im_in,
         int32_t offset,
         int32_t ksize,
         const std::vector<int32_t>& bounds,
         const std::vector<double>& prekk,
         preprocessCoefficientsFn preprocessCoefficients = nullptr,
         double init_buffer = 0.,
-        outMapFn<T> outMap = nullptr) {
+        outMapFn<T> outMap = nullptr)
+    {
         std::vector<double> kk(prekk.begin(), prekk.end());
-        // 如果需要，预处理系数。
+        // Preprocess coefficients if needed.
         if (preprocessCoefficients != nullptr) {
             kk = preprocessCoefficients(kk);
         }
 
-        for (int32_t yy = 0; yy < im_out.size().height; ++yy) {
-            for (int32_t xx = 0; xx < im_out.size().width; ++xx) {
+        for (int32_t yy = 0; yy < im_out.height; ++yy) {
+            for (int32_t xx = 0; xx < im_out.width; ++xx) {
                 const int32_t xmin = bounds[xx * 2 + 0];
                 const int32_t xmax = bounds[xx * 2 + 1];
                 const double* k = &kk[xx * ksize];
-                for (int32_t c = 0; c < im_in.channels(); ++c) {
-                    double ss = init_buffer;
+                for (int32_t c = 0; c < 3; ++c) {
+                    double ss = 0.0;
                     for (int32_t x = 0; x < xmax; ++x) {
-                        // NOLINTNEXTLINE
                         ss += static_cast<double>(
-                                  im_in.ptr<T>(yy + offset, x + xmin)[c]) *
+                            ((unsigned char*)im_in.data + ((yy + offset) * im_in.width + x + xmin) * im_in.channels)[c]) *
                               k[x];
                     }
                     // NOLINTNEXTLINE
-                    im_out.ptr<T>(yy, xx)[c] =
+                    ((unsigned char*)im_out.data + (yy * im_out.width + xx) * im_out.channels)[c] =
                         (outMap == nullptr ? static_cast<T>(ss) : outMap(ss));
                 }
             }
@@ -510,210 +454,285 @@ protected:
     }
 
     /**
-     * \brief _resample 使用指定的插值方法调整矩阵大小。
-     * 
-     * \param[in] im_in 输入矩阵。
-     * \param[in] x_size 期望的输出宽度。
-     * \param[in] y_size 期望的输出高度。
-     * \param[in] filter_p 插值滤波器的指针。
-     * \param[in] rect 要调整大小的输入区域。
-     *                 区域由四个点 x0, y0, x1, y1 定义的向量。
-     * 
-     * \return 调整大小的矩阵。矩阵的类型将与 im_in 相同。
+     * \brief _resampleHorizontal Apply resample along the horizontal axis.
+     * It calls the _resampleHorizontal with the correct pixel type using
+     * the value returned by cv::Mat::type().
+     *
+     * \param[in, out] im_out Output resized matrix.
+     *                        The matrix has to be previously initialized with right size.
+     * \param[in] im_in Input matrix.
+     * \param[in] offset Vertical offset (first used row in the source image).
+     * \param[in] ksize Interpolation filter size.
+     * \param[in] bounds Interpolation filter bounds (value of the min and max column
+     *                   to be considered by the filter).
+     * \param[in] prekk Interpolation filter coefficients.
      */
-    [[nodiscard]] static cv::Mat _resample(
-        const cv::Mat& im_in,
+    static void _resampleHorizontal(ResizeMat im_out,
+                                    const ResizeMat im_in,
+                                    int32_t offset,
+                                    int32_t ksize,
+                                    const std::vector<int32_t>& bounds,
+                                    const std::vector<double>& prekk)
+    {
+        switch (im_in.pixel_type) {
+            case UINT8:
+                return _resampleHorizontalImpl<uint8_t>(
+                    im_out, im_in, offset, ksize, bounds, prekk,
+                    _normalizeCoeffs8bpc, static_cast<double>(1U << (precision_bits - 1U)), _clip8);
+            default:
+                throw std::runtime_error("Unsupported pixel type");
+        }
+    }
+
+    /**
+     * \brief _resample Resize a matrix using the specified interpolation method.
+     *
+     * \param[in] im_in Input matrix.
+     * \param[in] im_out Output matrix.
+     * \param[in] x_size Desidered output width.
+     * \param[in] y_size Desidered output height.
+     * \param[in] filter_p Pointer to the interpolation filter.
+     * \param[in] rect Input region that has to be resized.
+     *                 Region is defined as a vector of 4 point x0,y0,x1,y1.
+     */
+    static void _resample(
+        const ResizeMat im_in,
+        const ResizeMat im_out,
         int32_t x_size,
         int32_t y_size,
         const std::shared_ptr<Filter>& filter_p,
-        const cv::Vec4f& rect) {
-        cv::Mat im_out;
-        cv::Mat im_temp;
+        const float rect[4])
+    {
+        ResizeMat im_temp;
 
         std::vector<int32_t> bounds_horiz;
         std::vector<int32_t> bounds_vert;
         std::vector<double> kk_horiz;
         std::vector<double> kk_vert;
 
-        const bool need_horizontal = x_size != im_in.size().width ||
+        const bool need_horizontal = x_size != im_in.width ||
                                      (rect[0] != 0.0F) ||
                                      static_cast<int32_t>(rect[2]) != x_size;
-        const bool need_vertical = y_size != im_in.size().height ||
+        const bool need_vertical = y_size != im_in.height ||
                                    (rect[1] != 0.0F) ||
                                    static_cast<int32_t>(rect[3]) != y_size;
 
-        // 计算水平滤波器系数。
+        // Compute horizontal filter coefficients.
         const int32_t ksize_horiz =
-            _precomputeCoeffs(im_in.size().width, rect[0], rect[2], x_size,
+            _precomputeCoeffs(im_in.width, rect[0], rect[2], x_size,
                               filter_p, bounds_horiz, kk_horiz);
 
-        // 计算垂直滤波器系数。
+        // Compute vertical filter coefficients.
         const int32_t ksize_vert =
-            _precomputeCoeffs(im_in.size().height, rect[1], rect[3], y_size,
+            _precomputeCoeffs(im_in.height, rect[1], rect[3], y_size,
                               filter_p, bounds_vert, kk_vert);
 
-        // 源图像中第一个使用的行。
+        // First used row in the source image.
         const int32_t ybox_first = bounds_vert[0];
-        // 源图像中最后一个使用的行。
+        // Last used row in the source image.
         const int32_t ybox_last =
             bounds_vert[y_size * 2 - 2] + bounds_vert[y_size * 2 - 1];
 
-        // 两次调整大小，水平通道。
+        // Two-pass resize, horizontal pass.
         if (need_horizontal) {
-            // 为垂直通道调整边界。
+            // Shift bounds for vertical pass.
             for (int32_t i = 0; i < y_size; ++i) {
                 bounds_vert[i * 2] -= ybox_first;
             }
 
-            // 创建具有期望输出宽度和与输入像素类型相同的目标图像。
-            im_temp.create(ybox_last - ybox_first, x_size, im_in.type());
-            if (!im_temp.empty()) {
-                _resampleHorizontal(im_temp, im_in, ybox_first, ksize_horiz,
-                                    bounds_horiz, kk_horiz);
-            }
-            else {
-                return cv::Mat();
-            }
-            im_out = im_temp;
+            // Create destination image with desired ouput width and same input pixel type.
+            if (need_vertical) {
+                im_temp.width = x_size;
+                im_temp.height = ybox_last - ybox_first;
+                im_temp.channels = im_in.channels;
+                im_temp.pixel_type = im_in.pixel_type;
+                im_temp.data = (unsigned long)malloc(im_temp.width * im_temp.height * im_in.channels);
+            } else
+                im_temp = im_out;
+            _resampleHorizontal(im_temp, im_in, ybox_first, ksize_horiz,
+                                bounds_horiz, kk_horiz);
         }
 
-        // 垂直通道。
+        // Vertical pass.
         if (need_vertical) {
-            // 创建具有期望输出大小和与输入像素类型相同的目标图像。
-
-            const auto new_w =
-                (im_temp.size().width != 0) ? im_temp.size().width : x_size;
-            im_out.create(y_size, new_w, im_in.type());
-            if (!im_out.empty()) {
-                if (im_temp.empty()) {
-                    im_temp = im_in;
-                }
-                // 输入可以是原始图像或水平重采样的图像。
-                _resampleVertical(im_out, im_temp, ksize_vert, bounds_vert,
-                                  kk_vert);
-            }
-            else {
-                return cv::Mat();
-            }
+            // Create destination image with desired ouput size and same input pixel type.
+            if (!need_horizontal)
+                im_temp = im_in;
+            // Input can be the original image or horizontally resampled one.
+            _resampleVertical(im_out, im_temp, ksize_vert, bounds_vert,
+                                kk_vert);
+            if (need_horizontal)
+                free((void*)im_temp.data);
         }
-
-        // 没有执行任何前面的步骤，直接复制。
-        if (im_out.empty()) {
-            im_out = im_in;
-        }
-
-        return im_out;
+        return;
     }
 
     /**
-     * \brief _nearestResample 使用最近邻插值调整矩阵大小。
-     * 
-     * \param[in] im_in 输入矩阵。
-     * \param[in] x_size 期望的输出宽度。
-     * \param[in] y_size 期望的输出高度。
-     * \param[in] rect 要调整大小的输入区域。
-     *                 区域由四个点 x0, y0, x1, y1 定义的向量。
-     * 
-     * \return 调整大小的矩阵。矩阵的类型将与 im_in 相同。
-     * 
-     * \throws std::runtime_error 如果输入矩阵类型不受支持。
+     * \brief _nearestResample Resize a matrix using nearest neighbor interpolation.
+     *
+     * \param[in] im_in Input matrix.
+     * \param[in] im_out Output matrix.
+     * \param[in] x_size Desidered output width.
+     * \param[in] y_size Desidered output height.
+     * \param[in] rect Input region that has to be resized.
+     *                 Region is defined as a vector of 4 point x0,y0,x1,y1.
      */
-    [[nodiscard]] static cv::Mat _nearestResample(const cv::Mat& im_in,
-                                                  int32_t x_size,
-                                                  int32_t y_size,
-                                                  const cv::Vec4f& rect) {
+    static void _nearestResample(const ResizeMat im_in,
+                                        const ResizeMat im_out,
+                                        int32_t x_size,
+                                        int32_t y_size,
+                                        const float rect[4])
+    {
         auto rx0 = static_cast<int32_t>(rect[0]);
         auto ry0 = static_cast<int32_t>(rect[1]);
         auto rx1 = static_cast<int32_t>(rect[2]);
         auto ry1 = static_cast<int32_t>(rect[3]);
         rx0 = std::max(rx0, 0);
         ry0 = std::max(ry0, 0);
-        rx1 = std::min(rx1, im_in.size().width);
-        ry1 = std::min(ry1, im_in.size().height);
+        rx1 = std::min(rx1, (int32_t)im_in.width);
+        ry1 = std::min(ry1, (int32_t)im_in.height);
 
-        // 仿射变换矩阵。
-        cv::Mat m = cv::Mat::zeros(2, 3, CV_64F);
-        m.at<double>(0, 0) =
-            static_cast<double>(rx1 - rx0) / static_cast<double>(x_size);
-        m.at<double>(0, 2) = static_cast<double>(rx0);
-        m.at<double>(1, 1) =
-            static_cast<double>(ry1 - ry0) / static_cast<double>(y_size);
-        m.at<double>(1, 2) = static_cast<double>(ry0);
+        double m[2][3] =
+            {{static_cast<double>(rx1 - rx0) / static_cast<double>(x_size), 0, static_cast<double>(rx0)},
+            {0, static_cast<double>(ry1 - ry0) / static_cast<double>(y_size), static_cast<double>(ry0)}};
 
-        cv::Mat im_out = cv::Mat::zeros(y_size, x_size, im_in.type());
-
-        // 检查像素类型并确定像素大小（元素大小 * 通道数）。
+        // Check pixel type and determine the pixel size
+        // (element size * number of channels).
         size_t pixel_size = 0;
-        switch (_getPixelType(im_in)) {
-            case CV_8U:
+        switch (im_in.pixel_type) {
+            case UINT8:
                 pixel_size = sizeof(uint8_t);
                 break;
-            case CV_8S:
+            case INT8:
                 pixel_size = sizeof(int8_t);
                 break;
-            case CV_16U:
+            case UINT16:
                 pixel_size = sizeof(uint16_t);
                 break;
-            case CV_16S:
+            case INT16:
                 pixel_size = sizeof(int16_t);
                 break;
-            case CV_32S:
+            case INT32:
                 pixel_size = sizeof(int32_t);
                 break;
-            case CV_32F:
+            case FLOAT32:
                 pixel_size = sizeof(float);
                 break;
             default:
                 throw std::runtime_error("Pixel type not supported");
         }
-        pixel_size *= im_in.channels();
+        pixel_size *= im_in.channels;
 
         const int32_t x0 = 0;
         const int32_t y0 = 0;
         const int32_t x1 = x_size;
         const int32_t y1 = y_size;
 
-        double xo = m.at<double>(0, 2) + m.at<double>(0, 0) * 0.5;
-        double yo = m.at<double>(1, 2) + m.at<double>(1, 1) * 0.5;
+        double xo = m[0][2] + m[0][0] * 0.5;
+        double yo = m[1][2] + m[1][1] * 0.5;
 
         auto coord = [](double x) -> int32_t {
             return x < 0. ? -1 : static_cast<int32_t>(x);
         };
 
         std::vector<int> xintab;
-        xintab.resize(im_out.size().width);
+        xintab.resize(im_out.width);
 
-        /* 预先计算水平像素位置 */
+        /* Pretabulate horizontal pixel positions */
         int32_t xmin = x1;
         int32_t xmax = x0;
         for (int32_t x = x0; x < x1; ++x) {
             int32_t xin = coord(xo);
-            if (xin >= 0 && xin < im_in.size().width) {
+            if (xin >= 0 && xin < im_in.width) {
                 xmax = x + 1;
                 if (x < xmin) {
                     xmin = x;
                 }
                 xintab[x] = xin;
             }
-            xo += m.at<double>(0, 0);
+            xo += m[0][0];
         }
 
         for (int32_t y = y0; y < y1; ++y) {
             int32_t yi = coord(yo);
-            if (yi >= 0 && yi < im_in.size().height) {
+            if (yi >= 0 && yi < im_in.height) {
                 for (int32_t x = xmin; x < xmax; ++x) {
-                    memcpy(im_out.ptr(y, x), im_in.ptr(yi, xintab[x]), pixel_size);
+                    memcpy((unsigned char*)(im_out.data) + (y * im_out.width + x) * pixel_size,
+                        (unsigned char*)(im_in.data) + (yi * im_in.width + xintab[x]) * pixel_size, pixel_size);
                 }
             }
-            yo += m.at<double>(1, 1);
+            yo += m[1][1];
         }
 
-        return im_out;
+        return;
+    }
+
+    /**
+     * \brief transpose Transpose the image matrix.
+     *
+     * \param[in, out] dst Destination matrix.
+     * \param[in] src Source matrix.
+     */
+    static void transpose(ResizeMat dst,
+                   const ResizeMat src) {
+        size_t h = src.height;
+        size_t w = src.width;
+        size_t c = src.channels;
+        unsigned char * dst_addr = (unsigned char *)dst.data;
+        unsigned char * src_addr = (unsigned char *)src.data;
+
+        for (size_t i = 0; i < h; ++i) {
+            for (size_t j = 0; j < w; ++j) {
+                dst_addr[(j * h + i) * c] = src_addr[(i * w + j) * c];
+                dst_addr[(j * h + i) * c + 1] = src_addr[(i * w + j) * c + 1];
+                dst_addr[(j * h + i) * c + 2] = src_addr[(i * w + j) * c + 2];
+            }
+        }
+    }
+
+    /**
+     * \brief _resampleVertical Apply resample along the vertical axis.
+     * It calls the _resampleVertical with the correct pixel type using
+     * the value returned by cv::Mat::type().
+     *
+     * \param[in, out] im_out Output resized matrix.
+     *                        The matrix has to be previously initialized with right size.
+     * \param[in] im_in Input matrix.
+     * \param[in] ksize Interpolation filter size.
+     * \param[in] bounds Interpolation filter bounds (value of the min and max row
+     *                   to be considered by the filter).
+     * \param[in] prekk Interpolation filter coefficients.
+     */
+    static void _resampleVertical(ResizeMat im_out,
+                                  const ResizeMat im_in,
+                                  int32_t ksize,
+                                  const std::vector<int32_t>& bounds,
+                                  const std::vector<double>& prekk)
+    {
+        ResizeMat im_int, im_outt;
+        im_int.width = im_in.height;
+        im_int.height = im_in.width;
+        im_int.channels = im_in.channels;
+        im_int.pixel_type = im_in.pixel_type;
+        im_int.data = (unsigned long)malloc(im_int.width * im_int.height * im_int.channels);
+        im_outt.width = im_out.height;
+        im_outt.height = im_out.width;
+        im_outt.channels = im_out.channels;
+        im_outt.pixel_type = im_out.pixel_type;
+        im_outt.data = (unsigned long)malloc(im_outt.width * im_outt.height * im_int.channels);
+
+        transpose(im_int, im_in);
+        _resampleHorizontal(im_outt, im_int, 0, ksize, bounds, prekk);
+
+        transpose(im_out, im_outt);
+        free((void*)im_int.data);
+        free((void*)im_outt.data);
+        return;
     }
 
 public:
     /**
-     * \brief InterpolationMethods 插值方法。
+     * \brief InterpolationMethods Interpolation methods.
      *
      * \see https://pillow.readthedocs.io/en/stable/handbook/concepts.html#concept-filters.
      */
@@ -727,27 +746,30 @@ public:
     };
 
     /**
-     * \brief resize 移植 Pillow 的 resize 方法。
-     * 
-     * \param[in] src 要处理的输入矩阵。
-     * \param[in] out_size 输出矩阵大小。
-     * \param[in] filter 插值方法代码，请参阅 InterpolationMethods。
-     * \param[in] box 输入 ROI。只有框内的元素会被调整大小。
-     * 
-     * \return 调整大小的矩阵。
-     * 
-     * \throw std::runtime_error 如果框无效、插值滤波器或输入矩阵类型不受支持。
+     * \brief resize Porting of Pillow resize method.
+     *
+     * \param[in] src Input matrix that has to be processed.
+     * \param[in] out Output matrix that will store the resized image.
+     * \param[in] filter Interpolation method code, see InterpolationMethods.
+     * \param[in] box Input roi. Only the elements inside the box will be resized.
+     *
+     * \return None. The resized image is stored in 'out'.
+     *
+     * \throw std::runtime_error In case the box is invalid, the interpolation filter
+     *        or the input matrix type are not supported.
      */
-    [[nodiscard]] static cv::Mat resize(const cv::Mat& src,
-                                        const cv::Size& out_size,
+    static void resize(const ResizeMat src,
+                                        const ResizeMat out,
                                         int32_t filter,
-                                        const cv::Rect2f& box) {
+                                        const float box[4])
+    {
         // Box = x0,y0,w,h
         // Rect = x0,y0,x1,y1
-        const cv::Vec4f rect(box.x, box.y, box.x + box.width, box.y + box.height);
+        const float rect[4] = {0, 0, box[2], box[3]};
 
-        const int32_t x_size = out_size.width;
-        const int32_t y_size = out_size.height;
+        const int32_t x_size = out.width;
+        const int32_t y_size = out.height;
+        const int32_t c_size = out.channels;
         if (x_size < 1 || y_size < 1) {
             throw std::runtime_error("Height and width must be > 0");
         }
@@ -756,27 +778,28 @@ public:
             throw std::runtime_error("Box offset can't be negative");
         }
 
-        if (static_cast<int32_t>(rect[2]) > src.size().width ||
-            static_cast<int32_t>(rect[3]) > src.size().height) {
+        if (static_cast<int32_t>(rect[2]) > src.width ||
+            static_cast<int32_t>(rect[3]) > src.height) {
             throw std::runtime_error("Box can't exceed original image size");
         }
 
-        if (box.width < 0 || box.height < 0) {
+        if (box[2] < 0 || box[3] < 0) {
             throw std::runtime_error("Box can't be empty");
         }
 
-        // 如果框的坐标是整数并且框大小与请求的大小匹配
-        if (static_cast<int32_t>(box.width) == x_size &&
-            static_cast<int32_t>(box.height) == y_size) {
-            cv::Rect roi = box;
-            return cv::Mat(src, roi);
+        // If box's coordinates are int and box size matches requested size
+        if (static_cast<int32_t>(box[2]) == x_size &&
+            static_cast<int32_t>(box[3]) == y_size) {
+            memcpy((void*)out.data, (void*)src.data, x_size * y_size * c_size);
+            return;
         }
         if (filter == INTERPOLATION_NEAREST) {
-            return _nearestResample(src, x_size, y_size, rect);
+            _nearestResample(src, out, x_size, y_size, rect);
+            return;
         }
         std::shared_ptr<Filter> filter_p;
 
-        // 检查滤波器。
+        // Check filter.
         switch (filter) {
             case INTERPOLATION_BOX:
                 filter_p = std::make_shared<BoxFilter>(BoxFilter());
@@ -797,27 +820,30 @@ public:
                 throw std::runtime_error("unsupported resampling filter");
         }
 
-        return PillowResize::_resample(src, x_size, y_size, filter_p, rect);
+        _resample(src, out, x_size, y_size, filter_p, rect);
+        return;
     }
 
     /**
-     * \brief resize 移植 Pillow 的 resize 方法。
-     * 
-     * \param[in] src 要处理的输入矩阵。
-     * \param[in] out_size 输出矩阵大小。
-     * \param[in] filter 插值方法代码，请参阅 InterpolationMethods。
-     * 
-     * \return 调整大小的矩阵。
-     * 
-     * \throw std::runtime_error 如果框无效、插值滤波器或输入矩阵类型不受支持。
+     * \brief resize Porting of Pillow resize method.
+     *
+     * \param[in] src Input matrix that has to be processed.
+     * \param[in] out Output matrix that will store the resized image.
+     * \param[in] filter Interpolation method code, see InterpolationMethods.
+     *
+     * \return None. The resized image is stored in 'out'.
+     *
+     * \throw std::runtime_error In case the interpolation filter
+     *        or the input matrix type are not supported.
      */
-    [[nodiscard]] static cv::Mat resize(const cv::Mat& src,
-                                        const cv::Size& out_size,
-                                        int32_t filter) {
-        cv::Rect2f box(0.F, 0.F, static_cast<float>(src.size().width),
-                       static_cast<float>(src.size().height));
-        return resize(src, out_size, filter, box);
+    static void resize(const ResizeMat src,
+                                        const ResizeMat out,
+                                        int32_t filter)
+    {
+        float box[4] = {0.F, 0.F, static_cast<float>(src.width), static_cast<float>(src.height)};
+        resize(src, out, filter, box);
+        return;
     }
 };
 
-#endif
+#endif // PILLOWRESIZE_HPP
