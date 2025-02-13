@@ -128,6 +128,10 @@ git clone https://github.com/sophgo/LLM-TPU.git
 
 请参考[LLM-TPU常见问题及解答](./docs/FAQ.md)
 
+# 精度优化
+
+请参考[大模型精度优化](./docs/Score_Refine.md)
+
 # 资料链接
 
 * ChatGLM2流程解析与TPU-MLIR部署：https://zhuanlan.zhihu.com/p/641975976
