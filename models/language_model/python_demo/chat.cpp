@@ -26,6 +26,7 @@
 #include "bmruntime_interface.h"
 #include "memory.h"
 #include "utils.h"
+#include "cv_utils.h"
 
 static const float ATTENTION_MASK = -10000.;
 
@@ -45,7 +46,7 @@ public:
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
   // Image Processing
-  std::vector<float> preprocess_image(const std::string &image_path);
+  void process_image(const std::string &image_path);
 
   std::mt19937 sgen;
   bool vision_enabled = false;
@@ -288,6 +289,7 @@ void Model::dynamic_net_launch(const bm_net_info_t *net, int token_length,
 void Model::load_bmodel(const std::vector<int> &devices,
                         const std::string &model_path) {
   // Device Initialization
+  ASSERT(devices.size() == 1, "not support multi device");
   std::cout << "Initializing devices...\n";
   std::cout << "Device [ " << devices[0] << " ] loading .....\n";
   bm_status_t status = bm_dev_request(&bm_handle, devices[0]);
@@ -342,7 +344,7 @@ void Model::init_network() {
     VIT_DIMS = net_vit->stages[0].input_shapes[0].dims[1];
     auto status = bm_malloc_device_byte(
         bm_handle, &dev_buffer,
-        bm_mem_get_device_size(net_embed->stages[0].output_mems[0]));
+        bm_mem_get_device_size(net_blocks[0]->stages[0].input_mems[2]));
     ASSERT(status == BM_SUCCESS, "malloc memory failed");
   }
 
@@ -538,6 +540,24 @@ bm_device_mem_t Model::embedding_launch(const bm_net_info_t *net0,
     throw std::runtime_error("embedding launch error");
   }
   return out_mem;
+}
+
+void Model::process_image(const std::string &image_path) {
+  int width, height, channels;
+  auto image = read_image(image_path.c_str(), width, height, channels);
+
+  if (model_type == "qwen2_vl") {
+    std::vector<float> image_mean = {0.48145466f, 0.4578275f, 0.40821073f};
+    std::vector<float> image_std = {0.26862954f, 0.26130258f, 0.27577711f};
+
+    auto resized = smart_resize(height, width);
+    int resized_height = resized.first;
+    int resized_width = resized.second;
+    auto resized_image = bicubic_resize(image, channels, height, width, resized_height, resized_width, image_mean, image_std);
+  }
+
+
+  return ;
 }
 
 void Model::vit_launch(const std::vector<float> &pixel_values, int vit_offset,
@@ -762,6 +782,7 @@ PYBIND11_MODULE(chat, m) {
            pybind11::arg("vit_offset") = 0,
            pybind11::arg("valid_vit_length") = 0)
       .def("forward_next", &Model::forward_next)
+      .def("process_image", &Model::process_image)
       .def("deinit", &Model::deinit)
       .def_readwrite("model_type", &Model::model_type)
       .def_readwrite("SEQLEN", &Model::SEQLEN)

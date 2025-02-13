@@ -3,7 +3,8 @@ import json
 import time
 import random
 import argparse
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoProcessor
+import torch
 
 import sys
 
@@ -18,23 +19,25 @@ class Model:
         with open(config_path, 'r') as file:
             self.config = json.load(file)
 
-        # Initialize model-specific mapper dynamically
+        # Initialize model
         self.model_type = args.model_type if args.model_type else self.config['model_type']
-        self.map(self.model_type, self.tokenizer_path)
+        self.model = chat.Model()
+        self.init_params(args)
+
+        # Initialize model-specific mapper dynamically
+        self.map(args)
 
         # warm up
         self.tokenizer.decode([0])
+        self.init_history()
 
-        # Initialize model
-        import chat
-        self.model = chat.Model()
-        self.init_params(args)
-        self.load_model(args.model_path, read_bmodel=True)
+        # load model
+        self.load_model(args, read_bmodel=True)
 
-    def map(self, model_type, tokenizer_path):
+    def map(self, args):
         """Abstract model-specific mapper into a dictionary."""
-        if model_type == "qwen2":
-            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
+        if self.model_type == "qwen2":
+            self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
             self.EOS = [self.tokenizer.eos_token_id]
             self.append_user = lambda history, input_str: history.append(
                 {"role": "user", "content": input_str}
@@ -46,23 +49,8 @@ class Model:
                 history, tokenize=False, add_generation_prompt=True
             )
             self.system_prompt = {"role": "system", "content": "You are a helpful assistant."}
-        elif model_type == "qwen2.5":
-            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
-            ID_IM_END = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
-            ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
-            self.EOS = [self.tokenizer.eos_token_id, ID_IM_END, ID_END]
-            self.append_user = lambda history, input_str: history.append(
-                {"role": "user", "content": input_str}
-            )
-            self.append_assistant = lambda history, answer_str: history.append(
-                {"role": "assistant", "content": answer_str}
-            )
-            self.apply_chat_template = lambda history: self.tokenizer.apply_chat_template(
-                history, tokenize=False, add_generation_prompt=True
-            )
-            self.system_prompt = {"role": "system", "content": "You are Qwen, created by Alibaba Cloud. You are a helpful assistant."}
-        elif model_type == "qwen":
-            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
+        elif self.model_type == "qwen":
+            self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
             self.EOS = [self.tokenizer.im_end_id]
             self.append_user = lambda history, input_str: history.append(
                 "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n".format(input_str)
@@ -70,8 +58,8 @@ class Model:
             self.append_assistant = lambda history, answer_str: history.append(answer_str)
             self.apply_chat_template = lambda history: "".join(history)
             self.system_prompt = "<|im_start|>system\nYou are a helpful assistant."
-        elif model_type == "llama":
-            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True, use_fast=False)
+        elif self.model_type == "llama":
+            self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True, use_fast=False)
             self.system_prompt = "<s>[INST] <<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. " \
                                  "Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. " \
                                  "Please ensure that your responses are socially unbiased and positive in nature. " \
@@ -86,8 +74,8 @@ class Model:
             )
             self.apply_chat_template = lambda history: "".join(history)
             self.tokenizer.add_prefix_space = False
-        elif model_type == "llama3":
-            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
+        elif self.model_type == "llama3":
+            self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
             self.system_prompt = {"role": "system", "content": "You are a helpful assistant."}
             self.EOS = [self.tokenizer.eos_token_id, self.tokenizer.convert_tokens_to_ids("<|eot_id|>")]
             self.append_user = lambda history, input_str: history.append(
@@ -99,8 +87,8 @@ class Model:
             self.apply_chat_template = lambda history: self.tokenizer.apply_chat_template(
                 history, tokenize=False, add_generation_prompt=True
             )
-        elif model_type == "lwm":
-            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
+        elif self.model_type == "lwm":
+            self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
             self.system_prompt = "You are a helpful assistant."
             self.EOS = [self.tokenizer.eos_token_id]
             self.append_user = lambda history, input_str: history.append(
@@ -111,11 +99,37 @@ class Model:
             )
             self.apply_chat_template = lambda history: "".join(history)
             self.tokenizer.add_prefix_space = False
+
+        # VISION
         else:
-            raise NotImplementedError(f"{model_type} not support now")
+            self.enable_vision = True
+            processor_path = os.path.join(args.dir_path, "processor")
+            if self.model_type == "qwen2_vl":
+                self.processor = AutoProcessor.from_pretrained(processor_path, trust_remote_code=True)
+                self.tokenizer = self.processor.tokenizer
+                self.EOS = [self.tokenizer.convert_tokens_to_ids("<|end|>"), self.tokenizer.convert_tokens_to_ids("<|im_end|>")]
+                self.model.spatial_merge_size = self.config["vision_config"]["spatial_merge_size"]
+                self.append_user = lambda history, input_str: history.append(
+                    {"role": "user", "content": input_str}
+                )
+                self.append_assistant = lambda history, answer_str: history.append(
+                    {"role": "assistant", "content": answer_str}
+                )
+                self.apply_chat_template = lambda history: self.tokenizer.apply_chat_template(
+                    history, tokenize=False, add_generation_prompt=True
+                )
+                self.system_prompt = {"role": "system", "content": "You are a helpful assistant."}
+            else:
+                raise NotImplementedError(f"{self.model_type} not support now")
         return
 
-    def load_model(self, model_path, read_bmodel):
+    def load_model(self, args, read_bmodel):
+        if not args.model_path:
+            bmodel_files = [f for f in os.listdir(args.dir_path) if f.endswith('.bmodel')]
+            model_path = os.path.join(args.dir_path, bmodel_files[0])
+        else:
+            model_path = args.model_path
+
         load_start = time.time()
         self.model.init(self.devices, model_path, read_bmodel) # when read_bmodel = false, not to load weight, reuse weight
         load_end = time.time()
@@ -130,9 +144,9 @@ class Model:
         self.model.generation_mode = args.generation_mode
         self.model.embedding_path = os.path.join(args.dir_path, "embedding.bin")
         self.model.NUM_LAYERS = self.config["num_hidden_layers"]
+        self.model.model_type = self.model_type
 
         self.enable_history = args.enable_history
-        self.init_history()
 
     def init_history(self):
         self.history = [self.system_prompt]
@@ -149,59 +163,68 @@ class Model:
         text = self.apply_chat_template(self.history)
         tokens = self.tokenizer(text).input_ids
         return tokens
+    
+    def process_media_input(self, path, media_type):
+        """处理图像或视频输入"""
+        if not os.path.exists(path):
+            print(f"无法找到 {media_type} 路径: {path}")
+            return None
 
-    def chat(self):
-        """
-        Start a chat session.
-        """
-        # Instruct
-        print(
-            """\n=================================================================
-1. If you want to quit, please enter one of [q, quit, exit]
-2. To create a new chat session, please enter one of [clear, new]
-================================================================="""
-        )
-        # Stop Chatting with "exit" input
-        while True:
-            self.input_str = input("\nQuestion: ")
-            # Quit
-            if self.input_str in ["exit", "q", "quit"]:
-                break
-            # New Chat
-            elif self.input_str in ["clear", "new"]:
-                self.init_history()
-            # Chat
-            else:
-                tokens = self.encode_tokens()
+        if media_type == "image":
+            inputs = self.model.process_image(path)
+        elif media_type == "video":
+            inputs = self.model.process_video(path)
+        else:
+            print(f"未知的媒体类型: {media_type}")
+            return None
+        return inputs
+    
+    def prefill_phase(self, inputs, media_type):
+        """handle image or video"""
+        print("\n回答: ", end="")
+        first_start = time.time()
 
-                # check tokens
-                if not tokens:
-                    print("Sorry: your question is empty!!")
-                    return
-                if len(tokens) > self.model.SEQLEN:
-                    print(
-                        "The maximum question length should be shorter than {} but we get {} instead.".format(
-                            self.model.SEQLEN, len(tokens)
-                        )
-                    )
-                    return
+        if media_type == "image":
+            vit_token_list = torch.where(inputs.input_ids == self.config["image_token_id"])[1].tolist()
+            vit_offset = vit_token_list[0]
+            valid_vit_length = len(vit_token_list)
+            token = self.model.forward_first(
+                inputs.input_ids.squeeze(0).tolist(),
+                inputs.pixel_values.flatten().tolist(),
+                inputs.image_grid_thw.squeeze(0).tolist(),
+                vit_offset,
+                valid_vit_length
+            )
+        elif media_type == "video":
+            vit_token_list = torch.where(inputs.input_ids == self.config["video_token_id"])[1].tolist()
+            vit_offset = vit_token_list[0]
+            valid_vit_length = len(vit_token_list)
+            token = self.model.forward_first(
+                inputs.input_ids.squeeze(0).tolist(),
+                inputs.pixel_values_videos.flatten().tolist(),
+                inputs.video_grid_thw.squeeze(0).tolist(),
+                vit_offset,
+                valid_vit_length
+            )
+        elif media_type == "text":
+            tokens = self.encode_tokens()
+            token = self.model.forward_first(tokens)
+        else:
+            raise NotImplementedError("Not Support Now")
 
-                print("\nAnswer: ", end="")
-                self.stream_answer(tokens)
+        first_end = time.time()
+        self.first_duration = first_end - first_start
+        return token
 
-
-    def stream_answer(self, tokens):
+    def decode_phase(self, token):
         """
         Stream the answer for the given tokens.
         """
         tok_num = 0
         self.answer_cur = ""
         self.answer_token = []
+        next_start = time.time()
 
-        # First token
-        first_start = time.time()
-        token = self.model.forward_first(tokens)
-        first_end = time.time()
         # Following tokens
         full_word_tokens = []
         while token not in self.EOS and self.model.total_length < self.model.SEQLEN:
@@ -219,8 +242,7 @@ class Model:
 
         # counting time
         next_end = time.time()
-        first_duration = first_end - first_start
-        next_duration = next_end - first_end
+        next_duration = next_end - next_start
         tps = tok_num / next_duration
 
         if self.enable_history:
@@ -230,8 +252,58 @@ class Model:
             self.init_history()
 
         print()
-        print(f"FTL: {first_duration:.3f} s")
+        print(f"FTL: {self.first_duration:.3f} s")
         print(f"TPS: {tps:.3f} token/s")
+
+    def chat(self):
+        """
+        Start a chat session.
+        """
+        # Instruct
+        print(
+            """\n=================================================================
+1. 如果您想退出，请输入 [q, quit, exit] 之一
+2. 要创建一个新的聊天会话，请输入 [clear, new] 之一
+3. 如果是多模态模型，请输入图像或视频的路径
+================================================================="""
+        )
+        # Stop Chatting with "exit" input
+        while True:
+            self.input_str = input("\n请输入问题: ").strip()
+
+            # Quit
+            if self.input_str in ["exit", "q", "quit"]:
+                print("退出聊天会话。")
+                break
+            # New Chat
+            elif self.input_str in ["clear", "new"]:
+                self.init_history()
+                print("聊天记录已清除，开始新的会话。")
+
+            # VISION
+            if hasattr(self, "enable_vision") and self.enable_vision:
+                media_path = input("\n请输入路径: ").strip()
+                _, ext = os.path.splitext(media_path)
+
+                if ext in [".jpg", ".jpeg", ".png"]:
+                    media_type = "image"
+                    inputs = self.process_media_input(media_path, media_type)
+                elif ext in [".mp4"]:
+                    media_type = "video"
+                    inputs = self.process_media_input(media_path, media_type)
+                else:
+                    print("输入的路径无效，请重新输入。")
+                    continue
+
+            # TEXT
+            else:
+                media_type = "text"
+                inputs = self.input_str
+
+
+            token = self.prefill_phase(inputs, media_type)
+            self.decode_phase(token)
+
 
 def main(args):
     model = Model(args)
@@ -240,7 +312,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-p", "--dir_path", type=str, default="./tmp", help="dir path to the config/embedding/tokenizer")
-    parser.add_argument('-b', '--model_path', type=str, required=True, help='path to the bmodel file')
+    parser.add_argument('-b', '--model_path', type=str, default="", help='path to the bmodel file')
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
     parser.add_argument('--temperature', type=float, default=1.0, help='temperature scaling factor for the likelihood distribution')
     parser.add_argument('--top_p', type=float, default=1.0, help='cumulative probability of token words to consider as a set of candidates')
