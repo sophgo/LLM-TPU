@@ -7,9 +7,14 @@ from transformers import AutoTokenizer, AutoProcessor
 import torch
 
 import sys
+import chat
 
 class Model:
     def __init__(self, args):
+        # test
+        self.test_input = args.test_input
+        self.test_media = args.test_media
+
         # preprocess parameters, such as prompt & tokenizer
         self.devices = [int(d) for d in args.devid.split(",")]
         config_path = os.path.join(args.dir_path, "config.json")
@@ -163,6 +168,37 @@ class Model:
         text = self.apply_chat_template(self.history)
         tokens = self.tokenizer(text).input_ids
         return tokens
+
+    def image_message(self, path):
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "image": path,
+                    },
+                    {"type": "text", "text": self.input_str},
+                ],
+            }
+        ]
+        return messages
+
+    def video_message(self, path):
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "video",
+                        "video": path,
+                        "fps": 1.0,
+                    },
+                    {"type": "text", "text": self.input_str},
+                ],
+            }
+        ]
+        return messages
     
     def process_media_input(self, path, media_type):
         """处理图像或视频输入"""
@@ -170,10 +206,26 @@ class Model:
             print(f"无法找到 {media_type} 路径: {path}")
             return None
 
-        if media_type == "image":
-            inputs = self.model.process_image(path)
+        if self.model_type == "qwen2_vl":
+            from qwen_vl_utils import process_vision_info
+            self.append_user(self.history, self.input_str)
+
+            messages = self.image_message(path) if media_type == "image" else self.video_message(path)
+            image_inputs, video_inputs = process_vision_info(messages)
+            text = self.apply_chat_template(messages)
+            inputs = self.processor(
+                text=[text],
+                images=image_inputs,
+                videos=video_inputs,
+                padding=True,
+                return_tensors="pt",
+            )
+        elif media_type == "image":
+            # inputs = self.model.process_image(path)
+            pass
         elif media_type == "video":
-            inputs = self.model.process_video(path)
+            # inputs = self.model.process_video(path)
+            pass
         else:
             print(f"未知的媒体类型: {media_type}")
             return None
@@ -269,7 +321,11 @@ class Model:
         )
         # Stop Chatting with "exit" input
         while True:
-            self.input_str = input("\n请输入问题: ").strip()
+            if self.test_input:
+                self.input_str = self.test_input.strip()
+                print(f"\n问题: {self.input_str}")
+            else:
+                self.input_str = input("\n请输入问题: ").strip()
 
             # Quit
             if self.input_str in ["exit", "q", "quit"]:
@@ -282,7 +338,11 @@ class Model:
 
             # VISION
             if hasattr(self, "enable_vision") and self.enable_vision:
-                media_path = input("\n请输入路径: ").strip()
+                if self.test_media:
+                    media_path = self.test_media.strip()
+                    print(f"路径: {media_path}")  # 显示测试路径
+                else:
+                    media_path = input("\n请输入媒体路径: ").strip()
                 _, ext = os.path.splitext(media_path)
 
                 if ext in [".jpg", ".jpeg", ".png"]:
@@ -314,6 +374,8 @@ if __name__ == "__main__":
     parser.add_argument("-p", "--dir_path", type=str, default="./tmp", help="dir path to the config/embedding/tokenizer")
     parser.add_argument('-b', '--model_path', type=str, default="", help='path to the bmodel file')
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
+    parser.add_argument('--test_input', type=str, help='the text for test')
+    parser.add_argument('--test_media', type=str, help='the media(image/video) path for test')
     parser.add_argument('--temperature', type=float, default=1.0, help='temperature scaling factor for the likelihood distribution')
     parser.add_argument('--top_p', type=float, default=1.0, help='cumulative probability of token words to consider as a set of candidates')
     parser.add_argument('--repeat_penalty', type=float, default=1.2, help='penalty for repeated tokens')

@@ -543,17 +543,22 @@ bm_device_mem_t Model::embedding_launch(const bm_net_info_t *net0,
 }
 
 void Model::process_image(const std::string &image_path) {
-  int width, height, channels;
-  auto image = read_image(image_path.c_str(), width, height, channels);
+  std::vector<cv::Mat> images;
+  opencv_read_image(images, image_path);
 
-  if (model_type == "qwen2_vl") {
-    std::vector<float> image_mean = {0.48145466f, 0.4578275f, 0.40821073f};
-    std::vector<float> image_std = {0.26862954f, 0.26130258f, 0.27577711f};
+  for (size_t i = 0; i < images.size(); i++) {
+    auto image = images[0];
+    int width = image.cols;
+    int height = image.rows;
+    if (model_type == "qwen2_vl") {
+      std::vector<float> image_mean = {0.48145466f, 0.4578275f, 0.40821073f};
+      std::vector<float> image_std = {0.26862954f, 0.26130258f, 0.27577711f};
 
-    auto resized = smart_resize(height, width);
-    int resized_height = resized.first;
-    int resized_width = resized.second;
-    auto resized_image = bicubic_resize(image, channels, height, width, resized_height, resized_width, image_mean, image_std);
+      auto resized = smart_resize(height, width);
+      int resized_height = resized.first;
+      int resized_width = resized.second;
+      auto resized_image = bicubic_resize(image, resized_height, resized_width, image_mean, image_std);
+    }
   }
 
 

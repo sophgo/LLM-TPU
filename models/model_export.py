@@ -975,7 +975,7 @@ class Qwen2Visual(Visual):
     def export(self, onnx_path):
         patch = torch.randn(self.max_pixels, 1176).to(dtype=torch.float32)
         position_ids = torch.randn(self.max_pixels, 2).to(dtype=torch.int32)
-        attention_mask = torch.zeros([1, self.max_pixels, self.max_pixels], dtype=torch.float32)
+        attention_mask = torch.zeros([1, 1, self.max_pixels, self.max_pixels], dtype=torch.float32)
 
         torch.onnx.export(
             self, (patch, position_ids, attention_mask),
