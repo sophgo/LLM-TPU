@@ -26,7 +26,6 @@
 #include "bmruntime_interface.h"
 #include "memory.h"
 #include "utils.h"
-#include "cv_utils.h"
 
 static const float ATTENTION_MASK = -10000.;
 
@@ -543,6 +542,7 @@ bm_device_mem_t Model::embedding_launch(const bm_net_info_t *net0,
 }
 
 void Model::process_image(const std::string &image_path) {
+  /**
   std::vector<cv::Mat> images;
   opencv_read_image(images, image_path);
 
@@ -561,7 +561,7 @@ void Model::process_image(const std::string &image_path) {
     }
   }
 
-
+  **/
   return ;
 }
 
