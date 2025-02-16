@@ -220,6 +220,8 @@ class Model:
                 padding=True,
                 return_tensors="pt",
             )
+            if self.model.MAX_PIXELS < inputs.pixel_values.shape[0]:
+                raise RuntimeError("your image is too large ")
         elif media_type == "image":
             # inputs = self.model.process_image(path)
             pass
@@ -340,7 +342,7 @@ class Model:
             if hasattr(self, "enable_vision") and self.enable_vision:
                 if self.test_media:
                     media_path = self.test_media.strip()
-                    print(f"路径: {media_path}")  # 显示测试路径
+                    print(f"路径: {media_path}")
                 else:
                     media_path = input("\n请输入媒体路径: ").strip()
                 _, ext = os.path.splitext(media_path)
@@ -363,6 +365,9 @@ class Model:
 
             token = self.prefill_phase(inputs, media_type)
             self.decode_phase(token)
+
+            if self.test_input or self.test_media:
+                break
 
 
 def main(args):

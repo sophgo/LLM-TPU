@@ -863,7 +863,7 @@ std::vector<uint16_t> make_attention_mask(const Config &config) {
   std::vector<uint16_t> attention_mask(
       config.MAX_PREFILL_LENGTH * config.MAX_PREFILL_LENGTH, config.mask_value);
   for (int i = 0; i < config.total_length; i++) {
-    for (int j = 0; j < config.MAX_PREFILL_LENGTH; j++) {
+    for (int j = 0; j < config.total_length; j++) {
       if (j <= i) {
         attention_mask[i * config.MAX_PREFILL_LENGTH + j] = 0;
       }

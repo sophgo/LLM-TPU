@@ -968,7 +968,7 @@ class Qwen2Visual(Visual):
 
         hidden_states = self.patch_embed(flatten_patches)
         for blk in self.blocks:
-            hidden_states, _ = self.blocks[0](hidden_states, rotary_pos_emb=(self.cos, self.sin), attention_mask=attention_mask)
+            hidden_states, _ = blk(hidden_states, rotary_pos_emb=(self.cos, self.sin), attention_mask=attention_mask)
         image_embeds = self.merger.mlp(self.merger.ln_q(hidden_states).view(1, -1, self.hidden_size * self.mlp_ratio))
         return image_embeds
 
