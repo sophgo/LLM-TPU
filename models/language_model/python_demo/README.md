@@ -47,23 +47,31 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 ```bash
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-distill-qwen-1-5b.zip
 unzip deepseek-r1-distill-qwen-1-5b.zip
-python3 pipeline.py --model_path ./deepseek-r1-distill-qwen-1-5b/qwen2_w4bf16_seq8192_20250131_213156.bmodel --devid 0 --dir_path ./deepseek-r1-distill-qwen-1-5b/
+python3 pipeline.py --devid 0 --dir_path ./deepseek-r1-distill-qwen-1-5b/
 ```
 
 下载`deepseek-r1-distill-qwen-7b`模型，并运行：
 ```bash
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-distill-qwen-7b.zip
 unzip deepseek-r1-distill-qwen-7b.zip
-python3 pipeline.py --model_path ./deepseek-r1-distill-qwen-7b/qwen2_w4bf16_seq2048_20250131_203910.bmodel --devid 0 --dir_path ./deepseek-r1-distill-qwen-7b/
+python3 pipeline.py --devid 0 --dir_path ./deepseek-r1-distill-qwen-7b/
+```
+
+下载`deepseek-r1-distill-qwen-14b`模型，并运行：
+```bash
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-distill-qwen-14b-seq512.zip
+unzip deepseek-r1-distill-qwen-14b-seq512.zip
+python3 pipeline.py --devid 0 --dir_path ./deepseek-r1-distill-qwen-14b/
 ```
 
 ## 5. 程序性能测试
 LLM性能
 
-|   测试平台   |           测试模型              | 量化方式 | 模型长度 | first token latency(s) | token per second(tokens/s) | 
-| ----------- | ------------------------------ | -------- | -------- | --------------------- | -------------------------- | 
-| SE7-32      | deepseek-r1-distill-qwen-1.5b  | INT4     | 8192     | 5.431                 | 28.878                     | 
-| SE7-32      | deepseek-r1-distill-qwen-7b    | INT4     | 2048     | 2.939                 | 10.600                     | 
+|   测试平台   |           测试模型              | 量化方式 | 模型长度 | first token latency(s) | token per second(tokens/s) |
+| ----------- | ------------------------------ | -------- | -------- | --------------------- | -------------------------- |
+| SE7-32      | deepseek-r1-distill-qwen-1.5b  | INT4     | 8192     | 5.431                 | 28.878                     |
+| SE7-32      | deepseek-r1-distill-qwen-7b    | INT4     | 2048     | 2.939                 | 10.600                     |
+| SE7-32      | deepseek-r1-distill-qwen-14b   | INT4     | 512      | 1.400                 | 5.564                      |
 
 > **测试说明**：  
 > 1. 性能测试结果具有一定的波动性，建议多次测试取平均值；
