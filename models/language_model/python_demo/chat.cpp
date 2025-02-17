@@ -299,7 +299,6 @@ void Model::load_bmodel(const std::vector<int> &devices,
   ASSERT(p_bmrt != NULL, "can not create bmrt");
 
   std::string board_name(256, '\0');
-  ;
   bm_get_board_name(bm_handle, &board_name[0]);
 
   // load bmodel by file
@@ -568,6 +567,7 @@ void Model::process_image(const std::string &image_path) {
 void Model::vit_launch(const std::vector<float> &pixel_values, int vit_offset,
                        int valid_vit_length, const std::vector<int> &grid_thw,
                        bm_device_mem_t &out_mem) {
+  auto start = std::chrono::high_resolution_clock::now();
   empty(bm_handle, dev_buffer);
   d2d(dev_buffer, out_mem, 0, total_length * hidden_bytes);
   out_mem = dev_buffer;
@@ -592,6 +592,9 @@ void Model::vit_launch(const std::vector<float> &pixel_values, int vit_offset,
   int dst_offset = vit_offset * hidden_bytes;
   int vit_size = valid_vit_length * hidden_bytes;
   bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, vit_out_mem, 0, vit_size);
+  auto end = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+  std::cout << "vit_launch time : " << duration.count() << " milliseconds." << std::endl;
 }
 
 bm_device_mem_t Model::lm_launch(const bm_net_info_t *net,
