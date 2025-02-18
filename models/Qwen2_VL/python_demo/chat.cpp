@@ -390,9 +390,9 @@ std::vector<int> Qwen2VL::make_posid(
 }
 
 void Qwen2VL::preprocess_image(std::string &image_path) {
-  std::vector<cv::Mat> images;
-  opencv_read_image(images, image_path);
-  auto resized_image = bicubic_resize(images[0], 480, 480);
+  // std::vector<cv::Mat> images;
+  // opencv_read_image(images, image_path);
+  // auto resized_image = bicubic_resize(images[0], 480, 480);
   return ;
 }
 
