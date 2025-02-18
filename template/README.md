@@ -40,7 +40,7 @@
 * 如果不想编译模型，也可以直接跳转至[5. 运行](#5-运行)测试我们编译好的模型。
 
 模型编译的流程是将llm原始权重转换为onnx，再通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，需要在x86主机上安装TPU-MLIR环境，x86主机已安装Ubuntu16.04/18.04/20.04系统，并且运行内存在12GB以上。
-具体环境配置请参考：[MLIR环境安装指南](https://github.com/sophgo/LLM-TPU/blob/main/docs/FAQ.md)
+具体环境配置请参考：[MLIR环境安装指南](https://github.com/sophgo/LLM-TPU/blob/main/docs/Mlir_Install_Guide.md)
 
 ### 4.2 模型转换与编译
 
