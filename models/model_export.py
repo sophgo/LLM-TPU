@@ -1110,17 +1110,12 @@ class ModelExporter(torch.nn.Module):
             return
 
         import ctypes
-        if self.config.torch_dtype == torch.bfloat16:
+        if self.half_precision_quantize == "bf16":
             tensor_data = self.embed.embed.weight.data.to(torch.bfloat16)
-        elif self.config.torch_dtype == torch.float16:
+        elif self.half_precision_quantize == "f16":
             tensor_data = self.embed.embed.weight.data.to(torch.float16)
         else:
-            if self.half_precision_quantize == "bf16":
-                tensor_data = self.embed.embed.weight.data.to(torch.bfloat16)
-            elif self.half_precision_quantize == "bf16":
-                tensor_data = self.embed.embed.weight.data.to(torch.float16)
-            else:
-                raise NotImplementedError("Not support now")
+            raise NotImplementedError("Not support now")
         data_ptr = tensor_data.untyped_storage().data_ptr()
         buffer = (ctypes.c_byte * (tensor_data.numel() * 2)).from_address(data_ptr)
         
@@ -1308,7 +1303,7 @@ if __name__ == '__main__':
     parser.add_argument('--out_bmodel', type=str, default='', help='bmodel name after model_tool --combine')
     parser.add_argument('--seq_length', type=int, required=True, help="sequence length")
     parser.add_argument('--visual_length', type=int, help="visual length for vision transformer")
-    parser.add_argument('--chip', type=str, default="bm1684x", choices=["bm1684x", "bm1688", "cv186ah"], help="chip")
+    parser.add_argument('--chip', type=str, default="bm1684x", choices=["bm1684x", "bm1688", "bm1690", "cv186ah"], help="chip")
     parser.add_argument('--quantize', type=str, required=True, choices=["bf16", "w8bf16", "w4bf16", "f16", "w8f16", "w4f16"], help="quantize")
     parser.add_argument('--num_device', type=int, default=1, help="num device in compiling bmodel")
     parser.add_argument('--max_workers', type=int, default=3, help="max workers for compiling bmodel in multi-processing")
