@@ -342,7 +342,7 @@ void Model::init_network() {
     VIT_DIMS = net_vit->stages[0].input_shapes[0].dims[1];
     auto status = bm_malloc_device_byte(
         bm_handle, &dev_buffer,
-        bm_mem_get_device_size(net_blocks[0]->stages[0].input_mems[2]));
+        bm_mem_get_device_size(net_blocks[0]->stages[0].input_mems[0]));
     ASSERT(status == BM_SUCCESS, "malloc memory failed");
   }
 
