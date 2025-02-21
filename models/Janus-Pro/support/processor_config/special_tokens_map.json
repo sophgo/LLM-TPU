@@ -1,0 +1,16 @@
+{
+  "additional_special_tokens": [
+    "<image_placeholder>",
+    "<patch_placeholder>",
+    "<|ref|>",
+    "<|/ref|>",
+    "<|det|>",
+    "<|/det|>",
+    "<|grounding|>",
+    "<|User|>",
+    "<|Assistant|>"
+  ],
+  "bos_token": "<｜begin▁of▁sentence｜>",
+  "eos_token": "<｜end▁of▁sentence｜>",
+  "pad_token": "<｜▁pad▁｜>"
+}

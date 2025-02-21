@@ -15,8 +15,13 @@ logging.getLogger("torch").setLevel(logging.ERROR)
 logging.getLogger("onnx").setLevel(logging.ERROR)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-from transformers import AutoModel, AutoModelForCausalLM
-from transformers import AutoConfig, AutoTokenizer, AutoProcessor
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    AutoProcessor,
+    AutoModel,
+    AutoConfig,
+)
 from onnx_rebuilder import *
 
 GREEN_COLOR = "\033[92m"  # ANSI escape code for green text

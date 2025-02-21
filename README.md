@@ -82,6 +82,7 @@
 |Llama3.2-Vision-11B          |:white\_check\_mark:|                    |[LINK](https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct)   |
 |Molmo-7B-D-0924              |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/allenai/Molmo-7B-D-0924)                    |
 |OpenClip                     |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/openai/clip-vit-base-patch32)               |
+|DeepSeek-Janus-Pro           |:white\_check\_mark:|                    |[LINK](https://huggingface.co/deepseek-ai/Janus-Pro-7B)                   |
 
 
 如果您想要知道转换细节和源码，可以到本项目[models](./models)子目录查看各类模型部署细节。

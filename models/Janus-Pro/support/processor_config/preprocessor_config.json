@@ -1,0 +1,23 @@
+{
+  "background_color": [
+    127,
+    127,
+    127
+  ],
+  "do_normalize": true,
+  "image_mean": [
+    0.5,
+    0.5,
+    0.5
+  ],
+  "image_processor_type": "VLMImageProcessor",
+  "image_size": 384,
+  "image_std": [
+    0.5,
+    0.5,
+    0.5
+  ],
+  "min_size": 14,
+  "processor_class": "VLChatProcessor",
+  "rescale_factor": 0.00392156862745098
+}

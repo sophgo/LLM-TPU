@@ -1,0 +1,10 @@
+{
+  "bos_token": "<｜begin▁of▁sentence｜>",
+  "clean_up_tokenization_spaces": false,
+  "eos_token": "<｜end▁of▁sentence｜>",
+  "model_max_length": 16384,
+  "pad_token": null,
+  "tokenizer_class": "LlamaTokenizer",
+  "unk_token": null,
+  "use_default_system_prompt": true
+}

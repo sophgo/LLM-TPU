@@ -1,0 +1,9 @@
+{
+  "add_special_token": false,
+  "ignore_id": -100,
+  "image_tag": "<image_placeholder>",
+  "mask_prompt": true,
+  "num_image_tokens": 576,
+  "processor_class": "VLChatProcessor",
+  "sft_format": "deepseek"
+}
