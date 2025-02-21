@@ -85,13 +85,13 @@ class VisionTransformer(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.rotary_pos_emb_full = ViT.rotary_pos_emb(VISION_LENGTH) # max_grid_size << VISION_LENGTH
-        self.cos = self.rotary_pos_emb_full.cos().unsqueeze(1).repeat(1, 1, 2)
-        self.sin = self.rotary_pos_emb_full.sin().unsqueeze(1).repeat(1, 1, 2)
+        self.cos = self.rotary_pos_emb_full.cos()
+        self.sin = self.rotary_pos_emb_full.sin()
 
     def forward(self, hidden_states, position_ids, attention_mask):
         hidden_states = ViT.patch_embed(hidden_states)
-        self.cos = self.cos[position_ids].flatten(1).unsqueeze(1).unsqueeze(0)
-        self.sin = self.sin[position_ids].flatten(1).unsqueeze(1).unsqueeze(0)
+        self.cos = self.cos[position_ids].flatten(1).unsqueeze(1).repeat(1,1,2).unsqueeze(0)
+        self.sin = self.sin[position_ids].flatten(1).unsqueeze(1).repeat(1,1,2).unsqueeze(0)
 
         # hidden_states = ViT.blocks[0](hidden_states, attention_mask=attention_mask, rotary_pos_emb=(self.cos, self.sin))
         for blk in ViT.blocks:

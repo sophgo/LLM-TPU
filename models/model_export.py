@@ -924,8 +924,8 @@ class VisionRotary(torch.nn.Module):
         if self.model_type == "qwen2_vl":
             seq = torch.arange(visual_length)
             freqs = torch.outer(seq, self.inv_freq)
-            self.cos = freqs.cos().unsqueeze(1).repeat(1, 1, 2)
-            self.sin = freqs.sin().unsqueeze(1).repeat(1, 1, 2)
+            self.cos = freqs.cos()
+            self.sin = freqs.sin()
         return (self.cos, self.sin)
 
     def llama_rotary_pos(self, x, cos, sin):
@@ -963,8 +963,8 @@ class Qwen2Visual(Visual):
         self.max_pixels = self.visual_length * self.spatial_merge_size * self.spatial_merge_size
 
     def forward(self, flatten_patches, position_ids, attention_mask):
-        self.cos = self.rotary.cos[position_ids].flatten(1).unsqueeze(1).unsqueeze(0)
-        self.sin = self.rotary.sin[position_ids].flatten(1).unsqueeze(1).unsqueeze(0)
+        self.cos = self.rotary.cos[position_ids].flatten(1).unsqueeze(1).repeat(1,1,2).unsqueeze(0)
+        self.sin = self.rotary.sin[position_ids].flatten(1).unsqueeze(1).repeat(1,1,2).unsqueeze(0)
 
         hidden_states = self.patch_embed(flatten_patches)
         for blk in self.blocks:
