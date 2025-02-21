@@ -289,14 +289,12 @@ int JanusPro::forward_first(std::vector<int> &tokens,
   auto &out_mem = net_embed->stages[0].output_mems[0];
   bm_memcpy_s2d(bm_handle, in_mem, (void *)visited_tokens.data());
   net_launch(net_embed);
-  dump_net_to_file(bm_handle, net_embed, "embed.npz");
 
   // forward vision transformer
   auto &vit_in_mem = net_vit->stages[0].input_mems[0];
   auto &vit_out_mem = net_vit->stages[0].output_mems[0];
   bm_memcpy_s2d(bm_handle, vit_in_mem, (void *)images.data());
   net_launch(net_vit);
-  dump_net_to_file(bm_handle, net_vit, "vit.npz");
   int bytes = out_mem.size / SEQLEN;
   // 0~42: system prompt
   // 42~576: image embed

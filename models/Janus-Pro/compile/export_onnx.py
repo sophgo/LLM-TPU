@@ -364,21 +364,21 @@ def test_net_with_mask(image_path):
         token = greedy_head(lm_head(out)).view(1)
     print("\noutput_ids:{}".format(out_ids))
 
-test_net_with_mask('../python_demo/test.jpg')
+# test_net_with_mask('../python_demo/test.jpg')
 
-# print(f'Convert vision transformer')
-# convert_vision_transformer()
+print(f'Convert vision transformer')
+convert_vision_transformer()
 
-# print(f'Convert block & block_cache')
-# for i in tqdm(range(NUM_LAYERS)):
-#     convert_block(i)
-#     convert_block_cache(i)
+print(f'Convert block & block_cache')
+for i in tqdm(range(NUM_LAYERS)):
+    convert_block(i)
+    convert_block_cache(i)
  
-# print(f'Convert embedding')
-# convert_embedding()
+print(f'Convert embedding')
+convert_embedding()
 
-# print(f'Convert lm_head')
-# convert_lm_head()
-# convert_greedy_head()
-# convert_penalty_sample_head()
-# print("Done")
+print(f'Convert lm_head')
+convert_lm_head()
+convert_greedy_head()
+convert_penalty_sample_head()
+print("Done")
