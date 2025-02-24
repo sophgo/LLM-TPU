@@ -33,7 +33,7 @@
 ```bash
 git clone https://github.com/sophgo/LLM-TPU.git
 pip3 install dfss transformers==4.45.1 pybind11[global] Jinja2
-sudo apt install zip
+sudo apt install zip zlib1g-dev
 
 cd LLM-TPU/models/language_model/python_demo
 mkdir build
@@ -73,7 +73,7 @@ LLM性能
 | SE7-32      | deepseek-r1-distill-qwen-7b    | INT4     | 2048     | 2.939                 | 10.600                     |
 | SE7-32      | deepseek-r1-distill-qwen-14b   | INT4     | 512      | 1.400                 | 5.564                      |
 
-> **测试说明**：  
+> **测试说明**：
 > 1. 性能测试结果具有一定的波动性，建议多次测试取平均值；
 > 2. SE7-32的主控处理器为8核 ARM A53 42320 DMIPS @2.3GHz，PCIe上的性能由于处理器的不同可能存在较大差异；
 > 3. 这里使用的SDK版本是BM1684X V24.04.01；
