@@ -298,8 +298,8 @@ int JanusPro::forward_first(std::vector<int> &tokens,
   int bytes = out_mem.size / SEQLEN;
   // 0~42: system prompt
   // 42~576: image embed
-  bm_memcpy_d2d_byte(bm_handle, out_mem, 0, vit_out_mem,
-                     42 * bytes, 576 * bytes);
+  bm_memcpy_d2d_byte(bm_handle, out_mem, 42 * bytes, vit_out_mem,
+                     0, 576 * bytes);
 
   // forward blocks
   for (int idx = 0; idx < NUM_LAYERS; idx++) {

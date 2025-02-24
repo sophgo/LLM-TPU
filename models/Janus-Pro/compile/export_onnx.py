@@ -356,11 +356,11 @@ def test_net_with_mask(image_path):
         out = embed(input_ids).view(1, 1, HIDDEN_SIZE)
         position_ids = torch.tensor([[token_len - 1]])
         attention_mask = torch.zeros((1, 1, 1, SEQ_LENGTH + 1)).float()
-        attention_mask[:, :, :, token_len:SEQ_LENGTH] = -10000.0
+        attention_mask[:, :, :, token_len-1:SEQ_LENGTH] = -10000.0
         for i in range(NUM_LAYERS):
             out, k, v = block_kvs[i](out, position_ids, attention_mask, k_cache[i], v_cache[i])
-            k_cache[i][:,token_len:token_len+1] = k
-            v_cache[i][:,token_len:token_len+1] = v
+            k_cache[i][:,token_len-1:token_len] = k
+            v_cache[i][:,token_len-1:token_len] = v
         token = greedy_head(lm_head(out)).view(1)
     print("\noutput_ids:{}".format(out_ids))
 
