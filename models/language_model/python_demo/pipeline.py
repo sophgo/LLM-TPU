@@ -1,12 +1,9 @@
 import os
 import json
 import time
-import random
 import argparse
 from transformers import AutoTokenizer, AutoProcessor
 import torch
-
-import sys
 import chat
 
 class Model:
@@ -19,6 +16,7 @@ class Model:
         self.devices = [int(d) for d in args.devid.split(",")]
         config_path = os.path.join(args.dir_path, "config.json")
         self.tokenizer_path = os.path.join(args.dir_path, "tokenizer")
+        self.embedding_path = os.path.join(args.dir_path, "embedding.bin")
 
         # config
         with open(config_path, 'r') as file:
@@ -147,7 +145,7 @@ class Model:
         self.model.repeat_last_n = args.repeat_last_n
         self.model.max_new_tokens = args.max_new_tokens
         self.model.generation_mode = args.generation_mode
-        self.model.embedding_path = os.path.join(args.dir_path, "embedding.bin")
+        self.model.embedding_path = self.embedding_path if os.path.exists(self.embedding_path) else ""
         self.model.NUM_LAYERS = self.config["num_hidden_layers"]
         self.model.model_type = self.model_type
 
@@ -328,7 +326,7 @@ class Model:
         while True:
             if self.test_input:
                 self.input_str = self.test_input.strip()
-                print(f"\n问题: {raw_str}")
+                print(f"\n问题: {self.input_str}")
             else:
                 self.input_str = self.clean_invalid_unicode(input("\n请输入问题: ").strip())
 
