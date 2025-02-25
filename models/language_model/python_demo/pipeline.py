@@ -163,6 +163,9 @@ class Model:
         else:
             self.append_assistant(self.history, self.answer_cur)
 
+    def clean_invalid_unicode(self, text):
+        return text.encode('utf-8', 'ignore').decode('utf-8', 'ignore')
+
     def encode_tokens(self):
         self.append_user(self.history, self.input_str)
         text = self.apply_chat_template(self.history)
@@ -325,9 +328,9 @@ class Model:
         while True:
             if self.test_input:
                 self.input_str = self.test_input.strip()
-                print(f"\n问题: {self.input_str}")
+                print(f"\n问题: {raw_str}")
             else:
-                self.input_str = input("\n请输入问题: ").strip()
+                self.input_str = self.clean_invalid_unicode(input("\n请输入问题: ").strip())
 
             # Quit
             if self.input_str in ["exit", "q", "quit"]:

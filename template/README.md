@@ -64,15 +64,16 @@ python model_export.py -m ./Qwen2-7B-Instruct -t /workspace/tpu-mlir -s 4096 -q 
 ```
 
 此外还有其他参数：
-* -c, --chip           需要参数，芯片类型，默认bm1684x, 其他可选：bm1688,cv186x
-* --num_device         需要参数，芯片设备数量，用于导出多芯模型
-* --not_compile        无需参数，表示只导出onnx，不编译bmodel
-* --embedding_disk     无需参数，表示将embedding存储为bin文件，通过cpu推理
-* --out_dir            需要参数，表示输出路径，默认生成在./tmp目录
-* --out_bmodel         需要参数，表示输出bmodel名，默认由模型config组成
-* --visual_length      需要参数，表示visual length，用于导出多模态模型
-* --max_workers        需要参数，编译bmodel时的最大线程，默认为3
-
+| **选项**               | **是否需要参数** | **默认值**       | **描述**                                                                 |
+|------------------------|------------------|------------------|--------------------------------------------------------------------------|
+| `-c`, `--chip`         | 是               | `bm1684x`        | 芯片类型，可选：`bm1688`, `cv186x`                                      |
+| `--num_device`         | 是               | 无               | 芯片设备数量，用于导出多芯模型                                          |
+| `--not_compile`        | 否               | 无               | 仅导出 ONNX，不编译 BMODEL                                              |
+| `--embedding_disk`     | 否               | 无               | 将 embedding 存储为 bin 文件，通过 CPU 推理                             |
+| `--out_dir`            | 是               | `./tmp`          | 输出路径                                                                |
+| `--out_bmodel`         | 是               | 模型配置自动生成  | 输出 BMODEL 的名称                                                      |
+| `--visual_length`      | 是               | 无               | 视觉长度（Vision Length），用于导出多模态模型                           |
+| `--max_workers`        | 是               | `3`              | 编译 BMODEL 时的最大线程数                                              |
 
 ## 5. 运行
 
@@ -88,13 +89,8 @@ sudo apt install zip
 
 编译c++依赖
 ```bash
-cd python_demo
-mkdir build
-cd build
-cmake ..
-make
-cp *cpython* ..
-cd ..
+cd LLM-TPU/template/demo && mkdir build
+cd build && cmake .. && make && cp *cpython* .. && cd ..
 ```
 
 ### 5.2 模型下载与运行
