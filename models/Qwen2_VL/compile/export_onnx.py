@@ -539,7 +539,7 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--model_path', type=str, help='path to the torch model')
     parser.add_argument('-d', '--device', type=str, choices=["cpu", "cuda"], default="cpu")
     parser.add_argument('-b', '--batch_size', type=int, default=1, help='batch size')
-    parser.add_argument('-s', '--seq_length', type=int, default=512, help="sequence length")
+    parser.add_argument('-s', '--seq_length', type=int, default=8192, help="sequence length")
     parser.add_argument('-i', '--vision_length', type=int, help="vision_length = max_image_width // patch_size * max_image_height // patch_size")
     parser.add_argument('-n', '--num_threads', type=int, default=1, help='The number of threads used for torch if device is cpu')
     args = parser.parse_args()
