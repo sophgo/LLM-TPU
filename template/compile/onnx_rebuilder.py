@@ -21,7 +21,7 @@ class ModelMapper:
         self.regist_models()
 
     def regist_models(self):
-        self.defualt_map()
+        self.default_map()
         llama_map = self.default_map
         self.regist('llama', llama_map)
         self.regist('qwen2', llama_map)
@@ -37,7 +37,7 @@ class ModelMapper:
         self.regist_glm2()
         self.regist_phi()
 
-    def defualt_map(self):
+    def default_map(self):
         # default map is `LlamaForCausalLM`
         self.config_key = 'config'
         self.model_key = 'model'
@@ -49,9 +49,9 @@ class ModelMapper:
             'num_hidden_layers': 'num_hidden_layers',
             'num_key_value_heads': 'num_key_value_heads',
             'rope_theta': 'rope_theta',
-            'vocab_size': 'vocab_size'
+            'vocab_size': 'vocab_size',
         }
-        self.defualt_model = {
+        self.default_model = {
             'lm_': 'lm_head',
             'embed_': 'model.embed_tokens',
             'blocks_': 'model.layers',
@@ -72,7 +72,7 @@ class ModelMapper:
         }
         self.default_map = {
             'config': self.default_config,
-            'model': self.defualt_model,
+            'model': self.default_model,
             'decoder': self.default_decoder,
             'attention': self.default_attention
         }
@@ -216,10 +216,12 @@ class ModelMapper:
 class OnnxRebuilder:
     def __init__(self,
 				 onnx_dir: str,
+                 quantize: str,
 				 seq_length: int,
                  model_type: str,
 				 embedding_disk: bool):
         self.onnx_model = None
+        self.quantize = quantize
         self.onnx_dir = onnx_dir
         self.seq_length = seq_length
         self.model_type = model_type
@@ -319,9 +321,9 @@ class OnnxRebuilder:
                 print(f"{embedding_file} already exists. Skipping export.")
                 return
             import ctypes
-            if self.torch_dtype == torch.bfloat16:
+            if 'bf16' in self.quantize:
                 tensor_data = self.embed.embed.weight.data.to(torch.bfloat16)
-            elif self.torch_dtype == torch.float16:
+            elif 'f16' in self.quantize:
             	tensor_data = self.embed.embed.weight.data.to(torch.float16)
             else:
                 raise NotImplementedError("Not support now")
@@ -843,8 +845,8 @@ class VisionRotary(torch.nn.Module):
         if self.model_type == "qwen2_vl":
             seq = torch.arange(visual_length)
             freqs = torch.outer(seq, self.inv_freq)
-            self.cos = freqs.cos().unsqueeze(1).repeat(1, 1, 2)
-            self.sin = freqs.sin().unsqueeze(1).repeat(1, 1, 2)
+            self.cos = freqs.cos()
+            self.sin = freqs.sin()
         return (self.cos, self.sin)
 
     def llama_rotary_pos(self, x, cos, sin):
@@ -881,8 +883,8 @@ class Qwen2Visual(Visual):
         self.max_pixels = self.visual_length * self.spatial_merge_size * self.spatial_merge_size
 
     def forward(self, flatten_patches, position_ids, attention_mask):
-        self.cos = self.rotary.cos[position_ids].flatten(1).unsqueeze(1).unsqueeze(0)
-        self.sin = self.rotary.sin[position_ids].flatten(1).unsqueeze(1).unsqueeze(0)
+        self.cos = self.rotary.cos[position_ids].flatten(1).unsqueeze(1).repeat(1, 1, 2).unsqueeze(0)
+        self.sin = self.rotary.sin[position_ids].flatten(1).unsqueeze(1).repeat(1, 1, 2).unsqueeze(0)
 
         hidden_states = self.patch_embed(flatten_patches)
         for blk in self.blocks:

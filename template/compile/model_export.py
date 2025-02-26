@@ -368,6 +368,7 @@ class ModelExporter:
         super().__init__()
         self.model_path = args.model_path
         self.seq_length = args.seq_length
+        self.quantize = args.quantize
         self.not_compile = args.not_compile
         self.embedding_disk = args.embedding_disk
         self.out_dir = args.out_dir
@@ -387,6 +388,7 @@ class ModelExporter:
         
         # rebuild original weight to onnx model
         self.onnx_rebuilder = OnnxRebuilder(self.onnx_dir,
+                                            self.quantize,
                                             self.seq_length,
                                             self.model_type,
                                             self.embedding_disk)
