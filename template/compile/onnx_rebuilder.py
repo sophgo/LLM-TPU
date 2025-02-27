@@ -38,6 +38,7 @@ class ModelMapper:
         }
         self.regist('baichuan', baichuan_map)
         self.regist_qwen()
+        self.regist_qwen2_vl()
         self.regist_qwen2_5_vl()
         self.regist_glm()
         self.regist_glm2()
@@ -118,6 +119,19 @@ class ModelMapper:
         }
         self.regist('qwen', qwen_map)
         
+    def regist_qwen2_vl(self):
+        qwen2_vl_map = {
+            'config': self.default_config,
+            'vision_config': {
+                'embed_dim': 'embed_dim',
+                'hidden_size': 'hidden_size'
+            },
+            'model': self.default_model,
+            'decoder': self.default_decoder,
+            'attention': self.default_attention
+        }
+        self.regist('qwen2_vl', qwen2_vl_map)
+
     def regist_qwen2_5_vl(self):
         qwen2_5_vl_map = {
             'config': self.default_config,
