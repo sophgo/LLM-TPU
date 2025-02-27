@@ -37,7 +37,7 @@ python3 export_onnx.py --model_path /path/to/Qwen2_5-VL-3B-Instruct --seq_length
 此处介绍如何将onnx模型编译成bmodel。也可以省去编译模型这一步，直接下载编译好的模型：
 
 ``` shell
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2-vl-2b_int4_seq2048_1dev.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-3b_w4bf16_seq8192.bmodel
 ```
 
 #### 1. 下载docker，启动容器
@@ -66,7 +66,7 @@ source ./envsetup.sh  #激活环境变量
 
 #### 3. 编译模型生成bmodel
 
-对ONNX模型进行编译，生成模型`qwen2-vl-2b_int4_seq2048_1dev.bmodel `
+对ONNX模型进行编译，生成模型`qwen2.5-vl-3b_w4bf16_seq8192.bmodel `
 
 ``` shell
 ./compile.sh --name qwen2-vl-2b --seq_length 8192
@@ -93,13 +93,13 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 * python demo
 
 ``` shell
-python3 pipeline.py --model_path qwen2-vl-2b_int4_seq2048_1dev.bmodel --config_path ../support/processor_config 
+python3 pipeline.py --model_path qwen2.5-vl-3b_w4bf16_seq8192.bmodel --config_path ../support/processor_config 
 ```
 model为实际的model储存路径；config_path为配置文件路径
 
 * 运行效果
 
-![](../../assets/qwen2-vl-2b.png)
+![](../../assets/qwen2_5vl.png)
 
 ## 常见问题
 
@@ -108,4 +108,4 @@ model为实际的model储存路径；config_path为配置文件路径
 是支持的，步骤基本一致。
 1. 将`files/Qwen2_5-VL-7B`里面的文件替换到`Qwen2_5-VL-7B`中；
 2. 执行`export_onnx.py`指定`Qwen2_5-VL-7B`路径，导出onnx；
-3. 执行`./compile.sh --name qwen2_5-vl-7b`生成模型`qwen2-vl-7b_int4_seq512_1dev.bmodel`
+3. 执行`./compile.sh --name qwen2_5-vl-7b`生成模型`qwen2.5-vl-3b_w4bf16_seq8192.bmodel`

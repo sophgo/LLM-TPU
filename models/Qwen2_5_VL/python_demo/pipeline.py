@@ -45,39 +45,23 @@ class Qwen2VL():
         return messages
 
     def image_message(self, path):
-        if self.resized_height != None and self.resized_width != None:
-            print("\033[31m如果输入为图片时，注意resized_height与resized_width与export_onnx.py时的保持一致\033[0m")
-            messages = [{
-                "role":
-                "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "image": path,
-                        "resized_height": self.resized_height,
-                        "resized_width": self.resized_width,
-                    },
-                    {
-                        "type": "text",
-                        "text": self.input_str
-                    },
-                ],
-            }]
-        else:
-            messages = [{
-                "role":
-                "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "image": path,
-                    },
-                    {
-                        "type": "text",
-                        "text": self.input_str
-                    },
-                ],
-            }]
+        print("\033[31m如果输入为图片时，注意resized_height与resized_width与export_onnx.py时的保持一致\033[0m")
+        messages = [{
+            "role":
+            "user",
+            "content": [
+                {
+                    "type": "image",
+                    "image": path,
+                    "resized_height": self.resized_height,
+                    "resized_width": self.resized_width,
+                },
+                {
+                    "type": "text",
+                    "text": self.input_str
+                },
+            ],
+        }]
         return messages
 
     def video_message(self, path):
@@ -151,18 +135,14 @@ class Qwen2VL():
                 break
 
             media_path = input("\nImage or Video Path: ")
-            if media_path == "":
-                media_type = "text"
-                messages = self.text_message()
+            if not os.path.exists(media_path):
+                print("Can't find image or video: {}".format(media_path))
+                continue
+            media_type = self.get_media_type(media_path)
+            if media_type == "image":
+                messages = self.image_message(media_path)
             else:
-                if not os.path.exists(media_path):
-                    print("Can't find image or video: {}".format(media_path))
-                    continue
-                media_type = self.get_media_type(media_path)
-                if media_type == "image":
-                    messages = self.image_message(media_path)
-                else:
-                    messages = self.video_message(media_path)
+                messages = self.video_message(media_path)
             inputs = self.process(messages)
             print("\nAnswer:")
 

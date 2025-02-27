@@ -40,8 +40,10 @@ public:
   Qwen2VL() : sgen(std::random_device()()) {};
 
 private:
-  std::vector<int> make_vit_posid(std::vector<int> &grid_thw);
-  std::vector<uint16_t> make_vit_attn_mask(std::vector<int> &grid_thw);
+  void make_vit_posid(std::vector<int> &grid_thw,
+                      std::vector<int> &position_ids);
+  void make_vit_attn_mask(std::vector<int> &grid_thw,
+                          std::vector<float> &attention_mask);
   std::vector<int> make_posid(const std::vector<int> &grid_thw, int vit_offset,
                               int valid_vit_length, int token_length);
 
@@ -186,7 +188,8 @@ void Qwen2VL::head_launch(const bm_net_info_t *net,
   bm_thread_sync(bm_handle);
 }
 
-std::vector<int> Qwen2VL::make_vit_posid(std::vector<int> &grid_thw) {
+void Qwen2VL::make_vit_posid(std::vector<int> &grid_thw,
+                             std::vector<int> &pos_ids) {
   int t = grid_thw[0];
   int h = grid_thw[1];
   int w = grid_thw[2];
@@ -214,18 +217,16 @@ std::vector<int> Qwen2VL::make_vit_posid(std::vector<int> &grid_thw) {
   }
 
   int valid_vit_pixels = h * w;
-  std::vector<int> pos_ids(MAX_PIXELS * 2, 0);
   for (int i = 0; i < t; ++i) {
     for (int j = 0; j < valid_vit_pixels; ++j) {
       pos_ids[i * valid_vit_pixels + 2 * j] = hpos_ids[j];
       pos_ids[i * valid_vit_pixels + 2 * j + 1] = wpos_ids[j];
     }
   }
-
-  return pos_ids;
 }
 
-std::vector<uint16_t> Qwen2VL::make_vit_attn_mask(std::vector<int> &grid_thw) {
+void Qwen2VL::make_vit_attn_mask(std::vector<int> &grid_thw,
+                                 std::vector<float> &attention_mask) {
   // Extract t, h, w from grid_thw
   int t = grid_thw[0];
   int h = grid_thw[1];
@@ -236,9 +237,6 @@ std::vector<uint16_t> Qwen2VL::make_vit_attn_mask(std::vector<int> &grid_thw) {
   for (int i = 0; i <= t; ++i) {
     cu_seqlens[i] = h * w * i;
   }
-
-  // Initialize attention_mask with -10000
-  std::vector<uint16_t> attention_mask(MAX_PIXELS * MAX_PIXELS, ATTENTION_MASK);
 
   // Update attention_mask based on cu_seqlens
   for (size_t i = 1; i < cu_seqlens.size(); ++i) {
@@ -253,8 +251,6 @@ std::vector<uint16_t> Qwen2VL::make_vit_attn_mask(std::vector<int> &grid_thw) {
       }
     }
   }
-
-  return attention_mask;
 }
 
 void Qwen2VL::vit_launch(std::vector<float> &pixel_values, int vit_offset,
@@ -264,8 +260,11 @@ void Qwen2VL::vit_launch(std::vector<float> &pixel_values, int vit_offset,
   out_mem = dev_buffer;
   // forward vision transformer
   std::vector<float> pixel_values_pad(MAX_PIXELS * VIT_DIMS, 0);
-  auto position_ids = make_vit_posid(grid_thw);
-  auto attention_mask = make_vit_attn_mask(grid_thw);
+  // Initialize attention_mask with -10000
+  std::vector<float> attention_mask(MAX_PIXELS * MAX_PIXELS, -10000.0f);
+  std::vector<int> position_ids(MAX_PIXELS * 2, 0);
+  make_vit_posid(grid_thw, position_ids);
+  make_vit_attn_mask(grid_thw, attention_mask);
   std::copy(pixel_values.begin(), pixel_values.end(), pixel_values_pad.data());
 
   empty_net(bm_handle, net_vit);
@@ -387,7 +386,7 @@ int Qwen2VL::forward_first(std::vector<int> &tokens,
                            std::vector<int> &grid_thw, int vit_offset,
                            int valid_vit_length) {
   std::vector<int> input_ids(SEQLEN, 0);
-  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, 0);
+  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
   std::copy(tokens.begin(), tokens.end(), input_ids.data());
 
   token_length = tokens.size(); // text input length
@@ -395,12 +394,10 @@ int Qwen2VL::forward_first(std::vector<int> &tokens,
   auto position_ids =
       make_posid(grid_thw, vit_offset, valid_vit_length, token_length);
   for (int i = 0; i < token_length; i++) {
-    for (int j = 0; j < SEQLEN; j++) {
+    for (int j = 0; j < token_length; j++) {
       if (j <= i) {
         attention_mask[i * SEQLEN + j] = 0;
-      } else {
-        attention_mask[i * SEQLEN + j] = ATTENTION_MASK;
-      }
+      } 
     }
   }
 

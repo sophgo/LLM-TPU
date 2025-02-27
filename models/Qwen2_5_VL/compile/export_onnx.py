@@ -428,7 +428,8 @@ def test_net_with_mask(mode, messages):
         padding=True,
         return_tensors="pt",
     )
-
+    del image_inputs, video_inputs
+    torch.cuda.empty_cache()
     input_ids = inputs.input_ids
     if mode == "image":
         pixel_values = inputs.pixel_values
@@ -445,7 +446,8 @@ def test_net_with_mask(mode, messages):
 
     # vit
     vit_embeds = vit_launch(pixel_values, grid_thw)
-
+    del pixel_values
+    torch.cuda.empty_cache()
     # embedding
     input_ids_prefill = torch.zeros(1, SEQ_LENGTH).to(torch.int32).to(device)
     input_ids_prefill[:, :input_ids.shape[-1]] = input_ids
@@ -482,6 +484,8 @@ def test_net_with_mask(mode, messages):
         v[:, input_ids.shape[-1]:, :, :] = 0
         k_cache.append(k)
         v_cache.append(v)
+        del k, v
+        torch.cuda.empty_cache()
     inputs_embeds = inputs_embeds[:, input_ids.shape[-1] - 1:input_ids.shape[-1]].view(1, 1, HIDDEN_SIZE)
     lm = LmHead()
 
@@ -494,6 +498,7 @@ def test_net_with_mask(mode, messages):
         token_len += 1
         input_id = torch.tensor([token]).to(device)
         out = embed(input_id).view(1, 1, HIDDEN_SIZE)
+        del input_id
         valid_position_ids += 1
         position_ids = torch.tensor(3*[[[valid_position_ids]]]).to(device)
 
@@ -506,6 +511,8 @@ def test_net_with_mask(mode, messages):
                                      k_cache[i].to(dtype), v_cache[i].to(dtype))
             k_cache[i][:, token_len-1:token_len, :, :] = k[:, :, :, :]
             v_cache[i][:, token_len-1:token_len, :, :] = v[:, :, :, :]
+            del k, v
+            torch.cuda.empty_cache()
         token = greedy(lm(out.to(dtype))).view(1)
         out_ids.append(int(token))
     words = tokenizer.decode(out_ids)
@@ -592,7 +599,7 @@ if __name__ == "__main__":
     print("\033[31m如果输入为图片时，注意resized_height与resized_width，避免resize导致图片质量损失 \033[0m")
 
 
-    # test_image(path = "./../python_demo/image1.jpg", resized_height=280, resized_width=420)
+    # test_image(path = "./../python_demo/test.jpg", resized_height=280, resized_width=420)
     # test_video(path = "./sample.mp4")
 
     # convert

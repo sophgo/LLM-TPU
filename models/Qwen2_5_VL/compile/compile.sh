@@ -188,8 +188,6 @@ vision_transformer() {
     model_deploy.py \
         --mlir vit.mlir \
         ${half_quantize_args} \
-        --quant_input \
-        --quant_input_list 3 \
         --quant_output \
         --high_precision \
         --chip bm1684x \
