@@ -437,7 +437,8 @@ class ModelExporter:
 
         # load config
         ModelMapper.do_map(self.onnx_rebuilder, self.model.config, self.onnx_rebuilder.model_map['config'])
-        ModelMapper.do_map(self.onnx_rebuilder.config.vision_config, self.model.config.vision_config, self.onnx_rebuilder.model_map['vision_config'])
+        if self.visual_length:
+            ModelMapper.do_map(self.onnx_rebuilder.config.vision_config, self.model.config.vision_config, self.onnx_rebuilder.model_map['vision_config'])
 
         # rebuild config
         self.onnx_rebuilder.rebuild_config()
@@ -459,7 +460,7 @@ class ModelExporter:
         self.onnx_rebuilder.export_block()
         self.onnx_rebuilder.export_block_cache()
 
-        if self.onnx_rebuilder.visual is not None:
+        if self.visual_length:
             self.onnx_rebuilder.export_processor()
             self.onnx_rebuilder.export_visual()
 
