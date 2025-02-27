@@ -1,10 +1,15 @@
 import os
 import sys
+import json
 import copy
+import math
 import torch
 import onnx
 from tqdm import tqdm
 from typing import Optional, Tuple
+
+
+from transformers import AutoTokenizer, AutoProcessor
 
 def logging(message):
     def decorator(func):
@@ -33,6 +38,7 @@ class ModelMapper:
         }
         self.regist('baichuan', baichuan_map)
         self.regist_qwen()
+        self.regist_qwen2_5_vl()
         self.regist_glm()
         self.regist_glm2()
         self.regist_phi()
@@ -49,7 +55,7 @@ class ModelMapper:
             'num_hidden_layers': 'num_hidden_layers',
             'num_key_value_heads': 'num_key_value_heads',
             'rope_theta': 'rope_theta',
-            'vocab_size': 'vocab_size',
+            'vocab_size': 'vocab_size'
         }
         self.default_model = {
             'lm_': 'lm_head',
@@ -111,6 +117,19 @@ class ModelMapper:
             }
         }
         self.regist('qwen', qwen_map)
+        
+    def regist_qwen2_5_vl(self):
+        qwen2_5_vl_map = {
+            'config': self.default_config,
+            'vision_config': {
+                'embed_dim': 'hidden_size',
+                'hidden_size': 'out_hidden_size'
+            },
+            'model': self.default_model,
+            'decoder': self.default_decoder,
+            'attention': self.default_attention
+        }
+        self.regist('qwen2_5_vl', qwen2_5_vl_map)
 
     def regist_glm(self):
         glm_map = {
@@ -216,16 +235,22 @@ class ModelMapper:
 class OnnxRebuilder:
     def __init__(self,
 				 onnx_dir: str,
+                 model_path: str,
                  quantize: str,
 				 seq_length: int,
                  model_type: str,
-				 embedding_disk: bool):
+				 embedding_disk: bool,
+                 config,
+                 visual_length):
         self.onnx_model = None
+        self.model_path = model_path
         self.quantize = quantize
         self.onnx_dir = onnx_dir
         self.seq_length = seq_length
         self.model_type = model_type
         self.embedding_disk = embedding_disk
+        self.config = config
+        self.visual_length = visual_length
         self.model_mapper = ModelMapper()
 
     def _replace_initializer(self, old_init, new_init):
@@ -259,8 +284,8 @@ class OnnxRebuilder:
 
         # Blocks
         self.blocks = []
-        for i in range(self.num_hidden_layers):
-            self.blocks.append(Decoder(self, i))
+        for block in self.blocks_.children():
+            self.blocks.append(Decoder(block, self))
 
         # Lmhead
         self.lm = Lm(self)
@@ -302,6 +327,25 @@ class OnnxRebuilder:
 
         # Save the modified model
         onnx.save(self.onnx_model, save_path)
+
+    @logging("export_config ...")
+    def export_config(self):
+        config_dict = self.config.to_dict()
+        with open(f'{self.onnx_dir}/../config.json', "w") as f:
+            json.dump(config_dict, f, indent=4)
+        return
+    
+    @logging("export_tokenizer ...")
+    def export_tokenizer(self):
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, trust_remote_code=True)
+        self.tokenizer.save_pretrained(f'{self.onnx_dir}/../tokenizer')
+        return
+
+    @logging("export_processor ...")
+    def export_processor(self):
+        self.processor = AutoProcessor.from_pretrained(self.model_path, trust_remote_code=True)
+        self.processor.save_pretrained(f'{self.onnx_dir}/../processor')
+        return
 
     @logging("export_embed ...")
     def export_embed(self):
@@ -667,9 +711,9 @@ class Rotary(torch.nn.Module):
         return torch.cat((x1, x2), dim=-1)
 
 class Decoder(torch.nn.Module):
-    def __init__(self, config, layer_id):
+    def __init__(self, decoder, config):
         super().__init__()
-        ModelMapper.do_map(self, config.blocks_[layer_id], config.model_map['decoder'])
+        ModelMapper.do_map(self, decoder, config.model_map['decoder'])
         self.hidden_size = config.hidden_size
         self.self_attn = Attention(self.self_attn, config)
 
@@ -773,7 +817,6 @@ class Visual(torch.nn.Module):
         self.model_type = base.model_type
         self.visual_model = visual_model.eval()
         self.embed_ = base.embed
-        self.tokenizer = base.tokenizer
         self.config = base.config
         self.visual_config = self.config.vision_config
 
@@ -795,6 +838,7 @@ class Visual(torch.nn.Module):
     def get_visual(model_type, visual_model, base):
         visual_models = {
             'qwen2_vl': Qwen2Visual,
+            'qwen2_5_vl': Qwen2Visual,
         }
         if model_type in visual_models:
             return visual_models[model_type](visual_model, base)
@@ -803,7 +847,7 @@ class Visual(torch.nn.Module):
         return None
 
     def get_model_map(self):
-        if self.model_type == "qwen2_vl":
+        if self.model_type == "qwen2_vl" or self.model_type == "qwen2_5_vl":
             model_map = {
                 'decoder': {
                     'self_attn': 'attn',
@@ -842,7 +886,7 @@ class VisionRotary(torch.nn.Module):
         self.cos, self.sin = self.init_rotary_pos_emb(self.visual_length)
 
     def init_rotary_pos_emb(self, visual_length):
-        if self.model_type == "qwen2_vl":
+        if self.model_type == "qwen2_vl" or self.model_type == "qwen2_5_vl":
             seq = torch.arange(visual_length)
             freqs = torch.outer(seq, self.inv_freq)
             self.cos = freqs.cos()
@@ -868,7 +912,6 @@ class Qwen2Visual(Visual):
 
     def load(self):
         # load model
-        self.mlp_ratio = self.visual_config.mlp_ratio
         self.hidden_size = self.visual_config.embed_dim
         self.num_attention_heads = self.visual_config.num_heads
         self.num_key_value_heads = self.visual_config.num_heads
@@ -881,6 +924,10 @@ class Qwen2Visual(Visual):
         self.merger = self.visual_model.merger
         self.spatial_merge_size = self.visual_config.spatial_merge_size
         self.max_pixels = self.visual_length * self.spatial_merge_size * self.spatial_merge_size
+        self.mlp_ratio = self.merger.mlp[0].weight.shape[0] // self.hidden_size
+
+        self.in_channels = self.patch_embed.proj.in_channels
+        self.conv_dim = math.prod(self.patch_embed.proj.kernel_size) * self.in_channels
 
     def forward(self, flatten_patches, position_ids, attention_mask):
         self.cos = self.rotary.cos[position_ids].flatten(1).unsqueeze(1).repeat(1, 1, 2).unsqueeze(0)
@@ -888,14 +935,14 @@ class Qwen2Visual(Visual):
 
         hidden_states = self.patch_embed(flatten_patches)
         for blk in self.blocks:
-            hidden_states, _ = self.blocks[0](hidden_states, rotary_pos_emb=(self.cos, self.sin), attention_mask=attention_mask)
+            hidden_states, _ = blk(hidden_states, rotary_pos_emb=(self.cos, self.sin), attention_mask=attention_mask)
         image_embeds = self.merger.mlp(self.merger.ln_q(hidden_states).view(1, -1, self.hidden_size * self.mlp_ratio))
         return image_embeds
 
     def export(self, onnx_path):
-        patch = torch.randn(self.max_pixels, 1176).to(dtype=torch.float32)
+        patch = torch.randn(self.max_pixels, self.conv_dim).to(dtype=torch.float32)
         position_ids = torch.randn(self.max_pixels, 2).to(dtype=torch.int32)
-        attention_mask = torch.zeros([1, self.max_pixels, self.max_pixels], dtype=torch.float32)
+        attention_mask = torch.zeros([1, 1, self.max_pixels, self.max_pixels], dtype=torch.float32)
 
         torch.onnx.export(
             self, (patch, position_ids, attention_mask),

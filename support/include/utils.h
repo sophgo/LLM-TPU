@@ -675,7 +675,7 @@ struct Config {
 //===------------------------------------------------------------===//
 std::vector<int> make_vit_position_id(const Config &config) {
   std::vector<int> pos_ids;
-  if (config.model_type == "qwen2_vl") {
+  if (config.model_type == "qwen2_vl" || config.model_type == "qwen2_5_vl") {
     int t = config.grid_thw[0];
     int h = config.grid_thw[1];
     int w = config.grid_thw[2];
@@ -719,7 +719,7 @@ std::vector<int> make_vit_position_id(const Config &config) {
 
 std::vector<uint16_t> make_vit_attention_mask(const Config &config) {
   std::vector<uint16_t> attention_mask;
-  if (config.model_type == "qwen2_vl") {
+  if (config.model_type == "qwen2_vl" || config.model_type == "qwen2_5_vl") {
     // Extract t, h, w from config.grid_thw
     int t = config.grid_thw[0];
     int h = config.grid_thw[1];
@@ -760,7 +760,7 @@ std::vector<uint16_t> make_vit_attention_mask(const Config &config) {
 //===------------------------------------------------------------===//
 std::vector<int> make_position_id(Config &config) {
   std::vector<int> position_id;
-  if (config.model_type == "qwen2_vl") {
+  if (config.model_type == "qwen2_vl" || config.model_type == "qwen2_5_vl") {
     int text_len = config.vit_offset;
 
     // Assuming config.grid_thw has at least one element
@@ -880,7 +880,7 @@ std::vector<uint16_t> make_attention_mask(const Config &config) {
 //===------------------------------------------------------------===//
 std::vector<int> make_next_position_id(Config &config) {
   std::vector<int> position_id;
-  if (config.model_type == "qwen2_vl") {
+  if (config.model_type == "qwen2_vl" || config.model_type == "qwen2_5_vl") {
     config.max_pos += 1;
     position_id = {config.max_pos, config.max_pos, config.max_pos};
   } else {

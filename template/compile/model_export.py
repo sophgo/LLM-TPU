@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import os
 import sys
-import json
 import time
 import warnings
 import logging
@@ -385,13 +384,16 @@ class ModelExporter:
 
         # load original weight, save config and tokenizer
         self.load_pretrained()
-        
+
         # rebuild original weight to onnx model
         self.onnx_rebuilder = OnnxRebuilder(self.onnx_dir,
+                                            self.model_path,
                                             self.quantize,
                                             self.seq_length,
                                             self.model_type,
-                                            self.embedding_disk)
+                                            self.embedding_disk,
+                                            self.config,
+                                            self.visual_length)
         self.rebuild_model()
 
         # compile bmodel
@@ -406,21 +408,15 @@ class ModelExporter:
                                                     self.visual_length)
 
     def load_pretrained(self):
-        self.config = AutoConfig.from_pretrained(self.model_path, trust_remote_code=True)
-        with open(f'{self.out_dir}/config.json', "w") as f:
-            json.dump(self.config.to_dict(), f, indent=4)
-
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, trust_remote_code=True)        
-        self.tokenizer.save_pretrained(f'{self.out_dir}/tokenizer')
-
-        if self.visual is not None:
-            self.processor = AutoProcessor.from_pretrained(self.model_path, trust_remote_code=True)
-            self.processor.save_pretrained(f'{self.out_dir}/processor')
-
+        self.config = AutoConfig.from_pretrained(self.model_path)
         self.model_type = self.config.model_type
+
         if 'qwen2_vl' == self.model_type:
             from transformers import Qwen2VLForConditionalGeneration
             self.model = Qwen2VLForConditionalGeneration.from_pretrained(self.model_path)
+        elif 'qwen2_5_vl' == self.model_type:
+            from transformers import Qwen2_5_VLForConditionalGeneration
+            self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(self.model_path)
         elif 'mllama' == self.model_type:
             from transformers import MllamaForConditionalGeneration
             self.model = MllamaForConditionalGeneration.from_pretrained(self.model_path)
@@ -441,6 +437,7 @@ class ModelExporter:
 
         # load config
         ModelMapper.do_map(self.onnx_rebuilder, self.model.config, self.onnx_rebuilder.model_map['config'])
+        ModelMapper.do_map(self.onnx_rebuilder.config.vision_config, self.model.config.vision_config, self.onnx_rebuilder.model_map['vision_config'])
 
         # rebuild config
         self.onnx_rebuilder.rebuild_config()
@@ -452,6 +449,9 @@ class ModelExporter:
         self.onnx_rebuilder.rebuild_modules()
 
     def export(self):
+        self.onnx_rebuilder.export_config()
+        self.onnx_rebuilder.export_tokenizer()
+
         self.onnx_rebuilder.export_embed()
         self.onnx_rebuilder.export_lm_head()
         self.onnx_rebuilder.export_greedy_head()
@@ -459,7 +459,8 @@ class ModelExporter:
         self.onnx_rebuilder.export_block()
         self.onnx_rebuilder.export_block_cache()
 
-        if self.visual is not None:
+        if self.onnx_rebuilder.visual is not None:
+            self.onnx_rebuilder.export_processor()
             self.onnx_rebuilder.export_visual()
 
         if not self.not_compile:

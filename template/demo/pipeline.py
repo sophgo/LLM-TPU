@@ -107,7 +107,10 @@ class Model:
         else:
             self.enable_vision = True
             processor_path = os.path.join(args.dir_path, "processor")
-            if self.model_type == "qwen2_vl":
+            if self.model_type == "qwen2_vl" or self.model_type == "qwen2_5_vl":
+                # for qwen2_5_vl
+                # pip install qwen-vl-utils[decord]==0.0.8
+                # pip install git+https://github.com/huggingface/transformers accelerate
                 self.processor = AutoProcessor.from_pretrained(processor_path, trust_remote_code=True)
                 self.tokenizer = self.processor.tokenizer
                 self.EOS = [self.tokenizer.convert_tokens_to_ids("<|end|>"), self.tokenizer.convert_tokens_to_ids("<|im_end|>")]
@@ -118,7 +121,7 @@ class Model:
                 self.append_assistant = lambda history, answer_str: history.append(
                     {"role": "assistant", "content": answer_str}
                 )
-                self.apply_chat_template = lambda history: self.tokenizer.apply_chat_template(
+                self.apply_chat_template = lambda history: self.processor.apply_chat_template(
                     history, tokenize=False, add_generation_prompt=True
                 )
                 self.system_prompt = {"role": "system", "content": "You are a helpful assistant."}
@@ -129,6 +132,10 @@ class Model:
     def load_model(self, args, read_bmodel):
         if not args.model_path:
             bmodel_files = [f for f in os.listdir(args.dir_path) if f.endswith('.bmodel')]
+            if len(bmodel_files) > 1:
+                raise RuntimeError(f"Found multiple bmodel files in {args.dir_path}, please specify one with --model_path")
+            elif not bmodel_files:
+                raise FileNotFoundError(f"No bmodel files found in {args.dir_path}")
             model_path = os.path.join(args.dir_path, bmodel_files[0])
         else:
             model_path = args.model_path
@@ -207,7 +214,7 @@ class Model:
             print(f"无法找到 {media_type} 路径: {path}")
             return None
 
-        if self.model_type == "qwen2_vl":
+        if self.model_type == "qwen2_vl" or self.model_type == "qwen2_5_vl":
             from qwen_vl_utils import process_vision_info
             self.append_user(self.history, self.input_str)
 
