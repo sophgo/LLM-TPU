@@ -41,5 +41,5 @@ find_package(pybind11 REQUIRED CONFIG)
 file(GLOB CPP_FILES ${PROJECT_SOURCE_DIR}/*.cpp)
 
 pybind11_add_module(chat ${CPP_FILES})
-target_link_libraries(chat PUBLIC bmrt bmlib ${OPENCV_LIBS})
+target_link_libraries(chat PUBLIC bmrt bmlib ${OPENCV_LIBS} z)
 install(TARGETS chat DESTINATION python)
