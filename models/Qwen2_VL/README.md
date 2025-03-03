@@ -35,7 +35,7 @@ pip3 install qwen-vl-utils accelerate torch==2.5.0 torchvision==0.15.2 transform
 
 # 导出onnx
 cd compile
-python3 export_onnx_video.py --model_path /path/to/Qwen2-VL-2B-Instruct --seq_length 2048
+python3 export_onnx.py --model_path /path/to/Qwen2-VL-2B-Instruct --seq_length 2048
 ```
 
 ## 编译模型
@@ -72,10 +72,10 @@ source ./envsetup.sh  #激活环境变量
 
 #### 3. 编译模型生成bmodel
 
-对ONNX模型进行编译，生成模型`qwen2-vl-2b_int4_seq2048_1dev.bmodel `
+对ONNX模型进行编译，生成模型`qwen2-vl-2b_int4_seq2048_1dev.bmodel `, 注意mode需要标注具体类型比如：w4bf16, w4f16
 
 ``` shell
-./compile.sh --name qwen2-vl-2b --seq_length 2048
+./compile.sh --name qwen2-vl-2b --seq_length 2048 --mode w4bf16
 ```
 
 ## 编译与运行程序

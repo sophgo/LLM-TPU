@@ -1,8 +1,7 @@
 import time
 import argparse
 from PIL import Image
-import torchvision.transforms as T
-from transformers import AutoProcessor, AutoTokenizer, PretrainedConfig, Qwen2VLConfig
+from transformers import AutoProcessor
 from qwen_vl_utils import process_vision_info
 import chat
 import json
@@ -17,10 +16,11 @@ class Qwen2VL():
         self.device = args.devid
         self.processor = AutoProcessor.from_pretrained(args.processor_path,
                                                        trust_remote_code=True)
-        
         self.tokenizer = self.processor.tokenizer
+
         with open(args.config, 'r') as f:
             self.config = json.load(f)
+
         self.resized_height = args.resized_height
         self.resized_width = args.resized_width
 
@@ -88,7 +88,6 @@ class Qwen2VL():
         t1 = time.time()
         self.model.preprocess_image(path)
         t2 = time.time()
-        breakpoint()
         text = self.processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
