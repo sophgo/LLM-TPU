@@ -176,9 +176,13 @@ rearrange_patches(const std::vector<std::vector<float>> &patches,
   int grid_w = config.grid_thw[2];
   int channel = 3;
 
-  int total_elements = grid_t * grid_h * grid_w * channel *
-                       config.temporal_patch_size * config.patch_size *
-                       config.patch_size;
+  int grid_prod = grid_t * grid_h * grid_w;
+  int conv_dim = channel * config.temporal_patch_size * config.patch_size * config.patch_size;
+  int total_elements = grid_prod * conv_dim;
+  if (grid_prod > config.MAX_PIXELS) {
+    throw std::runtime_error("the resized image exceeds MAX_PIXELS, please use --resized_width/--resized_height in pipeline.py.");
+  }
+
   std::vector<float> in(total_elements, 0);
   if (patches.size() == 1) {
     tile(patches[0], in, config.temporal_patch_size);
