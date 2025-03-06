@@ -287,7 +287,14 @@ std::vector<float> bicubic_resize(const cv::Mat &image, int resized_height,
   auto resized_image =
       PillowResize::resize(rgb_image, cv::Size(resized_height, resized_width),
                            PillowResize::INTERPOLATION_BICUBIC);
-
+  // cv::Mat resized_image;
+  // cv::resize(
+  //       rgb_image, 
+  //       resized_image, 
+  //       cv::Size(resized_width, resized_height),
+  //       0, 0,
+  //       cv::INTER_CUBIC
+  // );
   // rescale
   resized_image.convertTo(resized_image, CV_32FC1, 0.00392156862745098, 0);
 
