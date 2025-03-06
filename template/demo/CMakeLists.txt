@@ -22,7 +22,8 @@ elseif (${TARGET_ARCH} STREQUAL "pcie")
 endif()
 
 # OpenCV configuration
-if (${TYPE} STREQUAL "image" OR ${TYPE} STREQUAL "video")
+if (${TYPE} STREQUAL "media")
+    add_definitions(-DENABLE_MEDIA)
     find_package(OpenCV REQUIRED)
     include_directories(${OpenCV_INCLUDE_DIRS})
     link_directories(${OpenCV_LIBRARY_DIRS})

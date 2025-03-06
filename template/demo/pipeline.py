@@ -114,7 +114,12 @@ class Model:
                 self.processor = AutoProcessor.from_pretrained(processor_path, trust_remote_code=True)
                 self.tokenizer = self.processor.tokenizer
                 self.EOS = [self.tokenizer.convert_tokens_to_ids("<|end|>"), self.tokenizer.convert_tokens_to_ids("<|im_end|>")]
-                self.model.spatial_merge_size = self.config["vision_config"]["spatial_merge_size"]
+                
+                self.model.config.image_token_id = self.config["image_token_id"]
+                self.model.config.video_token_id = self.config["video_token_id"]
+                self.model.config.spatial_merge_size = self.config["vision_config"]["spatial_merge_size"]
+                self.model.config.patch_size = self.config["vision_config"]["patch_size"]
+                self.model.config.temporal_patch_size = self.config["vision_config"]["temporal_patch_size"]
                 self.append_user = lambda history, input_str: history.append(
                     {"role": "user", "content": input_str}
                 )
@@ -154,7 +159,7 @@ class Model:
         self.model.generation_mode = args.generation_mode
         self.model.embedding_path = self.embedding_path if os.path.exists(self.embedding_path) else ""
         self.model.NUM_LAYERS = self.config["num_hidden_layers"]
-        self.model.model_type = self.model_type
+        self.model.config.model_type = self.model_type
 
         self.enable_history = args.enable_history
 
@@ -171,108 +176,66 @@ class Model:
     def clean_invalid_unicode(self, text):
         return text.encode('utf-8', 'ignore').decode('utf-8', 'ignore')
 
-    def encode_tokens(self):
-        self.append_user(self.history, self.input_str)
-        text = self.apply_chat_template(self.history)
-        tokens = self.tokenizer(text).input_ids
-        return tokens
-
-    def image_message(self, path):
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "image": path,
-                    },
-                    {"type": "text", "text": self.input_str},
-                ],
-            }
-        ]
+    def image_message(self, text, path):
+        messages = {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "image": path,
+                },
+                {"type": "text", "text": text},
+            ],
+        }
         return messages
 
-    def video_message(self, path):
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "video",
-                        "video": path,
-                        "fps": 1.0,
-                    },
-                    {"type": "text", "text": self.input_str},
-                ],
-            }
-        ]
+    def video_message(self, text, path):
+        messages = {
+            "role": "user",
+            "content": [
+                {
+                    "type": "video",
+                    "video": path,
+                    "fps": 1.0,
+                },
+                {"type": "text", "text": text},
+            ],
+        }
         return messages
-    
-    def process_media_input(self, path, media_type):
-        """处理图像或视频输入"""
-        if not os.path.exists(path):
-            print(f"无法找到 {media_type} 路径: {path}")
-            return None
 
-        if self.model_type == "qwen2_vl" or self.model_type == "qwen2_5_vl":
-            from qwen_vl_utils import process_vision_info
-            self.append_user(self.history, self.input_str)
-
-            messages = self.image_message(path) if media_type == "image" else self.video_message(path)
-            image_inputs, video_inputs = process_vision_info(messages)
-            text = self.apply_chat_template(messages)
-            inputs = self.processor(
-                text=[text],
-                images=image_inputs,
-                videos=video_inputs,
-                padding=True,
-                return_tensors="pt",
-            )
-            if self.model.MAX_PIXELS < inputs.pixel_values.shape[0]:
-                raise RuntimeError("your image is too large ")
-        elif media_type == "image":
-            # inputs = self.model.process_image(path)
-            pass
+    def encode_tokens(self, text, media_path, media_type):
+        if media_type == "image":
+            messages = self.image_message(text, media_path)
+            self.history.append(messages)
         elif media_type == "video":
-            # inputs = self.model.process_video(path)
-            pass
+            messages = self.video_message(text, media_path)
+            self.history.append(messages)
         else:
-            print(f"未知的媒体类型: {media_type}")
-            return None
+            self.append_user(self.history, text)
+        formatted_text = self.apply_chat_template(self.history)
+
+        tokens = self.tokenizer(formatted_text).input_ids
+        return tokens
+    
+    def process_media_input(self, media_path, media_type):
+        if self.model_type in ["qwen2_vl", "qwen2_5_vl"]:
+            inputs = self.model.process_media(media_path, media_type) # preprocess and vit launch
+        else:
+            raise NotImplementedError(f"Not support {self.model_type} now")
         return inputs
     
-    def prefill_phase(self, inputs, media_type):
+    def prefill_phase(self, text, media_path, media_type):
         """handle image or video"""
         print("\n回答: ", end="")
         first_start = time.time()
 
-        if media_type == "image":
-            vit_token_list = torch.where(inputs.input_ids == self.config["image_token_id"])[1].tolist()
-            vit_offset = vit_token_list[0]
-            valid_vit_length = len(vit_token_list)
-            token = self.model.forward_first(
-                inputs.input_ids.squeeze(0).tolist(),
-                inputs.pixel_values.flatten().tolist(),
-                inputs.image_grid_thw.squeeze(0).tolist(),
-                vit_offset,
-                valid_vit_length
-            )
-        elif media_type == "video":
-            vit_token_list = torch.where(inputs.input_ids == self.config["video_token_id"])[1].tolist()
-            vit_offset = vit_token_list[0]
-            valid_vit_length = len(vit_token_list)
-            token = self.model.forward_first(
-                inputs.input_ids.squeeze(0).tolist(),
-                inputs.pixel_values_videos.flatten().tolist(),
-                inputs.video_grid_thw.squeeze(0).tolist(),
-                vit_offset,
-                valid_vit_length
-            )
-        elif media_type == "text":
-            tokens = self.encode_tokens()
-            token = self.model.forward_first(tokens)
-        else:
-            raise NotImplementedError("Not Support Now")
+        tokens = self.encode_tokens(text, media_path, media_type)
+        self.model.init_forward(tokens)
+
+        if media_path:
+            self.process_media_input(media_path, media_type)
+
+        token = self.model.forward_first()
 
         first_end = time.time()
         self.first_duration = first_end - first_start
@@ -332,46 +295,44 @@ class Model:
         # Stop Chatting with "exit" input
         while True:
             if self.test_input:
-                self.input_str = self.test_input.strip()
-                print(f"\n问题: {self.input_str}")
+                input_str = self.test_input.strip()
+                print(f"\n问题: {input_str}")
             else:
-                self.input_str = self.clean_invalid_unicode(input("\n请输入问题: ").strip())
+                input_str = self.clean_invalid_unicode(input("\n请输入问题: ").strip())
 
             # Quit
-            if self.input_str in ["exit", "q", "quit"]:
+            if input_str in ["exit", "q", "quit"]:
                 print("退出聊天会话。")
                 break
             # New Chat
-            elif self.input_str in ["clear", "new"]:
+            elif input_str in ["clear", "new"]:
                 self.init_history()
                 print("聊天记录已清除，开始新的会话。")
 
             # VISION
+            media_type = "text"
+            media_path = ""
             if hasattr(self, "enable_vision") and self.enable_vision:
                 if self.test_media:
                     media_path = self.test_media.strip()
-                    print(f"路径: {media_path}")
+                    print(f"测试媒体路径: {media_path}") if media_path else None
                 else:
-                    media_path = input("\n请输入媒体路径: ").strip()
-                _, ext = os.path.splitext(media_path)
+                    media_path = input("\n媒体路径（回车跳过）: ").strip()
+                
+                if media_path:
+                    if not os.path.exists(media_path):
+                        print(f"路径不存在: {media_path}，使用纯文本输入")
+                    else:
+                        ext = os.path.splitext(media_path)[1].lower()
+                        if ext in [".jpg", ".jpeg", ".png"]:
+                            media_type = "image"
+                        elif ext == ".mp4":
+                            media_type = "video"
+                        else:
+                            print(f"不支持的格式: {ext}，使用纯文本输入")
+                            media_path = ""
 
-                if ext in [".jpg", ".jpeg", ".png"]:
-                    media_type = "image"
-                    inputs = self.process_media_input(media_path, media_type)
-                elif ext in [".mp4"]:
-                    media_type = "video"
-                    inputs = self.process_media_input(media_path, media_type)
-                else:
-                    print("输入的路径无效，请重新输入。")
-                    continue
-
-            # TEXT
-            else:
-                media_type = "text"
-                inputs = self.input_str
-
-
-            token = self.prefill_phase(inputs, media_type)
+            token = self.prefill_phase(input_str, media_path, media_type)
             self.decode_phase(token)
 
             if self.test_input or self.test_media:

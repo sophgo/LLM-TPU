@@ -315,7 +315,7 @@ def convert():
     print("Done")
 
 
-def get_image_messages(path, resized_height, resized_width):
+def get_image_messages(path):
     messages = [
         {
             "role": "user",
@@ -323,8 +323,6 @@ def get_image_messages(path, resized_height, resized_width):
                 {
                     "type": "image",
                     "image": path,
-                    "resized_height": resized_height,
-                    "resized_width": resized_width,
                 },
                 {"type": "text", "text": "Describe this image and tell a story."},
             ],
@@ -429,6 +427,7 @@ def test_net_with_mask(mode, messages):
     greedy = GreedyHead()
 
     # vit
+    breakpoint()
     vit_embeds = vit_launch(pixel_values, grid_thw)
 
     # embedding
@@ -528,8 +527,8 @@ def test_video(path):
     messages = get_video_messages(path)
     test_net_with_mask("video", messages)
 
-def test_image(path, resized_height, resized_width):
-    messages = get_image_messages(path, resized_height, resized_width)
+def test_image(path):
+    messages = get_image_messages(path)
     test_net_with_mask("image", messages)
 
     # test_model_generate(messages)
@@ -577,7 +576,8 @@ if __name__ == "__main__":
     print("\033[31m如果输入为图片时，注意resized_height与resized_width，避免resize导致图片质量损失 \033[0m")
 
 
-    # test_image(path = "./../python_demo/image1.jpg", resized_height=280, resized_width=420)
+    test_image(path = "../../../assets/g.jpg")
+    exit()
     # test_video(path = "./sample.mp4")
 
     # convert

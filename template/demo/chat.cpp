@@ -17,6 +17,7 @@
 #include <inttypes.h>
 #include <iostream>
 #include <numeric>
+#include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <random>
@@ -37,15 +38,15 @@ public:
   void deinit();
 
   // Inference Functions
-  int forward_first(const std::vector<int> &tokens,
-                    const std::vector<float> &pixel_values = {},
-                    const std::vector<int> &grid_thw = {}, int vit_offset = 0,
-                    int valid_vit_length = 0);
+  void update_config();
+  void init_forward(pybind11::array_t<int> tokens);
+  int forward_first();
   int forward_next();
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
-  // Image Processing
-  void process_image(const std::string &image_path);
+  // Media Processing
+  void process_media(const std::string &media_path,
+                     const std::string &media_type);
 
   std::mt19937 sgen;
   bool vision_enabled = false;
@@ -63,14 +64,12 @@ private:
 
   // Core Inference Functions
   void vit_launch(const std::vector<float> &pixel_values, int vit_offset,
-                  int valid_vit_length, const std::vector<int> &grid_thw,
-                  bm_device_mem_t &out_mem);
+                  int vit_size);
   void net_launch(const bm_net_info_t *net, int stage = 0);
   void dynamic_net_launch(const bm_net_info_t *net, int token_length,
                           int stage_idx = 0);
   void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
                    int this_stage_idx);
-  int sample_token(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   std::vector<uint16_t>
   load_and_infer_embedding(const std::vector<int> &tokens);
   bm_device_mem_t embedding_launch(const bm_net_info_t *net0,
@@ -86,17 +85,13 @@ private:
                      std::vector<int> &input_tokens, int &token_length);
 
   // Helper Functions
-  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
-  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, size_t offset);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, size_t offset,
                   size_t size);
-  std::vector<int> make_posid(const std::vector<int> &grid_thw, int vit_offset,
-                              int valid_vit_length, int token_length);
-  std::vector<uint16_t> create_attention_mask(int seq_len);
 
 public:
   bool is_dynamic;
   uint32_t prefill_reuse;
+  std::vector<int> raw_tokens;
   std::vector<int> total_tokens;
   std::string embedding_path;
   int stage_idx;
@@ -104,7 +99,6 @@ public:
 
   // model
   Config config;
-  std::string model_type;
   int hidden_bytes;
   int kv_bytes;
   int total_length;
@@ -112,11 +106,13 @@ public:
   int NUM_LAYERS;
   int MAX_PREFILL_LENGTH;
   int BATCH_SIZE;
+  std::unique_ptr<Maker> maker;
 
   // vit config
   int MAX_PIXELS;
   int VIT_DIMS;
-  int spatial_merge_size;
+  std::vector<int> media_offset;
+  std::vector<int> media_size;
 
   // generation
   float temperature;
@@ -149,6 +145,7 @@ private:
 Model::Model() {
   prefill_reuse = 0;
   stage_idx = 0;
+  raw_tokens.clear();
   total_tokens.clear();
   make_in_tensors_flag = false;
 
@@ -336,13 +333,13 @@ void Model::init_network() {
 
   // Vision Components
   if (bmrt_get_network_index(p_bmrt, "vit") != -1) {
-    vision_enabled = true;
+    vision_enabled = false; // only when vit launch, vision_enabled = true
     net_vit = bmrt_get_network_info(p_bmrt, "vit");
     MAX_PIXELS = net_vit->stages[0].input_shapes[0].dims[0];
     VIT_DIMS = net_vit->stages[0].input_shapes[0].dims[1];
     auto status = bm_malloc_device_byte(
         bm_handle, &dev_buffer,
-        bm_mem_get_device_size(net_blocks[0]->stages[0].input_mems[0]));
+        bm_mem_get_device_size(net_vit->stages[0].output_mems[0]));
     ASSERT(status == BM_SUCCESS, "malloc memory failed");
   }
 
@@ -376,6 +373,7 @@ void Model::init_parameter() {
   // resize
   past_key.clear();
   past_value.clear();
+  raw_tokens.clear();
   total_tokens.clear();
 
   past_key.resize(NUM_LAYERS);
@@ -540,43 +538,53 @@ bm_device_mem_t Model::embedding_launch(const bm_net_info_t *net0,
   return out_mem;
 }
 
-void Model::process_image(const std::string &image_path) {
-  /**
-  std::vector<cv::Mat> images;
-  opencv_read_image(images, image_path);
+#ifdef ENABLE_MEDIA
+#include "cv_utils.h"
+void Model::process_media(const std::string &media_path,
+                          const std::string &media_type) {
+  int media_token_id;
+  std::vector<float> pixel_values;
 
-  for (size_t i = 0; i < images.size(); i++) {
-    auto image = images[0];
-    int width = image.cols;
-    int height = image.rows;
-    if (model_type == "qwen2_vl") {
-      std::vector<float> image_mean = {0.48145466f, 0.4578275f, 0.40821073f};
-      std::vector<float> image_std = {0.26862954f, 0.26130258f, 0.27577711f};
-
-      auto resized = smart_resize(height, width);
-      int resized_height = resized.first;
-      int resized_width = resized.second;
-      auto resized_image = bicubic_resize(image, resized_height, resized_width, image_mean, image_std);
-    }
+  if (media_type == "image") {
+    pixel_values = process_image(media_path, config);
+    media_token_id = config.image_token_id;
+  } else if (media_type == "video") {
+    process_video(media_path);
+    media_token_id = config.video_token_id;
+  } else if (media_type == "audio") {
+    process_audio(media_path);
+  } else {
+    throw std::runtime_error("not support now");
   }
 
-  **/
-  return ;
+  // token process & vit launch
+  raw_tokens = maker->insert_tokens(raw_tokens, media_token_id);
+  get_media_info(raw_tokens, media_offset, media_size, media_token_id);
+
+  ASSERT((media_offset.size() == 1 && media_size.size() == 1),
+         "only support media_offset.size() == 1");
+
+  // update
+  total_length = raw_tokens.size();
+  config.total_length = total_length;
+  config.media_offset = media_offset[0];
+  config.media_size = media_size[0];
+
+  // vit launch
+  vit_launch(pixel_values, media_offset[0], media_size[0]);
 }
+#endif
 
 void Model::vit_launch(const std::vector<float> &pixel_values, int vit_offset,
-                       int valid_vit_length, const std::vector<int> &grid_thw,
-                       bm_device_mem_t &out_mem) {
+                       int vit_size) {
   auto start = std::chrono::high_resolution_clock::now();
   empty(bm_handle, dev_buffer);
-  d2d(dev_buffer, out_mem, 0, total_length * hidden_bytes);
-  out_mem = dev_buffer;
+
   // forward vision transformer
   std::vector<float> pixel_values_pad(MAX_PIXELS * VIT_DIMS, 0);
-  auto position_id = make_vit_position_id(config);
-  auto attention_mask = make_vit_attention_mask(config);
+  auto position_id = maker->make_vit_position_id();
+  auto attention_mask = maker->make_vit_attention_mask();
   std::copy(pixel_values.begin(), pixel_values.end(), pixel_values_pad.data());
-
   empty_net(bm_handle, net_vit);
 
   auto &vit_in0_mem = net_vit->stages[0].input_mems[0];
@@ -588,13 +596,15 @@ void Model::vit_launch(const std::vector<float> &pixel_values, int vit_offset,
   bm_memcpy_s2d(bm_handle, vit_in2_mem, (void *)attention_mask.data());
   net_launch(net_vit);
 
-  // concatenante texting embedding and image embedding
-  int dst_offset = vit_offset * hidden_bytes;
-  int vit_size = valid_vit_length * hidden_bytes;
-  bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, vit_out_mem, 0, vit_size);
+  int vit_bytes = vit_size * hidden_bytes;
+  bm_memcpy_d2d_byte(bm_handle, dev_buffer, 0, vit_out_mem, 0, vit_bytes);
+
+  vision_enabled = true;
   auto end = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-  std::cout << "vit_launch time : " << duration.count() << " milliseconds." << std::endl;
+  auto duration =
+      std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+  std::cout << "vit_launch time : " << duration.count() << " milliseconds."
+            << std::endl;
 }
 
 bm_device_mem_t Model::lm_launch(const bm_net_info_t *net,
@@ -607,27 +617,39 @@ bm_device_mem_t Model::lm_launch(const bm_net_info_t *net,
   return lm_out_mem;
 }
 
-int Model::forward_first(const std::vector<int> &tokens,
-                         const std::vector<float> &pixel_values,
-                         const std::vector<int> &grid_thw, int vit_offset,
-                         int valid_vit_length) {
-  ASSERT((int)tokens.size() < MAX_PREFILL_LENGTH,
+void Model::update_config() {
+  config.SEQLEN = SEQLEN;
+  config.MAX_PREFILL_LENGTH = MAX_PREFILL_LENGTH;
+  config.total_length = total_length;
+  config.mask_value = mask_value;
+
+  config.max_pos = 0;
+  config.MAX_PIXELS = MAX_PIXELS;
+}
+
+void Model::init_forward(pybind11::array_t<int> tokens) {
+  pybind11::buffer_info buf = tokens.request();
+  int *ptr = static_cast<int *>(buf.ptr);
+  size_t size = buf.size;
+
+  raw_tokens.resize(size);
+  memcpy(raw_tokens.data(), ptr, size * sizeof(int));
+
+  total_length = raw_tokens.size();
+  update_config();
+  maker = std::make_unique<Maker>(config);
+}
+
+int Model::forward_first() {
+  ASSERT((int)raw_tokens.size() < MAX_PREFILL_LENGTH,
          "the sequence length you input exceeds MAX_PREFILL_LENGTH");
 
   std::vector<int> first_tokens(MAX_PREFILL_LENGTH, 0);
-  std::copy(tokens.begin(), tokens.end(), total_tokens.data());
-  std::copy(tokens.begin(), tokens.end(), first_tokens.data());
+  std::copy(raw_tokens.begin(), raw_tokens.end(), total_tokens.data());
+  std::copy(raw_tokens.begin(), raw_tokens.end(), first_tokens.data());
 
-  total_length = tokens.size();
-
-  config = {model_type,         SEQLEN,
-            MAX_PREFILL_LENGTH, total_length,
-            mask_value,         0,
-            MAX_PIXELS,         grid_thw,
-            vit_offset,         valid_vit_length,
-            spatial_merge_size};
-  auto position_id = make_position_id(config);
-  auto attention_mask = make_attention_mask(config);
+  auto position_id = maker->make_position_id();
+  auto attention_mask = maker->make_attention_mask();
 
   // empty
   for (int i = 0; i < NUM_LAYERS; i++) {
@@ -639,8 +661,11 @@ int Model::forward_first(const std::vector<int> &tokens,
   auto out_mem = embedding_launch(net_embed, net_blocks[0], first_tokens);
 
   // forward vit
-  if (vision_enabled && !pixel_values.empty()) {
-    vit_launch(pixel_values, vit_offset, valid_vit_length, grid_thw, out_mem);
+  if (vision_enabled) {
+    for (size_t i = 0; i < media_offset.size(); i++) {
+      bm_memcpy_d2d_byte(bm_handle, out_mem, media_offset[i] * hidden_bytes,
+                         dev_buffer, 0, media_size[i] * hidden_bytes);
+    }
   }
 
   // forward blocks
@@ -698,12 +723,9 @@ int Model::forward_next() {
 
   int cur_token = total_tokens[total_length - 1];
 
-  std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
-  for (int i = total_length - 1; i < SEQLEN; i++) {
-    attention_mask[i] = mask_value;
-  }
   config.total_length = total_length;
-  auto position_id = make_next_position_id(config);
+  auto attention_mask = maker->make_next_attention_mask();
+  auto position_id = maker->make_next_position_id();
 
   // embedding
   std::vector<int> cur_tokens = {cur_token};
@@ -781,23 +803,28 @@ int Model::forward_next() {
 // }
 
 PYBIND11_MODULE(chat, m) {
+  pybind11::class_<Config>(m, "Config")
+      .def(pybind11::init<>())
+      .def_readwrite("model_type", &Config::model_type)
+      .def_readwrite("patch_size", &Config::patch_size)
+      .def_readwrite("spatial_merge_size", &Config::spatial_merge_size)
+      .def_readwrite("temporal_patch_size", &Config::temporal_patch_size)
+      .def_readwrite("image_token_id", &Config::image_token_id)
+      .def_readwrite("video_token_id", &Config::video_token_id);
+
   pybind11::class_<Model>(m, "Model")
       .def(pybind11::init<>())
       .def("init", &Model::init)
-      .def("forward_first", &Model::forward_first, pybind11::arg("tokens"),
-           pybind11::arg("pixel_values") = std::vector<float>{},
-           pybind11::arg("grid_thw") = std::vector<int>{},
-           pybind11::arg("vit_offset") = 0,
-           pybind11::arg("valid_vit_length") = 0)
+      .def("init_forward", &Model::init_forward)
+      .def("forward_first", &Model::forward_first)
       .def("forward_next", &Model::forward_next)
-      .def("process_image", &Model::process_image)
+      .def("process_media", &Model::process_media)
       .def("deinit", &Model::deinit)
-      .def_readwrite("model_type", &Model::model_type)
+      .def_readwrite("config", &Model::config)
       .def_readwrite("SEQLEN", &Model::SEQLEN)
       .def_readwrite("NUM_LAYERS", &Model::NUM_LAYERS)
       .def_readwrite("MAX_PREFILL_LENGTH", &Model::MAX_PREFILL_LENGTH)
       .def_readwrite("MAX_PIXELS", &Model::MAX_PIXELS)
-      .def_readwrite("spatial_merge_size", &Model::spatial_merge_size)
       .def_readwrite("total_length", &Model::total_length)
       .def_readwrite("temperature", &Model::temperature)
       .def_readwrite("top_p", &Model::top_p)

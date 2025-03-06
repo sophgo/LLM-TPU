@@ -9,7 +9,9 @@
  *    without the express written permission of Sophgo Technologies Inc.
  *
  *****************************************************************************/
-#pragma once
+#ifndef UTILS_H_
+#define UTILS_H_
+
 #include "cnpy.h"
 #include <algorithm>
 #include <climits>
@@ -665,25 +667,114 @@ struct Config {
   int max_pos;
   int MAX_PIXELS;
   std::vector<int> grid_thw;
-  int vit_offset;
-  int valid_vit_length;
+  int media_offset;
+  int media_size;
   int spatial_merge_size;
+  int patch_size;
+  int temporal_patch_size;
+  int image_token_id;
+  int video_token_id;
 };
 
-//===------------------------------------------------------------===//
-// Make ViT position_id & attention_mask
-//===------------------------------------------------------------===//
-std::vector<int> make_vit_position_id(const Config &config) {
-  std::vector<int> pos_ids;
-  if (config.model_type == "qwen2_vl" || config.model_type == "qwen2_5_vl") {
-    int t = config.grid_thw[0];
-    int h = config.grid_thw[1];
-    int w = config.grid_thw[2];
+class Maker {
+public:
+  explicit Maker(Config &config) : config_(config) {}
+
+  std::vector<int> insert_tokens(const std::vector<int> &raw_tokens,
+                                 int media_token_id) {
+    if (config_.model_type == "qwen2_vl" ||
+        config_.model_type == "qwen2_5_vl") {
+      return insert_qwen2vl_tokens(raw_tokens, media_token_id);
+    } else {
+      throw std::runtime_error("Not support now");
+    }
+  }
+
+  // ViT
+  std::vector<uint16_t> make_vit_attention_mask() {
+    if (config_.model_type == "qwen2_vl" ||
+        config_.model_type == "qwen2_5_vl") {
+      return make_qwen2vl_vit_attention_mask();
+    } else {
+      throw std::runtime_error("Not support now");
+    }
+  }
+
+  std::vector<int> make_vit_position_id() {
+    if (config_.model_type == "qwen2_vl" ||
+        config_.model_type == "qwen2_5_vl") {
+      return make_qwen2vl_vit_position_id();
+    } else {
+      throw std::runtime_error("Not support now");
+    }
+  }
+
+  // Prefill
+  std::vector<uint16_t> make_attention_mask() {
+    return make_default_attention_mask();
+  }
+
+  std::vector<int> make_position_id() {
+    if ((config_.model_type == "qwen2_vl" ||
+         config_.model_type == "qwen2_5_vl") &&
+        config_.grid_thw.size() != 0) {
+      return make_qwen2vl_position_id();
+    } else {
+      return make_default_position_id();
+    }
+  }
+
+  // Decode
+  std::vector<uint16_t> make_next_attention_mask() {
+    return make_default_next_attention_mask();
+  }
+
+  std::vector<int> make_next_position_id() {
+    if ((config_.model_type == "qwen2_vl" ||
+         config_.model_type == "qwen2_5_vl") &&
+        config_.grid_thw.size() != 0) {
+      return make_qwen2vl_next_position_id();
+    } else {
+      return make_default_next_position_id();
+    }
+  }
+
+private:
+  Config &config_;
+
+  // token processing
+  std::vector<int> insert_qwen2vl_tokens(const std::vector<int> &raw_tokens,
+                                         int media_token_id) {
+    int merge_length = config_.spatial_merge_size * config_.spatial_merge_size;
+    const int repeat_num =
+        std::accumulate(config_.grid_thw.begin(), config_.grid_thw.end(), 1,
+                        std::multiplies<int>()) /
+        merge_length;
+
+    std::vector<int> result;
+    result.reserve((int)raw_tokens.size() + repeat_num);
+    for (int token : raw_tokens) {
+      if (token == media_token_id) {
+        result.insert(result.end(), repeat_num, media_token_id);
+      } else {
+        result.push_back(token);
+      }
+    }
+    return result;
+  }
+
+  // ViT position utilities
+  std::vector<int> make_qwen2vl_vit_position_id() {
+    std::vector<int> pos_ids;
+
+    int t = config_.grid_thw[0];
+    int h = config_.grid_thw[1];
+    int w = config_.grid_thw[2];
 
     // generate hpos_ids
     std::vector<int> hpos_ids;
-    for (int n = 0; n < h; n += config.spatial_merge_size) {
-      for (int _ = 0; _ < w / config.spatial_merge_size; ++_) {
+    for (int n = 0; n < h; n += config_.spatial_merge_size) {
+      for (int _ = 0; _ < w / config_.spatial_merge_size; ++_) {
         hpos_ids.push_back(n);
         hpos_ids.push_back(n);
         hpos_ids.push_back(n + 1);
@@ -693,8 +784,8 @@ std::vector<int> make_vit_position_id(const Config &config) {
 
     // generate wpos_ids
     std::vector<int> wpos_ids;
-    for (int _ = 0; _ < h / config.spatial_merge_size; ++_) {
-      for (int e = 0; e < w; e += config.spatial_merge_size) {
+    for (int _ = 0; _ < h / config_.spatial_merge_size; ++_) {
+      for (int e = 0; e < w; e += config_.spatial_merge_size) {
         wpos_ids.push_back(e);
         wpos_ids.push_back(e + 1);
         wpos_ids.push_back(e);
@@ -703,27 +794,22 @@ std::vector<int> make_vit_position_id(const Config &config) {
     }
 
     int valid_vit_pixels = h * w;
-    pos_ids.resize(config.MAX_PIXELS * 2, 0);
+    pos_ids.resize(config_.MAX_PIXELS * 2, 0);
     for (int i = 0; i < t; ++i) {
       for (int j = 0; j < valid_vit_pixels; ++j) {
         pos_ids[i * valid_vit_pixels + 2 * j] = hpos_ids[j];
         pos_ids[i * valid_vit_pixels + 2 * j + 1] = wpos_ids[j];
       }
     }
-  } else {
-    throw std::runtime_error("not support now");
+
+    return pos_ids;
   }
 
-  return pos_ids;
-}
-
-std::vector<uint16_t> make_vit_attention_mask(const Config &config) {
-  std::vector<uint16_t> attention_mask;
-  if (config.model_type == "qwen2_vl" || config.model_type == "qwen2_5_vl") {
-    // Extract t, h, w from config.grid_thw
-    int t = config.grid_thw[0];
-    int h = config.grid_thw[1];
-    int w = config.grid_thw[2];
+  std::vector<uint16_t> make_qwen2vl_vit_attention_mask() {
+    std::vector<uint16_t> attention_mask;
+    int t = config_.grid_thw[0];
+    int h = config_.grid_thw[1];
+    int w = config_.grid_thw[2];
 
     // Compute cu_seqlens
     std::vector<int> cu_seqlens(t + 1, 0);
@@ -732,8 +818,8 @@ std::vector<uint16_t> make_vit_attention_mask(const Config &config) {
     }
 
     // Initialize attention_mask with -10000
-    attention_mask.resize(config.MAX_PIXELS * config.MAX_PIXELS,
-                          config.mask_value);
+    attention_mask.resize(config_.MAX_PIXELS * config_.MAX_PIXELS,
+                          config_.mask_value);
 
     // Update attention_mask based on cu_seqlens
     for (size_t i = 1; i < cu_seqlens.size(); ++i) {
@@ -741,32 +827,25 @@ std::vector<uint16_t> make_vit_attention_mask(const Config &config) {
       int end = cu_seqlens[i];
       for (int row = start; row < end; ++row) {
         for (int col = start; col < end; ++col) {
-          size_t index = row * config.MAX_PIXELS + col;
+          size_t index = row * config_.MAX_PIXELS + col;
           if (index < attention_mask.size()) {
             attention_mask[index] = 0;
           }
         }
       }
     }
-  } else {
-    throw std::runtime_error("not support now");
+
+    return attention_mask;
   }
 
-  return attention_mask;
-}
+  // LLM position utilities (Prefill)
+  std::vector<int> make_qwen2vl_position_id() {
+    std::vector<int> position_id;
+    int text_len = config_.media_offset;
 
-//===------------------------------------------------------------===//
-// Make LLM position_id & attention_mask (Prefill Phase)
-//===------------------------------------------------------------===//
-std::vector<int> make_position_id(Config &config) {
-  std::vector<int> position_id;
-  if (config.model_type == "qwen2_vl" || config.model_type == "qwen2_5_vl") {
-    int text_len = config.vit_offset;
-
-    // Assuming config.grid_thw has at least one element
-    int llm_grid_t = config.grid_thw[0];
-    int llm_grid_h = config.grid_thw[1] / config.spatial_merge_size;
-    int llm_grid_w = config.grid_thw[2] / config.spatial_merge_size;
+    int llm_grid_t = config_.grid_thw[0];
+    int llm_grid_h = config_.grid_thw[1] / config_.spatial_merge_size;
+    int llm_grid_w = config_.grid_thw[2] / config_.spatial_merge_size;
 
     std::vector<int> t_position_id;
     std::vector<int> h_position_id;
@@ -799,11 +878,10 @@ std::vector<int> make_position_id(Config &config) {
 
     // Calculate starting index for tail text length
     int st_idx = w_position_id.back() + 1;
-    int tail_text_len =
-        config.total_length - config.valid_vit_length - text_len;
+    int tail_text_len = config_.total_length - config_.media_size - text_len;
 
     // Prepare final position ids
-    position_id.reserve(config.SEQLEN * 3);
+    position_id.reserve(config_.SEQLEN * 3);
 
     // Prepare head position ids
     std::vector<int> head_position_id;
@@ -825,7 +903,7 @@ std::vector<int> make_position_id(Config &config) {
                        t_position_id.end());
     position_id.insert(position_id.end(), tail_position_id.begin(),
                        tail_position_id.end());
-    position_id.insert(position_id.end(), config.SEQLEN - config.total_length,
+    position_id.insert(position_id.end(), config_.SEQLEN - config_.total_length,
                        1); // Fill with 1
 
     // Fill position_id for h
@@ -836,7 +914,7 @@ std::vector<int> make_position_id(Config &config) {
                        h_position_id.end());
     position_id.insert(position_id.end(), tail_position_id.begin(),
                        tail_position_id.end());
-    position_id.insert(position_id.end(), config.SEQLEN - config.total_length,
+    position_id.insert(position_id.end(), config_.SEQLEN - config_.total_length,
                        1); // Fill with 1
 
     // Fill position_id for w
@@ -847,45 +925,54 @@ std::vector<int> make_position_id(Config &config) {
                        w_position_id.end());
     position_id.insert(position_id.end(), tail_position_id.begin(),
                        tail_position_id.end());
-    position_id.insert(position_id.end(), config.SEQLEN - config.total_length,
+    position_id.insert(position_id.end(), config_.SEQLEN - config_.total_length,
                        1); // Fill with 1
 
-    config.max_pos = st_idx + tail_text_len - 1;
-  } else {
-    position_id.resize(config.MAX_PREFILL_LENGTH, 0);
-    for (int i = 0; i < config.total_length; i++) {
+    config_.max_pos = st_idx + tail_text_len - 1;
+
+    return position_id;
+  }
+
+  std::vector<int> make_default_position_id() {
+    std::vector<int> position_id(config_.MAX_PREFILL_LENGTH, 0);
+    for (int i = 0; i < config_.total_length; i++) {
       position_id[i] = i;
     }
+    return position_id;
   }
 
-  return position_id;
-}
-
-std::vector<uint16_t> make_attention_mask(const Config &config) {
-  std::vector<uint16_t> attention_mask(
-      config.MAX_PREFILL_LENGTH * config.MAX_PREFILL_LENGTH, config.mask_value);
-  for (int i = 0; i < config.total_length; i++) {
-    for (int j = 0; j < config.total_length; j++) {
-      if (j <= i) {
-        attention_mask[i * config.MAX_PREFILL_LENGTH + j] = 0;
+  std::vector<uint16_t> make_default_attention_mask() {
+    std::vector<uint16_t> attention_mask(config_.MAX_PREFILL_LENGTH *
+                                             config_.MAX_PREFILL_LENGTH,
+                                         config_.mask_value);
+    for (int i = 0; i < config_.total_length; i++) {
+      for (int j = 0; j < config_.total_length; j++) {
+        if (j <= i) {
+          attention_mask[i * config_.MAX_PREFILL_LENGTH + j] = 0;
+        }
       }
     }
+
+    return attention_mask;
   }
 
-  return attention_mask;
-}
-
-//===------------------------------------------------------------===//
-// Make LLM position_id & attention_mask (Decode Phase)
-//===------------------------------------------------------------===//
-std::vector<int> make_next_position_id(Config &config) {
-  std::vector<int> position_id;
-  if (config.model_type == "qwen2_vl" || config.model_type == "qwen2_5_vl") {
-    config.max_pos += 1;
-    position_id = {config.max_pos, config.max_pos, config.max_pos};
-  } else {
-    position_id = {config.total_length - 1};
+  // LLM position utilities (Decode)
+  std::vector<uint16_t> make_default_next_attention_mask() {
+    std::vector<uint16_t> attention_mask(config_.SEQLEN + 1, 0);
+    for (int i = config_.total_length - 1; i < config_.SEQLEN; i++) {
+      attention_mask[i] = config_.mask_value;
+    }
+    return attention_mask;
   }
 
-  return position_id;
-}
+  std::vector<int> make_qwen2vl_next_position_id() {
+    config_.max_pos += 1;
+    return {config_.max_pos, config_.max_pos, config_.max_pos};
+  }
+
+  std::vector<int> make_default_next_position_id() {
+    return {config_.total_length - 1};
+  }
+};
+
+#endif // UTILS_H_

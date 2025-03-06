@@ -15,7 +15,7 @@
 
 # 最近更新！ 🔥🔥🔥
 
-- 🚀 **DeepSeek时刻！！**: 我们适配了 **DeepSeek-R1-Distill-Qwen-1.5B** 和 **DeepSeek-R1-Distill-Qwen-7B** 和 **DeepSeek-R1-Distill-Qwen-14B**的适配，详情见[language_model/python_demo](./models/language_model/python_demo/)。
+- 🚀 **DeepSeek时刻！！**: 我们适配了 **DeepSeek-R1-Distill-Qwen-1.5B** 和 **DeepSeek-R1-Distill-Qwen-7B** 和 **DeepSeek-R1-Distill-Qwen-14B**的适配，详情见[LLM-TPU/template](./template/)。
 
 
 # 目录
