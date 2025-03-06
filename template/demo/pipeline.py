@@ -114,7 +114,15 @@ class Model:
                 self.processor = AutoProcessor.from_pretrained(processor_path, trust_remote_code=True)
                 self.tokenizer = self.processor.tokenizer
                 self.EOS = [self.tokenizer.convert_tokens_to_ids("<|end|>"), self.tokenizer.convert_tokens_to_ids("<|im_end|>")]
-                
+
+                if args.resized_width % self.config["vision_config"]["patch_size"] != 0 and \
+                    args.resized_height % self.config["vision_config"]["patch_size"] != 0:
+                    raise ValueError(
+                        f"The resized width ({args.resized_width}) and height ({args.resized_height}) must be multiples of the patch size ({self.config['vision_config']['patch_size']})."
+                    )
+
+                self.model.config.resized_width = args.resized_width
+                self.model.config.resized_height = args.resized_height
                 self.model.config.image_token_id = self.config["image_token_id"]
                 self.model.config.video_token_id = self.config["video_token_id"]
                 self.model.config.spatial_merge_size = self.config["vision_config"]["spatial_merge_size"]
@@ -182,7 +190,7 @@ class Model:
             "content": [
                 {
                     "type": "image",
-                    "image": path,
+                    "image": path
                 },
                 {"type": "text", "text": text},
             ],
@@ -315,13 +323,13 @@ class Model:
             if hasattr(self, "enable_vision") and self.enable_vision:
                 if self.test_media:
                     media_path = self.test_media.strip()
-                    print(f"测试媒体路径: {media_path}") if media_path else None
+                    print(f"路径: {media_path}") if media_path else None
                 else:
-                    media_path = input("\n媒体路径（回车跳过）: ").strip()
+                    media_path = input("\n路径: ").strip()
                 
                 if media_path:
                     if not os.path.exists(media_path):
-                        print(f"路径不存在: {media_path}，使用纯文本输入")
+                        print(f"路径不存在: {media_path}")
                     else:
                         ext = os.path.splitext(media_path)[1].lower()
                         if ext in [".jpg", ".jpeg", ".png"]:
@@ -329,7 +337,7 @@ class Model:
                         elif ext == ".mp4":
                             media_type = "video"
                         else:
-                            print(f"不支持的格式: {ext}，使用纯文本输入")
+                            print(f"不支持的格式: {ext}")
                             media_path = ""
 
             token = self.prefill_phase(input_str, media_path, media_type)
@@ -368,6 +376,10 @@ if __name__ == "__main__":
     parser.add_argument('--generation_mode', type=str, default="greedy",
                         choices=["greedy", "penalty_sample"],
                         help='mode for generating next token')
+    parser.add_argument('--resized_height', type=int, default=0,
+                        help='use resized_height for vlm when resized_height != 0')
+    parser.add_argument('--resized_width', type=int, default=0,
+                        help='use resized_width for vlm when resized_width != 0')
     parser.add_argument('--enable_history', action='store_true',
                         help="if set, enables storing of history memory")
     parser.add_argument('--model_type', type=str, help="model type")

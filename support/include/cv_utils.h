@@ -328,9 +328,14 @@ std::vector<float> process_image(const std::string &media_path,
       std::vector<float> image_mean = {0.48145466f, 0.4578275f, 0.40821073f};
       std::vector<float> image_std = {0.26862954f, 0.26130258f, 0.27577711f};
 
-      auto resized = smart_resize(height, width);
-      resized_height = resized.first;
-      resized_width = resized.second;
+      if (config.resized_height != 0 || config.resized_width != 0) {
+        auto resized = smart_resize(height, width);
+        resized_height = config.resized_height == 0 ? resized.first : config.resized_height;
+        resized_width = config.resized_width == 0 ? resized.second : config.resized_width;
+      } else {
+        resized_height = config.resized_height;
+        resized_width = config.resized_width;
+      }
       auto resized_image = bicubic_resize(image, resized_height, resized_width,
                                           image_mean, image_std);
       patches.push_back(resized_image);
@@ -341,7 +346,6 @@ std::vector<float> process_image(const std::string &media_path,
     throw std::runtime_error("patches are empty!");
   }
 
-  // TODO: valid all resized_height & resized_width are same
   config.grid_thw =
       calc_grid_thw(patches, resized_height, resized_width, config);
   std::vector<float> flatten_patches =

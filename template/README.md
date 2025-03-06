@@ -93,6 +93,12 @@ cd LLM-TPU/template/demo && mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..
 ```
 
+多模态模型（例如Qwen2-VL、Qwen2.5-VL），编译c++依赖
+```bash
+cd LLM-TPU/template/demo && mkdir build
+cd build && cmake -DTYPE=media .. && make && cp *cpython* .. && cd ..
+```
+
 ### 5.2 模型下载与运行
 
 ```bash

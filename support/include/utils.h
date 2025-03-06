@@ -674,6 +674,8 @@ struct Config {
   int temporal_patch_size;
   int image_token_id;
   int video_token_id;
+  int resized_height = 0;
+  int resized_width = 0;
 };
 
 class Maker {

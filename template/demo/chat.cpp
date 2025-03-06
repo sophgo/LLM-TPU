@@ -809,6 +809,8 @@ PYBIND11_MODULE(chat, m) {
       .def_readwrite("patch_size", &Config::patch_size)
       .def_readwrite("spatial_merge_size", &Config::spatial_merge_size)
       .def_readwrite("temporal_patch_size", &Config::temporal_patch_size)
+      .def_readwrite("resized_height", &Config::resized_height)
+      .def_readwrite("resized_width", &Config::resized_width)
       .def_readwrite("image_token_id", &Config::image_token_id)
       .def_readwrite("video_token_id", &Config::video_token_id);
 
