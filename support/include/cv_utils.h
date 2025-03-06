@@ -328,7 +328,7 @@ std::vector<float> process_image(const std::string &media_path,
       std::vector<float> image_mean = {0.48145466f, 0.4578275f, 0.40821073f};
       std::vector<float> image_std = {0.26862954f, 0.26130258f, 0.27577711f};
 
-      if (config.resized_height != 0 || config.resized_width != 0) {
+      if (config.resized_height == 0 || config.resized_width == 0) {
         auto resized = smart_resize(height, width);
         resized_height = config.resized_height == 0 ? resized.first : config.resized_height;
         resized_width = config.resized_width == 0 ? resized.second : config.resized_width;
