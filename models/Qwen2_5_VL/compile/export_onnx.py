@@ -205,7 +205,7 @@ def convert_vision_transformer():
     # make input
     x = torch.randn(max_pixels, 1176).to(dtype=torch.float32, device=device)
     position_ids = torch.randn(max_pixels, 2).to(dtype=torch.int32, device=device)
-    attention_mask = torch.zeros([1, max_pixels, max_pixels], device=device, dtype=torch.float32)
+    attention_mask = torch.zeros([1, 1, max_pixels, max_pixels], device=device, dtype=torch.float32)
 
     # export onnx
     model = VisionTransformer()
@@ -371,7 +371,7 @@ def vit_launch(pixel_values, grid_thw):
     vit_infer = VisionTransformer()
     cu_seqlens = [h * w * i for i in range(t+1)]
     attention_mask = torch.full(
-        [1, pixel_values.shape[0], pixel_values.shape[0]], -10000, device=device, dtype=torch.float32
+        [1, 1, pixel_values.shape[0], pixel_values.shape[0]], -10000, device=device, dtype=torch.float32
     )
     for i in range(1, len(cu_seqlens)):
         attention_mask[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0
@@ -561,7 +561,7 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--model_path', type=str, help='path to the torch model')
     parser.add_argument('-d', '--device', type=str, choices=["cpu", "cuda"], default="cpu")
     parser.add_argument('-b', '--batch_size', type=int, default=1, help='batch size')
-    parser.add_argument('-s', '--seq_length', type=int, default=8192, help="sequence length")
+    parser.add_argument('-s', '--seq_length', type=int, default=2048, help="sequence length")
     parser.add_argument('-i', '--vision_length', type=int,default=600, help="vision_length = max_image_width // patch_size * max_image_height // patch_size")
     parser.add_argument('-n', '--num_threads', type=int, default=1, help='The number of threads used for torch if device is cpu')
     args = parser.parse_args()

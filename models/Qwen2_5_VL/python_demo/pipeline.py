@@ -20,8 +20,8 @@ class Qwen2VL():
         self.tokenizer = self.processor.tokenizer
         with open(config_file, 'r') as f:
             self.config = json.load(f)
-        self.resized_height = args.resized_height
-        self.resized_width = args.resized_width
+        self.resized_height = args.resize[0]
+        self.resized_width = args.resize[1]
 
         # load model
         self.model = chat.Qwen2VL()
@@ -45,23 +45,38 @@ class Qwen2VL():
         return messages
 
     def image_message(self, path):
-        print("\033[31m如果输入为图片时，注意resized_height与resized_width与export_onnx.py时的保持一致\033[0m")
-        messages = [{
-            "role":
-            "user",
-            "content": [
-                {
-                    "type": "image",
-                    "image": path,
-                    "resized_height": self.resized_height,
-                    "resized_width": self.resized_width,
-                },
-                {
-                    "type": "text",
-                    "text": self.input_str
-                },
-            ],
-        }]
+        if self.resized_height != 0 and self.resized_width != 0:
+            messages = [{
+                "role":
+                "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "image": path,
+                        "resized_height": self.resized_height,
+                        "resized_width": self.resized_width,
+                    },
+                    {
+                        "type": "text",
+                        "text": self.input_str
+                    },
+                ],
+            }]
+        else:
+            messages = [{
+                "role":
+                "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "image": path,
+                    },
+                    {
+                        "type": "text",
+                        "text": self.input_str
+                    },
+                ],
+            }]
         return messages
 
     def video_message(self, path):
@@ -168,7 +183,8 @@ class Qwen2VL():
                     inputs.video_grid_thw.squeeze(0).tolist(), vit_offset, valid_vit_length)
             else:
                 empty = []
-                token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), empty, [], 0, 0)
+                token = self.model.forward_first(
+                    inputs.input_ids.squeeze(0).tolist(), empty, [], 0, 0)
             first_end = time.time()
             tok_num = 1
             # Following tokens
@@ -208,13 +224,18 @@ if __name__ == "__main__":
                         type=str,
                         required=True,
                         help='path to the bmodel file')
-    parser.add_argument('-p',
+    parser.add_argument('-c',
                         '--config_path',
                         type=str,
-                        default="../support/processor_config",
+                        default="config",
                         help='path to the processor file')
     parser.add_argument('-d', '--devid', type=int, default=0, help='device ID to use')
-    parser.add_argument('--resized_height', type=int, default=280, help='resized height')
-    parser.add_argument('--resized_width', type=int, default=420, help='resized width')
+    parser.add_argument('-r',
+                        '--resize',
+                        nargs=2,
+                        type=int,
+                        default=[280, 420],
+                        metavar=('HEIGHT', 'WIDTH'),
+                        help='resized height and width, for example: --resize 280 420')
     args = parser.parse_args()
     main(args)

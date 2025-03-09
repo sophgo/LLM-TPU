@@ -74,6 +74,7 @@
 |:-                           |:-                  |:-                  |:-                                                                        |
 |Qwen-VL-Chat                 |:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen-VL-Chat)                          |
 |Qwen2-VL-Chat                |:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct)                  |
+|Qwen2.5-VL-Chat                |:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct)                  |
 |InternVL2-4B                 |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/OpenGVLab/InternVL2-4B)                     |
 |InternVL2-2B                 |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/OpenGVLab/InternVL2-2B)                     |
 |Stable Diffusion             |:white\_check\_mark:|                    |[LINK](https://huggingface.co/runwayml/stable-diffusion-v1-5)             |

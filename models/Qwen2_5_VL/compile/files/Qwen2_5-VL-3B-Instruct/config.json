@@ -14,7 +14,7 @@
   "hidden_size": 2048,
   "initializer_range": 0.02,
   "intermediate_size": 11008,
-  "max_position_embeddings": 8192,
+  "max_position_embeddings": 2048,
   "max_window_layers": 70,
   "model_type": "qwen2_5_vl",
   "num_attention_heads": 16,
