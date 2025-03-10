@@ -169,6 +169,7 @@ class Model:
         self.model.NUM_LAYERS = self.config["num_hidden_layers"]
         self.model.config.model_type = self.model_type
 
+        self.max_new_tokens = args.max_new_tokens
         self.enable_history = args.enable_history
 
     def init_history(self):
@@ -211,7 +212,7 @@ class Model:
         }
         return messages
 
-    def encode_tokens(self, text, media_path, media_type):
+    def encode_tokens(self, text, media_path="", media_type="text"):
         if media_type == "image":
             messages = self.image_message(text, media_path)
             self.history.append(messages)
@@ -246,7 +247,7 @@ class Model:
         token = self.model.forward_first()
 
         first_end = time.time()
-        self.first_duration = first_end - first_start
+        self.ftl = first_end - first_start
         return token
 
     def decode_phase(self, token):
@@ -276,7 +277,7 @@ class Model:
         # counting time
         next_end = time.time()
         next_duration = next_end - next_start
-        tps = tok_num / next_duration
+        self.tps = tok_num / next_duration
 
         if self.enable_history:
             self.answer_cur = self.tokenizer.decode(self.answer_token)
@@ -285,8 +286,33 @@ class Model:
             self.init_history()
 
         print()
-        print(f"FTL: {self.first_duration:.3f} s")
-        print(f"TPS: {tps:.3f} token/s")
+        print(f"FTL: {self.ftl:.3f} s")
+        print(f"TPS: {self.tps:.3f} token/s")
+
+    def generate(self, text):
+        tokens = self.encode_tokens(text)
+        self.model.init_forward(tokens)
+
+        first_start = time.time()
+        token = self.model.forward_first()
+        first_end = time.time()
+
+        tok_num = 0
+
+        next_start = time.time()
+        result_tokens = []
+        while token not in self.EOS and self.model.total_length < self.model.SEQLEN and len(result_tokens) < self.max_new_tokens:
+            tok_num += 1
+            result_tokens.append(token)
+            token = self.model.forward_next()
+        next_end = time.time()
+        next_duration = next_end - next_start
+
+        self.ftl = first_end - first_start
+        self.tps = tok_num / next_duration
+
+        self.init_history()
+        return result_tokens
 
     def chat(self):
         """

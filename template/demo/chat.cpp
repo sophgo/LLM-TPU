@@ -42,11 +42,12 @@ public:
   void init_forward(pybind11::array_t<int> tokens);
   int forward_first();
   int forward_next();
-  std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
+  std::vector<int> generate(const std::vector<int>& EOS);
 
   // Media Processing
   void process_media(const std::string &media_path,
-                     const std::string &media_type);
+                     const std::string &media_type,
+                     pybind11::array_t<float> pixel_values_arr);
 
   std::mt19937 sgen;
   bool vision_enabled = false;
@@ -541,21 +542,30 @@ bm_device_mem_t Model::embedding_launch(const bm_net_info_t *net0,
 #ifdef ENABLE_MEDIA
 #include "cv_utils.h"
 void Model::process_media(const std::string &media_path,
-                          const std::string &media_type) {
+                          const std::string &media_type,
+                          pybind11::array_t<float> pixel_values_arr = pybind11::array_t<float>()) {
   int media_token_id;
   std::vector<float> pixel_values;
 
-  if (media_type == "image") {
-    pixel_values = process_image(media_path, config);
-    media_token_id = config.image_token_id;
-  } else if (media_type == "video") {
-    process_video(media_path);
-    media_token_id = config.video_token_id;
-  } else if (media_type == "audio") {
-    process_audio(media_path);
+  if (pixel_values_arr.size() != 0) {
+    pybind11::buffer_info buf = pixel_values_arr.request();
+    float* ptr = static_cast<float*>(buf.ptr);
+    size_t size = buf.size;
+    pixel_values.assign(ptr, ptr + size);
   } else {
-    throw std::runtime_error("not support now");
+    if (media_type == "image") {
+      pixel_values = process_image(media_path, config);
+      media_token_id = config.image_token_id;
+    } else if (media_type == "video") {
+      process_video(media_path);
+      media_token_id = config.video_token_id;
+    } else if (media_type == "audio") {
+      process_audio(media_path);
+    } else {
+      throw std::runtime_error("not support now");
+    }
   }
+
 
   // token process & vit launch
   raw_tokens = maker->insert_tokens(raw_tokens, media_token_id);
@@ -717,9 +727,9 @@ int Model::forward_first() {
 }
 
 int Model::forward_next() {
-  if (total_length >= SEQLEN - 5) {
-    throw std::runtime_error("the sequence length exceeds SEQLEN");
-  }
+  // if (total_length >= SEQLEN - 5) {
+  //   throw std::runtime_error("the sequence length exceeds SEQLEN");
+  // }
 
   int cur_token = total_tokens[total_length - 1];
 
@@ -778,29 +788,15 @@ int Model::forward_next() {
   return token;
 }
 
-// std::vector<int> Model::generate(std::vector<int> &history_tokens, int EOS) {
-//   if (history_tokens.empty(bm_handle, )) {
-//     printf("Sorry: your question is empty!!\n");
-//     history_tokens.clear();
-//     return {};
-//   }
-
-//   // make sure token not too large
-//   if ((int)history_tokens.size() > SEQLEN - 10) {
-//     history_tokens.clear();
-//     printf("Error: your question is too large!\n");
-//     return {};
-//   }
-
-//   std::vector<int> result_tokens;
-//   int token = forward_first(history_tokens);
-//   while (token != EOS && token_length < SEQLEN) {
-//     result_tokens.emplace_back(token);
-//     token = forward_share_next();
-//   }
-
-//   return result_tokens;
-// }
+std::vector<int> Model::generate(const std::vector<int>& EOS) {
+  std::vector<int> result_tokens;
+  int token = forward_first();
+  while (std::find(EOS.begin(), EOS.end(), token) == EOS.end() && total_length < SEQLEN && (int)result_tokens.size() < max_new_tokens) {
+    result_tokens.emplace_back(token);
+    token = forward_next();
+  }
+  return result_tokens;
+}
 
 PYBIND11_MODULE(chat, m) {
   pybind11::class_<Config>(m, "Config")
@@ -820,7 +816,11 @@ PYBIND11_MODULE(chat, m) {
       .def("init_forward", &Model::init_forward)
       .def("forward_first", &Model::forward_first)
       .def("forward_next", &Model::forward_next)
-      .def("process_media", &Model::process_media)
+      .def("process_media", &Model::process_media, 
+           pybind11::arg("media_path"), 
+           pybind11::arg("media_type"),
+           pybind11::arg("pixel_values_arr") = pybind11::array_t<float>())
+      .def("generate", &Model::generate)
       .def("deinit", &Model::deinit)
       .def_readwrite("config", &Model::config)
       .def_readwrite("SEQLEN", &Model::SEQLEN)
