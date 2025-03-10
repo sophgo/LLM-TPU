@@ -460,7 +460,7 @@ class ModelExporter:
         self.onnx_rebuilder.export_embed()
         self.onnx_rebuilder.export_lm_head()
 
-        if !self.lmhead_with_topk:
+        if not self.lmhead_with_topk:
             self.onnx_rebuilder.export_greedy_head()
             self.onnx_rebuilder.export_penalty_sample_head()
 

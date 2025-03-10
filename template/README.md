@@ -34,6 +34,7 @@
 │   ├── pipeline.py               # python_demo的执行脚本
 │   └── CMakeLists.txt
 ```
+
 ## 4. 模型编译
 
 ### 4.1 环境准备
@@ -128,14 +129,13 @@ python3 pipeline.py --devid 0 --dir_path ./deepseek-r1-distill-qwen-14b/
 ```
 
 ## 6. 程序性能测试
-LLM性能
+我们测试了不同大小的deepseek-r1蒸馏模型在SE7-32(单芯1684x)上的性能，具体如下：
 
 |   测试平台   |           测试模型              | 量化方式 | 模型长度 | first token latency(s) | token per second(tokens/s) |
 | ----------- | ------------------------------ | -------- | -------- | --------------------- | -------------------------- |
 | SE7-32      | deepseek-r1-distill-qwen-1.5b  | INT4     | 8192     | 5.431                 | 28.878                     |
 | SE7-32      | deepseek-r1-distill-qwen-7b    | INT4     | 2048     | 2.939                 | 10.600                     |
 | SE7-32      | deepseek-r1-distill-qwen-14b   | INT4     | 512      | 1.400                 | 5.564                      |
-           | 
 
 > **测试说明**：  
 > 1. 性能测试结果具有一定的波动性，建议多次测试取平均值；
