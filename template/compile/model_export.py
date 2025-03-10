@@ -336,8 +336,10 @@ class BmodelConverter:
             self.compile_embedding_cache(self.env)
 
         self.compile_lm_head(self.env)
-        self.compile_greedy_head(self.env)
-        self.compile_penalty_head(self.env)
+
+        if self.num_device == 1:
+            self.compile_greedy_head(self.env)
+            self.compile_penalty_head(self.env)
 
         if self.visual:
             self.compile_vit(self.env)
@@ -370,6 +372,7 @@ class ModelExporter:
         self.quantize = args.quantize
         self.not_compile = args.not_compile
         self.embedding_disk = args.embedding_disk
+        self.lmhead_with_topk = args.num_device > 1
         self.out_dir = args.out_dir
         self.onnx_dir = os.path.join(self.out_dir, "onnx")
         self.bmodel_dir = os.path.join(self.out_dir, "bmodel")
@@ -392,6 +395,7 @@ class ModelExporter:
                                             self.seq_length,
                                             self.model_type,
                                             self.embedding_disk,
+                                            self.lmhead_with_topk,
                                             self.config,
                                             self.visual_length)
         self.rebuild_model()
@@ -455,8 +459,11 @@ class ModelExporter:
 
         self.onnx_rebuilder.export_embed()
         self.onnx_rebuilder.export_lm_head()
-        self.onnx_rebuilder.export_greedy_head()
-        self.onnx_rebuilder.export_penalty_sample_head()
+
+        if !self.lmhead_with_topk:
+            self.onnx_rebuilder.export_greedy_head()
+            self.onnx_rebuilder.export_penalty_sample_head()
+
         self.onnx_rebuilder.export_block()
         self.onnx_rebuilder.export_block_cache()
 

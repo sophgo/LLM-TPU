@@ -15,7 +15,8 @@
 
 # 最近更新！ 🔥🔥🔥
 
-- 🚀 **DeepSeek时刻！！**: 我们适配了 **DeepSeek-R1-Distill-Qwen-1.5B** 和 **DeepSeek-R1-Distill-Qwen-7B** 和 **DeepSeek-R1-Distill-Qwen-14B**的适配，详情见[LLM-TPU/template](./template/)。
+- [2025.03.07]🚀 **QWQ-32B**: Qwen最新推理模型 **QWQ-32B**，1684x多芯demo已适配，详情见[Qwen2_5/python_demo_parallel](./models/Qwen2_5/python_demo_parallel/)。
+- [2025.02.05]🚀 **DeepSeek时刻！！**: 我们适配了 **DeepSeek-R1-Distill-Qwen-1.5B** 和 **DeepSeek-R1-Distill-Qwen-7B** 和 **DeepSeek-R1-Distill-Qwen-14B**的适配，详情见[LLM-TPU/template](./template/)。
 
 
 # 目录
@@ -64,6 +65,7 @@
 |Qwen2-7B                     |:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen2-7B-Instruct)                     |
 |Qwen2.5-1.5B                 |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct)                   |
 |Qwen2.5-7B                   |:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct)                   |
+|QWQ-32B                      |:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/QWQ-32B)                               |
 |WizardCoder-15B              |:white\_check\_mark:|                    |[LINK](https://huggingface.co/WizardLM/WizardCoder-15B-V1.0)              |
 |Yi-6B-chat                   |:white\_check\_mark:|                    |[LINK](https://huggingface.co/01-ai/Yi-6B-Chat)                           |
 |Yi-34B-chat                  |:white\_check\_mark:|                    |[LINK](https://huggingface.co/01-ai/Yi-34B-Chat)                          |

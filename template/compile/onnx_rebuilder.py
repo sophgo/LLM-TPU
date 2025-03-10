@@ -254,6 +254,7 @@ class OnnxRebuilder:
 				 seq_length: int,
                  model_type: str,
 				 embedding_disk: bool,
+				 lmhead_with_topk: bool,
                  config,
                  visual_length):
         self.onnx_model = None
@@ -263,6 +264,7 @@ class OnnxRebuilder:
         self.seq_length = seq_length
         self.model_type = model_type
         self.embedding_disk = embedding_disk
+        self.lmhead_with_topk = lmhead_with_topk
         self.config = config
         self.visual_length = visual_length
         self.model_mapper = ModelMapper()
@@ -780,10 +782,14 @@ class Lm(torch.nn.Module):
         self.final_layernorm = config.final_layernorm_
         self.lm = config.lm_
         self.hidden_size = config.hidden_size
+        self.lmhead_with_topk = config.lmhead_with_topk
 
     def forward(self, hidden_states):
         hidden_states = self.final_layernorm(hidden_states)
         m_logits = self.lm(hidden_states)
+        if self.lmhead_with_topk:
+            _, token = torch.topk(m_logits.float(), 1)
+            return token
         return m_logits
 
 class GreedyHead(torch.nn.Module):

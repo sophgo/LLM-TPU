@@ -109,15 +109,22 @@ class Qwen2():
         first_start = time.time()
         token = self.model.forward_first(tokens)
         first_end = time.time()
+
         # Following tokens
+        full_word_tokens = []
         while token != self.EOS and self.model.token_length < self.model.SEQLEN:
-            word = self.tokenizer.decode(token, skip_special_tokens=True)
-            self.answer_token += [token]
+            full_word_tokens.append(token)
+            word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
+            if "�" in word:
+                token = self.model.forward_next(token)
+                tok_num += 1
+                continue
+            self.answer_token += full_word_tokens
             print(word, flush=True, end="")
             tok_num += 1
+            full_word_tokens = []
             token = self.model.forward_next(token)
-        self.answer_cur = self.tokenizer.decode(self.answer_token)
-        
+
         # counting time
         next_end = time.time()
         first_duration = first_end - first_start
@@ -125,6 +132,7 @@ class Qwen2():
         tps = tok_num / next_duration
 
         if self.enable_history:
+            self.answer_cur = self.tokenizer.decode(self.answer_token)
             self.update_history()
         else:
             self.clear()
@@ -191,7 +199,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--model_path', type=str, required=True, help='path to the bmodel file')
-    parser.add_argument('-t', '--tokenizer_path', type=str, default="../support/token_config", help='path to the tokenizer file')
+    parser.add_argument('-t', '--tokenizer_path', type=str, default="../support/qwq_token_config", help='path to the tokenizer file')
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
     parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory")
     args = parser.parse_args()
