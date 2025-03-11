@@ -816,10 +816,12 @@ PYBIND11_MODULE(chat, m) {
       .def("init_forward", &Model::init_forward)
       .def("forward_first", &Model::forward_first)
       .def("forward_next", &Model::forward_next)
+#ifdef ENABLE_MEDIA
       .def("process_media", &Model::process_media, 
            pybind11::arg("media_path"), 
            pybind11::arg("media_type"),
            pybind11::arg("pixel_values_arr") = pybind11::array_t<float>())
+#endif
       .def("generate", &Model::generate)
       .def("deinit", &Model::deinit)
       .def_readwrite("config", &Model::config)
