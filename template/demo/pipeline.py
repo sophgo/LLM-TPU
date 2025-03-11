@@ -214,21 +214,31 @@ class Model:
 
     def encode_tokens(self, text, media_path="", media_type="text"):
         if media_type == "image":
-            messages = self.image_message(text, media_path)
-            self.history.append(messages)
+            self.messages = self.image_message(text, media_path)
+            self.history.append(self.messages)
         elif media_type == "video":
-            messages = self.video_message(text, media_path)
-            self.history.append(messages)
+            self.messages = self.video_message(text, media_path)
+            self.history.append(self.messages)
         else:
             self.append_user(self.history, text)
-        formatted_text = self.apply_chat_template(self.history)
-
-        tokens = self.tokenizer(formatted_text).input_ids
+        self.formatted_text = self.apply_chat_template(self.history)
+        tokens = self.tokenizer(self.formatted_text).input_ids
         return tokens
     
     def process_media_input(self, media_path, media_type):
         if self.model_type in ["qwen2_vl", "qwen2_5_vl"]:
-            inputs = self.model.process_media(media_path, media_type) # preprocess and vit launch
+            from qwen_vl_utils import process_vision_info
+            image_inputs, video_inputs = process_vision_info([self.messages])
+            inputs = self.processor(
+                text=[self.formatted_text],
+                images=image_inputs,
+                videos=video_inputs,
+                padding=True,
+                return_tensors="pt",
+            )
+            pixel_values = inputs.pixel_values
+            self.model.config.grid_thw = inputs.image_grid_thw.tolist()[0]
+            inputs = self.model.process_media(media_path, media_type, pixel_values) # preprocess and vit launch
         else:
             raise NotImplementedError(f"Not support {self.model_type} now")
         return inputs

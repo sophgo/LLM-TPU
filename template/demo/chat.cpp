@@ -555,15 +555,19 @@ void Model::process_media(const std::string &media_path,
   } else {
     if (media_type == "image") {
       pixel_values = process_image(media_path, config);
-      media_token_id = config.image_token_id;
     } else if (media_type == "video") {
       process_video(media_path);
-      media_token_id = config.video_token_id;
     } else if (media_type == "audio") {
       process_audio(media_path);
     } else {
       throw std::runtime_error("not support now");
     }
+  }
+
+  if (media_type == "image") {
+    media_token_id = config.image_token_id;
+  } else if (media_type == "video") {
+    media_token_id = config.video_token_id;
   }
 
 
@@ -802,6 +806,7 @@ PYBIND11_MODULE(chat, m) {
   pybind11::class_<Config>(m, "Config")
       .def(pybind11::init<>())
       .def_readwrite("model_type", &Config::model_type)
+      .def_readwrite("grid_thw", &Config::grid_thw)
       .def_readwrite("patch_size", &Config::patch_size)
       .def_readwrite("spatial_merge_size", &Config::spatial_merge_size)
       .def_readwrite("temporal_patch_size", &Config::temporal_patch_size)
