@@ -58,10 +58,14 @@ python model_export.py -m $your_model_path -t $your_mlir_path -s $seq_length -q 
 * -q, --quantize       Bmodel的量化类型，目前支持：bf16,w8bf16,w4bf16,f16,w8f16,w4f16
 
 比如，导出4k长度的int4量化的Qwen2-7B-Instruct：
-
 ``` shell
 cd compile
 python model_export.py -m ./Qwen2-7B-Instruct -t /workspace/tpu-mlir -s 4096 -q w4bf16
+```
+
+导出1k长度的int4量化的QWQ-32B：
+``` shell
+python model_export.py --quantize w4bf16 --tpu_mlir_path /workspace/tpu-mlir/ --model_path /workspace/models/QWQ-32B/ --seq_length 1024 --out_dir qwq_32b --num_device 2
 ```
 
 此外还有其他参数：
@@ -100,9 +104,16 @@ cd LLM-TPU/template/demo && mkdir build
 cd build && cmake -DTYPE=media .. && make && cp *cpython* .. && cd ..
 ```
 
+多芯模型（例如QWQ-32B），编译c++依赖
+```bash
+cd LLM-TPU/template/parallel_demo && mkdir build
+cd build && cmake .. && make && cp *cpython* .. && cd ..
+```
+
 ### 5.2 模型下载与运行
 
 ```bash
+cd LLM-TPU/template/demo
 python3 pipeline.py --model_path your_bmodel_path --devid your_dev_id
 ```
 
@@ -127,6 +138,22 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepsee
 unzip deepseek-r1-distill-qwen-14b-seq512.zip
 python3 pipeline.py --devid 0 --dir_path ./deepseek-r1-distill-qwen-14b/
 ```
+
+### 5.3 多芯模型下载与运行
+
+```bash
+cd LLM-TPU/template/parallel_demo
+python3 pipeline.py --model_path your_bmodel_path --devid your_dev_id
+```
+
+#### QWQ-32B系列
+下载`qwq-32b`模型，并运行：
+```bash
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwq-32b-w4bf16-seq1024.zip
+unzip qwq-32b-w4bf16-seq1024-2dev.zip
+python3 pipeline.py --devid 0,1 --dir_path ./qwq-32b/
+```
+
 
 ## 6. 程序性能测试
 我们测试了不同大小的deepseek-r1蒸馏模型在SE7-32(单芯1684x)上的性能，具体如下：

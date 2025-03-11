@@ -244,7 +244,6 @@ class Model:
         return inputs
     
     def prefill_phase(self, text, media_path, media_type):
-        """handle image or video"""
         print("\n回答: ", end="")
         first_start = time.time()
 

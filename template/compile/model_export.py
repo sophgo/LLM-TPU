@@ -306,9 +306,11 @@ class BmodelConverter:
             bmodel_list = bmodel_list + [f"block_{i}.bmodel", f"block_cache_{i}.bmodel"]
         if not self.embedding_disk:
             bmodel_list += ['embedding.bmodel', 'embedding_cache.bmodel']
-        bmodel_list += ["lm_head.bmodel", "greedy_head.bmodel", "penalty_sample_head.bmodel"]
         if self.visual:
             bmodel_list += ["vit.bmodel"]
+        if self.num_device == 1:
+            bmodel_list += ["greedy_head.bmodel", "penalty_sample_head.bmodel"]
+        bmodel_list += ["lm_head.bmodel"]
 
         combine_args = [
             'model_tool',
@@ -429,10 +431,11 @@ class ModelExporter:
             self.model = LlamaForCausalLM.from_pretrained(self.model_path, trust_remote_code=True)
         else:
             try:
-                self.model = AutoModelForCausalLM.from_pretrained(self.model_path, trust_remote_code=True)
+                self.model = AutoModelForCausalLM.from_pretrained(self.model_path, trust_remote_code=True, low_cpu_mem_usage=True)
             except:
                 self.model = AutoModel.from_pretrained(self.model_path, trust_remote_code=True)
-        self.model = self.model.cpu().float().eval()
+
+        self.model = self.model.cpu().eval()
         for param in self.model.parameters():
                 param.requires_grad = False
 
@@ -472,6 +475,7 @@ class ModelExporter:
             self.onnx_rebuilder.export_visual()
 
         if not self.not_compile:
+            del self.model, self.onnx_rebuilder # need to delete at the same time
             self.bmodel_converter.compile()
 
 if __name__ == '__main__':

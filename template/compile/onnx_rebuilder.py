@@ -367,13 +367,15 @@ class OnnxRebuilder:
     def export_embed(self):
         if not hasattr(self, 'embed') or not isinstance(self.embed.embed, torch.nn.Embedding):
             return
+
+        embed_model = copy.deepcopy(self.embed).float()
         if not self.embedding_disk:
             embedding_file = f'{self.onnx_dir}/embedding.pt'
             if os.path.exists(embedding_file):
                 print(f"{embedding_file} already exists. Skipping export.")
                 return
             input_ids = torch.tensor([range(self.seq_length)], dtype=torch.int32)
-            module = torch.jit.trace(self.embed.forward, input_ids)
+            module = torch.jit.trace(embed_model.forward, input_ids)
             torch.jit.save(module, embedding_file)
         else:
             embedding_file = f'{self.onnx_dir}/../embedding.bin'
@@ -382,9 +384,9 @@ class OnnxRebuilder:
                 return
             import ctypes
             if 'bf16' in self.quantize:
-                tensor_data = self.embed.embed.weight.data.to(torch.bfloat16)
+                tensor_data = embed_model.embed.weight.data.to(torch.bfloat16)
             elif 'f16' in self.quantize:
-            	tensor_data = self.embed.embed.weight.data.to(torch.float16)
+                tensor_data = embed_model.embed.weight.data.to(torch.float16)
             else:
                 raise NotImplementedError("Not support now")
             data_ptr = tensor_data.untyped_storage().data_ptr()
@@ -399,12 +401,12 @@ class OnnxRebuilder:
         attention_mask = torch.randn((1, 1, self.seq_length, self.seq_length), dtype=torch.float)
 
         for i in tqdm(range(self.num_hidden_layers)):
-            model = self.blocks[i]
             onnx_path = f'{self.onnx_dir}/block_{i}.onnx'
             if os.path.exists(onnx_path):
                 print(f"{onnx_path} already exists. Skipping export.")
                 continue
 
+            model = copy.deepcopy(self.blocks[i]).float()
             if i == 0:
                 torch.onnx.export(
                     model,
@@ -422,6 +424,7 @@ class OnnxRebuilder:
                     torch_model=model,
                     save_path=onnx_path
                 )
+            del model
 
     @logging("export_block_cache ...")
     def export_block_cache(self):
@@ -436,13 +439,13 @@ class OnnxRebuilder:
         past_k = torch.randn((1, self.seq_length, self.num_key_value_heads, self.head_dim), dtype=torch.float)
         past_v = torch.randn((1, self.seq_length, self.num_key_value_heads, self.head_dim), dtype=torch.float)
 
-        for i in tqdm(range(len(self.blocks))):
-            model = self.blocks[i]
+        for i in tqdm(range(self.num_hidden_layers)):
             onnx_path = f'{self.onnx_dir}/block_cache_{i}.onnx'
             if os.path.exists(onnx_path):
                 print(f"{onnx_path} already exists. Skipping export.")
                 continue
 
+            model = copy.deepcopy(self.blocks[i]).float()
             if i == 0:
                 torch.onnx.export(
                     model,
@@ -467,7 +470,7 @@ class OnnxRebuilder:
         if os.path.exists(lmhead_file):
             print(f"{lmhead_file} already exists. Skipping export.")
             return
-        model = self.lm
+        model = self.lm.float()
         hidden_states = torch.randn((1, 1, self.hidden_size), dtype=torch.float)
         module = torch.jit.trace(model.forward, hidden_states)
         torch.jit.save(module, lmhead_file)
@@ -479,7 +482,7 @@ class OnnxRebuilder:
             print(f"{onnx_path} already exists. Skipping export.")
             return
 
-        model = GreedyHead()
+        model = GreedyHead().float()
         m_logits = torch.randn(1, self.vocab_size)
         torch.onnx.export(
             model, (m_logits),
@@ -497,7 +500,7 @@ class OnnxRebuilder:
             print(f"{onnx_path} already exists. Skipping export.")
             return
 
-        model = PenaltySampleHead()
+        model = PenaltySampleHead().float()
         m_logits = torch.randn(1, self.vocab_size)
         input_ids = torch.tensor([range(self.seq_length)])
         top_p = torch.tensor([0.8])
@@ -525,7 +528,9 @@ class OnnxRebuilder:
         if os.path.exists(onnx_path):
             print(f"{onnx_path} already exists. Skipping export.")
             return
-        return self.visual.export(onnx_path)
+
+        self.visual.export(onnx_path)
+        return
 
 # some wrapper class for export
 class Embedding(torch.nn.Module):
@@ -964,8 +969,9 @@ class Qwen2Visual(Visual):
         position_ids = torch.randn(self.max_pixels, 2).to(dtype=torch.int32)
         attention_mask = torch.zeros([1, 1, self.max_pixels, self.max_pixels], dtype=torch.float32)
 
+        model = copy.deepcopy(self).float()
         torch.onnx.export(
-            self, (patch, position_ids, attention_mask),
+            model, (patch, position_ids, attention_mask),
             onnx_path,
             verbose=False,
             input_names=['input_states', 'position_ids', 'attention_mask'],
@@ -973,4 +979,5 @@ class Qwen2Visual(Visual):
             do_constant_folding=True,
             opset_version=15
         )
+        del model
         return
