@@ -16,7 +16,8 @@ from demo.pipeline import Model
 class MultiDeviceModel(Model):
     def __init__(self, args):
         # test
-        self.test_input = args.test_input
+        self.test_input = None
+        self.test_media = None
 
         # preprocess parameters, such as prompt & tokenizer
         self.devices = [int(d) for d in args.devid.split(",")]
@@ -121,12 +122,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-p", "--dir_path", type=str, default="./tmp",
                         help="dir path to the config/embedding/tokenizer")
-    parser.add_argument('-b', '--model_path', type=str, default="",
-                        help='path to the bmodel file')
-    parser.add_argument('-d', '--devid', type=str, default='0,1,2,3',
+    parser.add_argument('-d', '--devid', type=str,
                         help='device ID to use')
-    parser.add_argument('--test_input', type=str,
-                        help='the text for test')
     parser.add_argument('--enable_history', action='store_true',
                         help="if set, enables storing of history memory")
     parser.add_argument('--model_type', type=str, help="model type")

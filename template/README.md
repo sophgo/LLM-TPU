@@ -12,6 +12,7 @@
   - [5. 运行](#5-运行)
     - [5.1 环境准备](#51-环境准备)
     - [5.2 模型下载与运行](#52-模型下载与运行)
+    - [5.3 多芯模型下载与运行](#53-多芯模型下载与运行)
   - [6. 程序性能测试](#6-程序性能测试)
 
 ## 1. 简介
@@ -26,10 +27,14 @@
 ```bash
 
 ├── README.md                     # 例程指南
-├── compile
+├── compile                       # 模型导出目录
 │   ├── model_export.py           # bmodel编译脚本
 │   └── onnx_rebuilder.py         # onnx导出脚本
-├── python_demo
+├── demo                          # 单芯demo
+│   ├── chat.cpp                  # python依赖的后端cpp文件
+│   ├── pipeline.py               # python_demo的执行脚本
+│   └── CMakeLists.txt
+├── parallel_demo                 # 多芯demo
 │   ├── chat.cpp                  # python依赖的后端cpp文件
 │   ├── pipeline.py               # python_demo的执行脚本
 │   └── CMakeLists.txt
@@ -94,27 +99,29 @@ sudo apt install zip
 
 编译c++依赖
 ```bash
-cd LLM-TPU/template/demo && mkdir build
+cd demo && mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..
 ```
 
 多模态模型（例如Qwen2-VL、Qwen2.5-VL），编译c++依赖
 ```bash
-cd LLM-TPU/template/demo && mkdir build
+cd demo && mkdir build
 cd build && cmake -DTYPE=media .. && make && cp *cpython* .. && cd ..
 ```
 
 多芯模型（例如QWQ-32B），编译c++依赖
 ```bash
-cd LLM-TPU/template/parallel_demo && mkdir build
+cd parallel_demo && mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..
 ```
 
 ### 5.2 模型下载与运行
 
+完成模型编译后，模型相关的推理文件和分词器相关配置，通常都保存在同一目录下，确认其中包含了bmodel文件、config文件，和tokenizer目录就可以直接运行了：
+
 ```bash
-cd LLM-TPU/template/demo
-python3 pipeline.py --model_path your_bmodel_path --devid your_dev_id
+cd demo
+python3 pipeline.py --devid your_dev_id --dir_path your_model_path
 ```
 
 #### DeepSeek-R1-Distill-Qwen系列
@@ -142,8 +149,8 @@ python3 pipeline.py --devid 0 --dir_path ./deepseek-r1-distill-qwen-14b/
 ### 5.3 多芯模型下载与运行
 
 ```bash
-cd LLM-TPU/template/parallel_demo
-python3 pipeline.py --model_path your_bmodel_path --devid your_dev_id
+cd parallel_demo
+python3 pipeline.py --devid your_dev_id --dir_path your_model_path
 ```
 
 #### QWQ-32B系列

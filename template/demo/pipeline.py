@@ -390,8 +390,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-p", "--dir_path", type=str, default="./tmp",
                         help="dir path to the config/embedding/tokenizer")
-    parser.add_argument('-b', '--model_path', type=str, default="",
-                        help='path to the bmodel file')
     parser.add_argument('-d', '--devid', type=str, default='0',
                         help='device ID to use')
     parser.add_argument('--test_input', type=str,
