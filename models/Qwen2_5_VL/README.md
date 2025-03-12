@@ -28,7 +28,7 @@ git clone git@hf.co:Qwen/Qwen2.5-VL-3B-Instruct
 
 另外需要做一些模型源码上的修改：
 1. 修改`Qwen2_5-VL-3B-Instruct`的`config.json`中的`max_position_embeddings`改成想要的长度，比如2048
-2. 将`compile/files/Qwen2_5-VL-3B-Instruct/`中的`modeling_qwen2_5_vl.py`覆盖到transformers中，如下：
+2. 将`compile/files/Qwen2_5-VL/`中的`modeling_qwen2_5_vl.py`覆盖到transformers中，比如：
 ``` shell
 cp files/Qwen2_5-VL-3B-Instruct/modeling_qwen2_5_vl.py /root/miniconda3/lib/python3.10/site-packages/transformers/models/qwen2_5_vl/modeling_qwen2_5_vl.py
 ```
@@ -101,7 +101,7 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 * python demo
 
 ``` shell
-python3 pipeline.py --model_path qwen2.5-vl-3b_w4bf16_seq2048.bmodel --config_path ../support/processor_config 
+python3 pipeline.py --model_path qwen2.5-vl-3b_w4bf16_seq2048.bmodel --config_path config 
 ```
 model为实际的model储存路径；config_path为配置文件路径
 
@@ -122,6 +122,7 @@ python3 tpu/llm_dequant.py --pretrained_model_path /workspace/Qwen2.5-VL-3B-Inst
 #### 是否支持Qwen2_5-VL-7B ?
 
 是支持的，步骤基本一致。
-1. 将`files/Qwen2_5-VL-7B`里面的文件替换到`Qwen2_5-VL-7B`中；
-2. 执行`export_onnx.py`指定`Qwen2_5-VL-7B`路径，导出onnx；
-3. 执行`./compile.sh --name qwen2_5-vl-7b`生成模型`qwen2.5-vl-7b_w4bf16_seq2048.bmodel`
+1. 将`files/Qwen2_5-VL`里面的`model_qwen2_5_vl.py`替换到transformers中；
+2. 将`Qwen2_5-VL-7B-Instruct`中`config.json`配置max_position_embeddings改为2048;
+3. 执行`export_onnx.py`指定`Qwen2_5-VL-7B-Instruct`路径，导出onnx；
+4. 执行`./compile.sh --name qwen2_5-vl-7b --seq_length 2048`生成模型`qwen2.5-vl-7b_w4bf16_seq2048.bmodel`
