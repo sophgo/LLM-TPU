@@ -149,9 +149,9 @@ python3 pipeline.py --model_path your_bmodel_path --devid your_dev_id
 #### QWQ-32B系列
 下载`qwq-32b`模型，并运行：
 ```bash
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwq-32b-w4bf16-seq1024.zip
-unzip qwq-32b-w4bf16-seq1024-2dev.zip
-python3 pipeline.py --devid 0,1 --dir_path ./qwq-32b/
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwq_32b_w4bf16_seq1024_2dev.tar.gz
+tar -zxvf qwq_32b_w4bf16_seq1024_2dev.tar.gz
+python3 pipeline.py --devid 0,1 --dir_path ./qwq_32b_w4bf16_seq1024_2dev
 ```
 
 
