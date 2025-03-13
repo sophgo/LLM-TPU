@@ -25,7 +25,7 @@ model_path = args.model_path
 folder = f"./tmp/onnx"
 
 origin_model = AutoModelForCausalLM.from_pretrained(
-    model_path, trust_remote_code=True).eval()
+    model_path, trust_remote_code=True, attn_implementation='eager').eval()
 
 for param in origin_model.parameters():
     param.requires_grad = False

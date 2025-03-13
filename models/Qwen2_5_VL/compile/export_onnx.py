@@ -316,24 +316,19 @@ def convert():
     print(f'Convert block & block_cache')
     for i in tqdm(range(NUM_LAYERS)):
         convert_block(i)
-        torch.cuda.empty_cache()
         convert_block_cache(i)
-        torch.cuda.empty_cache()
 
     print(f'Convert embedding')
     convert_embedding()
-    torch.cuda.empty_cache()
 
     print(f'Convert lm_head')
     convert_lm_head_with_topk()
-    torch.cuda.empty_cache()
     # convert_lm_head()
     # convert_greedy_head()
     # convert_penalty_sample_head()
 
     print(f'Convert Vision Transformer')
     convert_vision_transformer()
-    torch.cuda.empty_cache()
     print("Done")
 
 

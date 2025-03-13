@@ -30,7 +30,7 @@ if device == 'cpu':
     torch.set_num_threads(args.num_threads)
 
 origin_model = AutoModel.from_pretrained(
-    model_path, trust_remote_code=True, torch_dtype=torch.float, device_map='auto').eval()
+    model_path, trust_remote_code=True, attn_implementation='eager', torch_dtype=torch.float, device_map='auto').eval()
 
 for param in origin_model.parameters():
     param.requires_grad = False

@@ -20,10 +20,10 @@ mv chat*.so ../
 
 ## 下载模型
 ```shell
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-3b_w4bf16_seq8192.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-3b_w4bf16_seq2048.bmodel
 ```
 
 ## 运行
 ``` shell
-python3 pipeline.py --model_path ../qwen2.5-vl-3b_w4bf16_seq8192.bmodel --config_path config/
+python3 pipeline.py --model_path ../qwen2.5-vl-3b_w4bf16_seq2048.bmodel --config_path config/
 ```

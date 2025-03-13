@@ -34,6 +34,7 @@ else:
 model = AutoModelForCausalLM.from_pretrained(
     args.model_path,
 	trust_remote_code=True,
+    attn_implementation='eager',
     torch_dtype=dtype,
     device_map=device)
 processor = AutoProcessor.from_pretrained(

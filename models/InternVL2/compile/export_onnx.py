@@ -44,7 +44,7 @@ is_4B = "InternVL2-4B" in model_path
 folder = f"./tmp/onnx"
 
 origin_model = AutoModelForCausalLM.from_pretrained(
-    model_path, trust_remote_code=True,
+    model_path, trust_remote_code=True, attn_implementation='eager',
     torch_dtype=dtype).eval().to(device)
 
 for param in origin_model.parameters():

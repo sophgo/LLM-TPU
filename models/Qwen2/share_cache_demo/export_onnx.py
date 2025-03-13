@@ -47,7 +47,7 @@ else:
     dtype = torch.bfloat16
 
 origin_model = AutoModelForCausalLM.from_pretrained(
-    model_path, trust_remote_code=True, torch_dtype=dtype, device_map="auto"
+    model_path, trust_remote_code=True, attn_implementation='eager', torch_dtype=dtype, device_map="auto"
 ).eval()
 
 for param in origin_model.parameters():

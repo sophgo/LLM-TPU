@@ -25,7 +25,7 @@ folder = f"./tmp/onnx"
 device = torch.device(args.device)
 
 origin_model = AutoModel.from_pretrained(
-    model_path, trust_remote_code=True, torch_dtype=torch.float, device_map='auto').eval()
+    model_path, trust_remote_code=True, attn_implementation='eager', torch_dtype=torch.float, device_map='auto').eval()
 
 tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 

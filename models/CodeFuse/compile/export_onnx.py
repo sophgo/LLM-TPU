@@ -43,7 +43,7 @@ modify_json(json_path)
 
 device = torch.device(args.device)
 origin_model = AutoModelForCausalLM.from_pretrained(
-    model_path, trust_remote_code=True,
+    model_path, trust_remote_code=True, attn_implementation='eager',
     torch_dtype=torch.float32, device_map="cpu").eval()
 
 for param in origin_model.parameters():

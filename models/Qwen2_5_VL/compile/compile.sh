@@ -73,6 +73,7 @@ embedding() {
         ${quantize_args} \
         --quant_input \
         --quant_output \
+        --debug \
         --chip bm1684x \
         --model embedding.bmodel \
         >> ${TASK_FILE}
@@ -88,6 +89,7 @@ embedding() {
         ${quantize_args} \
         --quant_input \
         --quant_output \
+        --debug \
         --chip bm1684x \
         --model embedding_cache.bmodel \
         >> ${TASK_FILE}
@@ -105,6 +107,7 @@ lm_head() {
         ${half_quantize_args} \
         --high_precision \
         --quant_input \
+        --debug \
         --chip bm1684x \
         --model lm_head.bmodel \
         >> ${TASK_FILE}
@@ -122,6 +125,7 @@ block() {
             --high_precision \
             --quant_input \
             --quant_output \
+            --debug \
             --chip bm1684x \
             --model block_$i.bmodel \
             >> ${TASK_FILE}
@@ -134,6 +138,7 @@ block() {
             --high_precision \
             --quant_input \
             --quant_output \
+            --debug \
             --chip bm1684x \
             --addr_mode io_alone \
             --model block_cache_$i.bmodel \
@@ -152,6 +157,7 @@ vision_transformer() {
         ${half_quantize_args} \
         --quant_output \
         --high_precision \
+        --debug \
         --chip bm1684x \
         --model vit.bmodel \
         >> ${TASK_FILE}
