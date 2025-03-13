@@ -1,23 +1,30 @@
 cmake_minimum_required(VERSION 3.10)
-project(parallel_demo)
+project(model)
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE INTERNAL "") 
-set(TARGET_ARCH pcie)
+if (NOT DEFINED TARGET_ARCH)
+    set(TARGET_ARCH pcie)
+endif()
+
+if (NOT DEFINED TYPE)
+    set(TYPE "default")
+endif()
 
 include_directories(${PROJECT_SOURCE_DIR}/../../support/include)
-include_directories(/opt/sophon/libsophon-current/include)
 
 if (${TARGET_ARCH} STREQUAL "pcie")
     add_definitions(-DPCIE_TARGET)
-    link_directories(/opt/sophon/libsophon-current/lib/)
-    message("Pcie mode, starting......")
+    link_directories(${PROJECT_SOURCE_DIR}/../../support/lib_pcie)
+    message("PCIE mode, starting......")
 endif()
 
-add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -Werror)
+add_definitions(-DDEBUG --std=c++17 -fPIC -Wall)
+
 set(CMAKE_BUILD_TYPE "Debug")
 
 find_package(pybind11 REQUIRED CONFIG)
 
-pybind11_add_module(chat chat.cpp)
-target_link_libraries(chat PUBLIC bmrt bmlib)
+file(GLOB CPP_FILES ${PROJECT_SOURCE_DIR}/*.cpp)
+
+pybind11_add_module(chat ${CPP_FILES})
+target_link_libraries(chat PUBLIC bmrt bmlib ${OPENCV_LIBS})
 install(TARGETS chat DESTINATION python)
