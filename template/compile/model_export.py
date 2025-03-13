@@ -265,7 +265,7 @@ class BmodelConverter:
                 '--quant_input',
                 '--quant_output',
                 f'--chip {self.chip}',
-                '--addr_mode=io_alone',
+                '--addr_mode io_alone',
                 f'--num_core {self.num_core}',
                 f'--num_device {self.num_device}',
                 f'--model {name}.bmodel'

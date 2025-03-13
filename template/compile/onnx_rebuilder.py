@@ -396,7 +396,8 @@ class OnnxRebuilder:
 
     @logging("export_block ...")
     def export_block(self):
-        hidden_states = torch.randn((1, self.seq_length, self.hidden_size), dtype=torch.float)
+        hidden_states = torch.randn((1, self.seq_length, self
+                                     .hidden_size), dtype=torch.float)
         position_ids = torch.tensor([range(self.seq_length)], dtype=torch.long)
         attention_mask = torch.randn((1, 1, self.seq_length, self.seq_length), dtype=torch.float)
 
@@ -418,13 +419,14 @@ class OnnxRebuilder:
                     do_constant_folding=False, # set False to keep original name
                     opset_version=15,
                 )
-                self.onnx_model = onnx.load(onnx_path)
             else:
+                if self.onnx_model is None:
+                    self.onnx_model = onnx.load(f'{self.onnx_dir}/block_0.onnx')
                 self.rebuild_weights(
                     torch_model=model,
                     save_path=onnx_path
                 )
-            del model
+        self.onnx_model = None
 
     @logging("export_block_cache ...")
     def export_block_cache(self):
@@ -457,12 +459,14 @@ class OnnxRebuilder:
                     do_constant_folding=False,
                     opset_version=15,
                 )
-                self.onnx_model = onnx.load(onnx_path)
             else:
+                if self.onnx_model is None:
+                    self.onnx_model = onnx.load(f'{self.onnx_dir}/block_cache_0.onnx')
                 self.rebuild_weights(
                     torch_model=model,
                     save_path=onnx_path
                 )
+        self.onnx_model = None
 
     @logging("export_lm_head ...")
     def export_lm_head(self):
