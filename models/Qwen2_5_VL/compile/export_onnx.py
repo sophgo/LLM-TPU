@@ -289,14 +289,16 @@ def load_model():
     if args.device == "cpu":
         dtype = torch.float
         torch.set_num_threads(args.num_threads)
+        device_map="cpu"
     else:
         dtype = torch.bfloat16
+        device_map="cuda:0"
 
     # load model
     model_path = args.model_path
     origin_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
         model_path, trust_remote_code=True, attn_implementation='eager',
-        torch_dtype=dtype, device_map="cuda:0"
+        torch_dtype=dtype, device_map=device_map
     ).eval()
 
     for param in origin_model.parameters():
@@ -314,19 +316,24 @@ def convert():
     print(f'Convert block & block_cache')
     for i in tqdm(range(NUM_LAYERS)):
         convert_block(i)
+        torch.cuda.empty_cache()
         convert_block_cache(i)
+        torch.cuda.empty_cache()
 
     print(f'Convert embedding')
     convert_embedding()
+    torch.cuda.empty_cache()
 
     print(f'Convert lm_head')
     convert_lm_head_with_topk()
+    torch.cuda.empty_cache()
     # convert_lm_head()
     # convert_greedy_head()
     # convert_penalty_sample_head()
 
     print(f'Convert Vision Transformer')
     convert_vision_transformer()
+    torch.cuda.empty_cache()
     print("Done")
 
 
@@ -563,7 +570,7 @@ if __name__ == "__main__":
     parser.add_argument('-b', '--batch_size', type=int, default=1, help='batch size')
     parser.add_argument('-s', '--seq_length', type=int, default=2048, help="sequence length")
     parser.add_argument('-i', '--vision_length', type=int,default=600, help="vision_length = max_image_width // patch_size * max_image_height // patch_size")
-    parser.add_argument('-n', '--num_threads', type=int, default=1, help='The number of threads used for torch if device is cpu')
+    parser.add_argument('-n', '--num_threads', type=int, default=32, help='The number of threads used for torch if device is cpu')
     args = parser.parse_args()
 
     # processor & tokenizer
@@ -586,7 +593,6 @@ if __name__ == "__main__":
     HEAD_DIM = HIDDEN_SIZE // NUM_ATTENTION_HEADS
     VOCAB_SIZE = config.vocab_size
     print(f"Layers: {NUM_LAYERS}\nHidden size: {HIDDEN_SIZE}\n")
-    print("\033[31m修改了load model方式，将attn_implementation由sdpa改为了eager，不然无法导出onnx\n\033[0m")
     folder = f"./tmp/onnx"
 
     VISION_LENGTH = args.vision_length

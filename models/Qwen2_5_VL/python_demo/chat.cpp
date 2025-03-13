@@ -122,7 +122,7 @@ void Qwen2VL::init(int dev_id, std::string model_path) {
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
-  printf("Num Layers:%d\n", NUM_LAYERS);
+
   // net embed and lm_head
   net_embed = bmrt_get_network_info(p_bmrt, "embedding");
   net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
@@ -132,7 +132,9 @@ void Qwen2VL::init(int dev_id, std::string model_path) {
   HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[1];
   MAX_PIXELS = net_vit->stages[0].input_shapes[0].dims[0];
   VIT_DIMS = net_vit->stages[0].input_shapes[0].dims[1];
-
+  auto num_nets = bmrt_get_network_number(p_bmrt);
+  NUM_LAYERS = (num_nets - 4) / 2;
+  printf("Num Layers:%d\n", NUM_LAYERS);
   // net blocks
   for (int i = 0; i < NUM_LAYERS; i++) {
     auto block_name = "block_" + std::to_string(i);
@@ -504,7 +506,6 @@ PYBIND11_MODULE(chat, m) {
       .def("forward_next", &Qwen2VL::forward_next)
       .def("deinit", &Qwen2VL::deinit)
       .def_readwrite("SEQLEN", &Qwen2VL::SEQLEN) // read SEQLEN in pipeline.py
-      .def_readwrite("NUM_LAYERS", &Qwen2VL::NUM_LAYERS)
       .def_readwrite("MAX_PIXELS", &Qwen2VL::MAX_PIXELS)
       .def_readwrite("spatial_merge_size", &Qwen2VL::spatial_merge_size)
       .def_readwrite("token_length", &Qwen2VL::token_length)

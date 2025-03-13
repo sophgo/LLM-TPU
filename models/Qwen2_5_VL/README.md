@@ -6,10 +6,12 @@
 本文包括如何转换bmodel，和如何在BM1684X环境运行bmodel。如何转换bmodel环节可以省去，直接用以下链接下载：
 
 ``` shell
-# 2K版本
+# 3B 2K版本
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-3b_w4bf16_seq2048.bmodel
-# 8K版本
+# 3B 8K版本
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-3b_w4bf16_seq8192.bmodel
+# 7B 2K版本
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-7b_w4bf16_seq2048.bmodel
 ```
 
 ## 开发环境准备
@@ -30,7 +32,7 @@ git clone git@hf.co:Qwen/Qwen2.5-VL-3B-Instruct
 1. 修改`Qwen2_5-VL-3B-Instruct`的`config.json`中的`max_position_embeddings`改成想要的长度，比如2048
 2. 将`compile/files/Qwen2_5-VL/`中的`modeling_qwen2_5_vl.py`覆盖到transformers中，比如：
 ``` shell
-cp files/Qwen2_5-VL-3B-Instruct/modeling_qwen2_5_vl.py /root/miniconda3/lib/python3.10/site-packages/transformers/models/qwen2_5_vl/modeling_qwen2_5_vl.py
+cp files/Qwen2_5-VL/modeling_qwen2_5_vl.py /root/miniconda3/lib/python3.10/site-packages/transformers/models/qwen2_5_vl/modeling_qwen2_5_vl.py
 ```
 
 #### 2. 导出成onnx模型

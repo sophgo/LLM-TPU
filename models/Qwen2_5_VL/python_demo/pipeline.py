@@ -25,7 +25,6 @@ class Qwen2VL():
 
         # load model
         self.model = chat.Qwen2VL()
-        self.model.NUM_LAYERS = self.config["num_hidden_layers"]
         self.model.spatial_merge_size = self.config["vision_config"]["spatial_merge_size"]
         self.model.init(self.device, args.model_path)
 
