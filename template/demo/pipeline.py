@@ -143,15 +143,12 @@ class Model:
         return
 
     def load_model(self, args, read_bmodel):
-        if not args.model_path:
-            bmodel_files = [f for f in os.listdir(args.dir_path) if f.endswith('.bmodel')]
-            if len(bmodel_files) > 1:
-                raise RuntimeError(f"Found multiple bmodel files in {args.dir_path}, please specify one with --model_path")
-            elif not bmodel_files:
-                raise FileNotFoundError(f"No bmodel files found in {args.dir_path}")
-            model_path = os.path.join(args.dir_path, bmodel_files[0])
-        else:
-            model_path = args.model_path
+        bmodel_files = [f for f in os.listdir(args.dir_path) if f.endswith('.bmodel')]
+        if len(bmodel_files) > 1:
+            raise RuntimeError(f"Found multiple bmodel files in {args.dir_path}, please specify one with --model_path")
+        elif not bmodel_files:
+            raise FileNotFoundError(f"No bmodel files found in {args.dir_path}")
+        model_path = os.path.join(args.dir_path, bmodel_files[0])
 
         load_start = time.time()
         self.model.init(self.devices, model_path, read_bmodel) # when read_bmodel = false, not to load weight, reuse weight
@@ -389,7 +386,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-p", "--dir_path", type=str, default="./tmp",
-                        help="dir path to the config/embedding/tokenizer")
+                        help="dir path to the bmodel/config/tokenizer")
     parser.add_argument('-d', '--devid', type=str, default='0',
                         help='device ID to use')
     parser.add_argument('--test_input', type=str,

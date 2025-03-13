@@ -15,7 +15,7 @@
 
 # 最近更新！ 🔥🔥🔥
 
-- **2025.03.07**：🚀 Qwen最新推理模型**QWQ-32B**，1684x多芯demo已适配，详情见[Qwen2_5多芯demo](./models/Qwen2_5/python_demo_parallel/)。
+- **2025.03.07**：🚀 Qwen最新推理模型**QWQ-32B**，1684x多芯demo已适配，详情见[LLM Template](./template/)。
 - **2025.02.05**：🚀 DeepSeek时刻！！我们适配了**DeepSeek-R1-Distill-Qwen**系列模型，包括1.5B、7B和14B版本，详情见[LLM Template](./template/)。
 
 

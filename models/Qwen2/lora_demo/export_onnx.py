@@ -495,7 +495,8 @@ def load_model(args):
     # load model
     model_path = args.model_path
     origin_model = AutoModelForCausalLM.from_pretrained(
-        model_path, trust_remote_code=True, torch_dtype=dtype
+        model_path, trust_remote_code=True, torch_dtype=dtype,
+        attn_implementation="eager"
     ).eval().to(device)
     for param in origin_model.parameters():
         param.requires_grad = False
