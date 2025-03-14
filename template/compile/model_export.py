@@ -40,6 +40,7 @@ class BmodelConverter:
         self.seq_length = args.seq_length
         self.num_device = args.num_device
         self.max_workers = args.max_workers
+        self.compile_mode = args.compile_mode
         self.tpu_mlir_path = args.tpu_mlir_path
         self.embedding_disk = args.embedding_disk
         self.half_precision_quantize = "bf16" if "bf16" in self.quantize else "f16"
@@ -104,26 +105,44 @@ class BmodelConverter:
             print(f"{name}.bmodel already exists. Skipping compilation.")
         else:
             path = os.path.join(self.relative_onnx_path, f"{name}.pt")
-            transform_args = [
-                'model_transform.py',
-                f'--model_name {name}',
-                f'--model_def {path}',
-                f'--input_shapes [[1,{self.seq_length}]]',
-                f'--input_types "int32"',
-                f'--mlir {name}.mlir'
-            ]
-            deploy_args = [
-                'model_deploy.py',
-                f'--mlir {name}.mlir',
-                f'--quantize {self.half_precision_quantize}',
-                '--quant_output',
-                f'--chip {self.chip}',
-                f'--num_core {self.num_core}',
-                f'--num_device {self.num_device}',
-                f'--model {name}.bmodel'
-            ]
-            self.run_command(['bash', '-c', ' '.join(transform_args)], env)
-            self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
+            if self.compile_mode == 'fast':
+                convert_args = [
+                    'model_convert.py',
+                    f'--model_name {name}',
+                    f'--model_def {path}',
+                    f'--input_shapes [[1,{self.seq_length}]]',
+                    f'--input_types "int32"',
+                    f'--quantize {self.quantize}',
+                    '--quant_input',
+                    '--quant_output',
+                    f'--chip {self.chip}',
+                    f'--num_core {self.num_core}',
+                    f'--num_device {self.num_device}',
+                    f'--model {name}.bmodel'
+                ]
+                self.run_command(['bash', '-c', ' '.join(convert_args)], env)
+            else:
+                transform_args = [
+                    'model_transform.py',
+                    f'--model_name {name}',
+                    f'--model_def {path}',
+                    f'--input_shapes [[1,{self.seq_length}]]',
+                    f'--input_types "int32"',
+                    f'--mlir {name}.mlir'
+                ]
+                deploy_args = [
+                    'model_deploy.py',
+                    f'--mlir {name}.mlir',
+                    f'--quantize {self.quantize}',
+                    '--quant_input',
+                    '--quant_output',
+                    f'--chip {self.chip}',
+                    f'--num_core {self.num_core}',
+                    f'--num_device {self.num_device}',
+                    f'--model {name}.bmodel'
+                ]
+                self.run_command(['bash', '-c', ' '.join(transform_args)], env)
+                self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
 
     def compile_embedding_cache(self, env):
         name = "embedding_cache"
@@ -131,26 +150,44 @@ class BmodelConverter:
             print(f"{name}.bmodel already exists. Skipping compilation.")
         else:
             path = os.path.join(self.relative_onnx_path, f"embedding.pt")
-            transform_args = [
-                'model_transform.py',
-                f'--model_name {name}',
-                f'--model_def {path}',
-                f'--input_shapes [[1,1]]',
-                f'--input_types "int32"',
-                f'--mlir {name}.mlir'
-            ]
-            deploy_args = [
-                'model_deploy.py',
-                f'--mlir {name}.mlir',
-                f'--quantize {self.half_precision_quantize}',
-                '--quant_output',
-                f'--chip {self.chip}',
-                f'--num_core {self.num_core}',
-                f'--num_device {self.num_device}',
-                f'--model {name}.bmodel'
-            ]
-            self.run_command(['bash', '-c', ' '.join(transform_args)], env)
-            self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
+            if self.compile_mode == 'fast':
+                convert_args = [
+                    'model_convert.py',
+                    f'--model_name {name}',
+                    f'--model_def {path}',
+                    f'--input_shapes [[1,1]]',
+                    f'--input_types "int32"',
+                    f'--quantize {self.quantize}',
+                    '--quant_input',
+                    '--quant_output',
+                    f'--chip {self.chip}',
+                    f'--num_core {self.num_core}',
+                    f'--num_device {self.num_device}',
+                    f'--model {name}.bmodel'
+                ]
+                self.run_command(['bash', '-c', ' '.join(convert_args)], env)
+            else:
+                transform_args = [
+                    'model_transform.py',
+                    f'--model_name {name}',
+                    f'--model_def {path}',
+                    f'--input_shapes [[1,1]]',
+                    f'--input_types "int32"',
+                    f'--mlir {name}.mlir'
+                ]
+                deploy_args = [
+                    'model_deploy.py',
+                    f'--mlir {name}.mlir',
+                    f'--quantize {self.quantize}',
+                    '--quant_input',
+                    '--quant_output',
+                    f'--chip {self.chip}',
+                    f'--num_core {self.num_core}',
+                    f'--num_device {self.num_device}',
+                    f'--model {name}.bmodel'
+                ]
+                self.run_command(['bash', '-c', ' '.join(transform_args)], env)
+                self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
 
     def compile_lm_head(self, env):
         name = "lm_head"
@@ -158,25 +195,40 @@ class BmodelConverter:
             print(f"{name}.bmodel already exists. Skipping compilation.")
         else:
             path = os.path.join(self.relative_onnx_path, f"{name}.pt")
-            transform_args = [
-                'model_transform.py',
-                f'--model_name {name}',
-                f'--model_def {path}',
-                f'--input_shapes [[1,{self.hidden_size}]]',
-                f'--mlir {name}.mlir'
-            ]
-            deploy_args = [
-                'model_deploy.py',
-                f'--mlir {name}.mlir',
-                f'--quantize {self.quantize}',
-                '--quant_input',
-                f'--chip {self.chip}',
-                f'--num_core {self.num_core}',
-                f'--num_device {self.num_device}',
-                f'--model {name}.bmodel'
-            ]
-            self.run_command(['bash', '-c', ' '.join(transform_args)], env)
-            self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
+            if self.compile_mode == 'fast':
+                convert_args = [
+                    'model_convert.py',
+                    f'--model_name {name}',
+                    f'--model_def {path}',
+                    f'--input_shapes [[1,{self.hidden_size}]]',
+                    f'--quantize {self.half_precision_quantize}',
+                    '--quant_input',
+                    f'--chip {self.chip}',
+                    f'--num_core {self.num_core}',
+                    f'--num_device {self.num_device}',
+                    f'--model {name}.bmodel'
+                ]
+                self.run_command(['bash', '-c', ' '.join(convert_args)], env)
+            else:
+                transform_args = [
+                    'model_transform.py',
+                    f'--model_name {name}',
+                    f'--model_def {path}',
+                    f'--input_shapes [[1,{self.hidden_size}]]',
+                    f'--mlir {name}.mlir'
+                ]
+                deploy_args = [
+                    'model_deploy.py',
+                    f'--mlir {name}.mlir',
+                    f'--quantize {self.half_precision_quantize}',
+                    '--quant_input',
+                    f'--chip {self.chip}',
+                    f'--num_core {self.num_core}',
+                    f'--num_device {self.num_device}',
+                    f'--model {name}.bmodel'
+                ]
+                self.run_command(['bash', '-c', ' '.join(transform_args)], env)
+                self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
 
     def compile_greedy_head(self, env):
         name = "greedy_head"
@@ -184,20 +236,30 @@ class BmodelConverter:
             print(f"{name}.bmodel already exists. Skipping compilation.")
         else:
             path = os.path.join(self.relative_onnx_path, f"{name}.onnx")
-            transform_args = [
-                'model_transform.py',
-                f'--model_name {name}',
-                f'--model_def {path}',
-                f'--mlir {name}.mlir'
-            ]
-            deploy_args = [
-                'model_deploy.py',
-                f'--mlir {name}.mlir',
-                f'--chip {self.chip}',
-                f'--model {name}.bmodel'
-            ]
-            self.run_command(['bash', '-c', ' '.join(transform_args)], env)
-            self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
+            if self.compile_mode == 'fast':
+                convert_args = [
+                    'model_convert.py',
+                    f'--model_name {name}',
+                    f'--model_def {path}',
+                    f'--chip {self.chip}',
+                    f'--model {name}.bmodel'
+                ]
+                self.run_command(['bash', '-c', ' '.join(convert_args)], env)
+            else:
+                transform_args = [
+                    'model_transform.py',
+                    f'--model_name {name}',
+                    f'--model_def {path}',
+                    f'--mlir {name}.mlir'
+                ]
+                deploy_args = [
+                    'model_deploy.py',
+                    f'--mlir {name}.mlir',
+                    f'--chip {self.chip}',
+                    f'--model {name}.bmodel'
+                ]
+                self.run_command(['bash', '-c', ' '.join(transform_args)], env)
+                self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
 
     def compile_penalty_head(self, env):
         name = "penalty_sample_head"
@@ -205,20 +267,30 @@ class BmodelConverter:
             print(f"{name}.bmodel already exists. Skipping compilation.")
         else:
             path = os.path.join(self.relative_onnx_path, f"{name}.onnx")
-            transform_args = [
-                'model_transform.py',
-                f'--model_name {name}',
-                f'--model_def {path}',
-                f'--mlir {name}.mlir'
-            ]
-            deploy_args = [
-                'model_deploy.py',
-                f'--mlir {name}.mlir',
-                f'--chip {self.chip}',
-                f'--model {name}.bmodel'
-            ]
-            self.run_command(['bash', '-c', ' '.join(transform_args)], env)
-            self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
+            if self.compile_mode == 'fast':
+                convert_args = [
+                    'model_convert.py',
+                    f'--model_name {name}',
+                    f'--model_def {path}',
+                    f'--chip {self.chip}',
+                    f'--model {name}.bmodel'
+                ]
+                self.run_command(['bash', '-c', ' '.join(convert_args)], env)
+            else:
+                transform_args = [
+                    'model_transform.py',
+                    f'--model_name {name}',
+                    f'--model_def {path}',
+                    f'--mlir {name}.mlir'
+                ]
+                deploy_args = [
+                    'model_deploy.py',
+                    f'--mlir {name}.mlir',
+                    f'--chip {self.chip}',
+                    f'--model {name}.bmodel'
+                ]
+                self.run_command(['bash', '-c', ' '.join(transform_args)], env)
+                self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
 
     def compile_block(self, layer_id, env):
         name = f"block_{layer_id}"
@@ -226,25 +298,41 @@ class BmodelConverter:
             print(f"{name}.bmodel already exists. Skipping compilation.")
         else:
             path = os.path.join(self.relative_onnx_path, f"{name}.onnx")
-            transform_args = [
-                'model_transform.py',
-                f'--model_name {name}',
-                f'--model_def {path}',
-                f'--mlir {name}.mlir'
-            ]
-            deploy_args = [
-                'model_deploy.py',
-                f'--mlir {name}.mlir',
-                f'--quantize {self.quantize}',
-                '--quant_input',
-                '--quant_output',
-                f'--chip {self.chip}',
-                f'--num_core {self.num_core}',
-                f'--num_device {self.num_device}',
-                f'--model {name}.bmodel'
-            ]
-            self.run_command(['bash', '-c', ' '.join(transform_args)], env)
-            self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
+            if self.compile_mode == 'fast':
+                convert_args = [
+                    'model_convert.py',
+                    f'--model_name {name}',
+                    f'--model_def {path}',
+                    f'--quantize {self.quantize}',
+                    '--quant_input',
+                    '--quant_output',
+                    '--do_onnx_sim True',
+                    f'--chip {self.chip}',
+                    f'--num_core {self.num_core}',
+                    f'--num_device {self.num_device}',
+                    f'--model {name}.bmodel'
+                ]
+                self.run_command(['bash', '-c', ' '.join(convert_args)], env)
+            else:
+                transform_args = [
+                    'model_transform.py',
+                    f'--model_name {name}',
+                    f'--model_def {path}',
+                    f'--mlir {name}.mlir'
+                ]
+                deploy_args = [
+                    'model_deploy.py',
+                    f'--mlir {name}.mlir',
+                    f'--quantize {self.quantize}',
+                    '--quant_input',
+                    '--quant_output',
+                    f'--chip {self.chip}',
+                    f'--num_core {self.num_core}',
+                    f'--num_device {self.num_device}',
+                    f'--model {name}.bmodel'
+                ]
+                self.run_command(['bash', '-c', ' '.join(transform_args)], env)
+                self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
 
     def compile_block_cache(self, layer_id, env):
         name = f"block_cache_{layer_id}"
@@ -252,53 +340,87 @@ class BmodelConverter:
             print(f"{name}.bmodel already exists. Skipping compilation.")
         else:
             path = os.path.join(self.relative_onnx_path, f"{name}.onnx")
-            transform_args = [
-                'model_transform.py',
-                f'--model_name {name}',
-                f'--model_def {path}',
-                f'--mlir {name}.mlir'
-            ]
-            deploy_args = [
-                'model_deploy.py',
-                f'--mlir {name}.mlir',
-                f'--quantize {self.quantize}',
-                '--quant_input',
-                '--quant_output',
-                f'--chip {self.chip}',
-                '--addr_mode io_alone',
-                f'--num_core {self.num_core}',
-                f'--num_device {self.num_device}',
-                f'--model {name}.bmodel'
-            ]
-            self.run_command(['bash', '-c', ' '.join(transform_args)], env)
-            self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
+            if self.compile_mode == 'fast':
+                convert_args = [
+                    'model_convert.py',
+                    f'--model_name {name}',
+                    f'--model_def {path}',
+                    f'--quantize {self.quantize}',
+                    '--quant_input',
+                    '--quant_output',
+                    '--do_onnx_sim True',
+                    f'--chip {self.chip}',
+                    '--addr_mode io_alone',
+                    f'--num_core {self.num_core}',
+                    f'--num_device {self.num_device}',
+                    f'--model {name}.bmodel'
+                ]
+                self.run_command(
+                    ['bash', '-c', ' '.join(convert_args)], env)
+            else:
+                transform_args = [
+                    'model_transform.py',
+                    f'--model_name {name}',
+                    f'--model_def {path}',
+                    f'--mlir {name}.mlir'
+                ]
+                deploy_args = [
+                    'model_deploy.py',
+                    f'--mlir {name}.mlir',
+                    f'--quantize {self.quantize}',
+                    '--quant_input',
+                    '--quant_output',
+                    f'--chip {self.chip}',
+                    '--addr_mode io_alone',
+                    f'--num_core {self.num_core}',
+                    f'--num_device {self.num_device}',
+                    f'--model {name}.bmodel'
+                ]
+                self.run_command(
+                    ['bash', '-c', ' '.join(transform_args)], env)
+                self.run_command(
+                    ['bash', '-c', ' '.join(deploy_args)], env)
 
     def compile_vit(self, env):
-        name = f"vit"
+        name = "vit"
         if os.path.exists(f"{name}.bmodel"):
             print(f"{name}.bmodel already exists. Skipping compilation.")
         else:
             path = os.path.join(self.relative_onnx_path, "vit", f"{name}.onnx")
-            transform_args = [
-                'model_transform.py',
-                f'--model_name {name}',
-                f'--model_def {path}',
-                f'--mlir {name}.mlir'
-            ]
-            deploy_args = [
-                'model_deploy.py',
-                f'--mlir {name}.mlir',
-                f'--quantize {self.half_precision_quantize}',
-                '--quant_input',
-                '--quant_input_list 3',
-                '--quant_output',
-                f'--chip {self.chip}',
-                f'--num_core {self.num_core}',
-                f'--num_device {self.num_device}',
-                f'--model {name}.bmodel'
-            ]
-            self.run_command(['bash', '-c', ' '.join(transform_args)], env)
-            self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
+            if self.compile_mode == 'fast':
+                convert_args = [
+                    'model_convert.py',
+                    f'--model_name {name}',
+                    f'--model_def {path}',
+                    f'--quantize {self.half_precision_quantize}',
+                    '--quant_output',
+                    '--do_onnx_sim True',
+                    f'--chip {self.chip}',
+                    f'--model {name}.bmodel'
+                ]
+                self.run_command(
+                    ['bash', '-c', ' '.join(convert_args)], env)
+            else:
+                transform_args = [
+                    'model_transform.py',
+                    f'--model_name {name}',
+                    f'--model_def {path}',
+                    f'--mlir {name}.mlir'
+                ]
+                deploy_args = [
+                    'model_deploy.py',
+                    f'--mlir {name}.mlir',
+                    f'--quantize {self.half_precision_quantize}',
+                    '--quant_output',
+                    f'--chip {self.chip}',
+                    f'--num_core {self.num_core}',
+                    f'--num_device {self.num_device}',
+                    f'--model {name}.bmodel'
+                ]
+                self.run_command(
+                    ['bash', '-c', ' '.join(transform_args)], env)
+                self.run_command(
+                    ['bash', '-c', ' '.join(deploy_args)], env)
 
     def combine(self, env):
         bmodel_list = []
@@ -333,36 +455,40 @@ class BmodelConverter:
         ori_path = os.getcwd()
         os.chdir(self.bmodel_dir)
 
-        if not self.embedding_disk:
-            self.compile_embedding(self.env)
-            self.compile_embedding_cache(self.env)
-
-        self.compile_lm_head(self.env)
-
-        if self.num_device == 1:
-            self.compile_greedy_head(self.env)
-            self.compile_penalty_head(self.env)
-
-        if self.visual:
-            self.compile_vit(self.env)
-
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             futures = []
+
+            if not self.embedding_disk:
+                futures.append(executor.submit(self.compile_embedding, self.env))
+                futures.append(executor.submit(self.compile_embedding_cache, self.env))
+
+            futures.append(executor.submit(self.compile_lm_head, self.env))
+
+            if self.num_device == 1:
+                futures.append(executor.submit(self.compile_greedy_head, self.env))
+                futures.append(executor.submit(self.compile_penalty_head, self.env))
+
+            if self.visual:
+                futures.append(executor.submit(self.compile_vit, self.env))
+
             for i in range(self.num_layers):
                 futures.append(executor.submit(self.compile_block, i, self.env))
                 futures.append(executor.submit(self.compile_block_cache, i, self.env))
+
             # Wait for all threads to complete
             for future in concurrent.futures.as_completed(futures):
                 # This will raise exceptions if any occurred during thread execution
                 future.result()
 
-        # combine all bmodel
+        # Combine all bmodel files
         self.combine(self.env)
-        for file in os.listdir():
-            if os.path.splitext(file)[-1] == '.npz':
-                os.remove(file)
 
-        # Optionally, change back to the original directory
+        # Remove any .npz files
+        for npz_file in os.listdir():
+            if os.path.splitext(npz_file)[-1] == '.npz':
+                os.remove(npz_file)
+
+        # Change back to the original directory
         os.chdir(ori_path)
 
 class ModelExporter:
@@ -504,8 +630,11 @@ if __name__ == '__main__':
                         help='combined bmodel name, default use original weight')
     parser.add_argument('--visual_length', type=int, default=0,
                         help="visual length in vision transformer for VLM")
-    parser.add_argument('--max_workers', type=int, default=3,
+    parser.add_argument('--max_workers', type=int, default=4,
                         help="max workers for compiling bmodel in multi-processing")
+    parser.add_argument('--compile_mode', type=str, default="fast",
+                        choices=["fast", "debug"],
+                        help="compile with model_convert when use fast, compile with debug info when use debug")
     args = parser.parse_args()
 
     model_exporter = ModelExporter(args)
