@@ -109,7 +109,7 @@ int floor_by_factor(double number, int factor) {
   return static_cast<int>(std::floor(number / factor)) * factor;
 }
 
-std::pair<int, int> smart_resize(int height, int width,
+std::pair<int, int> _smart_resize(int height, int width,
                                  int factor = IMAGE_FACTOR,
                                  int min_pixels = MIN_PIXELS,
                                  int max_pixels = MAX_PIXELS) {
@@ -340,7 +340,7 @@ std::vector<float> process_image(const std::string &media_path,
       std::vector<float> image_std = {0.26862954f, 0.26130258f, 0.27577711f};
 
       if (config.resized_height == 0 || config.resized_width == 0) {
-        auto resized = smart_resize(height, width);
+        auto resized = _smart_resize(height, width);
         resized_height = config.resized_height == 0 ? resized.first : config.resized_height;
         resized_width = config.resized_width == 0 ? resized.second : config.resized_width;
       } else {

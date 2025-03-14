@@ -3,7 +3,11 @@ import json
 import time
 import argparse
 from transformers import AutoTokenizer, AutoProcessor
-import torch
+
+import base64
+from io import BytesIO
+from PIL import Image
+
 import chat
 
 class Model:
@@ -221,24 +225,42 @@ class Model:
         self.formatted_text = self.apply_chat_template(self.history)
         tokens = self.tokenizer(self.formatted_text).input_ids
         return tokens
-    
+
+    def process_image(self, image):
+        image_obj = None
+        if isinstance(image, Image.Image):
+            image_obj = image
+        elif image.startswith("data:image"):
+            if "base64," in image:
+                _, base64_data = image.split("base64,", 1)
+                data = base64.b64decode(base64_data)
+                image_obj = Image.open(BytesIO(data))
+        else:
+            image_obj = Image.open(image)
+        if image_obj is None:
+            raise ValueError(f"Unrecognized image input, support local path, http url, base64 and PIL.Image, got {image}")
+        image = image_obj.convert("RGB")
+
+        if self.model.config.resized_width and self.model.config.resized_height:
+            resized_width = self.model.config.resized_width
+            resized_height = self.model.config.resized_height
+        else:
+            height, width = image.height, image.width
+            resized_height, resized_width = self.model.smart_resize(height, width)
+            self.model.config.resized_width, self.model.config.resized_height = resized_width, resized_height
+
+        image = image.resize((resized_width, resized_height))
+        shape = list(image.size)
+        self.model.process_image(image.tobytes(), shape)
+        return
+
+
     def process_media_input(self, media_path, media_type):
         if self.model_type in ["qwen2_vl", "qwen2_5_vl"]:
-            from qwen_vl_utils import process_vision_info
-            image_inputs, video_inputs = process_vision_info([self.messages])
-            inputs = self.processor(
-                text=[self.formatted_text],
-                images=image_inputs,
-                videos=video_inputs,
-                padding=True,
-                return_tensors="pt",
-            )
-            pixel_values = inputs.pixel_values
-            self.model.config.grid_thw = inputs.image_grid_thw.tolist()[0]
-            inputs = self.model.process_media(media_path, media_type, pixel_values) # preprocess and vit launch
+            self.process_image(media_path) # preprocess and vit launch
         else:
             raise NotImplementedError(f"Not support {self.model_type} now")
-        return inputs
+        return
     
     def prefill_phase(self, text, media_path, media_type):
         print("\n回答: ", end="")

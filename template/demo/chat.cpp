@@ -42,12 +42,12 @@ public:
   void init_forward(pybind11::array_t<int> tokens);
   int forward_first();
   int forward_next();
-  std::vector<int> generate(const std::vector<int>& EOS);
+  std::vector<int> generate(const std::vector<int> &EOS);
 
   // Media Processing
-  void process_media(const std::string &media_path,
-                     const std::string &media_type,
-                     pybind11::array_t<float> pixel_values_arr);
+  std::pair<int, int> smart_resize(int height, int width);
+  void process_image(pybind11::bytes pixel_values_bytes,
+                     const std::vector<int> &shape);
 
   std::mt19937 sgen;
   bool vision_enabled = false;
@@ -541,35 +541,55 @@ bm_device_mem_t Model::embedding_launch(const bm_net_info_t *net0,
 
 #ifdef ENABLE_MEDIA
 #include "cv_utils.h"
-void Model::process_media(const std::string &media_path,
-                          const std::string &media_type,
-                          pybind11::array_t<float> pixel_values_arr = pybind11::array_t<float>()) {
-  int media_token_id;
-  std::vector<float> pixel_values;
+std::pair<int, int> Model::smart_resize(int height, int width) {
+  return _smart_resize(height, width);
+}
 
-  if (pixel_values_arr.size() != 0) {
-    pybind11::buffer_info buf = pixel_values_arr.request();
-    float* ptr = static_cast<float*>(buf.ptr);
-    size_t size = buf.size;
-    pixel_values.assign(ptr, ptr + size);
-  } else {
-    if (media_type == "image") {
-      pixel_values = process_image(media_path, config);
-    } else if (media_type == "video") {
-      process_video(media_path);
-    } else if (media_type == "audio") {
-      process_audio(media_path);
-    } else {
-      throw std::runtime_error("not support now");
+void Model::process_image(pybind11::bytes pixel_values_bytes,
+                          const std::vector<int> &shape) {
+  int media_token_id;
+
+  char *buffer;
+  ssize_t length;
+  PYBIND11_BYTES_AS_STRING_AND_SIZE(pixel_values_bytes.ptr(), &buffer, &length);
+  uint8_t *udata = (uint8_t *)buffer;
+
+  int height = shape[0];
+  int width = shape[1];
+  int channels = 3;
+  size_t total_pixels = height * width * channels;
+  std::vector<float> fdata(total_pixels);
+  for (size_t i = 0; i < fdata.size(); ++i) {
+    fdata[i] = static_cast<float>(udata[i]) * 0.00392156862745098;
+  }
+
+  std::vector<float> image_mean = {0.48145466f, 0.4578275f, 0.40821073f};
+  std::vector<float> image_std = {0.26862954f, 0.26130258f, 0.27577711f};
+
+  std::vector<float> fdata_chw(channels * height * width);
+
+  for (int c = 0; c < channels; ++c) {
+    const float mean = image_mean[c];
+    const float std = image_std[c];
+
+    for (int h = 0; h < height; ++h) {
+      for (int w = 0; w < width; ++w) {
+        size_t index_hwc = (h * width + w) * channels + c;
+        float normalized_value = (fdata[index_hwc] - mean) / std;
+
+        size_t index_chw = c * (height * width) + h * width + w;
+        fdata_chw[index_chw] = normalized_value;
+      }
     }
   }
 
-  if (media_type == "image") {
-    media_token_id = config.image_token_id;
-  } else if (media_type == "video") {
-    media_token_id = config.video_token_id;
-  }
+  std::vector<std::vector<float>> patches;
+  patches.push_back(fdata_chw);
+  config.grid_thw = calc_grid_thw(patches, height, width, config);
+  std::vector<float> pixel_values =
+      rearrange_patches(patches, height, width, config);
 
+  media_token_id = config.image_token_id;
 
   // token process & vit launch
   raw_tokens = maker->insert_tokens(raw_tokens, media_token_id);
@@ -792,10 +812,11 @@ int Model::forward_next() {
   return token;
 }
 
-std::vector<int> Model::generate(const std::vector<int>& EOS) {
+std::vector<int> Model::generate(const std::vector<int> &EOS) {
   std::vector<int> result_tokens;
   int token = forward_first();
-  while (std::find(EOS.begin(), EOS.end(), token) == EOS.end() && total_length < SEQLEN && (int)result_tokens.size() < max_new_tokens) {
+  while (std::find(EOS.begin(), EOS.end(), token) == EOS.end() &&
+         total_length < SEQLEN && (int)result_tokens.size() < max_new_tokens) {
     result_tokens.emplace_back(token);
     token = forward_next();
   }
@@ -822,10 +843,8 @@ PYBIND11_MODULE(chat, m) {
       .def("forward_first", &Model::forward_first)
       .def("forward_next", &Model::forward_next)
 #ifdef ENABLE_MEDIA
-      .def("process_media", &Model::process_media, 
-           pybind11::arg("media_path"), 
-           pybind11::arg("media_type"),
-           pybind11::arg("pixel_values_arr") = pybind11::array_t<float>())
+      .def("smart_resize", &Model::smart_resize)
+      .def("process_image", &Model::process_image)
 #endif
       .def("generate", &Model::generate)
       .def("deinit", &Model::deinit)
