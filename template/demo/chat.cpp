@@ -557,12 +557,8 @@ void Model::process_image(pybind11::bytes pixel_values_bytes,
   int height = shape[0];
   int width = shape[1];
   int channels = 3;
-  size_t total_pixels = height * width * channels;
-  std::vector<float> fdata(total_pixels);
-  for (size_t i = 0; i < fdata.size(); ++i) {
-    fdata[i] = static_cast<float>(udata[i]) * 0.00392156862745098;
-  }
 
+  float rescale_factor = 0.00392156862745098;
   std::vector<float> image_mean = {0.48145466f, 0.4578275f, 0.40821073f};
   std::vector<float> image_std = {0.26862954f, 0.26130258f, 0.27577711f};
 
@@ -575,7 +571,9 @@ void Model::process_image(pybind11::bytes pixel_values_bytes,
     for (int h = 0; h < height; ++h) {
       for (int w = 0; w < width; ++w) {
         size_t index_hwc = (h * width + w) * channels + c;
-        float normalized_value = (fdata[index_hwc] - mean) / std;
+        float normalized_value =
+            (static_cast<float>(udata[index_hwc]) * rescale_factor - mean) /
+            std;
 
         size_t index_chw = c * (height * width) + h * width + w;
         fdata_chw[index_chw] = normalized_value;
