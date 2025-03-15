@@ -89,9 +89,8 @@ cd compile
 * 环境准备
 > （python_demo运行之前都需要执行这个）
 ``` shell
-sudo apt-get update
-sudo apt-get install python3.10-dev pybind11-dev
-pip3 install torchvision pillow qwen_vl_utils transformers --upgrade
+# 如果不是python3.10，参考"常见问题"配置环境
+pip3 install torchvision pillow qwen_vl_utils transformers>=4.49.0
 ```
 
 编译库文件，生成`chat.cpython*.so`文件，将该文件拷贝到`pipeline.py`文件目录
@@ -121,6 +120,36 @@ model为实际的model储存路径；config_path为配置文件路径
 在该项目的docker中，经过如下命令转换：
 ``` shell
 python3 tpu/llm_dequant.py --pretrained_model_path /workspace/Qwen2.5-VL-3B-Instruct --quant_model_path /workspace/Qwen2.5-VL-3B-Instruct-AWQ --model_type qwen2.5_vl --use_cpu
+```
+
+#### SoC如何配置python3.10环境 ?
+
+安装过程如下：
+
+``` shell
+sudo add-apt-repository ppa:deadsnakes/ppa
+sudo apt update
+sudo apt install python3.10 python3.10-dev
+```
+
+python虚拟环境配置：
+
+``` shell
+cd /data
+# 创建虚拟环境（不包含 pip）
+python3.10 -m venv --without-pip myenv
+
+# 进入虚拟环境
+source myenv/bin/activate
+
+# 手动安装 pip
+curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+python get-pip.py
+rm get-pip.py
+
+# 安装依赖库
+pip3 install torchvision pillow qwen_vl_utils transformers --upgrade
+
 ```
 
 #### 是否支持Qwen2_5-VL-7B ?
