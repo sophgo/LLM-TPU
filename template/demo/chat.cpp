@@ -17,7 +17,6 @@
 #include <inttypes.h>
 #include <iostream>
 #include <numeric>
-#include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <random>
@@ -40,7 +39,7 @@ public:
 
   // Inference Functions
   void update_config();
-  void init_forward(pybind11::array_t<int> tokens);
+  void init_forward(const std::vector<int>& tokens);
   int forward_first();
   int forward_next();
   std::vector<int> generate(const std::vector<int> &EOS);
@@ -658,13 +657,8 @@ void Model::update_config() {
   config.MAX_PIXELS = MAX_PIXELS;
 }
 
-void Model::init_forward(pybind11::array_t<int> tokens) {
-  pybind11::buffer_info buf = tokens.request();
-  int *ptr = static_cast<int *>(buf.ptr);
-  size_t size = buf.size;
-
-  raw_tokens.resize(size);
-  memcpy(raw_tokens.data(), ptr, size * sizeof(int));
+void Model::init_forward(const std::vector<int>& tokens) {
+  raw_tokens = tokens;
 
   total_length = raw_tokens.size();
   update_config();
