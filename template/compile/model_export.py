@@ -540,7 +540,7 @@ class ModelExporter:
                                                     self.visual_length)
 
     def load_pretrained(self):
-        self.config = AutoConfig.from_pretrained(self.model_path)
+        self.config = AutoConfig.from_pretrained(self.model_path, trust_remote_code=True)
         self.model_type = self.config.model_type
 
         if 'qwen2_vl' == self.model_type:

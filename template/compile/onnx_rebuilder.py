@@ -11,6 +11,10 @@ from typing import Optional, Tuple
 
 from transformers import AutoTokenizer, AutoProcessor
 
+def rename_class(cls_instance):
+    cls = cls_instance.__class__
+    cls.__module__ = cls.__module__.replace("-", "_") # split(".")[-1]
+
 def logging(message):
     def decorator(func):
         def wrapper(*args, **kwargs):
@@ -280,7 +284,7 @@ class OnnxRebuilder:
         old_init.CopyFrom(new_init)
 
     def rebuild_config(self):
-        if self.num_key_value_heads is None:
+        if not hasattr(self, 'num_key_value_heads') or self.num_key_value_heads is None:
             self.num_key_value_heads = self.num_attention_heads
         if self.rope_theta is None:
             self.rope_theta = 10000.0
@@ -307,7 +311,7 @@ class OnnxRebuilder:
         self.lm = Lm(self)
 
         # Visual
-        if self.visual_model is not None:
+        if hasattr(self, 'visual_model') and self.visual_model is not None:
             self.visual = Visual.get_visual(self.model_type, self.visual_model, self)
 
     def rebuild_weights(self, torch_model, save_path):
@@ -788,6 +792,8 @@ class Decoder(torch.nn.Module):
 class Lm(torch.nn.Module):
     def __init__(self, config):
         super().__init__()
+        rename_class(config.final_layernorm_)
+
         self.final_layernorm = config.final_layernorm_
         self.lm = config.lm_
         self.hidden_size = config.hidden_size
