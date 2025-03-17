@@ -632,8 +632,8 @@ if __name__ == '__main__':
                         help="visual length in vision transformer for VLM")
     parser.add_argument('--max_workers', type=int, default=4,
                         help="max workers for compiling bmodel in multi-processing")
-    parser.add_argument('--compile_mode', type=str, default="fast",
-                        choices=["fast", "debug"],
+    parser.add_argument('--compile_mode', type=str, default="normal",
+                        choices=["fast", "normal"],
                         help="compile with model_convert when use fast, compile with debug info when use debug")
     args = parser.parse_args()
 

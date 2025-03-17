@@ -52,6 +52,7 @@ find "$model_dir" -mindepth 1 -maxdepth 1 -type d | while read -r model_path; do
             --model_path "$model_path" \
             --seq_length "$seq_length" \
             --out_dir "$out_dir" \
+            --compile_mode fast \
             --embedding_disk || { echo "Model export failed"; exit 1; }
 
         # Clean temporary directories
