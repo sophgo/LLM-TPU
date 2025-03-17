@@ -21,18 +21,6 @@ elseif (${TARGET_ARCH} STREQUAL "pcie")
     message("PCIE mode, starting......")
 endif()
 
-# OpenCV configuration
-if (${TYPE} STREQUAL "media")
-    add_definitions(-DENABLE_MEDIA)
-    find_package(OpenCV REQUIRED)
-    include_directories(${OpenCV_INCLUDE_DIRS})
-    link_directories(${OpenCV_LIBRARY_DIRS})
-    message(STATUS "OpenCV version: ${OpenCV_VERSION}")
-    set(OPENCV_LIBS opencv_core opencv_imgcodecs opencv_videoio)
-else()
-    set(OPENCV_LIBS "")
-endif()
-
 add_definitions(-DDEBUG --std=c++17 -fPIC -Wall)
 
 set(CMAKE_BUILD_TYPE "Debug")

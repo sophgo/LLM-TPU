@@ -27,6 +27,7 @@
 #include "bmruntime_interface.h"
 #include "memory.h"
 #include "utils.h"
+#include "cv_utils.h"
 
 static const float ATTENTION_MASK = -10000.;
 
@@ -539,8 +540,7 @@ bm_device_mem_t Model::embedding_launch(const bm_net_info_t *net0,
   return out_mem;
 }
 
-#ifdef ENABLE_MEDIA
-#include "cv_utils.h"
+
 std::pair<int, int> Model::smart_resize(int height, int width) {
   return _smart_resize(height, width);
 }
@@ -605,7 +605,6 @@ void Model::process_image(pybind11::bytes pixel_values_bytes,
   // vit launch
   vit_launch(pixel_values, media_offset[0], media_size[0]);
 }
-#endif
 
 void Model::vit_launch(const std::vector<float> &pixel_values, int vit_offset,
                        int vit_size) {
@@ -840,10 +839,8 @@ PYBIND11_MODULE(chat, m) {
       .def("init_forward", &Model::init_forward)
       .def("forward_first", &Model::forward_first)
       .def("forward_next", &Model::forward_next)
-#ifdef ENABLE_MEDIA
       .def("smart_resize", &Model::smart_resize)
       .def("process_image", &Model::process_image)
-#endif
       .def("generate", &Model::generate)
       .def("deinit", &Model::deinit)
       .def_readwrite("config", &Model::config)
