@@ -15,7 +15,7 @@
 
 # 最近更新！ 🔥🔥🔥
 
-- **2025.03.07**：🚀 Qwen最新推理模型**QWQ-32B**，1684x多芯demo已适配，详情见[LLM Template](./template/)。
+- **2025.03.07**：🚀 Qwen最新推理模型**QWQ-32B**和**DeepSeek-R1-Distill-Qwen-32B**，1684x多芯demo已适配，详情见[LLM Template](./template/)。
 - **2025.02.05**：🚀 DeepSeek时刻！！我们适配了**DeepSeek-R1-Distill-Qwen**系列模型，包括1.5B、7B和14B版本，详情见[LLM Template](./template/)。
 
 
@@ -43,6 +43,7 @@
 |DeepSeek-R1-Distill-Qwen-1.5B|:white\_check\_mark:|                    |[LINK](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B)  |
 |DeepSeek-R1-Distill-Qwen-7B  |:white\_check\_mark:|                    |[LINK](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B)    |
 |DeepSeek-R1-Distill-Qwen-14B |:white\_check\_mark:|                    |[LINK](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-14B)   |
+|DeepSeek-R1-Distill-Qwen-32B |:white\_check\_mark:|                    |[LINK](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-32B)   |
 |Falcon-40B                   |:white\_check\_mark:|                    |[LINK](https://huggingface.co/tiiuae/falcon-40b)                          |
 |Gemma-2B                     |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/google/gemma-1.1-2b-it)                     |
 |Gemma2-2B                    |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/google/gemma-2-2b-it)                       |

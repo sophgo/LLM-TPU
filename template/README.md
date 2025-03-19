@@ -80,6 +80,7 @@ python model_export.py --quantize w4bf16 --tpu_mlir_path /workspace/tpu-mlir/ --
 | `--num_device`         | 是               | 无               | 芯片设备数量，用于导出多芯模型                                          |
 | `--not_compile`        | 否               | 无               | 仅导出 ONNX，不编译 BMODEL                                              |
 | `--embedding_disk`     | 否               | 无               | 将 embedding 存储为 bin 文件，通过 CPU 推理                             |
+| `--compile_mode`       | 是               | `normal`         | 模型转换模式，可选：`fast`, `normal`                                      |
 | `--out_dir`            | 是               | `./tmp`          | 输出路径                                                                |
 | `--out_bmodel`         | 是               | 模型配置自动生成  | 输出 BMODEL 的名称                                                      |
 | `--visual_length`      | 是               | 无               | 视觉长度（Vision Length），用于导出多模态模型                           |
@@ -125,22 +126,18 @@ python3 pipeline.py --devid your_dev_id --dir_path your_model_path
 ```
 
 #### DeepSeek-R1-Distill-Qwen系列
-下载`deepseek-r1-distill-qwen-1.5b`模型，并运行：
+下载`deepseek-r1-distill-qwen`系列模型，并运行：
+
 ```bash
+# deepseek-r1-distill-qwen-1.5b
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-distill-qwen-1-5b.zip
 unzip deepseek-r1-distill-qwen-1-5b.zip
 python3 pipeline.py --devid 0 --dir_path ./deepseek-r1-distill-qwen-1-5b/
-```
-
-下载`deepseek-r1-distill-qwen-7b`模型，并运行：
-```bash
+# deepseek-r1-distill-qwen-7b
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-distill-qwen-7b.zip
 unzip deepseek-r1-distill-qwen-7b.zip
 python3 pipeline.py --devid 0 --dir_path ./deepseek-r1-distill-qwen-7b/
-```
-
-下载`deepseek-r1-distill-qwen-14b`模型，并运行：
-```bash
+# deepseek-r1-distill-qwen-14b
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-distill-qwen-14b-seq512.zip
 unzip deepseek-r1-distill-qwen-14b-seq512.zip
 python3 pipeline.py --devid 0 --dir_path ./deepseek-r1-distill-qwen-14b/
@@ -153,14 +150,27 @@ cd parallel_demo
 python3 pipeline.py --devid your_dev_id --dir_path your_model_path
 ```
 
-#### QWQ-32B系列
-下载`qwq-32b`模型，并运行：
+#### QWQ-32B
+下载`qwq-32b`两芯模型，并运行：
 ```bash
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwq_32b_w4bf16_seq1024_2dev.tar.gz
 tar -zxvf qwq_32b_w4bf16_seq1024_2dev.tar.gz
 python3 pipeline.py --devid 0,1 --dir_path ./qwq_32b_w4bf16_seq1024_2dev
 ```
 
+#### DeepSeek-R1-Distill-Qwen-32B
+
+下载`DeepSeek-R1-Distill-Qwen-32B`四芯模型，并运行：
+```bash
+# 2048长度
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-distill-qwen-32b-seq2048-4dev.zip
+unzip deepseek-r1-distill-qwen-32b-seq2048-4dev.zip
+python3 pipeline.py --devid 0,1,2,3 --dir_path deepseek-r1-distill-qwen-32b-seq2048-4dev
+# 4096长度
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-distill-qwen-32b-seq4096-4dev.zip
+unzip deepseek-r1-distill-qwen-32b-seq4096-4dev.zip
+python3 pipeline.py --devid 0,1,2,3 --dir_path deepseek-r1-distill-qwen-32b-seq4096-4dev
+```
 
 ## 6. 程序性能测试
 我们测试了不同大小的deepseek-r1蒸馏模型在SE7-32(单芯1684x)上的性能，具体如下：
