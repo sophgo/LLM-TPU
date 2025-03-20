@@ -292,12 +292,7 @@ class OnnxRebuilder:
 
     def rebuild_modules(self):
         # Embedding
-        if self.embed_.weight is self.lm_.weight:
-            import copy
-            embed_copy = copy.deepcopy(self.embed_)
-            self.embed = Embedding(embed_copy, self.hidden_size)
-        else:
-            self.embed = Embedding(self.embed_, self.hidden_size)
+        self.embed = Embedding(self.embed_, self.hidden_size)
 
         # Rotary
         self.rotary = Rotary(self)

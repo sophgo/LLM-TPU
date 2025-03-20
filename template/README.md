@@ -73,6 +73,8 @@ python model_export.py -m ./Qwen2-7B-Instruct -t /workspace/tpu-mlir -s 4096 -q 
 python model_export.py --quantize w4bf16 --tpu_mlir_path /workspace/tpu-mlir/ --model_path /workspace/models/QWQ-32B/ --seq_length 1024 --out_dir qwq_32b --num_device 2
 ```
 
+* 注意，model_export.py通常对transformers的版本没有特殊要求，但需要大于在原始权重config.json中标注的版本，比如QWQ-32B的config.json：`"transformers_version": "4.43.1"`
+
 此外还有其他参数：
 | **选项**               | **是否需要参数** | **默认值**       | **描述**                                                                 |
 |------------------------|------------------|------------------|--------------------------------------------------------------------------|
@@ -106,6 +108,10 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 多模态模型（例如Qwen2-VL、Qwen2.5-VL），编译c++依赖
 ```bash
+# 安装OpenCv依赖
+sudo apt update
+sudo apt install libopencv-dev
+
 cd demo && mkdir build
 cd build && cmake -DTYPE=media .. && make && cp *cpython* .. && cd ..
 ```
@@ -118,12 +124,14 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 ### 5.2 模型下载与运行
 
-完成模型编译后，模型相关的推理文件和分词器相关配置，通常都保存在同一目录下，确认其中包含了bmodel文件、config文件，和tokenizer目录就可以直接运行了：
+完成模型编译后，模型相关的推理文件和分词器相关配置，通常都保存在同一目录下，确认其中包含了bmodel文件、config文件，和tokenizer目录，就可以直接运行了：
 
 ```bash
 cd demo
 python3 pipeline.py --devid your_dev_id --dir_path your_model_path
 ```
+
+* 如果下载的是单独的bmodel文件，可以手动将bmodel文件、原始权重的config文件、和tokenizer或processor(用于多模态模型)放在同一目录下再运行。
 
 #### DeepSeek-R1-Distill-Qwen系列
 下载`deepseek-r1-distill-qwen`系列模型，并运行：
@@ -133,10 +141,12 @@ python3 pipeline.py --devid your_dev_id --dir_path your_model_path
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-distill-qwen-1-5b.zip
 unzip deepseek-r1-distill-qwen-1-5b.zip
 python3 pipeline.py --devid 0 --dir_path ./deepseek-r1-distill-qwen-1-5b/
+
 # deepseek-r1-distill-qwen-7b
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-distill-qwen-7b.zip
 unzip deepseek-r1-distill-qwen-7b.zip
 python3 pipeline.py --devid 0 --dir_path ./deepseek-r1-distill-qwen-7b/
+
 # deepseek-r1-distill-qwen-14b
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-distill-qwen-14b-seq512.zip
 unzip deepseek-r1-distill-qwen-14b-seq512.zip
@@ -166,6 +176,8 @@ python3 pipeline.py --devid 0,1 --dir_path ./qwq_32b_w4bf16_seq1024_2dev
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-distill-qwen-32b-seq2048-4dev.zip
 unzip deepseek-r1-distill-qwen-32b-seq2048-4dev.zip
 python3 pipeline.py --devid 0,1,2,3 --dir_path deepseek-r1-distill-qwen-32b-seq2048-4dev
+
+
 # 4096长度
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-distill-qwen-32b-seq4096-4dev.zip
 unzip deepseek-r1-distill-qwen-32b-seq4096-4dev.zip
