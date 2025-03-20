@@ -556,10 +556,18 @@ class ModelExporter:
             from transformers import LlamaForCausalLM
             self.model = LlamaForCausalLM.from_pretrained(self.model_path, trust_remote_code=True)
         else:
-            try:
-                self.model = AutoModelForCausalLM.from_pretrained(self.model_path, trust_remote_code=True, low_cpu_mem_usage=True)
-            except:
-                self.model = AutoModel.from_pretrained(self.model_path, trust_remote_code=True)
+            if "ForCausalLM" in self.config.architectures[0]:
+                try:
+                    self.model = AutoModelForCausalLM.from_pretrained(
+                        self.model_path, trust_remote_code=True, low_cpu_mem_usage=True)
+                except:
+                    self.model = AutoModelForCausalLM.from_pretrained(
+                        self.model_path, trust_remote_code=True)
+            elif "Model" in self.config.architectures[0]:
+                self.model = AutoModel.from_pretrained(
+                    self.model_path, trust_remote_code=True)
+            else:
+                raise ValueError(f"Unsupported Architectures:[ {self.config.architectures[0]} ]")
 
         self.model = self.model.cpu().eval()
         for param in self.model.parameters():
