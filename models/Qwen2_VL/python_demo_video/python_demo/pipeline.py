@@ -178,7 +178,7 @@ def get_position_ids(processor, config, video_path, text="Describe this video.")
     )
 
     SEQ_LENGTH = config['max_position_embeddings']
-    SEQ_LENGTH = 2048
+    # SEQ_LENGTH = 2048
     # SEQ_LENGTH = self.SEQLEN
     if SEQ_LENGTH <= inputs.input_ids.shape[-1]:
         raise ValueError(
@@ -303,16 +303,11 @@ class Qwen2VL():
 
             # Chat
             first_start = time.time()
-
-            import numpy as np
-            file_path = os.path.join('/workspace/LLM-TPU/models/Qwen2_VL/python_demo_video/compile', 'vit_out_mem.npz')
-            vit_out_mem = np.load(file_path)
             
             breakpoint()
             token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), position_ids.flatten().tolist(), pixel_values_prefill.flatten().tolist(),
                                              pos_ids_prefill.flatten().tolist(), attention_mask_vit_prefill.flatten().tolist(),
-                                             image_offset, pixel_num,
-                                             vit_out_mem['tensor'].flatten().tolist())
+                                             image_offset, pixel_num)
             first_end = time.time()
             tok_num = 1
             # Following tokens

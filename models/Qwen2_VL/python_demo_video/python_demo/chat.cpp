@@ -199,39 +199,39 @@ int Qwen2VL::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem
   return token;
 }
 
-int Qwen2VL::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
-                          std::vector<int> &input_tokens, int &token_length) {
-  auto &in1_mem = net->stages[stage_idx].input_mems[1];
-  auto &in2_mem = net->stages[stage_idx].input_mems[2];
-  auto &in3_mem = net->stages[stage_idx].input_mems[3];
-  auto &in4_mem = net->stages[stage_idx].input_mems[4];
-  auto &out0_mem = net->stages[stage_idx].output_mems[0];
-  auto &out1_mem = net->stages[stage_idx].output_mems[1];
+// int Qwen2VL::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
+//                           std::vector<int> &input_tokens, int &token_length) {
+//   auto &in1_mem = net->stages[0].input_mems[1];
+//   auto &in2_mem = net->stages[0].input_mems[2];
+//   auto &in3_mem = net->stages[0].input_mems[3];
+//   auto &in4_mem = net->stages[0].input_mems[4];
+//   auto &out0_mem = net->stages[0].output_mems[0];
+//   auto &out1_mem = net->stages[0].output_mems[1];
 
-  // repeat_penalty + top_p + top_k + temperature
-  std::vector<int> generated_tokens(SEQLEN, input_tokens[token_length - 1]);
-  repeat_last_n = std::min(repeat_last_n, token_length);
-  std::copy(input_tokens.begin() + token_length - repeat_last_n,
-            input_tokens.begin() + token_length, generated_tokens.begin());
-  bm_memcpy_s2d(bm_handle, in1_mem, (void *)generated_tokens.data());
-  bm_memcpy_s2d(bm_handle, in2_mem, (void *)&top_p);
-  bm_memcpy_s2d(bm_handle, in3_mem, (void *)&temperature);
-  bm_memcpy_s2d(bm_handle, in4_mem, (void *)&repeat_penalty);
+//   // repeat_penalty + top_p + top_k + temperature
+//   std::vector<int> generated_tokens(SEQLEN, input_tokens[token_length - 1]);
+//   repeat_last_n = std::min(repeat_last_n, token_length);
+//   std::copy(input_tokens.begin() + token_length - repeat_last_n,
+//             input_tokens.begin() + token_length, generated_tokens.begin());
+//   bm_memcpy_s2d(bm_handle, in1_mem, (void *)generated_tokens.data());
+//   bm_memcpy_s2d(bm_handle, in2_mem, (void *)&top_p);
+//   bm_memcpy_s2d(bm_handle, in3_mem, (void *)&temperature);
+//   bm_memcpy_s2d(bm_handle, in4_mem, (void *)&repeat_penalty);
 
-  // inference
-  head_launch(net, logits_mem, stage_idx);
+//   // inference
+//   head_launch(net, logits_mem, 0);
 
-  // get logit & token
-  int candidate_num = net->stages[stage_idx].output_shapes[0].dims[1];
-  std::vector<float> probs(candidate_num);
-  bm_memcpy_d2s(bm_handle, probs.data(), out0_mem);
-  std::vector<int> tokens(candidate_num);
-  bm_memcpy_d2s(bm_handle, tokens.data(), out1_mem);
+//   // get logit & token
+//   int candidate_num = net->stages[0].output_shapes[0].dims[1];
+//   std::vector<float> probs(candidate_num);
+//   bm_memcpy_d2s(bm_handle, probs.data(), out0_mem);
+//   std::vector<int> tokens(candidate_num);
+//   bm_memcpy_d2s(bm_handle, tokens.data(), out1_mem);
 
-  // penalty_sample
-  std::discrete_distribution<> dist(probs.begin(), probs.end());
-  return tokens[dist(sgen)];
-}
+//   // penalty_sample
+//   std::discrete_distribution<> dist(probs.begin(), probs.end());
+//   return tokens[dist(sgen)];
+// }
 
 int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_ids,
                              std::vector<float> &pixel_values, std::vector<int> &posids,
@@ -344,9 +344,9 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
     }
     net_launch(net_blocks[idx]);
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
-    std::string ref_file_name = "/workspace/LLM-TPU/models/Qwen2_VL/python_demo_video/compile/block_";
-    ref_file_name += std::to_string(idx);
-    ref_file_name += ".npz";
+    // std::string ref_file_name = "/workspace/LLM-TPU/models/Qwen2_VL/python_demo_video/compile/block_";
+    // ref_file_name += std::to_string(idx);
+    // ref_file_name += ".npz";
     // compare_similarity(bm_handle, out_mem, net_blocks[0]->input_dtypes[0], ref_file_name, "tensor");
     
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1]);
@@ -365,8 +365,9 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
   if (generation_mode == "greedy") {
     token = greedy_search(net_greedy_head, lm_out_mem);
   } else {
-    token = penalty_sample(net_penalty_sample_head, lm_out_mem, total_tokens,
-                           token_length);
+    // token = penalty_sample(net_penalty_sample_head, lm_out_mem, total_tokens,
+    //                        token_length);
+    throw std::runtime_error("ERROR: unsupported generation mode!\n");
   }
   token_length++;
   return token;
