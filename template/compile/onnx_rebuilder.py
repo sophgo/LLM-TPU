@@ -342,18 +342,14 @@ class OnnxRebuilder:
 
         # Save the modified model
         onnx.save(self.onnx_model, save_path)
-
+    
     @logging("export_config ...")
     def export_config(self):
-        config_dict = self.config.to_dict()
-        with open(f'{self.onnx_dir}/../config.json', "w") as f:
-            json.dump(config_dict, f, indent=4)
-        return
-    
-    @logging("export_tokenizer ...")
-    def export_tokenizer(self):
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, trust_remote_code=True)
-        self.tokenizer.save_pretrained(f'{self.onnx_dir}/../tokenizer')
+        self.tokenizer.save_pretrained(f'{self.onnx_dir}/../config')
+        config_dict = self.config.to_dict()
+        with open(f'{self.onnx_dir}/../config/config.json', "w") as f:
+            json.dump(config_dict, f, indent=4)
         return
 
     @logging("export_processor ...")

@@ -28,12 +28,8 @@ RED_COLOR = "\033[91m"
 RESET_COLOR = "\033[0m"
 
 class BmodelConverter:
-    def __init__(self,
-                 args,
-                 hidden_size: int,
-                 num_layers: int,
-                 model_type: str,
-                 bmodel_dir: str,
+
+    def __init__(self, args, hidden_size: int, num_layers: int, model_type: str, bmodel_dir: str,
                  visual: bool):
         self.chip = args.chip
         self.quantize = args.quantize
@@ -41,11 +37,15 @@ class BmodelConverter:
         self.high_precision = args.high_precision
         self.seq_length = args.seq_length
         self.num_device = args.num_device
-        self.max_workers = args.max_workers
         self.compile_mode = args.compile_mode
         self.tpu_mlir_path = args.tpu_mlir_path
         self.embedding_disk = args.embedding_disk
         self.half_precision_quantize = "bf16" if "bf16" in self.quantize else "f16"
+        cpu_count = os.cpu_count()
+        if args.compile_mode == 'fast':
+            self.max_workers = max(cpu_count, 4)
+        else:
+            self.max_workers = max(cpu_count // 2, 4)
 
         self.bmodel_dir = bmodel_dir
         self.relative_onnx_path = "../onnx"
@@ -454,7 +454,7 @@ class BmodelConverter:
             self.out_bmodel
         ]
         self.run_command(['bash', '-c', ' '.join(combine_args)], env)
-        
+
         get_info_args = [
             'model_tool',
             '--info',
@@ -583,7 +583,7 @@ class ModelExporter:
 
         self.model = self.model.cpu().eval()
         for param in self.model.parameters():
-                param.requires_grad = False
+            param.requires_grad = False
 
     def rebuild_model(self):
         self.onnx_rebuilder.model_map = self.onnx_rebuilder.model_mapper.get_map(self.model.config)
@@ -604,7 +604,6 @@ class ModelExporter:
 
     def export(self):
         self.onnx_rebuilder.export_config()
-        self.onnx_rebuilder.export_tokenizer()
 
         self.onnx_rebuilder.export_embed()
         self.onnx_rebuilder.export_lm_head()
@@ -654,8 +653,6 @@ if __name__ == '__main__':
                         help='combined bmodel name, default use original weight')
     parser.add_argument('--visual_length', type=int, default=0,
                         help="visual length in vision transformer for VLM")
-    parser.add_argument('--max_workers', type=int, default=4,
-                        help="max workers for compiling bmodel in multi-processing")
     parser.add_argument('--compile_mode', type=str, default="normal",
                         choices=["fast", "normal"],
                         help="compile with model_convert when use fast, compile with debug info when use debug")
