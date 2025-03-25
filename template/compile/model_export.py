@@ -37,6 +37,8 @@ class BmodelConverter:
                  visual: bool):
         self.chip = args.chip
         self.quantize = args.quantize
+        self.q_group_size = args.q_group_size
+        self.high_precision = args.high_precision
         self.seq_length = args.seq_length
         self.num_device = args.num_device
         self.max_workers = args.max_workers
@@ -112,7 +114,7 @@ class BmodelConverter:
                     f'--model_def {path}',
                     f'--input_shapes [[1,{self.seq_length}]]',
                     f'--input_types "int32"',
-                    f'--quantize {self.quantize}',
+                    f'--quantize {self.half_precision_quantize}',
                     '--quant_input',
                     '--quant_output',
                     f'--chip {self.chip}',
@@ -133,7 +135,7 @@ class BmodelConverter:
                 deploy_args = [
                     'model_deploy.py',
                     f'--mlir {name}.mlir',
-                    f'--quantize {self.quantize}',
+                    f'--quantize {self.half_precision_quantize}',
                     '--quant_input',
                     '--quant_output',
                     f'--chip {self.chip}',
@@ -157,7 +159,7 @@ class BmodelConverter:
                     f'--model_def {path}',
                     f'--input_shapes [[1,1]]',
                     f'--input_types "int32"',
-                    f'--quantize {self.quantize}',
+                    f'--quantize {self.half_precision_quantize}',
                     '--quant_input',
                     '--quant_output',
                     f'--chip {self.chip}',
@@ -178,7 +180,7 @@ class BmodelConverter:
                 deploy_args = [
                     'model_deploy.py',
                     f'--mlir {name}.mlir',
-                    f'--quantize {self.quantize}',
+                    f'--quantize {self.half_precision_quantize}',
                     '--quant_input',
                     '--quant_output',
                     f'--chip {self.chip}',
@@ -304,14 +306,16 @@ class BmodelConverter:
                     f'--model_name {name}',
                     f'--model_def {path}',
                     f'--quantize {self.quantize}',
+                    f'--q_group_size {self.q_group_size}',
                     '--quant_input',
                     '--quant_output',
-                    '--do_onnx_sim True',
                     f'--chip {self.chip}',
                     f'--num_core {self.num_core}',
                     f'--num_device {self.num_device}',
                     f'--model {name}.bmodel'
                 ]
+                if self.high_precision:
+                    convert_args.append('--high_precision')
                 self.run_command(['bash', '-c', ' '.join(convert_args)], env)
             else:
                 transform_args = [
@@ -324,6 +328,7 @@ class BmodelConverter:
                     'model_deploy.py',
                     f'--mlir {name}.mlir',
                     f'--quantize {self.quantize}',
+                    f'--q_group_size {self.q_group_size}',
                     '--quant_input',
                     '--quant_output',
                     f'--chip {self.chip}',
@@ -331,6 +336,8 @@ class BmodelConverter:
                     f'--num_device {self.num_device}',
                     f'--model {name}.bmodel'
                 ]
+                if self.high_precision:
+                    deploy_args.append('--high_precision')
                 self.run_command(['bash', '-c', ' '.join(transform_args)], env)
                 self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
 
@@ -346,15 +353,17 @@ class BmodelConverter:
                     f'--model_name {name}',
                     f'--model_def {path}',
                     f'--quantize {self.quantize}',
+                    f'--q_group_size {self.q_group_size}',
                     '--quant_input',
                     '--quant_output',
-                    '--do_onnx_sim True',
                     f'--chip {self.chip}',
                     '--addr_mode io_alone',
                     f'--num_core {self.num_core}',
                     f'--num_device {self.num_device}',
                     f'--model {name}.bmodel'
                 ]
+                if self.high_precision:
+                    convert_args.append('--high_precision')
                 self.run_command(
                     ['bash', '-c', ' '.join(convert_args)], env)
             else:
@@ -368,6 +377,7 @@ class BmodelConverter:
                     'model_deploy.py',
                     f'--mlir {name}.mlir',
                     f'--quantize {self.quantize}',
+                    f'--q_group_size {self.q_group_size}',
                     '--quant_input',
                     '--quant_output',
                     f'--chip {self.chip}',
@@ -376,6 +386,8 @@ class BmodelConverter:
                     f'--num_device {self.num_device}',
                     f'--model {name}.bmodel'
                 ]
+                if self.high_precision:
+                    deploy_args.append('--high_precision')
                 self.run_command(
                     ['bash', '-c', ' '.join(transform_args)], env)
                 self.run_command(
@@ -623,11 +635,15 @@ if __name__ == '__main__':
     parser.add_argument('-q', '--quantize', type=str,
                         choices=["bf16", "w8bf16", "w4bf16", "f16", "w8f16", "w4f16"],
                         help="quantize type for bmodel")
+    parser.add_argument('-g', "--q_group_size", default=64, type=int,
+                        help="group size for per-group quant, only used in W4A16 quant mode")
     parser.add_argument('-c', '--chip', type=str, default="bm1684x",
                         choices=["bm1684x", "bm1688", "cv186ah"],
                         help="chip type for bmodel")
     parser.add_argument('--num_device', type=int, default=1,
                         help="num device for bmodel")
+    parser.add_argument('--high_precision', action='store_true',
+                        help='use high precision for quantize')
     parser.add_argument('--not_compile', action='store_true',
                         help='only export onnx, not compile bmodel')
     parser.add_argument('--embedding_disk', action='store_true',

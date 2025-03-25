@@ -79,6 +79,8 @@ python model_export.py --quantize w4bf16 --tpu_mlir_path /workspace/tpu-mlir/ --
 | **选项**               | **是否需要参数** | **默认值**       | **描述**                                                                 |
 |------------------------|------------------|------------------|--------------------------------------------------------------------------|
 | `-c`, `--chip`         | 是               | `bm1684x`        | 芯片类型，可选：`bm1688`, `cv186x`                                      |
+| `-g`, `--q_group_size` | 是               | 64               | w4a16量化时指定`group_size`大小                                       |
+| `--high_precision`     | 否               | 无               | 是否使用高精度量化                                                    |
 | `--num_device`         | 是               | 无               | 芯片设备数量，用于导出多芯模型                                          |
 | `--not_compile`        | 否               | 无               | 仅导出 ONNX，不编译 BMODEL                                              |
 | `--embedding_disk`     | 否               | 无               | 将 embedding 存储为 bin 文件，通过 CPU 推理                             |
