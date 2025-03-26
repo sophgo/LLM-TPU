@@ -35,17 +35,19 @@ class BmodelConverter:
         self.quantize = args.quantize
         self.q_group_size = args.q_group_size
         self.high_precision = args.high_precision
+        self.symmetric = args.symmetric
         self.seq_length = args.seq_length
         self.num_device = args.num_device
         self.compile_mode = args.compile_mode
         self.tpu_mlir_path = args.tpu_mlir_path
         self.embedding_disk = args.embedding_disk
         self.half_precision_quantize = "bf16" if "bf16" in self.quantize else "f16"
-        cpu_count = os.cpu_count()
-        if args.compile_mode == 'fast':
-            self.max_workers = max(cpu_count, 4)
-        else:
-            self.max_workers = max(cpu_count // 2, 4)
+        self.max_workers = 4
+        # cpu_count = os.cpu_count()
+        # if args.compile_mode == 'fast':
+        #     self.max_workers = max(cpu_count, 4)
+        # else:
+        #     self.max_workers = max(cpu_count // 2, 4)
 
         self.bmodel_dir = bmodel_dir
         self.relative_onnx_path = "../onnx"
@@ -309,6 +311,7 @@ class BmodelConverter:
                     f'--q_group_size {self.q_group_size}',
                     '--quant_input',
                     '--quant_output',
+                    '--do_onnx_sim True',
                     f'--chip {self.chip}',
                     f'--num_core {self.num_core}',
                     f'--num_device {self.num_device}',
@@ -316,6 +319,8 @@ class BmodelConverter:
                 ]
                 if self.high_precision:
                     convert_args.append('--high_precision')
+                if self.symmetric:
+                    convert_args.append('--q_symmetric')
                 self.run_command(['bash', '-c', ' '.join(convert_args)], env)
             else:
                 transform_args = [
@@ -338,6 +343,8 @@ class BmodelConverter:
                 ]
                 if self.high_precision:
                     deploy_args.append('--high_precision')
+                if self.symmetric:
+                    deploy_args.append('--q_symmetric')
                 self.run_command(['bash', '-c', ' '.join(transform_args)], env)
                 self.run_command(['bash', '-c', ' '.join(deploy_args)], env)
 
@@ -356,6 +363,7 @@ class BmodelConverter:
                     f'--q_group_size {self.q_group_size}',
                     '--quant_input',
                     '--quant_output',
+                    '--do_onnx_sim True',
                     f'--chip {self.chip}',
                     '--addr_mode io_alone',
                     f'--num_core {self.num_core}',
@@ -364,6 +372,8 @@ class BmodelConverter:
                 ]
                 if self.high_precision:
                     convert_args.append('--high_precision')
+                if self.symmetric:
+                    convert_args.append('--q_symmetric')
                 self.run_command(
                     ['bash', '-c', ' '.join(convert_args)], env)
             else:
@@ -388,6 +398,8 @@ class BmodelConverter:
                 ]
                 if self.high_precision:
                     deploy_args.append('--high_precision')
+                if self.symmetric:
+                    deploy_args.append('--q_symmetric')
                 self.run_command(
                     ['bash', '-c', ' '.join(transform_args)], env)
                 self.run_command(
@@ -643,6 +655,8 @@ if __name__ == '__main__':
                         help="num device for bmodel")
     parser.add_argument('--high_precision', action='store_true',
                         help='use high precision for quantize')
+    parser.add_argument('--symmetric', action='store_true',
+                        help='do symmetric quantize')
     parser.add_argument('--not_compile', action='store_true',
                         help='only export onnx, not compile bmodel')
     parser.add_argument('--embedding_disk', action='store_true',
