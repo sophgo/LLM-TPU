@@ -79,6 +79,7 @@ public:
   void init(std::string model_path,
             std::string processor_path,
             std::string system_prompt,
+            bool enable_history,
             const std::vector<int> &devid);
   void deinit();
   void chat(std::string image_path);
@@ -103,6 +104,7 @@ public:
   int hidden_bytes;
   int kv_bytes;
   bool io_alone;
+  bool enable_history;
   uint16_t mask_value;
   std::vector<int> visited_tokens;
   std::vector<std::pair<std::string, std::string>> history_vector;
@@ -159,6 +161,7 @@ void Qwen2VL::d2d(bm_device_mem_t &dst, bm_device_mem_t &src,
 void Qwen2VL::init(std::string model_path,
                    std::string processor_path,
                    std::string system_prompt,
+                   bool enable_history,
                    const std::vector<int> &devices) {
   sys_config = "<|im_start|>system\n" + system_prompt + "<|im_end|>\n";
 
@@ -313,8 +316,6 @@ int Qwen2VL::forward_first(std::vector<int> &raw_tokens,
   net_launch(net_vit);
   bm_memcpy_d2d_byte(bm_handle, out_mem, config.media_offset * hidden_bytes,
                      vit_out_mem, 0, config.media_size * hidden_bytes);
-  std::vector<uint16_t> buffer(out_mem.size, 0);
-  bm_memcpy_d2s(bm_handle, (void *)&buffer[0], out_mem);
 
   // forward blocks
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
@@ -334,7 +335,6 @@ int Qwen2VL::forward_first(std::vector<int> &raw_tokens,
         0, token_length * kv_bytes);
   }
 
-  bm_memcpy_d2s(bm_handle, (void *)&buffer[0], out_mem);
   // forward lmhead
   auto &lm_in_mem = net_lm_head->stages[0].input_mems[0];
   auto &lm_out_mem = net_lm_head->stages[0].output_mems[0];
@@ -403,11 +403,13 @@ int Qwen2VL::forward_next() {
 
 std::string Qwen2VL::build_prompt(std::string input_str) {
   std::string prompt = sys_config;
-  for (const auto& item : history_vector) {
-    prompt += "<|im_start|>user\n" + item.first + "<|im_end|>\n" +
-              "<|im_start|>assistant\n" + item.second + "<|im_end|>\n";
-  }
   prompt += "<|im_start|>user\n<|vision_start|><|vision_pad|><|vision_end|>";
+  if (enable_history) {
+    for (const auto& item : history_vector) {
+      prompt += item.first + "<|im_end|>\n" + "<|im_start|>assistant\n"
+              + item.second + "<|im_end|>\n<|im_start|>user\n";
+    }
+  }
   prompt += input_str + "<|im_end|>\n<|im_start|>assistant\n";
   return prompt;
 }
@@ -445,13 +447,15 @@ void Qwen2VL::answer(const std::string input_str, const std::string image_path) 
   std::cout << "FTL: " << (use0.count() * 1e-6) << " s" << std::endl;
   std::cout << "TPS: " << tok_num / (use1.count() * 1e-6) << " token/s" << std::endl;
 
-  if (token_length >= SEQLEN) {
-    history_vector.push_back({input_str, result});
-    size_t half_size = history_vector.size() / 2;
-    history_vector.erase(history_vector.begin(), history_vector.begin() + half_size);
-    std::cout <<"history length exceed max sequence length, erase half" << std::endl;
-  } else {
-    // history_vector.push_back({input_str, result});
+  if (enable_history) {
+    if (token_length >= SEQLEN) {
+      history_vector.push_back({input_str, result});
+      size_t half_size = history_vector.size() / 2;
+      history_vector.erase(history_vector.begin(), history_vector.begin() + half_size);
+      std::cout <<"history length exceed max sequence length, erase half" << std::endl;
+    } else {
+      history_vector.push_back({input_str, result});
+    }
   }
   result.clear();
 }
@@ -486,25 +490,28 @@ void Usage() {
          "  -m, --model     : Set model path \n"
          "  -p, --processor : Set processor path, default is '../processor'\n"
          "  -i, --image     : Set image path, default is '../test.jpg' \n"
-         "  -d, --devid     : Set devices to run for model, default is '0'\n");
+         "  -d, --devid     : Set devices to run for model, default is '0'\n"
+         "  -e. --enable_history : if set, enable history memory\n");
 }
 
 void processArguments(int argc, char *argv[],
                       std::string &model_path,
                       std::string &processor_path,
                       std::string &image_path,
-                      std::vector<int> &devices) {
+                      std::vector<int> &devices,
+                      bool enable_history) {
   struct option longOptions[] = {{"model", required_argument, nullptr, 'm'},
                                  {"processor", required_argument, nullptr, 'p'},
                                  {"image", required_argument, nullptr, 'i'},
                                  {"devid", required_argument, nullptr, 'd'},
+                                 {"enable_history", no_argument, nullptr, 'e'},
                                  {"help", no_argument, nullptr, 'h'},
                                  {nullptr, 0, nullptr, 0}};
 
   int optionIndex = 0;
   int option;
 
-  while ((option = getopt_long(argc, argv, "m:p:i:d:h:", longOptions,
+  while ((option = getopt_long(argc, argv, "m:p:i:d:h:e", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -518,6 +525,9 @@ void processArguments(int argc, char *argv[],
       break;
     case 'd':
       devices = {atoi(optarg)};
+      break;
+    case 'e':
+      enable_history = true;
       break;
     case 'h':
       Usage();
@@ -536,8 +546,10 @@ int main(int argc, char **argv) {
   std::string processor_path;
   std::string image_path;
   std::vector<int> devices = {0};
+  bool enable_history = false;
 
-  processArguments(argc, argv, model_path, processor_path, image_path, devices);
+  processArguments(argc, argv, model_path, processor_path,
+                   image_path, devices, enable_history);
   if (model_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);
@@ -553,7 +565,7 @@ int main(int argc, char **argv) {
 
   Qwen2VL model;
   std::cout << "Init Environment ..." << std::endl;
-  model.init(model_path, processor_path, system_prompt, devices);
+  model.init(model_path, processor_path, system_prompt, enable_history, devices);
   model.chat(image_path);
   model.deinit();
   return 0;

@@ -57,7 +57,7 @@ public:
   }
 
   // ViT
-  std::vector<uint16_t> make_vit_attention_mask() {
+  std::vector<float> make_vit_attention_mask() {
     if (config_.model_type == "qwen2_vl" ||
         config_.model_type == "qwen2_5_vl") {
       return make_qwen2vl_vit_attention_mask();
@@ -172,8 +172,8 @@ private:
     return pos_ids;
   }
 
-  std::vector<uint16_t> make_qwen2vl_vit_attention_mask() {
-    std::vector<uint16_t> attention_mask;
+  std::vector<float> make_qwen2vl_vit_attention_mask() {
+    std::vector<float> attention_mask;
     int t = config_.grid_thw[0];
     int h = config_.grid_thw[1];
     int w = config_.grid_thw[2];
@@ -186,7 +186,7 @@ private:
 
     // Initialize attention_mask with -10000
     attention_mask.resize(config_.MAX_PIXELS * config_.MAX_PIXELS,
-                          config_.mask_value);
+                          -10000.);
 
     // Update attention_mask based on cu_seqlens
     for (size_t i = 1; i < cu_seqlens.size(); ++i) {
