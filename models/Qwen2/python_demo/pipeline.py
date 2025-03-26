@@ -23,7 +23,9 @@ class Qwen2():
         self.system_prompt = "You are a helpful assistant."
         self.history = [{"role": "system", "content": self.system_prompt}]
         self.EOS = self.tokenizer.eos_token_id
+        self.EOT = self.tokenizer.convert_tokens_to_ids('<|endoftext|>')
         self.enable_history = args.enable_history
+        self.max_new_tokens = args.max_new_tokens
 
         self.model = chat.Qwen()
         self.init_params(args)
@@ -123,14 +125,16 @@ class Qwen2():
         token = self.model.forward_first(tokens)
         first_end = time.time()
         # Following tokens
-        while token != self.EOS and self.model.token_length < self.model.SEQLEN:
+        while token not in [
+                self.EOS, self.EOT
+        ] and self.model.token_length < self.model.SEQLEN and tok_num < self.max_new_tokens:
             word = self.tokenizer.decode(token, skip_special_tokens=True)
             self.answer_token += [token]
             print(word, flush=True, end="")
             tok_num += 1
             token = self.model.forward_next()
         self.answer_cur = self.tokenizer.decode(self.answer_token)
-        
+
         # counting time
         next_end = time.time()
         first_duration = first_end - first_start
