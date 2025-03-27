@@ -29,8 +29,8 @@ static const float ATTENTION_MASK = -10000.;
 static const int VISION_PAD_TOKEN = 151654;
 static const int IMAGE_PAD_TOKEN = 151655;
 
-static const int resized_height = 364;
-static const int resized_width = 364;
+static const int resized_height = 140;
+static const int resized_width = 140;
 
 static inline uint16_t fp32_to_fp16_bits(float f) {
   uint32_t x = *((uint32_t *)&f);
@@ -120,6 +120,7 @@ private:
   const bm_net_info_t *net_embed;
   const bm_net_info_t *net_embed_cache;
   const bm_net_info_t *net_lm_head;
+  const bm_net_info_t *net_greedy_head;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
 
@@ -199,11 +200,16 @@ void Qwen2VL::init(std::string model_path,
   std::cout << "Done!" << std::endl;
 
   // init networks
-  NUM_LAYERS = (bmrt_get_network_number(p_bmrt) - 4) / 2;
+  net_vit = bmrt_get_network_info(p_bmrt, "vit");
   net_embed = bmrt_get_network_info(p_bmrt, "embedding");
   net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
   net_lm_head = bmrt_get_network_info(p_bmrt, "lm_head");
-  net_vit = bmrt_get_network_info(p_bmrt, "vit");
+  net_greedy_head = bmrt_get_network_info(p_bmrt, "greedy_head");
+  if (net_greedy_head) {
+    NUM_LAYERS = (bmrt_get_network_number(p_bmrt) - 6) / 2;
+  } else {
+    NUM_LAYERS = (bmrt_get_network_number(p_bmrt) - 4) / 2;
+  }
   for (int i = 0; i < NUM_LAYERS; i++) {
     auto block_name = "block_" + std::to_string(i);
     auto cache_name = "block_cache_" + std::to_string(i);
@@ -343,7 +349,15 @@ int Qwen2VL::forward_first(std::vector<int> &raw_tokens,
                      (token_length - 1) * hidden_bytes, hidden_bytes);
   net_launch(net_lm_head);
   int token = 0;
-  bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  if (net_greedy_head) {
+    auto &head_in_mem = net_greedy_head->stages[0].input_mems[0];
+    auto &head_out_mem = net_greedy_head->stages[0].output_mems[0];
+    d2d(head_in_mem, lm_out_mem);
+    net_launch(net_greedy_head);
+    bm_memcpy_d2s(bm_handle, (void *)&token, head_out_mem);
+  } else {
+    bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  }
   visited_tokens[token_length] = token;
   token_length += 1;
   return token;
@@ -396,7 +410,15 @@ int Qwen2VL::forward_next() {
   d2d(lm_in_mem, out_mem);
   net_launch(net_lm_head);
   int token = 0;
-  bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  if (net_greedy_head) {
+    auto &head_in_mem = net_greedy_head->stages[0].input_mems[0];
+    auto &head_out_mem = net_greedy_head->stages[0].output_mems[0];
+    d2d(head_in_mem, lm_out_mem);
+    net_launch(net_greedy_head);
+    bm_memcpy_d2s(bm_handle, (void *)&token, head_out_mem);
+  } else {
+    bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  }
   visited_tokens[token_length] = token;
   token_length += 1;
   return token;
