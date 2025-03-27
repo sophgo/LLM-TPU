@@ -389,10 +389,20 @@ if __name__ == "__main__":
                         help="dir path to the bmodel/config/tokenizer")
     parser.add_argument('-d', '--devid', type=str, default='0',
                         help='device ID to use')
+    parser.add_argument('--enable_history', action='store_true',
+                        help="if set, enables storing of history memory")
+    parser.add_argument('--model_type', type=str, help="model type")
+
+    #################### VLM config ###################
     parser.add_argument('--test_input', type=str,
                         help='the text for test')
     parser.add_argument('--test_media', type=str,
                         help='the media(image/video) path for test')
+    parser.add_argument('--resized_height', type=int, default=0,
+                        help='use resized_height for vlm when resized_height != 0')
+    parser.add_argument('--resized_width', type=int, default=0,
+                        help='use resized_width for vlm when resized_width != 0')
+    ################ generation config ################
     parser.add_argument('--temperature', type=float, default=1.0,
                         help='temperature scaling factor for the likelihood distribution')
     parser.add_argument('--top_p', type=float, default=1.0,
@@ -406,12 +416,6 @@ if __name__ == "__main__":
     parser.add_argument('--generation_mode', type=str, default="greedy",
                         choices=["greedy", "penalty_sample"],
                         help='mode for generating next token')
-    parser.add_argument('--resized_height', type=int, default=0,
-                        help='use resized_height for vlm when resized_height != 0')
-    parser.add_argument('--resized_width', type=int, default=0,
-                        help='use resized_width for vlm when resized_width != 0')
-    parser.add_argument('--enable_history', action='store_true',
-                        help="if set, enables storing of history memory")
-    parser.add_argument('--model_type', type=str, help="model type")
+    ###################################################
     args = parser.parse_args()
     main(args)

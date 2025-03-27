@@ -161,9 +161,10 @@ void Qwen2VL::d2d(bm_device_mem_t &dst, bm_device_mem_t &src,
 void Qwen2VL::init(std::string model_path,
                    std::string processor_path,
                    std::string system_prompt,
-                   bool enable_history,
+                   bool save_history,
                    const std::vector<int> &devices) {
   sys_config = "<|im_start|>system\n" + system_prompt + "<|im_end|>\n";
+  enable_history = save_history;
 
   // load tokenizer
   std::cout << "Processor [" << processor_path.c_str() << "] loading .... ";
@@ -491,7 +492,7 @@ void Usage() {
          "  -p, --processor : Set processor path, default is '../processor'\n"
          "  -i, --image     : Set image path, default is '../test.jpg' \n"
          "  -d, --devid     : Set devices to run for model, default is '0'\n"
-         "  -e. --enable_history : if set, enable history memory\n");
+         "  -e, --enable_history : if set, enable history memory\n");
 }
 
 void processArguments(int argc, char *argv[],
@@ -499,7 +500,7 @@ void processArguments(int argc, char *argv[],
                       std::string &processor_path,
                       std::string &image_path,
                       std::vector<int> &devices,
-                      bool enable_history) {
+                      bool &enable_history) {
   struct option longOptions[] = {{"model", required_argument, nullptr, 'm'},
                                  {"processor", required_argument, nullptr, 'p'},
                                  {"image", required_argument, nullptr, 'i'},
@@ -511,7 +512,7 @@ void processArguments(int argc, char *argv[],
   int optionIndex = 0;
   int option;
 
-  while ((option = getopt_long(argc, argv, "m:p:i:d:h:e", longOptions,
+  while ((option = getopt_long(argc, argv, "m:p:i:d:eh:", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':

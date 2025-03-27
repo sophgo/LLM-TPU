@@ -64,7 +64,7 @@ class BmodelConverter:
             self.out_bmodel = '../' + args.out_bmodel
         else:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.out_bmodel = f"../{model_type}_{self.quantize}_seq{self.seq_length}_{self.chip}_{timestamp}.bmodel"
+            self.out_bmodel = f"../{model_type}_{self.quantize}_seq{self.seq_length}_{self.chip}_{self.num_device}dev_{timestamp}.bmodel"
 
         self.env = self._get_environment()
 
