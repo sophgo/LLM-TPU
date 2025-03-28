@@ -277,7 +277,7 @@ int Qwen2VL::forward_first(std::vector<int> &raw_tokens,
   auto position_id = maker->make_position_id();
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, mask_value);
   for (int i = 0; i < token_length; i++) {
-    for (int j = 0; j < SEQLEN; j++) {
+    for (int j = 0; j < token_length; j++) {
       if (j <= i) {
         attention_mask[i * SEQLEN + j] = 0;
       }
@@ -494,19 +494,19 @@ void processArguments(int argc, char *argv[],
                                  {"width", required_argument, nullptr, 'w'},
                                  {"devid", required_argument, nullptr, 'd'},
                                  {"enable_history", no_argument, nullptr, 'e'},
-                                 {"help", no_argument, nullptr, nullptr, '?'},
+                                 {"help", no_argument, nullptr, 'p'},
                                  {nullptr, 0, nullptr, 0}};
 
   int optionIndex = 0;
   int option;
 
-  while ((option = getopt_long(argc, argv, "m:c:i:h:w:d:e", longOptions,
+  while ((option = getopt_long(argc, argv, "m:c:i:h:w:d:ep", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
       model_path = optarg;
       break;
-    case 'p':
+    case 'c':
       processor_path = optarg;
       break;
     case 'i':
@@ -524,6 +524,7 @@ void processArguments(int argc, char *argv[],
     case 'e':
       enable_history = true;
       break;
+    case 'p':
     case '?':
       Usage();
       exit(EXIT_SUCCESS);
