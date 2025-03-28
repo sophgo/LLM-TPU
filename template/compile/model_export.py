@@ -50,7 +50,7 @@ class BmodelConverter:
         #     self.max_workers = max(cpu_count // 2, 4)
 
         self.bmodel_dir = bmodel_dir
-        self.relative_onnx_path = "../onnx"
+        self.relative_onnx_path = f"../onnx_seq{self.seq_length}"
         if self.chip == "bm1688":
             self.num_core = 2
         else:
@@ -526,8 +526,8 @@ class ModelExporter:
         self.embedding_disk = args.embedding_disk
         self.lmhead_with_topk = args.num_device > 1
         self.out_dir = args.out_dir
-        self.onnx_dir = os.path.join(self.out_dir, "onnx")
-        self.bmodel_dir = os.path.join(self.out_dir, "bmodel")
+        self.onnx_dir = os.path.join(self.out_dir, f"onnx_seq{self.seq_length}")
+        self.bmodel_dir = os.path.join(self.out_dir, f"bmodel_seq{self.seq_length}")
         os.makedirs(self.out_dir, exist_ok=True)
         os.makedirs(self.onnx_dir, exist_ok=True)
         os.makedirs(self.bmodel_dir, exist_ok=True)
