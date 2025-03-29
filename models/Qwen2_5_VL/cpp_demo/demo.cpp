@@ -65,7 +65,10 @@ public:
   void deinit();
   void chat(std::string image_path);
   void answer(const std::string input_str, std::string image_path);
-  int forward_first(std::vector<int> &tokens, std::vector<float> &pixel_values);
+  bm_device_mem_t &forward_vit(std::vector<float> &pixel_values);
+  bm_device_mem_t &forward_embed(std::vector<int> &tokens);
+  void embed_replace(bm_device_mem_t &embed_mem, bm_device_mem_t &vit_mem);
+  int forward_first(bm_device_mem_t &embed_mem);
   int forward_next();
   std::string build_prompt(std::string input_str);
   std::mt19937 sgen;
@@ -172,7 +175,7 @@ void Qwen2VL::init(std::string model_path, std::string processor_path,
 
   p_bmrt = bmrt_create_ex(handles.data(), handles.size());
   assert(NULL != p_bmrt);
-
+  bmrt_set_flags(p_bmrt, BM_RUNTIME_SHARE_MEM);
   // load bmodel
   std::cout << "Qwen2VL [" << model_path.c_str() << "] loading .... ";
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
@@ -262,8 +265,22 @@ void Qwen2VL::deinit() {
   }
 }
 
-int Qwen2VL::forward_first(std::vector<int> &raw_tokens,
-                           std::vector<float> &pixel_values) {
+bm_device_mem_t &Qwen2VL::forward_vit(std::vector<float> &pixel_values) {
+  std::vector<float> pixel_values_pad(MAX_PIXELS * VIT_DIMS, 0);
+  std::copy(pixel_values.begin(), pixel_values.end(), pixel_values_pad.data());
+  auto vit_position_id = maker->make_vit_position_id();
+  auto vit_attention_mask = maker->make_vit_attention_mask();
+  auto &vit_in0_mem = net_vit->stages[0].input_mems[0];
+  auto &vit_in1_mem = net_vit->stages[0].input_mems[1];
+  auto &vit_in2_mem = net_vit->stages[0].input_mems[2];
+  bm_memcpy_s2d(bm_handle, vit_in0_mem, (void *)pixel_values_pad.data());
+  bm_memcpy_s2d(bm_handle, vit_in1_mem, (void *)vit_position_id.data());
+  bm_memcpy_s2d(bm_handle, vit_in2_mem, (void *)vit_attention_mask.data());
+  net_launch(net_vit);
+  return net_vit->stages[0].output_mems[0];
+}
+
+bm_device_mem_t &Qwen2VL::forward_embed(std::vector<int> &raw_tokens) {
   std::vector<int> tokens = maker->insert_tokens(raw_tokens, IMAGE_PAD_TOKEN);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
   token_length = tokens.size();
@@ -274,10 +291,20 @@ int Qwen2VL::forward_first(std::vector<int> &raw_tokens,
   config.media_size = media_size[0];
   config.total_length = token_length;
 
-  std::vector<float> pixel_values_pad(MAX_PIXELS * VIT_DIMS, 0);
-  std::copy(pixel_values.begin(), pixel_values.end(), pixel_values_pad.data());
-  auto vit_position_id = maker->make_vit_position_id();
-  auto vit_attention_mask = maker->make_vit_attention_mask();
+  auto &in_mem = net_embed->stages[0].input_mems[0];
+  auto &out_mem = net_embed->stages[0].output_mems[0];
+  bm_memcpy_s2d(bm_handle, in_mem, (void *)visited_tokens.data());
+  net_launch(net_embed);
+  return out_mem;
+}
+
+void Qwen2VL::embed_replace(bm_device_mem_t &embed_mem,
+                            bm_device_mem_t &vit_mem) {
+  bm_memcpy_d2d_byte(bm_handle, embed_mem, config.media_offset * hidden_bytes,
+                     vit_mem, 0, config.media_size * hidden_bytes);
+}
+
+int Qwen2VL::forward_first(bm_device_mem_t &embed_mem) {
   auto position_id = maker->make_position_id();
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, mask_value);
   for (int i = 0; i < token_length; i++) {
@@ -287,25 +314,7 @@ int Qwen2VL::forward_first(std::vector<int> &raw_tokens,
       }
     }
   }
-
-  // forward embeding
-  auto &in_mem = net_embed->stages[0].input_mems[0];
-  auto &out_mem = net_embed->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)visited_tokens.data());
-  net_launch(net_embed);
-
-  // forward vit
-  auto &vit_in0_mem = net_vit->stages[0].input_mems[0];
-  auto &vit_in1_mem = net_vit->stages[0].input_mems[1];
-  auto &vit_in2_mem = net_vit->stages[0].input_mems[2];
-  auto &vit_out_mem = net_vit->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, vit_in0_mem, (void *)pixel_values_pad.data());
-  bm_memcpy_s2d(bm_handle, vit_in1_mem, (void *)vit_position_id.data());
-  bm_memcpy_s2d(bm_handle, vit_in2_mem, (void *)vit_attention_mask.data());
-  net_launch(net_vit);
-  bm_memcpy_d2d_byte(bm_handle, out_mem, config.media_offset * hidden_bytes,
-                     vit_out_mem, 0, config.media_size * hidden_bytes);
-
+  auto out_mem = embed_mem;
   // forward blocks
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
@@ -431,7 +440,10 @@ void Qwen2VL::answer(const std::string input_str,
   int tok_num = 0;
 
   auto t0 = std::chrono::system_clock::now();
-  int token = forward_first(tokens, pixel_values);
+  auto embed_mem = forward_embed(tokens);
+  auto vit_mem = forward_vit(pixel_values);
+  embed_replace(embed_mem, vit_mem);
+  int token = forward_first(embed_mem);
   auto t1 = std::chrono::system_clock::now();
 
   std::string result;
@@ -503,7 +515,7 @@ void Usage() {
          "  -?, --help      : Show help info.\n"
          "  -m, --model     : Set model path \n"
          "  -c, --config    : Set config path, default is './config'\n"
-         "  -i, --image     : Set image path, default is '../test.png' \n"
+         "  -i, --image     : Set image path, default is './test.png' \n"
          "  -h, --height    : Set image resized height, default is '280'\n"
          "  -w, --width     : Set image resized width, default is '420'\n"
          "  -d, --devid     : Set devices to run for model, default is '0'\n"
