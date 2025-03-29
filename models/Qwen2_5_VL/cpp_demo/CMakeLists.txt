@@ -8,7 +8,7 @@ endif()
 include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(${PROJECT_SOURCE_DIR}/include/opencv4)
 include_directories(/opt/sophon/libsophon-current/include)
-include_directories(/opt/sophon//sophon-ffmpeg-latest/include)
+include_directories(/opt/sophon/sophon-ffmpeg-latest/include)
 
 link_directories(${PROJECT_SOURCE_DIR}/lib)
 link_directories(/opt/sophon/libsophon-current/lib)

@@ -5,11 +5,9 @@ deploy/
 .vscode
 *.npz
 __pycache__
-core
 *.log
 *.zip
 *.tar.gz
 *.deb
 chat*.so
-gen*
 verify*

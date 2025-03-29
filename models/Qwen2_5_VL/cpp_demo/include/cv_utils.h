@@ -18,7 +18,7 @@
 #include <opencv2/opencv.hpp>
 #include <string>
 #include <vector>
-
+#include <numeric>
 
 struct Config {
   std::string model_type;
