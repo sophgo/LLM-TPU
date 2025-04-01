@@ -38,6 +38,7 @@ class BmodelConverter:
         self.symmetric = args.symmetric
         self.seq_length = args.seq_length
         self.num_device = args.num_device
+        self.num_core = args.num_core if args.chip == "bm1688" else 1
         self.compile_mode = args.compile_mode
         self.tpu_mlir_path = args.tpu_mlir_path
         self.embedding_disk = args.embedding_disk
@@ -51,10 +52,6 @@ class BmodelConverter:
 
         self.bmodel_dir = bmodel_dir
         self.relative_onnx_path = f"../onnx_seq{self.seq_length}"
-        if self.chip == "bm1688":
-            self.num_core = 2
-        else:
-            self.num_core = 1
 
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -527,7 +524,11 @@ class ModelExporter:
         self.lmhead_with_topk = args.num_device > 1
         self.out_dir = args.out_dir
         self.onnx_dir = os.path.join(self.out_dir, f"onnx_seq{self.seq_length}")
-        self.bmodel_dir = os.path.join(self.out_dir, f"bmodel_seq{self.seq_length}")
+        if args.chip == "bm1684x":
+            folder_name = f"bmodel_seq{self.seq_length}_{self.quantize}_{args.chip}_{args.num_device}dev"
+        else:
+            folder_name = f"bmodel_seq{self.seq_length}_{self.quantize}_{args.chip}_{args.num_core}core"
+        self.bmodel_dir = os.path.join(self.out_dir, folder_name)
         os.makedirs(self.out_dir, exist_ok=True)
         os.makedirs(self.onnx_dir, exist_ok=True)
         os.makedirs(self.bmodel_dir, exist_ok=True)
@@ -653,6 +654,7 @@ if __name__ == '__main__':
                         help="chip type for bmodel")
     parser.add_argument('--num_device', type=int, default=1,
                         help="num device for bmodel")
+    parser.add_argument('--num_core', type=int, default=2, help = "num cores for bmodel")
     parser.add_argument('--high_precision', action='store_true',
                         help='use high precision for quantize')
     parser.add_argument('--symmetric', action='store_true',
