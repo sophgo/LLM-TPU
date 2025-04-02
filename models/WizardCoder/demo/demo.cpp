@@ -132,6 +132,7 @@ void WizardCoder::init(
         std::cerr << "Error in bmrt_create_ex\n";
         return;
     }
+    bmrt_set_flags(bmrt, BM_RUNTIME_SHARE_MEM);
     if (!bmrt_load_bmodel(bmrt, model_path.data())) {
         std::cerr << "Error in bmrt_load_bmodel\n";
         return;

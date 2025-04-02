@@ -418,7 +418,7 @@ void Qwen::load_bmodel(const std::vector<int> &devices,
   if (NULL == p_bmrt) {
     bmrt_error();
   }
-
+  bmrt_set_flags(p_bmrt, BM_RUNTIME_SHARE_MEM);
   // load bmodel by file
   printf("Model[%s] loading ....\n", model_path.c_str());
   bool ret = false;

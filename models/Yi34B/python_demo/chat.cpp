@@ -100,7 +100,7 @@ void Yi::init(const std::vector<int> &devices,
   // create bmruntime
   p_bmrt = bmrt_create_ex(handles.data(), handles.size());
   assert(NULL != p_bmrt);
-
+  bmrt_set_flags(p_bmrt, BM_RUNTIME_SHARE_MEM);
   // load bmodel by file
   printf("Model[%s] loading ....\n", model_path.c_str());
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());

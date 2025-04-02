@@ -295,7 +295,7 @@ void Model::load_bmodel(const std::vector<int> &devices,
   // create bmruntime
   p_bmrt = bmrt_create(bm_handle);
   ASSERT(p_bmrt != NULL, "can not create bmrt");
-
+  bmrt_set_flags(p_bmrt, BM_RUNTIME_SHARE_MEM);
   std::string board_name(256, '\0');
   bm_get_board_name(bm_handle, &board_name[0]);
 

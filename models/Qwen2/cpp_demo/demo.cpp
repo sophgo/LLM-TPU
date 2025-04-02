@@ -454,13 +454,14 @@ void processArguments(int argc, char *argv[], std::string &model_path,
   struct option longOptions[] = {{"model", required_argument, nullptr, 'm'},
                                  {"config", required_argument, nullptr, 'c'},
                                  {"devid", required_argument, nullptr, 'd'},
+                                 {"enable_history", no_argument, nullptr, 'e'},
                                  {"help", no_argument, nullptr, 'h'},
                                  {nullptr, 0, nullptr, 0}};
 
   int optionIndex = 0;
   int option;
 
-  while ((option = getopt_long(argc, argv, "m:c:i:h", longOptions,
+  while ((option = getopt_long(argc, argv, "m:c:d:eh", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':

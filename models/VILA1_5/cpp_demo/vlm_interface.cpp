@@ -95,7 +95,7 @@ void Vila::init(const std::string &llm_model, const std::string &vit_model,
   // create bmruntime
   p_bmrt = bmrt_create(bm_handle);
   assert(NULL != p_bmrt);
-
+  bmrt_set_flags(p_bmrt, BM_RUNTIME_SHARE_MEM);
   // load bmodel by file
   printf("LLM Model[%s] loading ....\n", llm_model.c_str());
   bool ret = bmrt_load_bmodel(p_bmrt, llm_model.c_str());

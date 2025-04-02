@@ -192,7 +192,7 @@ void Qwen2VL::init(std::string model_path,
 
   p_bmrt = bmrt_create_ex(handles.data(), handles.size());
   assert(NULL != p_bmrt);
-
+  bmrt_set_flags(p_bmrt, BM_RUNTIME_SHARE_MEM);
   // load bmodel
   std::cout << "Qwen2VL [" << model_path.c_str() << "] loading .... ";
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());

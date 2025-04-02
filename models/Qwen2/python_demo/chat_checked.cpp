@@ -213,7 +213,7 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   if (NULL == p_bmrt) {
     bmrt_error();
   }
-
+  bmrt_set_flags(p_bmrt, BM_RUNTIME_SHARE_MEM);
   // load bmodel by file
   printf("Model[%s] loading ....\n", model_path.c_str());
   bool ret = false;
