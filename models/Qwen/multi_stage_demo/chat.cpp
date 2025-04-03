@@ -220,7 +220,6 @@ void Model::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
 void Model::net_launch(const bm_net_info_t *net, int stage_idx) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
   std::vector<bm_tensor_t> out_tensors(net->output_num);
-  bm_thread_sync(bm_handle);
 
   for (int i = 0; i < net->input_num; i++) {
     bmrt_tensor_with_device(
@@ -577,7 +576,12 @@ void Model::init_forward(pybind11::array_t<int> tokens) {
   size_t size = buf.size;
   size_t prefill_length_0 = net_blocks[0]->stages[0].input_shapes[0].dims[1];
   size_t prefill_length_1 = net_blocks[0]->stages[1].input_shapes[0].dims[1];
-  if (size > prefill_length_0) {
+  size_t prefill_length_2 = net_blocks[0]->stages[2].input_shapes[0].dims[1];
+  if (size > prefill_length_1) {
+    stage_idx = 2;
+    MAX_PREFILL_LENGTH = prefill_length_2;
+    SEQLEN = net_blocks_cache[0]->stages[2].input_shapes[3].dims[1];
+  } else if (size > prefill_length_0) {
     stage_idx = 1;
     MAX_PREFILL_LENGTH = prefill_length_1;
     SEQLEN = net_blocks_cache[0]->stages[1].input_shapes[3].dims[1];

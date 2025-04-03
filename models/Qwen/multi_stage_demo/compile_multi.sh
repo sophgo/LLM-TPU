@@ -273,3 +273,6 @@ popd
 
 model_tool --combine $models -o $outdir/../$out_model
 model_tool --info $outdir/../$out_model > $outdir/../model.log
+
+# shape 按从小到大做combine
+# 注意：只有 block 、 block_cache 、 penalty_sample_head 三个模块有多stage，因此 lm_head 、 vit 、 greedy_head 只能combine一次，否则会报错！
