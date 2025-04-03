@@ -141,7 +141,7 @@ lm_head() {
         --model lm_head.bmodel
 
     rm -f *.npz
-    models=${models}${outdir}'/lm_head.bmodel '
+    # models=${models}${outdir}'/lm_head.bmodel '
 }
 
 greedy_head() {
@@ -156,7 +156,7 @@ greedy_head() {
         --model greedy_head.bmodel
 
     rm -f *.npz
-    models=${models}${outdir}'/greedy_head.bmodel '
+    # models=${models}${outdir}'/greedy_head.bmodel '
 }
 
 penalty_sample_head() {
@@ -223,7 +223,7 @@ vision_transformer() {
         --model vit.bmodel
 
     rm -f *.npz
-    models=${models}${outdir}'/vit.bmodel '
+    # models=${models}${outdir}'/vit.bmodel '
 }
 
 # outdir=${folder}/$mode"_1dev"/embedding
