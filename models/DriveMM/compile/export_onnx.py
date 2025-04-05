@@ -418,8 +418,8 @@ def test_net_with_mask():
 if not os.path.exists(folder):
     os.makedirs(folder)
 
-test_net_with_mask()
-exit()
+# test_net_with_mask()
+# exit()
 
 
 print(f'Convert block & block_cache')
