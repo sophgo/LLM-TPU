@@ -36,6 +36,8 @@ public:
   void init(const std::vector<int> &devid, const std::string &model_path
              );
   void deinit();
+  void init_decrypt();
+  void deinit_decrypt();
 
   // Inference Functions
   void update_config();
@@ -92,6 +94,7 @@ public:
   uint32_t prefill_reuse;
   std::vector<int> raw_tokens;
   std::vector<int> total_tokens;
+  std::string lib_path;
   std::string embedding_path;
   int stage_idx;
   bool make_in_tensors_flag;
@@ -138,6 +141,8 @@ private:
   bm_tensor_t inputs_attention, next_attention;
 
   uint16_t mask_value;
+  void *decrypt_handle_;      // handle of decrypt lib
+  decrypt_func decrypt_func_; // decrypt func from lib
 };
 
 // init
@@ -149,6 +154,7 @@ Model::Model() {
   make_in_tensors_flag = false;
 
   // path
+  // lib_path = "";
   embedding_path = "";
 
   // length
@@ -163,6 +169,8 @@ Model::Model() {
   sgen = std::mt19937(std::random_device()());
   bm_handle = nullptr;
   p_bmrt = nullptr;
+  decrypt_handle_ = nullptr;
+  decrypt_func_ = nullptr;
 }
 
 void Model::deinit() {
@@ -188,6 +196,42 @@ static inline void ASSERT(bool ret, std::string message) {
 void Model::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, size_t offset,
                 size_t size) {
   bm_memcpy_d2d_byte(bm_handle, dst, offset, src, 0, size);
+}
+
+void Model::init_decrypt() {
+  // init decrypt
+  if (lib_path.empty()) {
+    return;
+  }
+  decrypt_handle_ = dlopen(lib_path.c_str(), RTLD_LAZY);
+  if (!decrypt_handle_) {
+    std::cout << "Error:"
+              << "Decrypt lib [" << lib_path << "] load failed." << std::endl;
+    throw std::runtime_error("");
+  }
+  decrypt_func_ = (decrypt_func)dlsym(decrypt_handle_, "decrypt");
+  auto error = dlerror();
+  if (error) {
+    dlclose(decrypt_handle_);
+    std::cout << "Error:"
+              << "Decrypt lib [" << lib_path << "] symbol find failed."
+              << std::endl;
+    throw std::runtime_error("");
+  }
+  return;
+}
+
+void Model::deinit_decrypt() {
+  // Step 1: Close the dynamic library handle if it's open.
+  if (!lib_path.empty() && decrypt_handle_) {
+    dlclose(decrypt_handle_);
+    decrypt_handle_ =
+        nullptr; // Avoid dangling pointer by resetting to nullptr.
+  }
+
+  // Step 2: Reset the function pointer to nullptr.
+  // No need to free or close anything specific for it.
+  decrypt_func_ = nullptr;
 }
 
 void Model::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
@@ -284,7 +328,13 @@ void Model::load_bmodel(const std::vector<int> &devices,
   bmrt_set_flags(p_bmrt, BM_RUNTIME_SHARE_MEM);
   // load bmodel by file
   printf("Model[%s] loading ....\n", model_path.c_str());
-  bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
+  bool ret = false;
+  if (!lib_path.empty()) {
+    ret = bmrt_load_bmodel_with_decrypt(p_bmrt, model_path.c_str(),
+                                        decrypt_func_);
+  } else {
+    ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
+  }
 
   ASSERT(ret == true, "can not load bmodel correctly");
   printf("Done!\n");
@@ -766,6 +816,8 @@ PYBIND11_MODULE(chat, m) {
 #endif
       .def("generate", &Model::generate)
       .def("deinit", &Model::deinit)
+      .def("init_decrypt", &Model::init_decrypt)
+      .def("deinit_decrypt", &Model::deinit_decrypt)
       .def_readwrite("config", &Model::config)
       .def_readwrite("SEQLEN", &Model::SEQLEN)
       .def_readwrite("NUM_LAYERS", &Model::NUM_LAYERS)
@@ -779,6 +831,7 @@ PYBIND11_MODULE(chat, m) {
       .def_readwrite("max_new_tokens", &Model::max_new_tokens)
       .def_readwrite("generation_mode", &Model::generation_mode)
       .def_readwrite("prefill_reuse", &Model::prefill_reuse)
+      .def_readwrite("lib_path", &Model::lib_path)
       .def_readwrite("stage_idx", &Model::stage_idx)
       .def_readwrite("embedding_path", &Model::embedding_path);
 }

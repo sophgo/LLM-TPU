@@ -147,6 +147,7 @@ class Model:
         return
 
     def load_model(self, args):
+        self.model.init_decrypt()
 
         load_start = time.time()
         self.model.init(self.devices, args.model_path) # when read_bmodel = false, not to load weight, reuse weight
@@ -160,6 +161,7 @@ class Model:
         self.model.repeat_last_n = args.repeat_last_n
         self.model.max_new_tokens = args.max_new_tokens
         self.model.generation_mode = args.generation_mode
+        self.model.lib_path = args.lib_path
         self.model.embedding_path = self.embedding_path if os.path.exists(self.embedding_path) else ""
         self.model.NUM_LAYERS = self.config["num_hidden_layers"]
         self.model.config.model_type = self.model_type
@@ -384,6 +386,7 @@ class Model:
 
             if self.test_input or self.test_media:
                 break
+        self.model.deinit_decrypt()
 
 
 def main(args):
@@ -421,6 +424,7 @@ if __name__ == "__main__":
                         help='use resized_width for vlm when resized_width != 0')
     parser.add_argument('--enable_history', action='store_true',
                         help="if set, enables storing of history memory")
+    parser.add_argument('--lib_path', type=str, default='', help='lib path by user')
     parser.add_argument('--model_type', type=str, help="model type")
     args = parser.parse_args()
     main(args)
