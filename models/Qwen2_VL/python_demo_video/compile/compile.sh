@@ -31,6 +31,10 @@ while [[ $# -gt 0 ]]; do
         seq_length="$2"
         shift 2
         ;;
+    --vit_length)
+        vit_length="$2"
+        shift 2
+        ;;
     --dynamic)
         dynamic="$2"
         shift 2
@@ -272,7 +276,7 @@ pushd $outdir
 model_transform.py \
   --model_name vit \
   --model_def ../../onnx/vit/vision_transformer.onnx \
-  --input_shapes [[2000,1176],[2000,2],[1,2000,2000]] \
+  --input_shapes [[${vit_length},1176],[${vit_length},2],[1,${vit_length},${vit_length}]] \
   --input_types "float32,int32,float32" \
   --mlir vit.mlir 
 

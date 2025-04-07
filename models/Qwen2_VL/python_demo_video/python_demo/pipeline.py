@@ -220,6 +220,7 @@ class Qwen2VL():
     def __init__(self, args):
         # devid
         self.device = args.devid
+        self.visual_length = args.visual_length
         self.processor = AutoProcessor.from_pretrained(args.processor_path,
                                                        trust_remote_code=True)
         self.tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path,
@@ -292,11 +293,11 @@ class Qwen2VL():
             pos_ids = torch.cat(pos_ids, dim=0)
 
             # prefill vit
-            pixel_values_prefill = torch.zeros([2000, 1176]).to(dtype=torch.float32)
+            pixel_values_prefill = torch.zeros([self.visual_length, 1176]).to(dtype=torch.float32)
             pixel_values_prefill[:inputs.pixel_values_videos.shape[0],:] = inputs.pixel_values_videos
-            pos_ids_prefill = torch.zeros([2000, 2]).to(dtype=torch.int32)
+            pos_ids_prefill = torch.zeros([self.visual_length, 2]).to(dtype=torch.int32)
             pos_ids_prefill[:pos_ids.shape[0],:] = pos_ids
-            attention_mask_vit_prefill = torch.zeros([1, 2000, 2000], dtype=torch.bool)
+            attention_mask_vit_prefill = torch.zeros([1, self.visual_length, self.visual_length], dtype=torch.bool)
             # attention_mask_vit_prefill = torch.ones([1, 2000, 2000], dtype=torch.float) * -10000
 
             attention_mask_vit_prefill[0,:pos_ids.shape[0],:pos_ids.shape[0]] = attention_mask_vit
@@ -366,6 +367,8 @@ if __name__ == "__main__":
                         help='path to the model config file')
     parser.add_argument('-d', '--devid', type=int,
                         default=0, help='device ID to use')
+    parser.add_argument('-v', '--visual_length', type=int,
+                        default=2000, help='visual length')
     parser.add_argument('-g',
                         '--generation_mode',
                         type=str,

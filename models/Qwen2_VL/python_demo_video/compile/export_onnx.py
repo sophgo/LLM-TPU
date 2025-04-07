@@ -190,7 +190,7 @@ def convert_block_cache(layer_id):
 
 def convert_vision_transformer():
     # make input
-    x = torch.randn(2000, 1176).to(dtype=torch.float32, device=device)
+    x = torch.randn(VIT_LENGTH, 1176).to(dtype=torch.float32, device=device)
     # thw = torch.randn(3).to(dtype=torch.int32, device=device)
     thw = torch.tensor([[2, 20, 36]])
     # length = torch.tensor([1440], dtype=torch.int32, device=device)
@@ -428,13 +428,13 @@ def test_net_with_mask():
     pos_ids = torch.cat(pos_ids, dim=0)
 
     # prefill vit
-    pixel_values_prefill = torch.zeros([2000, 1176]).to(dtype=torch.float32, device=device)
+    pixel_values_prefill = torch.zeros([VIT_LENGTH, 1176]).to(dtype=torch.float32, device=device)
     pixel_values_prefill[:pixel_values.shape[0],:] = pixel_values
-    pos_ids_prefill = torch.zeros([2000, 2]).to(dtype=torch.int32, device=device)
+    pos_ids_prefill = torch.zeros([VIT_LENGTH, 2]).to(dtype=torch.int32, device=device)
     pos_ids_prefill[:pos_ids.shape[0],:] = pos_ids
-    attention_mask_vit_prefill = torch.zeros([1, 2000, 2000], device=device, dtype=torch.bool)
-    attention_mask_vit_prefill = torch.zeros([1, 2000, 2000], device=device)
-    # attention_mask_vit_prefill = torch.ones([1, 2000, 2000], device=device) * torch.finfo(torch.float32).min
+    attention_mask_vit_prefill = torch.zeros([1, VIT_LENGTH, VIT_LENGTH], device=device, dtype=torch.bool)
+    attention_mask_vit_prefill = torch.zeros([1, VIT_LENGTH, VIT_LENGTH], device=device)
+    # attention_mask_vit_prefill = torch.ones([1, VIT_LENGTH, VIT_LENGTH], device=device) * torch.finfo(torch.float32).min
     attention_mask_vit_prefill[0,:pos_ids.shape[0],:pos_ids.shape[0]] = attention_mask_vit
 
     breakpoint()
@@ -516,7 +516,8 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--model_path', type=str, help='path to the torch model')
     parser.add_argument('-d', '--device', type=str, choices=["cpu", "cuda"], default="cpu")
     parser.add_argument('-b', '--batch_size', type=int, default=1, help='batch size')
-    parser.add_argument('-s', '--seq_length', type=int, default=512, help="sequence length")
+    parser.add_argument('-s', '--seq_length', type=int, default=1024, help="sequence length")
+    parser.add_argument('-v', '--visual_length', type=int, default=2000, help="visual length")
     parser.add_argument('-n', '--num_threads', type=int, default=1, help='The number of threads used for torch if device is cpu')
     parser.add_argument('--max_pos_len', type=int, default=8704, help="max position length")
     parser.add_argument('--generation_mode', type=str, default="default", choices=["default", "lmhead_with_topk"], help="generation mode")
@@ -534,6 +535,7 @@ if __name__ == "__main__":
     layers = transformer.layers
 
     SEQ_LENGTH = args.seq_length
+    VIT_LENGTH = args.visual_length
     BATCH_SIZE = args.batch_size
     NUM_LAYERS = config.num_hidden_layers
     HIDDEN_SIZE = config.hidden_size

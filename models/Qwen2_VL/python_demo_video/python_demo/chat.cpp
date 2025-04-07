@@ -35,8 +35,7 @@ public:
   void deinit();
   int forward_first(std::vector<int> &tokens, std::vector<int> &position_id,
                     std::vector<float> &pixel_values, std::vector<int> &posids,
-                    std::vector<float> &attnmask, int img_offset, int pixel_num,
-                    std::vector<float> &vit_out_ref);
+                    std::vector<float> &attnmask, int img_offset, int pixel_num);
   int forward_next();
 
   std::mt19937 sgen;
@@ -235,18 +234,13 @@ int Qwen2VL::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem
 
 int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_ids,
                              std::vector<float> &pixel_values, std::vector<int> &posids,
-                             std::vector<float> &attnmask, int img_offset, int pixel_num,
-                             std::vector<float> &vit_out_ref) {
+                             std::vector<float> &attnmask, int img_offset, int pixel_num) {
   std::vector<int> input_ids(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, 0);
   std::copy(tokens.begin(), tokens.end(), input_ids.data());
   POSITION_IDS.resize(position_ids.size()/3, std::vector<int>(3));
   MAX_POS = 0;
   std::vector<int> p_ids(SEQLEN*3, 0);
-
-  std::vector<uint16_t> input_vit(500*3584, 0);
-  for (size_t i = 0; i < vit_out_ref.size(); ++i)
-    input_vit[i] = fp32_to_bf16_bits(vit_out_ref[i]);
 
   std::vector<float> pixel_values_pad(MAX_PIXELS * VIT_DIMS, 0);
   std::copy(pixel_values.begin(), pixel_values.end(), pixel_values_pad.data());
@@ -301,8 +295,6 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
 
     // concatenante texting embedding and image embedding
     int dst_offset = img_offset * HIDDEN_SIZE * 2;
-    int vit_size = pixel_num * HIDDEN_SIZE * sizeof(uint16_t);
-    // bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, vit_out_mem, 0, vit_size);
 
     int cnt = bm_mem_get_device_size(vit_out_mem) / 4;
     auto buffer = std::make_unique<float[]>(cnt);
@@ -315,22 +307,14 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
     bm_status_t status = bm_malloc_device_byte(bm_handle, &bf16_buffer, buffer_size/2);
     assert(BM_SUCCESS == status);
     bm_memcpy_s2d(bm_handle, bf16_buffer, (void *)uint16_value.data());
-    // compare_similarity(bm_handle, bf16_buffer, net_blocks[0]->input_dtypes[0], "/workspace/LLM-TPU/models/Qwen2_VL/python_demo_video/compile/vit_out_mem.npz", "tensor");
 
     bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, bf16_buffer, 0,
                        pixel_num * HIDDEN_SIZE * 2);
-
-    // bm_memcpy_s2d(bm_handle, bf16_buffer, (void *)input_vit.data());
-    // bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, bf16_buffer, 0,
-    //                    pixel_num * HIDDEN_SIZE * 2);
-    // compare_similarity(bm_handle, bf16_buffer, net_blocks[0]->input_dtypes[0], "/workspace/LLM-TPU/models/Qwen2_VL/python_demo_video/compile/vit_out_mem.npz", "tensor");
-    // compare_similarity(bm_handle, out_mem, net_blocks[0]->input_dtypes[0], "/workspace/LLM-TPU/models/Qwen2_VL/python_demo_video/compile/llm_input.npz", "tensor");
   }
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> duration = end - start;
   std::cout << "vit_launch execution time: " << duration.count() << " seconds" << std::endl;
 
-  int out_mem_num = bm_mem_get_device_size(out_mem) / 2;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
@@ -344,15 +328,10 @@ int Qwen2VL::forward_first(std::vector<int> &tokens, std::vector<int> &position_
     }
     net_launch(net_blocks[idx]);
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
-    // std::string ref_file_name = "/workspace/LLM-TPU/models/Qwen2_VL/python_demo_video/compile/block_";
-    // ref_file_name += std::to_string(idx);
-    // ref_file_name += ".npz";
-    // compare_similarity(bm_handle, out_mem, net_blocks[0]->input_dtypes[0], ref_file_name, "tensor");
-    
+
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1]);
     d2d(past_value[idx], net_blocks[idx]->stages[0].output_mems[2]);
   }
-  // compare_similarity(bm_handle, out_mem, net_blocks[0]->input_dtypes[0], "/workspace/LLM-TPU/models/Qwen2_VL/python_demo_video/compile/ref.npz", "tensor");
 
   // forward lmhead
   int bytes = out_mem.size / SEQLEN;
