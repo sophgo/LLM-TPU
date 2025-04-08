@@ -546,9 +546,9 @@ if __name__ == '__main__':
     config = AutoConfig.from_pretrained(args.model_path, trust_remote_code=True)
     if 'qwen2' == config.model_type:
         print("==== Using Fast Mode =====")
-        from mlir_rebuilder import MlirExport
-        exporter = MlirExport(args)
-        exporter.export()
+        from llm_convert import LlmConvert
+        converter = LlmConvert(args)
+        converter.run()
     else:
         model_exporter = ModelExporter(args)
         model_exporter.export()

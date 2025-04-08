@@ -98,7 +98,7 @@ def set_nested_attr(obj, attr_path: str, value):
     setattr(obj, attrs[-1], value)
 
 
-class MlirExport:
+class LlmConvert:
 
     def __init__(self, args):
         self.model_path = args.model_path
@@ -106,7 +106,7 @@ class MlirExport:
         self.quantize = args.quantize
         self.num_device = args.num_device
         self.q_group_size = args.q_group_size
-        self.high_precision = args.high_precision
+        self.high_precision = True
         self.symmetric = args.symmetric
         self.lmhead_with_topk = args.num_device > 1
         self.tpu_mlir_path = args.tpu_mlir_path
@@ -128,16 +128,18 @@ class MlirExport:
         self.context_readall()
         # get file path
         self.out_dir = args.out_dir
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         if args.chip == "bm1684x":
             folder_name = f"bmodel_seq{self.seq_length}_{self.quantize}_{self.chip}_{self.num_device}dev"
+            self.out_bmodel = f"../{self.model_type}_{self.quantize}_seq{self.seq_length}_{self.chip}_{self.num_device}dev_{timestamp}.bmodel"
         else:
             folder_name = f"bmodel_seq{self.seq_length}_{self.quantize}_{self.chip}_{self.num_core}core"
+            self.out_bmodel = f"../{self.model_type}_{self.quantize}_seq{self.seq_length}_{self.chip}_{self.num_core}core_{timestamp}.bmodel"
+
         self.bmodel_dir = os.path.join(self.out_dir, folder_name)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.out_bmodel = f"../{self.model_type}_{self.quantize}_seq{self.seq_length}_{self.chip}_{self.num_device}dev_{timestamp}.bmodel"
         self.commands = []
 
-    def export(self):
+    def run(self):
         os.makedirs(self.out_dir, exist_ok=True)
         os.makedirs(self.bmodel_dir, exist_ok=True)
         # export mlir files
@@ -181,6 +183,10 @@ class MlirExport:
             "intermediate_size": self.intermediate_size,
             "num_attention_heads": self.num_attention_heads,
             "num_key_value_heads": self.num_key_value_heads,
+            "head_dim": self.head_dim,
+            "kv_dim": self.num_key_value_heads * self.head_dim,
+            "half_head_dim": self.head_dim // 2,
+            "scaling": self.head_dim**-0.5,
         }
         return self.replace_template(context, replace_dict)
 
@@ -326,7 +332,7 @@ class MlirExport:
         if not self.embedding_disk:
             embed_builder = MlirRebuilder("embedding", self.embed_context, self.bmodel_dir)
             embed2_builder = MlirRebuilder("embedding_cache", self.embed2_context, self.bmodel_dir,
-                                        "embedding")
+                                           "embedding")
             weight = self.read_weight(self.model, self.model_info.weights.embed)
             embed_builder.set_weight(0, weight)
             embed_builder.save()
