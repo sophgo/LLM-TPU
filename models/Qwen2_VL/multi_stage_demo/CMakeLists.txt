@@ -33,7 +33,8 @@ else()
     set(OPENCV_LIBS "")
 endif()
 
-add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -lcryptopp)
+# add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -lcryptopp)
+add_definitions(-DDEBUG --std=c++17 -fPIC -Wall)
 
 set(CMAKE_BUILD_TYPE "Debug")
 
@@ -46,8 +47,8 @@ pybind11_add_module(chat chat.cpp)
 target_link_libraries(chat PUBLIC bmrt bmlib ${OPENCV_LIBS})
 install(TARGETS chat DESTINATION python)
 
-add_library(cipher SHARED crypto.cpp)
-target_link_libraries(cipher cryptopp)
+# add_library(cipher SHARED crypto.cpp)
+# target_link_libraries(cipher cryptopp)
 
-add_library(cipher_varlen SHARED crypto_varlen.cpp)
-target_link_libraries(cipher_varlen cryptopp)
+# add_library(cipher_varlen SHARED crypto_varlen.cpp)
+# target_link_libraries(cipher_varlen cryptopp)
