@@ -10,13 +10,10 @@ import torch
 import concurrent.futures
 import subprocess
 from datetime import datetime
+from safetensors import safe_open
 import sys
 from tqdm import tqdm
-from transformers import (
-    AutoModelForCausalLM,
-    AutoModel,
-    AutoConfig,
-)
+from transformers import AutoConfig
 
 
 class MlirRebuilder:
@@ -69,7 +66,7 @@ class MlirRebuilder:
         shape = wop.output.type.shape
         num_elems = np.prod(shape)
         if num_elems != weight.size:
-            print(f"Error:Weight[{idx}] size mismatch: {num_elems} vs {weight.size}")
+            print(f"Error: Weight[{idx}] size mismatch: {num_elems} vs {weight.size}")
             breakpoint()
         weight.reshape(shape)
         self.weight_datas[wname] = weight
@@ -83,19 +80,25 @@ class MlirRebuilder:
         tqdm.write(f"Success: Saved to {self.output_file}")
 
 
-def get_nested_attr(obj, attr_path: str):
-    """get nested attribute"""
-    for attr in attr_path.split("."):
-        obj = getattr(obj, attr)
-    return obj
+class LlmLoad:
 
+    def __init__(self, model_path: str):
+        self.st_files = []
+        # get all safetensors
+        for entry in os.listdir(model_path):
+            file_path = os.path.join(model_path, entry)
+            if os.path.isfile(file_path) and entry.lower().endswith('.safetensors'):
+                f = safe_open(file_path, "pt")
+                self.st_files.append(f)
 
-def set_nested_attr(obj, attr_path: str, value):
-    """get nested attribute"""
-    attrs = attr_path.split(".")
-    for attr in attrs[:-1]:
-        obj = getattr(obj, attr)
-    setattr(obj, attrs[-1], value)
+    def read(self, key: str):
+        for f in self.st_files:
+            if key in f.keys():
+                data = f.get_tensor(key)
+                if data.dtype in [torch.float16, torch.bfloat16]:
+                    return data.float().numpy()
+                return data.numpy()
+        raise RuntimeError(f"Can't find key: {key}")
 
 
 class LlmConvert:
@@ -118,7 +121,6 @@ class LlmConvert:
         self.load_pretrained()
         # get attributes
         self.init_config()
-        self.layers = get_nested_attr(self.model, self.model_info.weights.layers)
         cos, sin = self.get_rotary_pos_emb(self.seq_length)
         self.cos = cos.numpy()
         self.sin = sin.numpy()
@@ -216,6 +218,7 @@ class LlmConvert:
 
     def load_pretrained(self):
         self.config = AutoConfig.from_pretrained(self.model_path, trust_remote_code=True)
+        self.model = LlmLoad(self.model_path)
         self.model_type = self.config.model_type
         if 'qwen2' == self.model_type:
             self.model_info = QWEN2_INFO
@@ -223,35 +226,6 @@ class LlmConvert:
             self.block_cache_mlir = "models/qwen2/block_cache_0.mlir"
         else:
             raise RuntimeError("Not Implemented")
-        if 'qwen2_vl' == self.model_type:
-            from transformers import Qwen2VLForConditionalGeneration
-            self.model = Qwen2VLForConditionalGeneration.from_pretrained(self.model_path)
-        elif 'qwen2_5_vl' == self.model_type:
-            from transformers import Qwen2_5_VLForConditionalGeneration
-            self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(self.model_path)
-        elif 'mllama' == self.model_type:
-            from transformers import MllamaForConditionalGeneration
-            self.model = MllamaForConditionalGeneration.from_pretrained(self.model_path)
-        elif 'llama' == self.model_type:
-            from transformers import LlamaForCausalLM
-            self.model = LlamaForCausalLM.from_pretrained(self.model_path, trust_remote_code=True)
-        else:
-            if "ForCausalLM" in self.config.architectures[0]:
-                try:
-                    self.model = AutoModelForCausalLM.from_pretrained(self.model_path,
-                                                                      trust_remote_code=True,
-                                                                      low_cpu_mem_usage=True)
-                except:
-                    self.model = AutoModelForCausalLM.from_pretrained(self.model_path,
-                                                                      trust_remote_code=True)
-            elif "Model" in self.config.architectures[0]:
-                self.model = AutoModel.from_pretrained(self.model_path, trust_remote_code=True)
-            else:
-                raise ValueError(f"Unsupported Architectures:[ {self.config.architectures[0]} ]")
-
-        self.model = self.model.cpu().eval()
-        for param in self.model.parameters():
-            param.requires_grad = False
 
     def get_rotary_pos_emb(self, seq_length):
         position_ids = torch.tensor([range(seq_length)], dtype=torch.long)
@@ -265,23 +239,17 @@ class LlmConvert:
         rotary_pos_emb = rotary_pos_emb.unsqueeze(2).unsqueeze(1)
         return rotary_pos_emb
 
-    def read_weight_by_path(self, obj, attr_path: str):
-        """get nested attribute"""
-        module = get_nested_attr(obj, attr_path)
-        if isinstance(module, torch.nn.parameter.Parameter):
-            return module.numpy()
-        elif isinstance(module, torch.Tensor):
-            return module.numpy()
+    def read_weight(self, weight: WeightInfo, obj: str = ""):
+        if obj:
+            name = f"{obj}.{weight.name}"
         else:
-            raise RuntimeError(f"Can't get {attr_path} from {obj}")
-
-    def read_weight(self, obj, weight: WeightInfo):
+            name = weight.name
         if weight.type == WeightType.MM_BIAS:
-            return self.read_weight_by_path(obj, weight.name + ".bias")
+            return self.model.read(name+".bias")
         if weight.type == WeightType.MM_WEIGHT:
-            data = self.read_weight_by_path(obj, weight.name + ".weight")
+            data = self.model.read(name+".weight")
             return np.ascontiguousarray(np.transpose(data, (1, 0)))
-        return self.read_weight_by_path(obj, weight.name)
+        return self.model.read(name)
 
     def export_block(self, layer_idx: int):
         tqdm.write(f"export block {layer_idx}")
@@ -291,7 +259,6 @@ class LlmConvert:
         num_weight = len(self.model_info.weights.blocks)
         assert (block_builder.get_num_weight() == num_weight)
         assert (block_cache_builder.get_num_weight() == num_weight)
-        layer = self.layers[layer_idx]
         for widx in range(num_weight):
             if block_builder.get_weight_name(widx) != block_cache_builder.get_weight_name(widx):
                 print("Error: weight name mismatch")
@@ -302,17 +269,18 @@ class LlmConvert:
             elif weight.type == WeightType.ROTARY_SIN:
                 data = self.sin
             else:
-                data = self.read_weight(layer, weight)
+                obj = f"{self.model_info.weights.layers}.{widx}"
+                data = self.read_weight(weight, obj)
             block_builder.set_weight(widx, data)
         block_builder.save()
         block_cache_builder.save()
 
     def export_lmhead(self):
         tqdm.write("export lm_head")
-        norm_weight = self.read_weight(self.model, self.model_info.weights.norm)
+        norm_weight = self.read_weight(self.model_info.weights.norm)
         lmhead_builder = MlirRebuilder("lm_head", self.lmhead_context, self.bmodel_dir)
         lmhead_builder.set_weight(0, norm_weight)
-        lmhead_weight = self.read_weight(self.model, self.model_info.weights.lm_head)
+        lmhead_weight = self.read_weight(self.model_info.weights.lm_head)
         lmhead_builder.set_weight(1, lmhead_weight)
         lmhead_builder.save()
         if not self.lmhead_with_topk:
@@ -333,7 +301,7 @@ class LlmConvert:
             embed_builder = MlirRebuilder("embedding", self.embed_context, self.bmodel_dir)
             embed2_builder = MlirRebuilder("embedding_cache", self.embed2_context, self.bmodel_dir,
                                            "embedding")
-            weight = self.read_weight(self.model, self.model_info.weights.embed)
+            weight = self.read_weight(self.model_info.weights.embed)
             embed_builder.set_weight(0, weight)
             embed_builder.save()
             embed2_builder.save()
@@ -343,11 +311,12 @@ class LlmConvert:
                 print(f"{embedding_file} already exists. Skipping export.")
                 return
             import ctypes
-            weight = get_nested_attr(self.model, self.model_info.weights.embed.name + ".weight")
+            weight = self.read_weight(self.model_info.weights.embed)
+            weight = torch.from_numpy(weight)
             if 'bf16' in self.quantize:
-                tensor_data = weight.data.to(torch.bfloat16)
+                tensor_data = weight.to(torch.bfloat16)
             elif 'f16' in self.quantize:
-                tensor_data = weight.data.to(torch.float16)
+                tensor_data = weight.to(torch.float16)
             else:
                 raise NotImplementedError("Not support now")
             data_ptr = tensor_data.untyped_storage().data_ptr()
