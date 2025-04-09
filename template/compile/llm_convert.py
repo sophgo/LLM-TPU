@@ -159,6 +159,7 @@ class LlmConvert:
         self.hidden_size = getattr(self.config, c.hidden_size)
         self.vocab_size = getattr(self.config, c.vocab_size)
         self.intermediate_size = getattr(self.config, c.intermediate_size)
+        self.rms_norm_eps = getattr(self.config, c.rms_norm_eps)
         self.head_dim = self.hidden_size // self.num_attention_heads
         self.rotary_dim = self.head_dim
         if hasattr(self.config, 'rotary_dim'):
@@ -189,6 +190,8 @@ class LlmConvert:
             "kv_dim": self.num_key_value_heads * self.head_dim,
             "half_head_dim": self.head_dim // 2,
             "scaling": self.head_dim**-0.5,
+            "kv_tile": self.num_attention_heads // self.num_key_value_heads,
+            "rms_norm_eps": self.rms_norm_eps,
         }
         return self.replace_template(context, replace_dict)
 
@@ -245,9 +248,9 @@ class LlmConvert:
         else:
             name = weight.name
         if weight.type == WeightType.MM_BIAS:
-            return self.model.read(name+".bias")
+            return self.model.read(name + ".bias")
         if weight.type == WeightType.MM_WEIGHT:
-            data = self.model.read(name+".weight")
+            data = self.model.read(name + ".weight")
             return np.ascontiguousarray(np.transpose(data, (1, 0)))
         return self.model.read(name)
 

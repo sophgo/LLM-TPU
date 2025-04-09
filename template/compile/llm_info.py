@@ -11,7 +11,8 @@ class ModelConfig:
                  hidden_size: str = 'hidden_size',
                  vocab_size: str = 'vocab_size',
                  intermediate_size: str = 'intermediate_size',
-                 rope_theta: str = "rope_theta"):
+                 rope_theta: str = "rope_theta",
+                 rms_norm_eps: str = "rms_norm_eps"):
         self.num_attention_heads = num_attention_heads
         self.num_hidden_layers = num_hidden_layers
         self.num_key_value_heads = num_key_value_heads
@@ -19,6 +20,7 @@ class ModelConfig:
         self.vocab_size = vocab_size
         self.intermediate_size = intermediate_size
         self.rope_theta = rope_theta
+        self.rms_norm_eps = rms_norm_eps
 
 
 class WeightType(Enum):
@@ -78,3 +80,4 @@ QWEN2_INFO = ModelInfo(
         norm=WeightInfo("model.norm.weight", WeightType.NORMAL),
         lm_head=WeightInfo("lm_head", WeightType.MM_WEIGHT),
     ))
+
