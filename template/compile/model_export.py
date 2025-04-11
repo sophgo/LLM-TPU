@@ -544,11 +544,6 @@ if __name__ == '__main__':
                         help="visual length in vision transformer for VLM")
     args = parser.parse_args()
     config = AutoConfig.from_pretrained(args.model_path, trust_remote_code=True)
-    if 'qwen2' == config.model_type:
-        print("==== Using Fast Mode =====")
-        from llm_convert import LlmConvert
-        converter = LlmConvert(args)
-        converter.run()
-    else:
-        model_exporter = ModelExporter(args)
-        model_exporter.export()
+
+    model_exporter = ModelExporter(args)
+    model_exporter.export()

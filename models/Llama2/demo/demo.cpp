@@ -7,17 +7,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <iostream>
-#include <cstdlib>
-#include <vector>
-#include <assert.h>
-#include <chrono>
-#include <algorithm>
+#include "bmruntime_interface.h"
 #include "memory.h"
 #include "sentencepiece/sentencepiece_processor.h"
-#include "bmruntime_interface.h"
-#include <getopt.h>
+#include <algorithm>
+#include <assert.h>
+#include <chrono>
+#include <cstdlib>
 #include <fstream>
+#include <getopt.h>
+#include <iostream>
 #include <map>
 #include <random>
 #include <vector>
@@ -25,12 +24,12 @@
 void dump_tensor(bm_handle_t bm_handle, bm_tensor_t &tensor) {
   auto shape = tensor.shape;
   int size = 1;
-  for (int i = 0; i < shape.num_dims; ++i){
+  for (int i = 0; i < shape.num_dims; ++i) {
     size *= shape.dims[i];
   }
   std::vector<uint16_t> data(size);
   bm_memcpy_d2s(bm_handle, data.data(), tensor.device_mem);
-  std::cout<< data[0] << "\t" << data[data.size()-1] << std::endl;
+  std::cout << data[0] << "\t" << data[data.size() - 1] << std::endl;
   auto ptr = data.data();
   ptr[0] = ptr[0];
 }
@@ -116,8 +115,8 @@ public:
   int token_count;
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
   std::mt19937 sgen;
-  LLama2() : sgen(std::random_device()()){};
-  
+  LLama2() : sgen(std::random_device()()) {};
+
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
@@ -125,7 +124,9 @@ private:
   int greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   int penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   void load_sentencepiece(std::string tokenizer_path);
-  std::string build_prompt(std::string query, std::vector<std::pair<std::string, std::string>> history);
+  std::string
+  build_prompt(std::string query,
+               std::vector<std::pair<std::string, std::string>> history);
 
 public:
   int token_length;
@@ -157,7 +158,8 @@ private:
   std::vector<bm_device_mem_t> past_value;
   sentencepiece::SentencePieceProcessor sentencepiece;
   std::vector<std::pair<std::string, std::string>> history_vector;
-  std::string sys_config = R"(<s>[INST] <<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe.  Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\n
+  std::string sys_config =
+      R"(<s>[INST] <<SYS>>\nYou are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe.  Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\n
 If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information.\n<</SYS>>\n\n)";
   int EOS;
 };
@@ -198,23 +200,23 @@ void LLama2::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
 }
 
-void LLama2::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
+void LLama2::head_launch(const bm_net_info_t *net,
+                         bm_device_mem_t &logits_mem) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
   std::vector<bm_tensor_t> out_tensors(net->output_num);
 
-  bmrt_tensor_with_device(
-      &in_tensors[0], logits_mem,
-      net->input_dtypes[0], net->stages[0].input_shapes[0]);
+  bmrt_tensor_with_device(&in_tensors[0], logits_mem, net->input_dtypes[0],
+                          net->stages[0].input_shapes[0]);
 
   for (int i = 1; i < net->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net->stages[0].input_mems[i],
-        net->input_dtypes[i], net->stages[0].input_shapes[i]);
+    bmrt_tensor_with_device(&in_tensors[i], net->stages[0].input_mems[i],
+                            net->input_dtypes[i],
+                            net->stages[0].input_shapes[i]);
   }
   for (int i = 0; i < net->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net->stages[0].output_mems[i],
-        net->output_dtypes[i], net->stages[0].output_shapes[i]);
+    bmrt_tensor_with_device(&out_tensors[i], net->stages[0].output_mems[i],
+                            net->output_dtypes[i],
+                            net->stages[0].output_shapes[i]);
   }
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
@@ -223,7 +225,8 @@ void LLama2::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) 
   bm_thread_sync(bm_handle);
 }
 
-int LLama2::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
+int LLama2::greedy_search(const bm_net_info_t *net,
+                          bm_device_mem_t &logits_mem) {
   auto &out_mem = net->stages[0].output_mems[0];
   head_launch(net, logits_mem);
   int token = 0;
@@ -231,7 +234,8 @@ int LLama2::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem)
   return token;
 }
 
-int LLama2::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
+int LLama2::penalty_sample(const bm_net_info_t *net,
+                           bm_device_mem_t &logits_mem) {
   auto &in1_mem = net->stages[0].input_mems[1];
   auto &in2_mem = net->stages[0].input_mems[2];
   auto &in3_mem = net->stages[0].input_mems[3];
@@ -242,9 +246,8 @@ int LLama2::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem
   // repeat_penalty + top_p + top_k + temperature
   std::vector<int> generated_tokens(SEQLEN, visited_tokens[token_length - 1]);
   repeat_last_n = std::min(repeat_last_n, token_length);
-  std::copy(visited_tokens.begin() + token_length - repeat_last_n, 
-            visited_tokens.begin() + token_length,
-            generated_tokens.begin());
+  std::copy(visited_tokens.begin() + token_length - repeat_last_n,
+            visited_tokens.begin() + token_length, generated_tokens.begin());
   bm_memcpy_s2d(bm_handle, in1_mem, (void *)generated_tokens.data());
   bm_memcpy_s2d(bm_handle, in2_mem, (void *)&top_p);
   bm_memcpy_s2d(bm_handle, in3_mem, (void *)&temperature);
@@ -266,11 +269,11 @@ int LLama2::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem
 }
 
 void LLama2::init(const std::vector<int> &devices, std::string model_path,
-                std::string tokenizer_path, const float &__temperature,
-                const float &__top_p, const float &__repeat_penalty,
-                const int &__repeat_last_n, const int &__max_new_tokens,
-                const std::string &__generation_mode,
-                const std::string &__input_mode) {
+                  std::string tokenizer_path, const float &__temperature,
+                  const float &__top_p, const float &__repeat_penalty,
+                  const int &__repeat_last_n, const int &__max_new_tokens,
+                  const std::string &__generation_mode,
+                  const std::string &__input_mode) {
   // load tokenizer
   load_sentencepiece(tokenizer_path);
 
@@ -316,7 +319,14 @@ void LLama2::init(const std::vector<int> &devices, std::string model_path,
   net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
   net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
   net_greedy_head = bmrt_get_network_info(p_bmrt, "greedy_head");
-  net_penalty_sample_head = bmrt_get_network_info(p_bmrt, "penalty_sample_head");
+  if (net_greedy_head) {
+    net_penalty_sample_head =
+        bmrt_get_network_info(p_bmrt, "penalty_sample_head");
+    NUM_LAYERS = (bmrt_get_network_number(p_bmrt) - 5) / 2;
+  } else {
+    net_penalty_sample_head = nullptr;
+    NUM_LAYERS = (bmrt_get_network_number(p_bmrt) - 3) / 2;
+  }
   SEQLEN = net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
   auto num_nets = bmrt_get_network_number(p_bmrt);
   NUM_LAYERS = (num_nets - 5) / 2;
@@ -338,29 +348,14 @@ void LLama2::init(const std::vector<int> &devices, std::string model_path,
   past_value.resize(NUM_LAYERS);
   auto addr_mode = net_blocks_cache[0]->addr_mode;
   io_alone = addr_mode == 1;
+  assert(io_alone);
   for (int i = 0; i < NUM_LAYERS; i++) {
-    assert(addr_mode == net_blocks_cache[i]->addr_mode);
-    if (io_alone) {
-      past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
-      past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
-    } else {
-      auto ret = bm_malloc_device_byte(bm_handle, &past_key[i],
-                                       net_blocks_cache[i]->max_input_bytes[3]);
-      assert(BM_SUCCESS == ret);
-      ret = bm_malloc_device_byte(bm_handle, &past_value[i],
-                                  net_blocks_cache[i]->max_input_bytes[4]);
-      assert(BM_SUCCESS == ret);
-    }
+    past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
+    past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
   }
 }
 
 void LLama2::deinit() {
-  if (false == io_alone) {
-    for (int i = 0; i < NUM_LAYERS; i++) {
-      bm_free_device(bm_handle, past_key[i]);
-      bm_free_device(bm_handle, past_value[i]);
-    }
-  }
   bmrt_destroy(p_bmrt);
   for (auto h : handles) {
     bm_dev_free(h);
@@ -369,18 +364,18 @@ void LLama2::deinit() {
 
 int LLama2::forward_first(std::vector<int> &tokens) {
   // make inputs
-  std::vector<int> position_id(SEQLEN, 0);  
+  std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
-  
+
   token_length = tokens.size();
-  
+
   for (int i = 0; i < token_length; i++) {
     position_id[i] = i;
   }
 
   for (int i = 0; i < token_length; i++) {
-    for (int j = 0; j < SEQLEN; j++) {
+    for (int j = 0; j < token_length; j++) {
       if (j <= i) {
         attention_mask[i * SEQLEN + j] = 0;
       }
@@ -409,7 +404,7 @@ int LLama2::forward_first(std::vector<int> &tokens) {
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1]);
     d2d(past_value[idx], net_blocks[idx]->stages[0].output_mems[2]);
   }
-// forward lmhead
+  // forward lmhead
   int bytes = out_mem.size / SEQLEN;
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
   auto &lm_out_mem = net_lm->stages[0].output_mems[0];
@@ -418,12 +413,13 @@ int LLama2::forward_first(std::vector<int> &tokens) {
   net_launch(net_lm);
 
   int token = 0;
-  if (generation_mode == "greedy") {
+  if (!net_greedy_head) {
+    bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  } else if (generation_mode == "greedy") {
     token = greedy_search(net_greedy_head, lm_out_mem);
   } else if (generation_mode == "penalty_sample") {
     token = penalty_sample(net_penalty_sample_head, lm_out_mem);
-  }
-  else {
+  } else {
     std::cerr << "\nError: Invalid generation mode.\n";
     std::cerr << "Supported modes are 'greedy' or 'penalty_sample'.\n";
     throw std::runtime_error("Invalid generation mode");
@@ -434,15 +430,16 @@ int LLama2::forward_first(std::vector<int> &tokens) {
   return token;
 }
 
-std::string LLama2::build_prompt(std::string query, std::vector<std::pair<std::string, std::string>> history_vector) {
-    std::string prompt = sys_config;
-    for (const auto& item : history_vector) {
-      prompt += item.first + " [/INST] " + item.second + "</s><s>[INST]] ";
-    }
-    prompt += query + " [/INST] ";
-    return prompt;
+std::string LLama2::build_prompt(
+    std::string query,
+    std::vector<std::pair<std::string, std::string>> history_vector) {
+  std::string prompt = sys_config;
+  for (const auto &item : history_vector) {
+    prompt += item.first + " [/INST] " + item.second + "</s><s>[INST]] ";
+  }
+  prompt += query + " [/INST] ";
+  return prompt;
 }
-
 
 void LLama2::chat() {
   while (true) {
@@ -482,27 +479,16 @@ int LLama2::forward_next() {
     auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
     auto &in2_mem = net_blocks_cache[idx]->stages[0].input_mems[2];
-    auto &in3_mem = net_blocks_cache[idx]->stages[0].input_mems[3];
-    auto &in4_mem = net_blocks_cache[idx]->stages[0].input_mems[4];
     auto &out0_mem = net_blocks_cache[idx]->stages[0].output_mems[0];
     auto &out1_mem = net_blocks_cache[idx]->stages[0].output_mems[1];
     auto &out2_mem = net_blocks_cache[idx]->stages[0].output_mems[2];
     d2d(in0_mem, out_mem);
-    if (io_alone) {
-      if (idx == 0) {
-        bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
-        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-      } else {
-        d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
-        d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
-      }
+    if (idx == 0) {
+      bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
+      bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     } else {
-      if (idx == 0) {
-        bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
-        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-      }
-      d2d(in3_mem, past_key[idx]);
-      d2d(in4_mem, past_value[idx]);
+      d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
+      d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
     }
     net_launch(net_blocks_cache[idx]);
     out_mem = out0_mem;
@@ -519,17 +505,18 @@ int LLama2::forward_next() {
   net_launch(net_lm);
 
   int token = 0;
-  if (generation_mode == "greedy") {
+  if (!net_greedy_head) {
+    bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  } else if (generation_mode == "greedy") {
     token = greedy_search(net_greedy_head, lm_out_mem);
   } else if (generation_mode == "penalty_sample") {
     token = penalty_sample(net_penalty_sample_head, lm_out_mem);
-  }
-  else {
+  } else {
     std::cerr << "\nError: Invalid generation mode.\n";
     std::cerr << "Supported modes are 'greedy' or 'penalty_sample'.\n";
     throw std::runtime_error("Invalid generation mode");
   }
-  
+
   visited_tokens[token_length] = token;
   token_length += 1;
   return token;
@@ -570,11 +557,12 @@ void LLama2::answer(const std::string &input_str) {
   printf("\n\nfirst token latency: %f s", (use0.count() * 1e-6));
   printf("\nspeed: %f token/s\n", tok_num / (use1.count() * 1e-6));
   if (token_length >= SEQLEN) {
-    history_vector.push_back({input_str, result}); 
+    history_vector.push_back({input_str, result});
     result.clear();
 
     size_t half_size = history_vector.size() / 2;
-    history_vector.erase(history_vector.begin(), history_vector.begin() + half_size);
+    history_vector.erase(history_vector.begin(),
+                         history_vector.begin() + half_size);
   } else {
     history_vector.push_back({input_str, result});
     result.clear();
@@ -606,19 +594,28 @@ static std::vector<int> parseCascadeDevices(const std::string &str) {
 }
 
 void Usage() {
-  printf("Usage:\n"
-         "  --help                  : Show help info.\n"
-         "  --model                 : Set model path \n"
-         "  --tokenizer             : Set tokenizer path \n"
-         "  --devid                 : Set devices to run for model, e.g. 1,2, if not provided, use 0\n"
-         "  --temperature           : Set temperature for generating new token, e.g. 1.0, if not provided, default to 1.0 \n"
-         "  --top_p                 : Set top_p for generating new tokens, e.g. 0.8, if not provided, default to 1 \n"
-         "  --repeat_penalty        : Set repeat_penalty for generating new tokens, e.g. 1.1, if not provided, default to 1.1 \n"
-         "  --repeat_last_n         : Set repeat_penalty for penalizing recent n tokens, e.g. 32, if not provided, default to 32 \n"
-         "  --max_new_tokens        : Set max new tokens, e.g. 100, if not provided, stop at EOS or exceeding max length \n"
-         "  --generation_mode       : Set generation mode, e.g sample in greedy or penalty_sample, if not provided, default to greedy search \n"
-         "  --input_mode            : Set input mode, e.g. unprompted, if not provided, use prompted \n"
-         "\n");
+  printf(
+      "Usage:\n"
+      "  --help                  : Show help info.\n"
+      "  --model                 : Set model path \n"
+      "  --tokenizer             : Set tokenizer path \n"
+      "  --devid                 : Set devices to run for model, e.g. 1,2, if "
+      "not provided, use 0\n"
+      "  --temperature           : Set temperature for generating new token, "
+      "e.g. 1.0, if not provided, default to 1.0 \n"
+      "  --top_p                 : Set top_p for generating new tokens, e.g. "
+      "0.8, if not provided, default to 1 \n"
+      "  --repeat_penalty        : Set repeat_penalty for generating new "
+      "tokens, e.g. 1.1, if not provided, default to 1.1 \n"
+      "  --repeat_last_n         : Set repeat_penalty for penalizing recent n "
+      "tokens, e.g. 32, if not provided, default to 32 \n"
+      "  --max_new_tokens        : Set max new tokens, e.g. 100, if not "
+      "provided, stop at EOS or exceeding max length \n"
+      "  --generation_mode       : Set generation mode, e.g sample in greedy "
+      "or penalty_sample, if not provided, default to greedy search \n"
+      "  --input_mode            : Set input mode, e.g. unprompted, if not "
+      "provided, use prompted \n"
+      "\n");
 }
 
 void processArguments(int argc, char *argv[], std::string &model_path,
@@ -691,7 +688,7 @@ void processArguments(int argc, char *argv[], std::string &model_path,
 
 int main(int argc, char **argv) {
   // set your bmodel path here
-  printf("Demo for Qwen in BM1684X\n");
+  printf("Demo for Llama\n");
   std::string model_path;
   std::string tokenizer_path;
   std::vector<int> devices = {0};
@@ -713,8 +710,8 @@ int main(int argc, char **argv) {
   LLama2 llama2;
   printf("Init Environment ...\n");
   llama2.init(devices, model_path, tokenizer_path, temperature, top_p,
-            repeat_penalty, repeat_last_n, max_new_tokens, generation_mode,
-            input_mode);
+              repeat_penalty, repeat_last_n, max_new_tokens, generation_mode,
+              input_mode);
   printf("==========================\n");
   llama2.chat();
   llama2.deinit();

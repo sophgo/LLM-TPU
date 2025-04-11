@@ -8,6 +8,8 @@ if (NOT DEFINED TARGET_ARCH)
 endif()
 
 include_directories(${PROJECT_SOURCE_DIR}/../support/include)
+include_directories(/opt/sophon/libsophon-current/include)
+link_directories(/opt/sophon/libsophon-current/lib)
 
 if (${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "aarch64")
 	add_definitions(-DSOC_TARGET)
