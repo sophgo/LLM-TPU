@@ -77,7 +77,7 @@ def gr_chat(history):
         else:
             gr.Warning("Invalid media path!!")
             return
-
+    gr.Warning("Input: ", pipeline_model.input_str)
     tokens = pipeline_model.prefill_phase(pipeline_model.input_str, media_path, media_type)
 
     # # check tokens
