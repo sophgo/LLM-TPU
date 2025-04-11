@@ -272,7 +272,7 @@ class LlmConvert:
             elif weight.type == WeightType.ROTARY_SIN:
                 data = self.sin
             else:
-                obj = f"{self.model_info.weights.layers}.{widx}"
+                obj = f"{self.model_info.weights.layers}.{layer_idx}"
                 data = self.read_weight(weight, obj)
             block_builder.set_weight(widx, data)
         block_builder.save()
