@@ -191,7 +191,7 @@ class LlmConvert:
             "half_head_dim": self.head_dim // 2,
             "scaling": self.head_dim**-0.5,
             "kv_tile": self.num_attention_heads // self.num_key_value_heads,
-            "rms_norm_eps": self.rms_norm_eps,
+            "rms_norm_eps": f"{self.rms_norm_eps:.9f}",
         }
         return self.replace_template(context, replace_dict)
 
@@ -204,7 +204,7 @@ class LlmConvert:
         self.embed_mlir = "models/common/embedding.mlir"
         self.embed2_mlir = "models/common/embedding_cache.mlir"
         if self.lmhead_with_topk:
-            self.lmhead_mlir = "models/common/lm_head_topk.mlir"
+            self.lmhead_mlir = "models/common/lm_head_with_topk.mlir"
         else:
             self.lmhead_mlir = "models/common/lm_head.mlir"
             self.ghead_mlir = "models/common/greedy_head.mlir"
