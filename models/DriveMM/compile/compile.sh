@@ -186,7 +186,8 @@ block
 embedding
 lm_head
 
-parallel -j $(nproc) --progress --joblog ${TASK_FILE}.log < ${TASK_FILE}
+num_cores=$(grep -c ^processor /proc/cpuinfo)
+parallel -j ${num_cores} --progress --joblog ${TASK_FILE}.log < ${TASK_FILE}
 [[ $? -ne 0 ]] && { echo "Error: model convert failed"; exit 1; }
 
 rm -f *.npz *.onnx
