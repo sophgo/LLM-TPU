@@ -14,12 +14,18 @@ class Model:
 
         # preprocess parameters, such as prompt & tokenizer
         self.devices = [int(d) for d in args.devid.split(",")]
-        config_path = os.path.join(args.dir_path, "config.json")
-        self.tokenizer_path = os.path.join(args.dir_path, "tokenizer")
+        self.config_path = os.path.join(args.dir_path, "config/config.json")
+        self.tokenizer_path = os.path.join(args.dir_path, "config")
         self.embedding_path = os.path.join(args.dir_path, "embedding.bin")
 
+        if not os.path.exists(self.config_path):
+            self.config_path = os.path.join(args.dir_path, "config.json")
+
+        if not os.path.exists(self.tokenizer_path):
+            self.tokenizer_path = os.path.join(args.dir_path, "tokenizer")
+
         # config
-        with open(config_path, 'r') as file:
+        with open(self.config_path, 'r') as file:
             self.config = json.load(file)
 
         # Initialize model
