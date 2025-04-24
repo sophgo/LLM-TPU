@@ -58,6 +58,15 @@ class Model:
                 history, tokenize=False, add_generation_prompt=True
             )
             self.system_prompt = {"role": "system", "content": "You are a helpful assistant."}
+        elif self.model_type == "chatglm3":
+            self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
+            self.EOS = [2]
+            self.append_user = lambda history, input_str: history.append(
+                "<|user|>\n{}\n<|assistant|>\n".format(input_str)
+            )
+            self.append_assistant = lambda history, answer_str: history.append(answer_str)
+            self.apply_chat_template = lambda history: "".join(history)
+            self.system_prompt = "[gMASK]sop<|system|>\nYou are a helpful assistant.\n"
         elif self.model_type == "qwen":
             self.tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_path, trust_remote_code=True)
             self.EOS = [self.tokenizer.im_end_id]
@@ -169,7 +178,8 @@ class Model:
         self.model.max_new_tokens = args.max_new_tokens
         self.model.generation_mode = args.generation_mode
         self.model.embedding_path = self.embedding_path if os.path.exists(self.embedding_path) else ""
-        self.model.NUM_LAYERS = self.config["num_hidden_layers"]
+        if self.model_type == "chatglm3":
+            self.model.NUM_LAYERS = self.config["num_layers"]
         self.model.config.model_type = self.model_type
 
         self.max_new_tokens = args.max_new_tokens
