@@ -9,6 +9,7 @@ from io import BytesIO
 from PIL import Image
 
 import chat
+import random
 
 class Model:
     def __init__(self, args):
@@ -38,8 +39,8 @@ class Model:
         self.tokenizer.decode([0])
         self.init_history()
 
-        # load model
-        self.load_model(args)
+        # # load model
+        # self.load_model(args)
 
     def map(self, args):
         """Abstract model-specific mapper into a dictionary."""
@@ -274,7 +275,7 @@ class Model:
         self.ftl = first_end - first_start
         return token
 
-    def decode_phase(self, token):
+    def decode_phase(self, token, max_out_num=500):
         """
         Stream the answer for the given tokens.
         """
@@ -285,7 +286,7 @@ class Model:
 
         # Following tokens
         full_word_tokens = []
-        while token not in self.EOS and self.model.total_length < self.model.SEQLEN:
+        while (token not in self.EOS and self.model.total_length < self.model.SEQLEN) and tok_num < max_out_num:
             full_word_tokens.append(token)
             word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
             if "�" in word:
@@ -397,42 +398,183 @@ class Model:
                 break
         self.model.deinit_decrypt()
 
-    def test_sample(self, args, input_s):
-            """
-            Start a chat session.
-            """
-            self.load_model(args)
+    def test_sample(self, args, input_s, max_out_num, loopnum=1, no_run=0):
+        """
+        Start a chat session.
+        """
+        # self.init_params(args)
+        self.init_history()
+        self.load_model(args)
+        if not no_run:
             input_str = input_s
             # input_str = self.test_input.strip()
             media_type = "image"
             media_path = self.test_media.strip()
+            pre_ans_token = []
 
-            token = self.prefill_phase(input_str, media_path, media_type)
-            self.decode_phase(token)
+            for i in range(loopnum):
+                token = self.prefill_phase(input_str, media_path, media_type)
+                self.decode_phase(token, max_out_num)
+                if i == 0:
+                    pre_ans_token = self.answer_token
+                else:
+                    if pre_ans_token != self.answer_token:
+                        raise ValueError("output not equal !")
 
-            #if self.test_input or self.test_media:
-            #    break
-            self.model.deinit_decrypt()
-            self.model.deinit()
+        # self.model.deinit_decrypt()
+        # self.model.deinit()
+    
+def random_crop(image_path, crop_width, crop_height, output_path):
+    """
+    对指定路径的图片进行随机裁剪，并保存为新的图片。
+
+    参数：
+    image_path: 原始图片的路径
+    crop_width: 裁剪区域的宽度
+    crop_height: 裁剪区域的高度
+    output_path: 裁剪后图片保存的路径
+    """
+    # 打开图片
+    with Image.open(image_path) as img:
+        width, height = img.size
+
+        if crop_width > width or crop_height > height:
+            raise ValueError("裁剪尺寸大于原始图片尺寸！")
+
+        # 随机选择裁剪区域左上角的坐标
+        max_left = width - crop_width
+        max_top = height - crop_height
+        left = random.randint(0, max_left)
+        top = random.randint(0, max_top)
+        right = left + crop_width
+        bottom = top + crop_height
+
+        # 裁剪图片
+        cropped_img = img.crop((left, top, right, bottom))
+        cropped_img.save(output_path)
+        print(f"裁剪成功，保存至：{output_path}")
 
 
 def main(args):
     model = Model(args)
     # model.chat()
-    input_text = ["描述一下图片中的内容",
-                "在一个阳光灿烂的早晨，当城市的喧嚣尚未完全苏醒，街道上偶尔传来几声鸟鸣，伴随着微风轻拂树叶的沙沙声，年轻的艺术家走出她的小公寓，怀揣着对新一天的期待，决定在附近的公园里寻找灵感，尽管她知道，自己面临着即将到来的展览的压力，那是她职业生涯中最重要的一次展示，然而她相信，只有在大自然的怀抱中，才能真正激发她的创造力，捕捉到那些潜藏在心底的灵感，最终将它们化为色彩斑斓的画布作品，传递出她内心深处对生活的热爱与思考。在她走向公园的路上，阳光透过树梢洒下斑驳的光影，仿佛在为她的创作之旅铺设一条光明的道路，而她的脑海中闪现出各种各样的画面，有的是她在旅行中遇到的奇妙风景，有的是她与朋友们欢聚时的欢声笑语，还有那些在夜晚独自思考时的沉静瞬间，这些记忆交织在一起，形成了一个个生动的场景，激励着她不断前行，尽管她内心深处也有些许的不安，因为她知道，艺术创作的过程往往充满了不确定性，有时灵感如潮水般涌来，而有时却又如同干涸的河流，让人感到无比沮丧。然而，她并不打算让这些负面情绪影响到自己，反而在心中默默告诉自己，要学会接受这种不完美，因为正是这种起伏的过程才让艺术变得更加真实和动人，她的目标不仅仅是完成一幅画作，而是通过每一笔每一划，表达出她对生活的独特理解和感悟，这种追求让她在绘画的过程中感到无比充实和快乐，仿佛每一次的创作都是一次心灵的洗礼，让她更加贴近自己的内心世界。当她终于走到公园的中央，那里绿树成荫，花香四溢，孩子们在草地上嬉戏玩耍，老人们则悠闲地坐在长椅上，享受着温暖的阳光，整个场景显得那么和谐而宁静，这一刻，她感受到了一种难以言喻的幸福，仿佛这一切都是为了她而存在。这段话概括一下，150字左右",
-                "在不久的将来，城市的面貌将发生翻天覆地的变化。随着科技的飞速发展，我们将看到智能交通系统的普及，自动驾驶汽车将在城市的街道上自由穿行。这不仅能够减少交通拥堵，还能显著降低交通事故的发生率。想象一下，当你坐在自动驾驶的车辆中，轻松地浏览电子邮件或享受一杯咖啡，而车辆则安全地将你送到目的地。与此同时，城市的建筑将更加注重可持续性和生态友好。高楼大厦的外墙将覆盖着绿色植物，屋顶将安装太阳能电池板，为建筑提供清洁的能源。城市中的公园和绿地将被精心设计，成为人们休闲和社交的场所。这样的城市不仅美观，还能有效改善空气质量，为居民提供一个更健康的生活环境。然而，未来城市的愿景并非没有挑战。随着技术的普及，隐私和安全问题将成为人们关注的焦点。如何在享受便利的同时保护个人信息，将是政府和科技公司必须共同面对的难题。此外，社会的数字鸿沟也可能加剧，如何确保每个人都能平等地享受科技带来的红利，将是实现未来城市愿景的关键。然而，未来城市的愿景并非没有挑战。随着技术的普及，隐私和安全问题将成为人们关注的焦点。如何在享受便利的同时保护个人信息，将是政府和科技公司必须共同面对的难题。此外，社会的数字鸿沟也可能加剧，如何确保每个人都能平等地享受科技带来的红利，将是实现未来城市愿景的关键。而车辆则安全地将你送到目的地。与此同时，城市的建筑将更加注重可持续性和生态友好。高楼大厦的外墙将覆盖着绿色植物，屋顶将安装太阳能电池板，为建筑提供清洁的能源。城市中的公园和绿地将被精心设计，成为人们休闲和社交的场所。这样的城市不仅美观，还能有效改善空气质量，为居民提供一个更健康的生活环境。然而，未来城市的愿景并非没有挑战。随着技术的普及，隐私和安全问题将成为人们关注的焦点。如何在享受便利的同时保护个人信息，将是政府和科技公司必须共同面对的难题。此外，社会的数字鸿沟也可能加剧，如何确保每个人都能平等地享受科技带来的红利，将是实现未来城市愿景的关键。然而，未来城市的愿景并非没有挑战。随着技术的普及，隐私和安全问题将成为人们关注的焦点。如何在享受便利的同时保护个人信息，将是政府和科技公司必须共同面对的难题。此外，社会的数字鸿沟也可能加剧，如何确保每个人都能平等地享受科技带来的红利，将是实现未来城市愿景的关键。而车辆则安全地将你送到目的地。与此同时，城市的建筑将更加注重可持续性和生态友好。高楼大厦的外墙将覆盖着绿色植物，屋顶将安装太阳能电池板，为建筑提供清洁的能源。城市中的公园和绿地将被精心设计，成为人们休闲和社交的场所。这样的城市不仅美观，还能有效改善空气质量，为居民提供一个更健康的生活环境。然而，未来城市的愿景并非没有挑战。随着技术的普及，隐私和安全问题将成为人们关注的焦点。如何在享受便利的同时保护个人信息，将是政府和科技公司必须共同面对的难题。此外，社会的数字鸿沟也可能加剧，如何确保每个人都能平等地享受科技带来的红利，将是实现未来城市愿景的关键。然而，未来城市的愿景并非没有挑战。随着技术的普及，隐私和安全问题将成为人们关注的焦点。如何在享受便利的同时保护个人信息，将是政府和科技公司必须共同面对的难题。此外，社会的数字鸿沟也可能加剧，如何确保每个人都能平等地享受科技带来的红利，将是实现未来城市愿景的关键。此外，社会的数字鸿沟也可能加剧，如何确保每个人都能平等地享受科技带来的红利，将是实现未来城市愿景的关键。而车辆则安全地将你送到目的地。与此同时，城市的建筑将更加注重可持续性和生态友好。高楼大厦的外墙将覆盖着绿色植物，屋顶将安装太阳能电池板，为建筑提供清洁的能源。城市中的公园和绿地将被精心设计，成为人们休闲和社交的场所。这样的城市不仅美观，还能有效改善空气质量，为居民提供一个更健康的生活环境。然而，未来城市的愿景并非没有挑战。随着技术的普及，隐私和安全问题将成为人们关注的焦点。如何在享受便利的同时保护个人信息，将是政府和科技公司必须共同面对的难题。此外，社会的数字鸿沟也可能加剧，如何确保每个人都能平等地享受科技带来的红利，将是实现未来城市愿景的关键。然而，未来城市的愿景并非没有挑战。随着技术的普及，隐私和安全问题将成为人们关注的焦点。如何在享受便利的同时保护个人信息，将是政府和科技公司必须共同面对的难题。此外，社会的数字鸿沟也可能加剧，如何确保每个人都能平等地享受科技带来的红利，将是实现未来城市愿景的关键。结合图片总结一下这段话的含义，300字左右。"]
+    stage_num = [0, 1, 2, 3]
+    max_input_len = [1, 550, 1500, 2400, 2800]
+    out_token_len = [100, 150, 380, 500]
+    ori_bmodel_path = args.model_path
+    ori_embedding_path = model.model.embedding_path
+    cropped_path = "../../assets/crop.png"
+    input_text = ["", "", "", ""]
+    # read txt input
+    try:
+        with open('input_text.txt', 'r', encoding='utf-8') as file:
+            text = file.read()
+    except FileNotFoundError:
+        print(f"file not found, please check path.")
+        return
+    except Exception as e:
+        print(f"erro found in reading file: {e}")
+        return
+
+    start_time = time.time()
     for i in range(0, 1000000):
         try:
-            # model = Model(args)
-            model.test_sample(args, input_text[i % 3])
-        except Exception as e:
+            # random.shuffle(stage_num)
+            for k in range(4):
+                real_input_len = random.randint(max_input_len[k] + 1, max_input_len[k + 1])
+                start_index = random.randint(0, max(0, len(text) - real_input_len))
+                input_text[k] = text[start_index:start_index+real_input_len]
+            rand_k_in_shape = random.randint(10, 24) * 14
+            random_crop(args.test_media, rand_k_in_shape, rand_k_in_shape, cropped_path)
+            model.test_media = cropped_path
+
+            print("---------------------------(1) test embedding---------------------------")
+            embedding_path_list = [
+            "embedding.bin", "embedding.bin.empty", "embedding.bin.splitaa",
+            "embedding.bin.splitab", "embedding.bin.split0", "embedding.bin.split1"
+            ]
+            random.shuffle(embedding_path_list)
+            for embedding_path in embedding_path_list:
+                try:
+                    model.model.embedding_path = f"./test_abnormal/{embedding_path}"
+                    model.test_sample(args, input_text[1], out_token_len[1])
+                except Exception as e:
+                    print(f"{type(e).__name__} : {str(e)}")
+                finally:
+                    model.model.deinit_decrypt()
+                    model.model.deinit()
+            try:
+                model.init_history()
+                model.load_model(args)
+            except Exception as e:
                 print(f"{type(e).__name__} : {str(e)}")
+            finally:
+                model.model.deinit_decrypt()
+                model.model.deinit()
+            model.model.embedding_path = ori_embedding_path
+
+            print("---------------------------(2) test bmodel---------------------------")
+            bmodel_path_list = [
+                "encrypted.bmodel", "encrypted.bmodel.empty",
+                "encrypted.bmodel.split0", "encrypted.bmodel.split1",
+                "encrypted.bmodel.split2", "encrypted.bmodel.split3",
+                "encrypted.bmodel.split4", "encrypted.bmodel.split5"
+            ]
+            random.shuffle(bmodel_path_list)
+            for bmodel_path in bmodel_path_list:
+                try:
+                    args.model_path = f"./test_abnormal/{bmodel_path}"
+                    model.test_sample(args, input_text[1], out_token_len[1])
+                except Exception as e:
+                    print(f"{type(e).__name__} : {str(e)}")
+                finally:
+                    model.model.deinit_decrypt()
+                    model.model.deinit()
+            args.model_path = ori_bmodel_path
+
+            print("-----------------------(3) test loop prefill & decode----------------------")
+            for k in stage_num:
+                try:
+                    model.test_sample(args, input_text[k], out_token_len[k], random.randint(5, 10))
+                except Exception as e:
+                    print(f"{type(e).__name__} : {str(e)}")
+                finally:
+                    model.model.deinit_decrypt()
+                    model.model.deinit()
+
+            print("-----------------------(4) test loop init && deinit----------------------")
+            for k in range(random.randint(1, 10)):
+                try:
+                    model.test_sample(args, input_text[0], out_token_len[0], 1, 1)
+                except Exception as e:
+                    print(f"{type(e).__name__} : {str(e)}")
+                finally:
+                    model.model.deinit_decrypt()
+                    model.model.deinit()
+
+            print("-----------------------(5) stage idx test----------------------")
+            for k in stage_num:
+                try:
+                    model.test_sample(args, input_text[k], out_token_len[k])
+                except Exception as e:
+                    print(f"{type(e).__name__} : {str(e)}")
+                finally:
+                    model.model.deinit_decrypt()
+                    model.model.deinit()
+
+        except Exception as e:
+            print(f"{type(e).__name__} : {str(e)}")
+
+    end_time = time.time()
+    print(f"\nTotal Time: {(end_time - start_time):.3f} s")
+    print("Status Code: ", engine.model.status_code)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-m", "--model_path", type=str, required=True,
                         help="dir path to the bmodel/")
+    parser.add_argument("-b", "--bmodels_path", type=str, required=False,
+                        help="dir path to the bmodels")
     parser.add_argument("-p", "--dir_path", type=str, default="./tmp",
                         help="dir path to the bmodel/config/tokenizer")
     parser.add_argument('-d', '--devid', type=str, default='0',

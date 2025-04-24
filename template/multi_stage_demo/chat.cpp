@@ -645,11 +645,11 @@ void Model::init_forward(pybind11::array_t<int> tokens) {
   size_t prefill_length_0 = net_blocks[0]->stages[0].input_shapes[0].dims[1];
   size_t prefill_length_1 = net_blocks[0]->stages[1].input_shapes[0].dims[1];
   size_t prefill_length_2 = net_blocks[0]->stages[2].input_shapes[0].dims[1];
-  if (size > prefill_length_1) {
+  if (size + 48 >= prefill_length_1) {
     stage_idx = 2;
     MAX_PREFILL_LENGTH = prefill_length_2;
     SEQLEN = net_blocks_cache[0]->stages[2].input_shapes[3].dims[1];
-  } else if (size > prefill_length_0) {
+  } else if (size + 48 >= prefill_length_0) {
     stage_idx = 1;
     MAX_PREFILL_LENGTH = prefill_length_1;
     SEQLEN = net_blocks_cache[0]->stages[1].input_shapes[3].dims[1];
@@ -658,7 +658,6 @@ void Model::init_forward(pybind11::array_t<int> tokens) {
     MAX_PREFILL_LENGTH = prefill_length_0;
     SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[3].dims[1];
   }
-  std::cout << "use stage_idx : " << stage_idx << "  input tokens : " << size << std::endl;
   for (int i = 0; i < NUM_LAYERS; i++) {
     ASSERT(net_blocks_cache[i]->addr_mode == 1, "");
     past_key[i] = net_blocks_cache[i]->stages[stage_idx].input_mems[3];
@@ -672,6 +671,7 @@ void Model::init_forward(pybind11::array_t<int> tokens) {
   total_length = raw_tokens.size();
   update_config();
   maker = std::make_unique<Maker>(config);
+  std::cout << "use stage_idx : " << stage_idx << "  raw tokens : " << size << std::endl;
 }
 
 int Model::forward_first() {

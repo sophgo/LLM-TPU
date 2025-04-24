@@ -15,7 +15,9 @@ def execCmd(cmd):
     r = os.popen(cmd)
     text = r.read()
     r.close()
-    return int(text)
+    numbers = [int(line.strip()) for line in text.split('\n') if line.strip()]
+    return max(numbers)
+    # return int(text)
 
 max_memory = 0
 
