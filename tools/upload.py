@@ -28,6 +28,7 @@ def main():
         
         # Create compressed archive
         temp_path = create_compressed_archive(args.local_dir)
+        base_name = os.path.basename(os.path.normpath(args.local_dir))
         
         # Perform SFTP transfer
         sftp_transfer(
@@ -36,7 +37,8 @@ def main():
             username=args.username,
             password=args.password,
             remote_dir=args.remote_dir,
-            local_archive=temp_path
+            local_archive=temp_path,
+            remote_filename=f"{base_name}.tar.gz"
         )
     finally:
         # Clean up temporary files
@@ -111,8 +113,10 @@ def create_compressed_archive(source_dir):
             total_size += sum(os.path.getsize(os.path.join(root, f)) for f in files)
 
         progress = TransferProgress(total_files, operation="Compressing")
+        base_name = os.path.basename(os.path.normpath(source_dir))
         temp_file = tempfile.NamedTemporaryFile(
-            suffix='.tar.gz', 
+            prefix=f"{base_name}_",
+            suffix='.tar.gz',
             delete=False
         )
 
@@ -136,7 +140,7 @@ def create_compressed_archive(source_dir):
             os.remove(temp_file.name)
         raise RuntimeError(f"Archive creation failed: {str(e)}") from e
 
-def sftp_transfer(host, port, username, password, remote_dir, local_archive):
+def sftp_transfer(host, port, username, password, remote_dir, local_archive, remote_filename):
     """Handle SFTP file transfer operations.
     
     Args:
@@ -167,8 +171,8 @@ def sftp_transfer(host, port, username, password, remote_dir, local_archive):
         def _upload_callback(sent, total):
             if time.time() - progress.last_print > 0.3 or sent == total:
                 progress.print_progress(sent, total)
-        
-        remote_path = f"{remote_dir}/{os.path.basename(local_archive)}"
+
+        remote_path = f"{remote_dir}/{remote_filename}"
         sftp.put(local_archive, remote_path, callback=_upload_callback)
         print("\nUpload completed")
         
