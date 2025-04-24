@@ -441,6 +441,12 @@ class ModelExporter:
         self.config = AutoConfig.from_pretrained(self.model_path, trust_remote_code=True)
         self.model_type = self.config.model_type
 
+        if 'chatglm3' in self.model_path:
+            self.config = AutoConfig.from_pretrained(self.model_path, trust_remote_code=True, model_type='chatglm3')
+            print('chatglm3 model type:', self.model.config)
+            self.model_type = self.config.model_type
+            self.config.num_hidden_layers = self.config.num_layers
+
         if 'qwen2_vl' == self.model_type:
             from transformers import Qwen2VLForConditionalGeneration
             self.model = Qwen2VLForConditionalGeneration.from_pretrained(self.model_path)
@@ -464,6 +470,8 @@ class ModelExporter:
             elif "Model" in self.config.architectures[0]:
                 self.model = AutoModel.from_pretrained(
                     self.model_path, trust_remote_code=True)
+                if "chatglm3" in self.model_path:
+                    self.model.config.model_type = "chatglm3"
             else:
                 raise ValueError(f"Unsupported Architectures:[ {self.config.architectures[0]} ]")
 
