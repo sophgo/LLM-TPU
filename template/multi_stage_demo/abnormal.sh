@@ -14,6 +14,7 @@ dd if=embedding.bin of=embedding.bin.split1 bs=64 count=1
 
 # bmodel
 cp ${bmodel_path} . 
+cp ${bmodel_path} encrypted.bmodel.rivise
 touch encrypted.bmodel.empty
 dd if=${bmodel_path} of=encrypted.bmodel.split0 bs=56 count=1
 dd if=${bmodel_path} of=encrypted.bmodel.split1 bs=64 count=1
@@ -21,4 +22,8 @@ dd if=${bmodel_path} of=encrypted.bmodel.split2 bs=100 count=1
 dd if=${bmodel_path} of=encrypted.bmodel.split3 bs=10000 count=1
 dd if=${bmodel_path} of=encrypted.bmodel.split4 bs=1000000 count=1
 dd if=${bmodel_path} of=encrypted.bmodel.split5 bs=100000000 count=1
+echo -n "new bin" > new_content.bin
+dd if=/dev/zero bs=1 count=200 >> new_content.bin
+dd if=new_content.bin of=encrypted.bmodel.rivise bs=1 count=200 conv=notrunc
+rm new_content.bin
 popd

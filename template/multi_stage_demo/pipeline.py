@@ -259,11 +259,15 @@ class Model:
             raise NotImplementedError(f"Not support {self.model_type} now")
         return
     
-    def prefill_phase(self, text, media_path, media_type):
+    def prefill_phase(self, text, media_path, media_type, rand_token=[0]):
         print("\n回答: ", end="")
         first_start = time.time()
 
         tokens = self.encode_tokens(text, media_path, media_type)
+        if rand_token != [0]:
+            for i in range(min(len(tokens), len(rand_token))):
+                if self.model.config.image_token_id != tokens[i]:
+                    tokens[i] = rand_token[i]
         self.model.init_forward(tokens)
 
         if media_path:
@@ -398,7 +402,7 @@ class Model:
                 break
         self.model.deinit_decrypt()
 
-    def test_sample(self, args, input_s, max_out_num, loopnum=1, no_run=0):
+    def test_sample(self, args, input_s, max_out_num, loopnum=1, no_run=0, rand_token=[0]):
         """
         Start a chat session.
         """
@@ -413,7 +417,7 @@ class Model:
             pre_ans_token = []
 
             for i in range(loopnum):
-                token = self.prefill_phase(input_str, media_path, media_type)
+                token = self.prefill_phase(input_str, media_path, media_type, rand_token=rand_token)
                 self.decode_phase(token, max_out_num)
                 if i == 0:
                     pre_ans_token = self.answer_token
@@ -463,6 +467,8 @@ def main(args):
     out_token_len = [100, 150, 380, 500]
     ori_bmodel_path = args.model_path
     ori_embedding_path = model.model.embedding_path
+    ori_resized_width = model.model.config.resized_width
+    ori_resized_height = model.model.config.resized_height
     cropped_path = "../../assets/crop.png"
     input_text = ["", "", "", ""]
     # read txt input
@@ -487,6 +493,7 @@ def main(args):
             rand_k_in_shape = random.randint(10, 24) * 14
             random_crop(args.test_media, rand_k_in_shape, rand_k_in_shape, cropped_path)
             model.test_media = cropped_path
+            rand_tokens = [random.randint(-100, 100000) for k in range(random.randint(0, 1000)) ]
 
             print("---------------------------(1) test embedding---------------------------")
             embedding_path_list = [
@@ -495,9 +502,19 @@ def main(args):
             ]
             random.shuffle(embedding_path_list)
             for embedding_path in embedding_path_list:
+                # test rand text
                 try:
                     model.model.embedding_path = f"./test_abnormal/{embedding_path}"
                     model.test_sample(args, input_text[1], out_token_len[1])
+                except Exception as e:
+                    print(f"{type(e).__name__} : {str(e)}")
+                finally:
+                    model.model.deinit_decrypt()
+                    model.model.deinit()
+                # test rand tokens
+                try:
+                    model.model.embedding_path = f"./test_abnormal/{embedding_path}"
+                    model.test_sample(args, input_text[1], out_token_len[1], rand_token=rand_tokens)
                 except Exception as e:
                     print(f"{type(e).__name__} : {str(e)}")
                 finally:
@@ -518,7 +535,8 @@ def main(args):
                 "encrypted.bmodel", "encrypted.bmodel.empty",
                 "encrypted.bmodel.split0", "encrypted.bmodel.split1",
                 "encrypted.bmodel.split2", "encrypted.bmodel.split3",
-                "encrypted.bmodel.split4", "encrypted.bmodel.split5"
+                "encrypted.bmodel.split4", "encrypted.bmodel.split5",
+                "encrypted.bmodel.rivise"
             ]
             random.shuffle(bmodel_path_list)
             for bmodel_path in bmodel_path_list:
@@ -553,6 +571,8 @@ def main(args):
                     model.model.deinit()
 
             print("-----------------------(5) stage idx test----------------------")
+            model.model.config.resized_width = random.randint(6, 20) * 2 * 14
+            model.model.config.resized_height = model.model.config.resized_width
             for k in stage_num:
                 try:
                     model.test_sample(args, input_text[k], out_token_len[k])
@@ -561,6 +581,8 @@ def main(args):
                 finally:
                     model.model.deinit_decrypt()
                     model.model.deinit()
+            model.model.config.resized_width = ori_resized_width
+            model.model.config.resized_height = ori_resized_height
 
         except Exception as e:
             print(f"{type(e).__name__} : {str(e)}")

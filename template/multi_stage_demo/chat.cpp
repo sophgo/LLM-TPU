@@ -41,8 +41,8 @@ public:
 
   // Inference Functions
   void update_config();
-  // void init_forward(const std::vector<int>& tokens);
-  void init_forward(pybind11::array_t<int> tokens);
+  void init_forward(const std::vector<int>& tokens);
+  // void init_forward(pybind11::array_t<int> tokens);
   int forward_first();
   int forward_next();
   std::vector<int> generate(const std::vector<int> &EOS);
@@ -637,11 +637,17 @@ void Model::update_config() {
   config.MAX_PIXELS = MAX_PIXELS;
 }
 
-void Model::init_forward(pybind11::array_t<int> tokens) {
-  // raw_tokens = tokens;
-  pybind11::buffer_info buf = tokens.request();
-  int *ptr = static_cast<int *>(buf.ptr);
-  size_t size = buf.size;
+void Model::init_forward(const std::vector<int>& tokens) {
+  raw_tokens = tokens;
+
+  total_length = raw_tokens.size();
+  update_config();
+  maker = std::make_unique<Maker>(config);
+}
+
+int Model::forward_first() {
+  // set stage_idx
+  size_t size = raw_tokens.size();
   size_t prefill_length_0 = net_blocks[0]->stages[0].input_shapes[0].dims[1];
   size_t prefill_length_1 = net_blocks[0]->stages[1].input_shapes[0].dims[1];
   size_t prefill_length_2 = net_blocks[0]->stages[2].input_shapes[0].dims[1];
@@ -664,17 +670,11 @@ void Model::init_forward(pybind11::array_t<int> tokens) {
     past_value[i] = net_blocks_cache[i]->stages[stage_idx].input_mems[4];
   }
 
-  raw_tokens.resize(size);
-  memcpy(raw_tokens.data(), ptr, size * sizeof(int));
   total_tokens.resize(SEQLEN);
-
   total_length = raw_tokens.size();
   update_config();
   maker = std::make_unique<Maker>(config);
-  std::cout << "use stage_idx : " << stage_idx << "  raw tokens : " << size << std::endl;
-}
-
-int Model::forward_first() {
+  std::cout << "use stage_idx : " << stage_idx << "  input tokens : " << (int)raw_tokens.size() << std::endl;
   ASSERT((int)raw_tokens.size() < MAX_PREFILL_LENGTH,
          "the sequence length you input exceeds MAX_PREFILL_LENGTH");
 
