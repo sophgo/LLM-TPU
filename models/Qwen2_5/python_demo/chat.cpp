@@ -56,6 +56,7 @@ public:
   int SEQLEN;     // read from bmodel
   int NUM_LAYERS; // read from bmodel
   int TOKEN_LEN;
+  bool lmhead_with_topk;
   bool io_alone;
   bool is_dynamic;
   std::vector<int> visited_tokens;
@@ -133,7 +134,13 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   net_penalty_sample_head = bmrt_get_network_info(p_bmrt, "penalty_sample_head");
   SEQLEN = net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
   auto num_nets = bmrt_get_network_number(p_bmrt);
-  NUM_LAYERS = (num_nets - 5) / 2;
+  if (net_greedy_head && net_penalty_sample_head) {
+    lmhead_with_topk = false;
+    NUM_LAYERS = (num_nets - 5) / 2;
+  } else {
+    lmhead_with_topk = true;
+    NUM_LAYERS = (num_nets - 3) / 2;
+  }
 
   // resize
   visited_tokens.resize(SEQLEN);
@@ -386,7 +393,9 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   net_launch(net_lm);
 
   int token = 0;
-  if (generation_mode == "greedy") {
+  if (lmhead_with_topk) {
+    bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  } else if (generation_mode == "greedy") {
     token = greedy_search(net_greedy_head, lm_out_mem);
   } else if (generation_mode == "penalty_sample") {
     token = penalty_sample(net_penalty_sample_head, lm_out_mem);
@@ -454,7 +463,9 @@ int Qwen::forward_next() {
   net_launch(net_lm);
 
   int token = 0;
-  if (generation_mode == "greedy") {
+  if (lmhead_with_topk) {
+    bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  } else if (generation_mode == "greedy") {
     token = greedy_search(net_greedy_head, lm_out_mem);
   } else if (generation_mode == "penalty_sample") {
     token = penalty_sample(net_penalty_sample_head, lm_out_mem);

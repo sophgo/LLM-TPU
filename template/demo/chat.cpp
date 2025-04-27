@@ -90,6 +90,7 @@ private:
                   size_t size);
 
 public:
+  bool lmhead_with_topk;
   bool is_dynamic;
   uint32_t prefill_reuse;
   std::vector<int> raw_tokens;
@@ -320,6 +321,11 @@ void Model::init_network() {
   net_greedy_head = bmrt_get_network_info(p_bmrt, "greedy_head");
   net_penalty_sample_head =
       bmrt_get_network_info(p_bmrt, "penalty_sample_head");
+  if (net_greedy_head && net_penalty_sample_head) {
+    lmhead_with_topk = false;
+  } else {
+    lmhead_with_topk = true;
+  }
 
   // net blocks
   net_blocks.clear();
@@ -718,7 +724,9 @@ int Model::forward_first() {
                               (total_length - 1) * hidden_bytes, hidden_bytes);
 
   int token = 0;
-  if (generation_mode == "greedy") {
+  if (lmhead_with_topk) {
+    bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  } else if (generation_mode == "greedy") {
     token = greedy_search(net_greedy_head, lm_out_mem);
   } else if (generation_mode == "penalty_sample") {
     token = penalty_sample(net_penalty_sample_head, lm_out_mem, total_tokens,
@@ -780,7 +788,9 @@ int Model::forward_next() {
   auto lm_out_mem = lm_launch(net_lm, out_mem, 0, hidden_bytes);
 
   int token = 0;
-  if (generation_mode == "greedy") {
+  if (lmhead_with_topk) {
+    bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  } else if (generation_mode == "greedy") {
     token = greedy_search(net_greedy_head, lm_out_mem);
   } else if (generation_mode == "penalty_sample") {
     token = penalty_sample(net_penalty_sample_head, lm_out_mem, total_tokens,
