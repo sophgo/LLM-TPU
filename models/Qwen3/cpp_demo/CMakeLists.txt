@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(qwen2)
+project(qwen3)
 
 if (NOT DEFINED TARGET_ARCH)
     set(TARGET_ARCH pcie)
@@ -23,6 +23,6 @@ endif()
 add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -Werror)
 set(CMAKE_BUILD_TYPE "Debug")
 
-add_executable(qwen2 demo.cpp)
-target_link_libraries(qwen2 PUBLIC bmrt bmlib tokenizers_cpp tokenizers_c sentencepiece pthread dl)
-target_compile_options(qwen2 PRIVATE -Wno-error=attributes)
+add_executable(qwen3 demo.cpp)
+target_link_libraries(qwen3 PUBLIC bmrt bmlib tokenizers_cpp tokenizers_c sentencepiece pthread dl)
+target_compile_options(qwen3 PRIVATE -Wno-error=attributes)

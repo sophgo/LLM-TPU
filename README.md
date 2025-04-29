@@ -152,7 +152,8 @@ git clone https://github.com/sophgo/LLM-TPU.git
 
 # 精度优化
 
-请参考[大模型精度优化](./docs/Score_Refine.md)
+1) 请优先用AWQ或者GPTQ模型转bmodel
+2) 如果是浮点模型，请用[llmc-tpu](https://github.com/sophgo/llmc-tpu)做校准；然后转bmodel
 
 # 资料链接
 

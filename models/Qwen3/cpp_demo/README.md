@@ -7,4 +7,4 @@ make
 
 # how to run
 
-./qwen2 -m qwen2_xxx.bmodel -c config
+./qwen3 -m qwen2_xxx.bmodel -c config

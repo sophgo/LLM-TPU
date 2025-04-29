@@ -83,5 +83,5 @@ cd build
 cmake .. && make && cd ..
 
 # how to run
-./qwen2 -m qwen3_xxx.bmodel -c config
+./qwen3 -m qwen3_xxx.bmodel -c config
 ```
