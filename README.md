@@ -15,6 +15,7 @@
 
 # 最近更新！ 🔥🔥🔥
 
+- **2025.04.29**：🚀 Qwen最新推理模型**Qwen3**，BM1684X/1688已支持，详情见[Qwen3 Demo](./models/Qwen3/)。
 - **2025.03.07**：🚀 Qwen最新推理模型**QWQ-32B**和**DeepSeek-R1-Distill-Qwen-32B**，1684x多芯demo已适配，详情见[LLM Template](./template/)。
 - **2025.02.05**：🚀 DeepSeek时刻！！我们适配了**DeepSeek-R1-Distill-Qwen**系列模型，包括1.5B、7B和14B版本，详情见[LLM Template](./template/)。
 
@@ -67,6 +68,7 @@
 |Qwen2.5-1.5B                 |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct)                   |
 |Qwen2.5-7B                   |:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct)                   |
 |QWQ-32B                      |:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/QWQ-32B)                               |
+|Qwen3-4B                     |:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen3-4B)                   |
 |WizardCoder-15B              |:white\_check\_mark:|                    |[LINK](https://huggingface.co/WizardLM/WizardCoder-15B-V1.0)              |
 |Yi-6B-chat                   |:white\_check\_mark:|                    |[LINK](https://huggingface.co/01-ai/Yi-6B-Chat)                           |
 |Yi-34B-chat                  |:white\_check\_mark:|                    |[LINK](https://huggingface.co/01-ai/Yi-34B-Chat)                          |
@@ -75,9 +77,9 @@
 此外，还有一些多模态模型如下：
 |Model                        |BM1684X             |BM1688              |Huggingface Link                                                          |
 |:-                           |:-                  |:-                  |:-                                                                        |
-|Qwen-VL-Chat                 |:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen-VL-Chat)                          |
-|Qwen2-VL-Chat                |:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct)                  |
-|Qwen2.5-VL-Chat                |:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct)                  |
+|Qwen-VL                      |:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen-VL-Chat)                          |
+|Qwen2-VL                     |:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct)                  |
+|Qwen2.5-VL                   |:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct)                  |
 |InternVL2-4B                 |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/OpenGVLab/InternVL2-4B)                     |
 |InternVL2-2B                 |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/OpenGVLab/InternVL2-2B)                     |
 |Stable Diffusion             |:white\_check\_mark:|                    |[LINK](https://huggingface.co/runwayml/stable-diffusion-v1-5)             |
