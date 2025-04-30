@@ -157,7 +157,7 @@ git clone https://github.com/sophgo/LLM-TPU.git
 
 # 资料链接
 
-* ChatGLM2流程解析与TPU-MLIR部署：https://zhuanlan.zhihu.com/p/641975976
-* 模型转换工具链 TPU-MLIR：https://github.com/sophgo/tpu-mlir
-* TPU-MLIR快速入门手册：https://tpumlir.org/docs/quick_start/index.html
-* TPU-MLIR论文、整体工程讲解：https://www.bilibili.com/video/BV1My4y1o73Q
+* [ChatGLM2流程解析与TPU-MLIR部署](https://zhuanlan.zhihu.com/p/641975976)
+* [TPU-MLIR](https://github.com/sophgo/tpu-mlir)
+* [TPU-MLIR快速入门手册](https://doc.sophgo.com/sdk-docs/v23.09.01-lts-sp4/docs_latest_release/docs/tpu-mlir/quick_start/html/index.html)
+* [TPU-MLIR论文、整体工程讲解](https://www.bilibili.com/video/BV1My4y1o73Q)
