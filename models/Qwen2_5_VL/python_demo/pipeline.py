@@ -58,7 +58,7 @@ class Qwen2_5VL():
             "role": "user",
             "content": [
                 {"type": "video", "video": path, "fps": 1.0,
-                 "min_pixels": 256 * 28 * 28, "max_pixels": self.model.MAX_PIXELS // 4},
+                 "min_pixels": 64 * 28 * 28, "max_pixels": self.model.MAX_PIXELS // 4},
                 {"type": "text", "text": self.input_str},
             ],
         }]
@@ -207,7 +207,7 @@ class Qwen2_5VL():
         if per_t >= t:
             t_list = [t]
         else:
-            t_list = [per_t] * (t // per_t) + [t % per_t] if t % per_t else []
+            t_list = [per_t] * (t // per_t) + ([t % per_t] if t % per_t else [])
         t_offset = 0
         for t_i in t_list:
             grid_thw = torch.tensor([[t_i, h, w]], dtype=torch.int32)

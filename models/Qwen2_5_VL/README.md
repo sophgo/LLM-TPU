@@ -7,11 +7,11 @@
 本文包括如何编译bmodel，和如何在BM1684X/BM1688环境运行bmodel。如何编译bmodel环节可以省去，直接用以下链接下载：
 
 ``` shell
-# 1684x 3B 2K,max_pixel 672x896
+# 1684x 3B 2K,max_pixel 672x896, 视频可以支持20s (每秒1帧)
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-3b-instruct-awq_w4bf16_seq2048_bm1684x_1dev_20250428_143625.bmodel
 # 1684x 7B 2K,max_pixel 672x896
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-7b-instruct-awq_w4bf16_seq2048_bm1684x_1dev_20250428_150810.bmodel
-# 1684x 7B 8K,max_pixel 672x896, 如果是视频识别建议用该模型，可以支持40s (每秒1帧) 以内的视频
+# 1684x 7B 8K,max_pixel 672x896, 视频可以支持80s (每秒1帧)
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-7b-instruct-awq_w4bf16_seq8192_bm1684x_1dev_20250430_115515.bmodel
 
 # 1688 3B 2K,max_pixel 672x896
