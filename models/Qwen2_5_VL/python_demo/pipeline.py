@@ -32,15 +32,12 @@ class Qwen2_5VL():
         self.tokens_per_second = 2
 
     def text_message(self):
+        # yapf: disable
         messages = [{
             "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": self.input_str
-                },
-            ],
+            "content": [{"type": "text", "text": self.input_str}],
         }]
+        # yapf: enable
         return messages
 
     def image_message(self, path):
@@ -60,7 +57,8 @@ class Qwen2_5VL():
         messages = [{
             "role": "user",
             "content": [
-                {"type": "video", "video": path, "fps": 1.0},
+                {"type": "video", "video": path, "fps": 1.0,
+                 "min_pixels": 256 * 28 * 28, "max_pixels": self.model.MAX_PIXELS // 4},
                 {"type": "text", "text": self.input_str},
             ],
         }]
@@ -167,7 +165,7 @@ class Qwen2_5VL():
         pos_ids = torch.cat(pos_ids, dim=0)
         return pos_ids
 
-    def vit_process(self, inputs, vit_offset):
+    def vit_process_image(self, inputs, vit_offset):
         grid_thw = inputs.image_grid_thw
         hidden_states = inputs.pixel_values
         window_index, cu_window_seqlens = self.get_window_index(grid_thw)
@@ -202,11 +200,55 @@ class Qwen2_5VL():
                                grid_thw.flatten().tolist(),
                                reverse_indices.flatten().tolist(), vit_offset)
 
-    def get_rope_index(
-        self,
-        input_ids: torch.LongTensor,
-        image_grid_thw: torch.LongTensor,
-    ) -> torch.Tensor:
+    def vit_process_video(self, inputs, vit_offset):
+        t, h, w = inputs.video_grid_thw.flatten().tolist()
+        per_t = self.model.MAX_PATCHES // (h * w)
+        t_list = []
+        if per_t >= t:
+            t_list = [t]
+        else:
+            t_list = [per_t] * (t // per_t) + [t % per_t] if t % per_t else []
+        t_offset = 0
+        for t_i in t_list:
+            grid_thw = torch.tensor([[t_i, h, w]], dtype=torch.int32)
+            hidden_states = inputs.pixel_values_videos[(t_offset * h * w):((t_offset + t_i) * h *
+                                                                           w), :]
+            window_index, cu_window_seqlens = self.get_window_index(grid_thw)
+            cu_window_seqlens = torch.tensor(cu_window_seqlens, dtype=torch.int32)
+            cu_window_seqlens = torch.unique_consecutive(cu_window_seqlens)
+            seq_len, _ = hidden_states.shape
+            # reorder hidden_states
+            hidden_states = hidden_states.reshape(seq_len // self.spatial_merge_unit,
+                                                  self.spatial_merge_unit, -1)
+            hidden_states = hidden_states[window_index, :, :]
+            hidden_states = hidden_states.reshape(seq_len, -1)
+            # reorder position_ids
+            position_ids = self.rot_pos(grid_thw)
+            position_ids = position_ids.reshape(seq_len // self.spatial_merge_unit,
+                                                self.spatial_merge_unit, -1)
+            position_ids = position_ids[window_index, :, :]
+            position_ids = position_ids.reshape(seq_len, -1)
+            # cu_seqlens
+            cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2],
+                                                 grid_thw[:, 0]).cumsum(
+                                                     dim=0,
+                                                     dtype=torch.int32,
+                                                 )
+            cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
+            full_mask = self.get_attn_mask(seq_len, cu_seqlens)
+            window_mask = self.get_attn_mask(seq_len, cu_window_seqlens)
+            reverse_indices = torch.argsort(window_index)
+            self.model.forward_vit(hidden_states.flatten().tolist(),
+                                   position_ids.flatten().tolist(),
+                                   full_mask.flatten().tolist(),
+                                   window_mask.flatten().tolist(),
+                                   grid_thw.flatten().tolist(),
+                                   reverse_indices.flatten().tolist(), vit_offset)
+            vit_offset += seq_len // 4
+            t_offset += t_i
+
+    def get_rope_index(self, input_ids: torch.LongTensor, grid_thw: torch.LongTensor,
+                       pad_id: int) -> torch.Tensor:
         total_input_ids = input_ids
         attention_mask = torch.ones_like(total_input_ids)
         position_ids = torch.ones(
@@ -223,21 +265,21 @@ class Qwen2_5VL():
             image_nums = 0
             vision_start_indices = torch.argwhere(input_ids == self.ID_VISION_START).squeeze(1)
             vision_tokens = input_ids[vision_start_indices + 1]
-            image_nums = (vision_tokens == self.ID_IMAGE_PAD).sum()
+            image_nums = (vision_tokens == pad_id).sum()
             input_tokens = input_ids.tolist()
             llm_pos_ids_list: list = []
             st = 0
             remain_images = image_nums
             for _ in range(image_nums):
-                if self.ID_IMAGE_PAD in input_tokens and remain_images > 0:
-                    ed_image = input_tokens.index(self.ID_IMAGE_PAD, st)
+                if pad_id in input_tokens and remain_images > 0:
+                    ed_image = input_tokens.index(pad_id, st)
                 else:
                     ed_image = len(input_tokens) + 1
 
                 t, h, w = (
-                    image_grid_thw[image_index][0],
-                    image_grid_thw[image_index][1],
-                    image_grid_thw[image_index][2],
+                    grid_thw[image_index][0],
+                    grid_thw[image_index][1],
+                    grid_thw[image_index][2],
                 )
                 second_per_grid_t = 0
                 image_index += 1
@@ -298,38 +340,55 @@ class Qwen2_5VL():
                 break
 
             media_path = input("\nImage or Video Path: ")
-            if not os.path.exists(media_path):
+            media_path = media_path.strip()
+            if media_path == "":
+                messages = self.text_message()
+                media_type = "text"
+            elif not os.path.exists(media_path):
                 print("Can't find image or video: {}".format(media_path))
                 continue
-            media_type = self.get_media_type(media_path)
-            if media_type == "image":
-                messages = self.image_message(media_path)
             else:
-                messages = self.video_message(media_path)
+                media_type = self.get_media_type(media_path)
+                if media_type == "image":
+                    messages = self.image_message(media_path)
+                elif media_type == "video":
+                    messages = self.video_message(media_path)
+                else:
+                    print("Unsupported media type: {}".format(media_path))
+                    continue
+
             inputs = self.process(messages)
+            token_len = inputs.input_ids.numel()
+            if token_len >= self.model.SEQLEN - 128:
+                print(
+                    "The maximum question length should be shorter than {} but we get {} instead.".
+                    format(self.model.SEQLEN, token_len))
+                continue
             print("\nAnswer:")
 
             # Chat
             first_start = time.time()
+            self.model.forward_embed(inputs.input_ids.squeeze(0).tolist())
             if media_type == "image":
                 vit_token_list = torch.where(inputs.input_ids == self.ID_IMAGE_PAD)[1].tolist()
                 vit_offset = vit_token_list[0]
-                self.model.forward_embed(inputs.input_ids.squeeze(0).tolist())
-                self.vit_process(inputs, vit_offset)
-                position_ids = self.get_rope_index(inputs.input_ids, inputs.image_grid_thw)
+                self.vit_process_image(inputs, vit_offset)
+                position_ids = self.get_rope_index(inputs.input_ids, inputs.image_grid_thw,
+                                                   self.ID_IMAGE_PAD)
                 max_posid = int(position_ids.max())
                 token = self.model.forward_first(position_ids.flatten().tolist())
             elif media_type == "video":
                 vit_token_list = torch.where(inputs.input_ids == self.ID_VIDEO_PAD)[1].tolist()
                 vit_offset = vit_token_list[0]
-                token = self.model.forward_first(
-                    inputs.input_ids.squeeze(0).tolist(),
-                    inputs.pixel_values_videos.flatten().tolist(),
-                    inputs.video_grid_thw.squeeze(0).tolist(), vit_offset)
+                self.vit_process_video(inputs, vit_offset)
+                position_ids = self.get_rope_index(inputs.input_ids, inputs.video_grid_thw,
+                                                   self.ID_VIDEO_PAD)
+                max_posid = int(position_ids.max())
+                token = self.model.forward_first(position_ids.flatten().tolist())
             else:
-                empty = []
-                token = self.model.forward_first(
-                    inputs.input_ids.squeeze(0).tolist(), empty, [], 0, 0)
+                position_ids = 3 * [i for i in range(token_len)]
+                max_posid = token_len - 1
+                token = self.model.forward_first(position_ids)
             first_end = time.time()
             tok_num = 1
             # Following tokens

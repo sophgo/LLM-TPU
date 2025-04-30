@@ -210,8 +210,7 @@ void Qwen2_5VL::forward_vit(std::vector<float> &pixel_values,
   int t = grid_thw[0];
   int h = grid_thw[1];
   int w = grid_thw[2];
-  int hw = h * w;
-  assert(t == 1);
+  int hw = t * h * w;
   assert(full_attn_mask.size() == (size_t)(hw * hw));
   assert(window_attn_mask.size() == (size_t)(hw * hw));
   assert(pixel_values.size() == (size_t)(hw * VIT_DIMS));
