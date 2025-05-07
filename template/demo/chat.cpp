@@ -363,11 +363,6 @@ void Model::init_network() {
 }
 
 void Model::init_parameter() {
-  auto stage_size = bmrt_get_stage_size(p_bmrt, "block_0");
-  if (stage_idx < 0 || stage_idx >= stage_size) {
-    throw std::runtime_error("Invalid stage idx");
-  }
-
   // read parameters from bmodel
   is_dynamic = net_blocks[0]->is_dynamic;
   hidden_bytes = bm_mem_get_device_size(
