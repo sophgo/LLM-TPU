@@ -1,28 +1,33 @@
 # Qwen3
 
-本工程实现BM1684X/BM1688部署大模型[Qwen3](https://huggingface.co/Qwen/Qwen3-4B)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X/BM1688的PCIE环境，或者SoC环境。
+本工程实现BM1684X/BM1688部署大模型[Qwen3](https://huggingface.co/Qwen/Qwen3-4B-AWQ)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X/BM1688的PCIE环境，或者SoC环境。
 
 
-本文包括如何编译bmodel，和如何在BM1684X/BM1688环境运行bmodel。如何编译bmodel环节可以省去，直接用以下链接下载：
+本文包括如何编译bmodel，和如何在BM1684X/BM1688环境运行bmodel。编译LLM环节可以省去，直接用以下链接下载：
 
 ``` shell
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-4b_w4bf16_seq512_bm1684x_1dev_20250429_120231.bmodel
+# 1684x 512
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-4b-awq_w4bf16_seq512_bm1684x_1dev_20250514_161445.bmodel
+# 1684x 8k
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-4b-awq_w4bf16_seq8192_bm1684x_1dev_20250514_161732.bmodel
+# 1688 512
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU_Lite/qwen3-4b-awq_w4bf16_seq512_bm1688_2core_20250514_162231.bmodel
 ```
 
 ## 编译LLM模型
 
 此处介绍如何将LLM编译成bmodel。
 
-#### 1. 从Huggingface下载`Qwen3-4B`
+#### 1. 从Huggingface下载`Qwen3-4B-AWQ`
 
 (比较大，会花费较长时间)
 
 ``` shell
 # 下载模型
 git lfs install
-git clone git@hf.co:Qwen/Qwen3-4B
+git clone git@hf.co:Qwen/Qwen3-4B-AWQ
 # 如果是8B，则如下：
-git clone git@hf.co:Qwen/Qwen3-8B
+git clone git@hf.co:Qwen/Qwen3-8B-AWQ
 ```
 
 #### 2. 下载docker，启动容器
@@ -51,7 +56,7 @@ source ./envsetup.sh  #激活环境变量
 
 ``` shell
 # 如果有提示transformers版本问题，pip3 install transformers --upgrade
-llm_convert.py -m /workspace/Qwen3-4B -s 512 --quantize w4bf16 -g 128 -c bm1684x --out_dir qwen3_4b
+llm_convert.py -m /workspace/Qwen3-4B-AWQ -s 512 --quantize w4bf16 -c bm1684x --out_dir qwen3_4b
 ```
 
 ## 编译与运行程序
