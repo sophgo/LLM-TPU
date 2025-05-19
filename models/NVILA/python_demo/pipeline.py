@@ -53,7 +53,7 @@ class NVILA():
 
     def process_input(self, media_path):
         if media_path == "" or not os.path.exists(media_path):
-            print("Can't find image or video: {}".format(media_path))
+            print("Can't find image or video: {}, change to text mode".format(media_path))
             media_tokens = ""
             pixel_values, block_size = None, None
         else:
@@ -81,20 +81,23 @@ class NVILA():
         block_size = inputs[2]
         if pixel_values is None or block_size is None:
             return torch.tensor([])
+        elif pixel_values.shape[0] == 17 and block_size == (3,4):
+            self.model.forward_vit_projector(pixel_values.flatten().tolist())
+            return torch.tensor([])
         num_blocks = pixel_values.shape[0]
         image_features = []
         for i in range(num_blocks):
             image_features.append(
                 torch.tensor(self.model.forward_vit(
                     pixel_values[i].flatten().tolist()), dtype=torch.int16)
-                    .view(torch.bfloat16).reshape(1, 1024, 1152))
+                    .view(torch.half).reshape(1, 1024, 1152))
         image_feature = torch.cat(image_features, dim=0)
         scale0_feature = self.merge_chessboard(
-            image_feature[0:1], num_split_h=1, num_split_w=1, N=32)
+            image_feature[0:1], num_split_h=1, num_split_w=1, N=32).to(torch.float32)
         scale1_feature = self.merge_chessboard(
-            image_feature[1:5], num_split_h=2, num_split_w=2, N=32)
+            image_feature[1:5], num_split_h=2, num_split_w=2, N=32).to(torch.float32)
         scale2_feature = self.merge_chessboard(
-            image_feature[5:], block_size[0], block_size[1], N=32)
+            image_feature[5:], block_size[0], block_size[1], N=32).to(torch.float32)
         output_size = torch.Size([32*block_size[0], 32*block_size[1]])
         image_feature = torch.cat(
             [
@@ -105,18 +108,16 @@ class NVILA():
                 scale2_feature
             ],
             dim=1,
-        )
+        ).to(torch.half)
         image_feature = self.split_chessboard(image_feature, block_size[0], block_size[1])
-        full_image_feature = torch.zeros([20, 3456, 32, 32], dtype=torch.bfloat16)
+        full_image_feature = torch.zeros([15, 3456, 32, 32], dtype=torch.half)
         full_image_feature[:block_size[0] * block_size[1]] = image_feature
         full_image_feature = full_image_feature.view(torch.int16).flatten().tolist()
         image_feature = torch.tensor(self.model.forward_projector(full_image_feature), dtype=torch.int16)
-        image_feature = image_feature.reshape(-1, 256, 3584)[:block_size[0] * block_size[1]].view(torch.bfloat16)
+        image_feature = image_feature.reshape(-1, 256, 3584)[:block_size[0] * block_size[1]].view(torch.half)
         image_feature = self.merge_chessboard(
             image_feature, block_size[0], block_size[1], N=16)
         image_feature = rearrange(image_feature, "1 c h w -> (h w) c")
-        import numpy
-        numpy.savez('res.npz',image_feature.to(torch.float32).numpy())
         return image_feature
 
 
@@ -158,6 +159,7 @@ class NVILA():
             self.stream_answer(inputs)
 
 
+
     def stream_answer(self, inputs):
         """
         Stream the answer for the given inputs.
@@ -197,8 +199,6 @@ class NVILA():
         print()
         print(f"FTL: {first_duration:.3f} s")
         print(f"TPS: {tps:.3f} token/s")
-
-        print(self.answer_token)
 
 def main(args):
     model = NVILA(args)

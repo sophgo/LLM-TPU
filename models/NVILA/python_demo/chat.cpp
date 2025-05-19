@@ -33,6 +33,7 @@ public:
   void deinit();
   std::vector<int16_t> forward_vit(std::vector<float> &pixel_values);
   std::vector<int16_t> forward_projector(std::vector<int16_t> &image_feature);
+  void forward_vit_projector(std::vector<float> &pixel_values);
   int forward_first(std::vector<int> &tokens,
                     std::vector<int16_t> &media_embeds);
   int forward_next();
@@ -51,6 +52,7 @@ public:
   int NUM_LAYERS;
   uint16_t mask_value;
   bool io_alone;
+  bool forward_vit_mm;
   std::vector<int> visited_tokens;
 
 private:
@@ -59,9 +61,10 @@ private:
   void *p_bmrt;
   std::vector<const bm_net_info_t *> net_blocks;
   std::vector<const bm_net_info_t *> net_blocks_cache;
-  const bm_net_info_t *net_vit, *net_projector;
+  const bm_net_info_t *net_vit, *net_projector, *net_vit_mm;
   const bm_net_info_t *net_embed, *net_embed_cache;
   const bm_net_info_t *net_lm;
+  bm_device_mem_t dev_buffer;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
 };
@@ -122,6 +125,7 @@ void NVILA::init(const std::vector<int> &devices, std::string model_path) {
   printf("Done!\n");
 
   // net embed and lm_head
+  net_vit_mm = bmrt_get_network_info(p_bmrt, "vitmm");
   net_vit = bmrt_get_network_info(p_bmrt, "vit");
   net_projector = bmrt_get_network_info(p_bmrt, "projector");
   net_embed = bmrt_get_network_info(p_bmrt, "embedding");
@@ -131,7 +135,12 @@ void NVILA::init(const std::vector<int> &devices, std::string model_path) {
   SEQLEN = net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
   HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[1]; // read hidden size
   auto num_nets = bmrt_get_network_number(p_bmrt);
-  NUM_LAYERS = (num_nets - 5) / 2;
+  if (net_vit_mm) {
+    NUM_LAYERS = (num_nets - 6) / 2;
+    auto buffer_size = bm_mem_get_device_size(net_vit_mm->stages[0].output_mems[0]);
+    bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
+  }
+  else NUM_LAYERS = (num_nets - 5) / 2;
   if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
     mask_value = fp32_to_fp16_bits(ATTENTION_MASK);
   } else if (net_embed_cache->output_dtypes[0] == BM_BFLOAT16) {
@@ -143,6 +152,7 @@ void NVILA::init(const std::vector<int> &devices, std::string model_path) {
   }
   // resize
   visited_tokens.resize(SEQLEN);
+  forward_vit_mm = false;
 
   // net blocks
   for (int i = 0; i < NUM_LAYERS; i++) {
@@ -172,10 +182,9 @@ void NVILA::deinit() {
       bm_free_device(bm_handle, past_value[i]);
     }
   }
+  bm_free_device(bm_handle, dev_buffer);
   bmrt_destroy(p_bmrt);
-  for (auto h : handles) {
-    bm_dev_free(h);
-  }
+  bm_dev_free(bm_handle);
 }
 
 std::vector<int16_t> NVILA::forward_vit(std::vector<float> &pixel_values) {
@@ -200,6 +209,15 @@ std::vector<int16_t> NVILA::forward_projector(std::vector<int16_t> &image_featur
   return media_embeds;
 }
 
+void NVILA::forward_vit_projector(std::vector<float> &pixel_values) {
+  auto &in_mem = net_vit_mm->stages[0].input_mems[0];
+  auto &out_mem = net_vit_mm->stages[0].output_mems[0];
+  bm_memcpy_s2d(bm_handle, in_mem, (void *)pixel_values.data());
+  net_launch(net_vit_mm);
+  d2d(dev_buffer, out_mem);
+  forward_vit_mm = true;
+}
+
 int NVILA::forward_first(std::vector<int> &tokens,
                          std::vector<int16_t> &media_embeds) {
   std::vector<int> position_id(SEQLEN, 0);
@@ -208,8 +226,14 @@ int NVILA::forward_first(std::vector<int> &tokens,
   token_length = tokens.size();
 
   int vit_offset = 0;
-  if (!media_embeds.empty()) {
-    int visual_length = media_embeds.size() / HIDDEN_SIZE;
+  int visual_length = 0;
+  if (!media_embeds.empty() || forward_vit_mm) {
+    if (forward_vit_mm) {
+      auto &vit_out_mem = net_vit_mm->stages[0].output_mems[0];
+      visual_length = vit_out_mem.size / HIDDEN_SIZE / 2;
+    } else {
+      visual_length = media_embeds.size() / HIDDEN_SIZE / 2;
+    }
     for (int i = 0; i < token_length; i++) {
         if (visited_tokens[i]==MEDIA_TOKEN_ID) {
           vit_offset = i;
@@ -242,11 +266,14 @@ int NVILA::forward_first(std::vector<int> &tokens,
   bm_memcpy_s2d(bm_handle, in_mem, (void *)visited_tokens.data());
   net_launch(net_embed);
 
+  int bytes = out_mem.size / SEQLEN;
   if (!media_embeds.empty()) {
-    int bytes = out_mem.size / SEQLEN;
     bm_memcpy_s2d_partial_offset(
       bm_handle, out_mem, (void *)media_embeds.data(),
       media_embeds.size(), vit_offset * bytes);
+  } else if (forward_vit_mm) {
+    bm_memcpy_d2d_byte(bm_handle, out_mem, vit_offset * bytes,
+                      dev_buffer, 0, visual_length * bytes);
   }
 
   // forward blocks
@@ -266,7 +293,6 @@ int NVILA::forward_first(std::vector<int> &tokens,
   }
 
   // forward lmhead
-  int bytes = out_mem.size / SEQLEN;
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
   auto &lm_out_mem = net_lm->stages[0].output_mems[0];
   bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
@@ -354,6 +380,7 @@ PYBIND11_MODULE(chat, m) {
         .def("init", &NVILA::init)
         .def("forward_vit", &NVILA::forward_vit)
         .def("forward_projector", &NVILA::forward_projector)
+        .def("forward_vit_projector", &NVILA::forward_vit_projector)
         .def("forward_first", &NVILA::forward_first)
         .def("forward_next", &NVILA::forward_next)
         .def("deinit", &NVILA::deinit)

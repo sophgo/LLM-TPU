@@ -1,4 +1,4 @@
-import torch
+import torch, numpy
 import sys, os
 import argparse
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
@@ -13,8 +13,10 @@ from support.llava.modeling_siglip import SiglipVisionModel
 from support.llava.configuration_llava import LlavaConfig
 
 from einops import rearrange
+from PIL import Image
+from support.preprocess import process_image
 
-class Vision_Embedding(torch.nn.Module):
+class VisionTransformer(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.vision_tower = vision_tower
@@ -28,13 +30,22 @@ class Vision_Embedding(torch.nn.Module):
 
         return image_feature
 
-class Dynamic_S2_Merge(torch.nn.Module):
+class MultiModalProjector(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.mm_projector = mm_projector
-        self.scales = list(map(int, config.s2_scales.split(",")))
-        self.resize_output_to_scale_idx = config.s2_resize_output_to_scale_idx
-        self.end_token_embeds = llama.embed_tokens(torch.tensor([198]))
+
+    def forward(self, image_feature):
+        image_feature = rearrange(image_feature, "b c h w -> b (h w) c")
+        image_feature = self.mm_projector(image_feature)
+        return image_feature
+
+class VitMMProjector(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.vision_tower = vision_tower
+        self.mm_projector = mm_projector
+        self.block_size = (3,4)
 
     @staticmethod
     def merge_chessboard(x, num_split_h, num_split_w, N):
@@ -46,45 +57,44 @@ class Dynamic_S2_Merge(torch.nn.Module):
         x_split = rearrange(x, "1 c (nh h) (nw w) -> (nh nw) c h w", nh=num_split_h, nw=num_split_w)
         return x_split
 
-    def forward(self, image_feature):
-        # bh, bw = block_size
-        # bn = bh * bw + 5 = image_feature.shape[0]
+    def forward(self, images):
+        block_size = self.block_size
+        image_forward_out = self.vision_tower(images,output_hidden_states=True)
+        image_feature = image_forward_out.hidden_states[-2]
         #  cur_features_each_scale[448,896,1344]:
         #  [1, 1024, 1152] -> [1, 1152, 32, 32]
+        scale0_feature = self.merge_chessboard(
+            image_feature[0:1], num_split_h=1, num_split_w=1, N=32)
         #  [4, 1024, 1152] -> [1, 1152, 64, 64]
+        scale1_feature = self.merge_chessboard(
+            image_feature[1:5], num_split_h=2, num_split_w=2, N=32)
         #  [bn-5, 1024, 1152] -> [1, 1152, 32*bh, 32*bw]
-        # scale0_feature = self.merge_chessboard(
-        #     image_feature[0:1], num_split_h=1, num_split_w=1, N=32)
-        # scale1_feature = self.merge_chessboard(
-        #     image_feature[1:5], num_split_h=2, num_split_w=2, N=32)
-        # scale2_feature = self.merge_chessboard(
-        #     image_feature[5:], block_size[0], block_size[1], N=32)
+        scale2_feature = self.merge_chessboard(
+            image_feature[5:], block_size[0], block_size[1], N=32)
 
         # resize and concat features from different scales
         # [1, 1152*3, 32*bh, 32*bw]
-        # output_size = torch.Size([32*block_size[0], 32*block_size[1]])
-        # image_feature = torch.cat(
-        #     [
-        #         torch.nn.functional.interpolate(scale0_feature, size=output_size),
-        #         torch.nn.functional.interpolate(scale1_feature, size=output_size),
-        #         scale2_feature
-        #     ],
-        #     dim=1,
-        # )
+        output_size = torch.Size([32*block_size[0], 32*block_size[1]])
+        image_feature = torch.cat(
+            [
+                torch.nn.functional.interpolate(scale0_feature, size=output_size),
+                torch.nn.functional.interpolate(scale1_feature, size=output_size),
+                scale2_feature
+            ],
+            dim=1,
+        )
         # [1, 1152*3, 32*bh, 32*bw] -> [bn-5, 3456, 32, 32]
-        # image_feature = self.split_chessboard(
-        #     image_feature, block_size[0], block_size[1])
+        image_feature = self.split_chessboard(
+            image_feature, block_size[0], block_size[1])
         # [bn-5, 3456, 32, 32] -> [bn-5, 1024, 3456]
         image_feature = rearrange(image_feature, "b c h w -> b (h w) c")
         # [bn-5, 1024, 3456] -> [bn-5, 256, 3584]
         image_feature = self.mm_projector(image_feature)
         # [bn-5, 256, 3584] -> [1, 3584, 16*bh, 16*bw]
-        # image_feature = self.merge_chessboard(
-        #     image_feature, block_size[0], block_size[1], N=16)
-        # # [1, 3584, 16*bh, 16*bw] -> [(bn-5)*256, 3584]
-        # image_feature = rearrange(image_feature, "1 c h w -> (h w) c")
-        # # [(bn-5)*256, 3584] -> [(bn-5)*256+1, 3584]
-        # image_feature = torch.cat([image_feature, self.end_token_embeds], dim=0)
+        image_feature = self.merge_chessboard(
+            image_feature, block_size[0], block_size[1], N=16)
+        # [1, 3584, 16*bh, 16*bw] -> [(bn-5)*256, 3584]
+        image_feature = rearrange(image_feature, "1 c h w -> (h w) c")
         return image_feature
 
 class Embedding(torch.nn.Module):
@@ -113,7 +123,7 @@ class Block(torch.nn.Module):
                                             position_embeddings=(self.cos, self.sin))
         present_k, present_v = past_kv
         return hidden_states, present_k, present_v
-    
+
 class BlockCache(torch.nn.Module):
 
     def __init__(self, layer_id):
@@ -146,25 +156,41 @@ class LmHead(torch.nn.Module):
         _, token = torch.topk(m_logits.float(), 1)
         return token
 
-def convert_vision_embedding():
-    model = Vision_Embedding()
+def convert_vision_transformer():
+    model = VisionTransformer()
     images = torch.randn(1, 3, 448, 448, dtype=dtype)
     torch.onnx.export(
         model, images,
-        f"{folder}/vision_embedding.onnx",
+        f"{folder}/vit.onnx",
         input_names=["images"],
         output_names=["image_feature"],
         do_constant_folding=True,
         opset_version=15
     )
 
-def convert_dynamic_s2_merge():
-    model = Dynamic_S2_Merge()
-    image_feature = torch.randn(20, 3456, 32, 32, dtype=dtype)
+def convert_multimodal_projector():
+    model = MultiModalProjector()
+    image_feature = torch.randn(15, 3456, 32, 32, dtype=dtype)
     torch.onnx.export(
         model, (image_feature),
-        f"{folder}/merge.onnx",
+        f"{folder}/projector.onnx",
         input_names=["image_feature"],
+        output_names=["media_embeds"],
+        do_constant_folding=True,
+        opset_version=15
+    )
+
+def convert_vit_mmprojector():
+    model = VitMMProjector()
+    if args.image_path is not None:
+        image = Image.open(args.image_path).convert(RBG)
+        _, block_size = process_image(image, image_processor)
+        model.block_size = block_size
+    images = torch.randn(17, 3, 448, 448, dtype=dtype)
+    torch.onnx.export(
+        model, (images),
+        f"{folder}/vitmm.onnx",
+        input_names=["images"],
         output_names=["media_embeds"],
         do_constant_folding=True,
         opset_version=15
@@ -218,27 +244,26 @@ def convert_lm_head():
     torch.jit.save(module, f"{folder}/lm_head.pt")
 
 def convert():
-    convert_vision_embedding()
-    convert_dynamic_s2_merge()
-    convert_embedding()
-    convert_lm_head()
-    for i in range(NUM_LAYERS):
-        print(f'export block {i} ...')
-        convert_block(i)
-        convert_block_cache(i)
+    convert_vision_transformer()
+    convert_multimodal_projector()
+    convert_vit_mmprojector()
+    # convert_embedding()
+    # convert_lm_head()
+    # for i in range(NUM_LAYERS):
+        # print(f'export block {i} ...')
+        # convert_block(i)
+        # convert_block_cache(i)
 
 def test_net_with_mask(image_path):
-    from PIL import Image
-    from support.preprocess import process_image
-
-    prompt = 'introduce this image'
+    prompt = 'list three stuff in this image and describe them in detail'
     image = Image.open(image_path).convert('RGB')
     print(f"Loading {image_path}")
     print(f"Question: {prompt}")
-    text = f'<|im_start|>system\nYou are a helpful assistant<|im_end|>\n<|im_start|>user\n<image>{prompt}<|im_end|>\n<|im_start|>assistant\n'
+    text = f'<|im_start|>system\nYou are a helpful assistant<|im_end|>\n<|im_start|>user\n<image>\n{prompt}<|im_end|>\n<|im_start|>assistant\n'
 
-    vit = Vision_Embedding()
-    merge = Dynamic_S2_Merge()
+    vit = VisionTransformer()
+    merge = MultiModalProjector()
+    vitmm = VitMMProjector()
     embed = Embedding()
     lm = LmHead()
     blocks = [Block(i) for i in range(NUM_LAYERS)]
@@ -247,16 +272,17 @@ def test_net_with_mask(image_path):
     # images [h, w] -> [num_blocks, 3, 448, 448]
     # num_blocks = 1 + 4 + block_size[0] * block_size[1]
     images, block_size = process_image(image, image_processor)
-    VISUAL_LEN = block_size[0] * block_size[1] * 256 + 1
+    VISUAL_LEN = block_size[0] * block_size[1] * 256
     ids = tokenizer(text, return_tensors="pt").input_ids[0]
     token_len = len(ids)
     ids = ids.tolist() + (SEQ_LENGTH - token_len) * [0]
+    ids[13 + VISUAL_LEN:VISUAL_LEN + token_len - 1] = ids[14:token_len]
     input_ids = torch.tensor(ids).view(SEQ_LENGTH).to(device)
     out = embed(input_ids).view(1, SEQ_LENGTH, HIDDEN_SIZE)
 
     # image_feature [num_blocks, 3, 448, 448] -> [num_blocks, 1024, 1152]
-    # image_feature [num_blocks, 1024, 1152] -> [(num_blocks-5)*256+1, 3584]
     image_feature = vit(images)
+    # image_feature [num_blocks, 1024, 1152] -> [(num_blocks-5)*256, 3584]
     scale0_feature = merge.merge_chessboard(
         image_feature[0:1], num_split_h=1, num_split_w=1, N=32)
     scale1_feature = merge.merge_chessboard(
@@ -279,9 +305,8 @@ def test_net_with_mask(image_path):
     image_feature = merge.merge_chessboard(
         image_feature, block_size[0], block_size[1], N=16)
     image_feature = rearrange(image_feature, "1 c h w -> (h w) c")
-    image_feature = torch.cat([image_feature, merge.end_token_embeds], dim=0)
 
-    out[:, 13 + VISUAL_LEN:VISUAL_LEN + token_len - 1] = out[:, 14:token_len]
+    # merge image and text feature
     out[:, 13:13 + VISUAL_LEN] = image_feature.unsqueeze(0)
     token_len += VISUAL_LEN - 1
 
@@ -309,7 +334,7 @@ def test_net_with_mask(image_path):
     while int(token) != tokenizer.eos_token_id:
         out_ids.append(int(token))
         word = tokenizer.decode([int(token)])
-        print(word, end='')
+        print(word, end='', flush=True)
         token_len += 1
         input_ids = torch.tensor([token])
         out = embed(input_ids).view(1, 1, HIDDEN_SIZE)
@@ -337,9 +362,6 @@ if __name__ == '__main__':
     device = torch.device("cpu")
     dtype = torch.float
 
-    folder = 'tmp/onnx'
-    os.makedirs(folder, exist_ok=True)
-
     llm_path = os.path.join(model_path, "llm")
     vision_path = os.path.join(model_path, "vision_tower")
     proj_path = os.path.join(model_path, "mm_projector")
@@ -351,6 +373,7 @@ if __name__ == '__main__':
     llm_model.resize_token_embeddings(llm_cfg.vocab_size + 3)
     vision_tower = SiglipVisionModel.from_pretrained(vision_path, torch_dtype=dtype, attn_implementation='eager').eval()
     mm_projector = MultimodalProjector.from_pretrained(proj_path, config, torch_dtype=dtype).eval()
+    image_processor = SiglipImageProcessor.from_pretrained(vision_path)
 
     llama = llm_model.model
     NUM_LAYERS = llm_cfg.num_hidden_layers
@@ -375,9 +398,10 @@ if __name__ == '__main__':
         for name, token in tokenizer.media_tokens.items():
             tokenizer.add_tokens([token], special_tokens=True)
             tokenizer.media_token_ids[name] = tokenizer.convert_tokens_to_ids(token)
-        image_processor = SiglipImageProcessor.from_pretrained(vision_path)
-        image_path = '../python_demo/test.png' if args.image_path is None else args.image_path
+        image_path = '../python_demo/test.jpg' if args.image_path is None else args.image_path
         with torch.no_grad():
             test_net_with_mask(image_path)
     else:
+        folder = 'tmp/onnx'
+        os.makedirs(folder, exist_ok=True)
         convert()

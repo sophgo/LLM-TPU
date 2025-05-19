@@ -48,6 +48,8 @@ class SimpleResBlock(nn.Module):
 class DownSampleBlock(nn.Module):
     def forward(self, x):
         vit_embeds = x
+        vit_embeds = x.reshape(-1, 256, 13824)
+        return vit_embeds
         h = w = int(vit_embeds.shape[1] ** 0.5)
         vit_embeds = vit_embeds.reshape(vit_embeds.shape[0], h, w, -1)
         vit_embeds = self.flat_square(vit_embeds)
