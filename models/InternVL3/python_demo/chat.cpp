@@ -182,6 +182,7 @@ int InternVL3::forward_first(std::vector<int> &tokens,
                              std::vector<float> &pixel_values) {
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, mask_value);
+  std::fill(visited_tokens.begin(), visited_tokens.end(), 0);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
   token_length = tokens.size();
 
