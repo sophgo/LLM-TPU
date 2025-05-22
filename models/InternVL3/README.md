@@ -21,8 +21,8 @@ python export_onnx.py -m $your_model_path/InternVL3-8B -s 4096
 # 运行
 ``` shell
 # 下载编译好的模型: InternVL3-8b / InternVL3-2b
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/internVL3-8b_w4bf16_seq4096_bm1684x.bmodel
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/internVL3-2b_w4bf16_seq4096_bm1684x.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/internvl3-8b_w4bf16_seq4096_bm1684x.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/internvl3-2b_w4bf16_seq4096_bm1684x.bmodel
 
 
 cd python_demo
