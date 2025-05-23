@@ -112,7 +112,7 @@ class MiniCPMV():
             token = self.model.forward_first(
                 self.input_ids, self.pixel_values, self.image_offsets, self.patch_num)
             first_end = time.time()
-            tok_num = 1
+            tok_num = 0
             # Following tokens
             full_word_tokens = []
             while token not in [self.ID_EOS, self.ID_IM_END] and self.model.token_length < self.SEQLEN:

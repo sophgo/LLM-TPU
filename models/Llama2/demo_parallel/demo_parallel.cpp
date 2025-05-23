@@ -493,7 +493,7 @@ void Llama2Chat::chat() {
 void Llama2Chat::answer(const std::string &input_str) {
   std::string sentence_input = build_prompt(input_str, history_vector);
 
-  int tok_num = 1;
+  int tok_num = 0;
   std::vector<int> tokens;
   sentencepiece.Encode(sentence_input, &tokens);
   int pre_token = 0;

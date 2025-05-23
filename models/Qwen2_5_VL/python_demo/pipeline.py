@@ -390,7 +390,7 @@ class Qwen2_5VL():
                 max_posid = token_len - 1
                 token = self.model.forward_first(position_ids)
             first_end = time.time()
-            tok_num = 1
+            tok_num = 0
             # Following tokens
             full_word_tokens = []
             text = ""

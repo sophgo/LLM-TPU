@@ -64,7 +64,7 @@ class Megrez():
             first_start = time.time()
             token = self.model.forward_first(tokens)
             first_end = time.time()
-            tok_num = 1
+            tok_num = 0
             # Following tokens
             full_word_tokens = []
             while token not in self.ID_EOS and self.model.token_length < self.SEQLEN:

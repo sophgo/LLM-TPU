@@ -2,6 +2,7 @@ import argparse
 import os, sys, time
 import torch
 from transformers import AutoTokenizer
+import numpy as np
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.abspath(os.path.join(current_dir, ".."))
@@ -55,7 +56,7 @@ class InternVL3():
 
         prompt = f'<|im_start|>system\n{self.system_prompt}<|im_end|>\n<|im_start|>user\n{media_tokens}{self.input_str}<|im_end|>\n<|im_start|>assistant\n'
         input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids
-        return input_ids, pixel_values
+        return input_ids.flatten().numpy().astype(np.int32), pixel_values.flatten().numpy().astype(np.float32)
 
     def chat(self):
         """
@@ -105,8 +106,8 @@ class InternVL3():
 
         # First token
         first_start = time.time()
-        token = self.model.forward_first(inputs[0].flatten().tolist(),
-                                         inputs[1].flatten().tolist())
+        token = self.model.forward_first(inputs[0],
+                                         inputs[1])
         first_end = time.time()
 
         # Following tokens

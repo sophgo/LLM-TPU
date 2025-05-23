@@ -306,7 +306,6 @@ int Baichuan2::forward_next() {
 
 std::string Baichuan2::predict_first_token(const std::string &input_str) {
   history = input_str;
-  //int tok_num = 1;
   std::vector<int> tokens;
   sentencepiece.Encode(history, &tokens);
   tokens.insert(tokens.begin(), 1);

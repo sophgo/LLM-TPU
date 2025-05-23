@@ -23,6 +23,9 @@
 #include <random>
 #include <numeric>
 #include "utils.h"
+#include <chrono>
+
+#include <pybind11/numpy.h>
 
 static const float ATTENTION_MASK = -10000.;
 static const int MEDIA_TOKEN_ID = 151667;
@@ -31,8 +34,8 @@ class InternVL3 {
 public:
   void init(const std::vector<int> &devid, std::string model_path);
   void deinit();
-  int forward_first(std::vector<int> &tokens,
-                    std::vector<float> &pixel_values);
+  int forward_first(pybind11::array_t<int> tokens, pybind11::array_t<float> pixel_values);
+
   int forward_next();
 
   std::mt19937 sgen;
@@ -178,13 +181,19 @@ void InternVL3::deinit() {
   bm_dev_free(bm_handle);
 }
 
-int InternVL3::forward_first(std::vector<int> &tokens,
-                             std::vector<float> &pixel_values) {
+int InternVL3::forward_first(pybind11::array_t<int> tokens,
+                             pybind11::array_t<float> pixel_values) {
+  // 1. 解析 tokens
+  auto tokens_buf = tokens.request();
+  int* tokens_ptr = static_cast<int*>(tokens_buf.ptr);
+  size_t tokens_len = tokens_buf.size;
+
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, mask_value);
+
   std::fill(visited_tokens.begin(), visited_tokens.end(), 0);
-  std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
-  token_length = tokens.size();
+  std::copy(tokens_ptr, tokens_ptr + tokens_len, visited_tokens.data());
+  token_length = tokens_len;
 
   for (int i = 0; i < token_length; i++) {
     position_id[i] = i; 
@@ -205,7 +214,12 @@ int InternVL3::forward_first(std::vector<int> &tokens,
   d2d(dev_buffer, out_mem);
 
   int bytes = out_mem.size / SEQLEN;
-  if (!pixel_values.empty()) {
+  if (pixel_values.size() > 0) {
+    // 2. 解析 pixel_values
+    auto pixel_buf = pixel_values.request();
+    float* pixel_ptr = static_cast<float*>(pixel_buf.ptr);
+    size_t pixel_len = pixel_buf.size;
+
     int vit_offset = 0;
     for (int i = 0; i < token_length; i++) {
         if (visited_tokens[i]==MEDIA_TOKEN_ID) {
@@ -216,10 +230,10 @@ int InternVL3::forward_first(std::vector<int> &tokens,
     auto &vit_in_mem = net_vit->stages[0].input_mems[0];
     auto &vit_out_mem = net_vit->stages[0].output_mems[0];
     int pixel_bytes = vit_in_mem.size / sizeof(float);
-    int num_patches = pixel_values.size() / pixel_bytes;
+    int num_patches = pixel_len / pixel_bytes;
     for (int i = 0; i < num_patches; i++) {
       bm_memcpy_s2d(bm_handle, vit_in_mem,
-                    (void *)(pixel_values.data() + i * pixel_bytes));
+                    (void *)(pixel_ptr + i * pixel_bytes));
       net_launch(net_vit);
       bm_memcpy_d2d_byte(bm_handle, dev_buffer,
                         (vit_offset + i * NUM_IMAGE_TOKEN) * bytes,
@@ -257,6 +271,7 @@ int InternVL3::forward_first(std::vector<int> &tokens,
   token_length += 1;
   return token;
 }
+
 
 int InternVL3::forward_next() {
   int cur_token = visited_tokens[token_length - 1];

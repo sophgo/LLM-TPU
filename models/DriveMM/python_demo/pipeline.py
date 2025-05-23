@@ -148,7 +148,7 @@ class Model():
             elif image_or_video_type == "video":
                 raise NotImplementedError
             first_end = time.time()
-            tok_num = 1
+            tok_num = 0
             # Following tokens
             full_word_tokens = []
             text = ""

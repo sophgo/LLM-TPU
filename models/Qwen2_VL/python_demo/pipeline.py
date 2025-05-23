@@ -150,7 +150,7 @@ class Qwen2VL():
                 token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), inputs.pixel_values_videos.flatten().tolist(),
                                                 inputs.video_grid_thw.squeeze(0).tolist(), vit_offset, valid_vit_length)
             first_end = time.time()
-            tok_num = 1
+            tok_num = 0
             # Following tokens
             full_word_tokens = []
             text = ""

@@ -120,7 +120,7 @@ class InternVL2():
             token = self.model.forward_first(self.input_ids, self.pixel_values,
                                              self.image_offset)
             first_end = time.time()
-            tok_num = 1
+            tok_num = 0
             # Following tokens
             full_word_tokens = []
             text = ""

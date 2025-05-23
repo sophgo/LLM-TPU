@@ -304,13 +304,12 @@ class Qwen2VL():
 
             # Chat
             first_start = time.time()
-            
-            breakpoint()
+
             token = self.model.forward_first(inputs.input_ids.squeeze(0).tolist(), position_ids.flatten().tolist(), pixel_values_prefill.flatten().tolist(),
                                              pos_ids_prefill.flatten().tolist(), attention_mask_vit_prefill.flatten().tolist(),
                                              image_offset, pixel_num)
             first_end = time.time()
-            tok_num = 1
+            tok_num = 0
             # Following tokens
             full_word_tokens = []
             text = ""
