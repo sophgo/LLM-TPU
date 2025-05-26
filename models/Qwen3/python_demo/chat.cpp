@@ -72,7 +72,7 @@ private:
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset,
                   int size);
-
+  void init_by_names();
   void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   int greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   int penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
@@ -125,6 +125,56 @@ void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset,
   bm_memcpy_d2d_byte(bm_handle, dst, offset, src, 0, size);
 }
 
+void Qwen::init_by_names() {
+  auto is_exist = [](const char *name, const char **names, int num) {
+    for (int i = 0; i < num; i++) {
+      if (strcmp(name, names[i]) == 0) {
+        return true;
+      }
+    }
+    return false;
+  };
+  net_embed = bmrt_get_network_info(p_bmrt, "embedding");
+  net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
+  net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
+  const char **net_names = nullptr;
+  auto num_nets = bmrt_get_network_number(p_bmrt);
+  bmrt_get_network_names(p_bmrt, &net_names);
+  net_greedy_head = nullptr;
+  auto num_blocks = num_nets - 3; // 3 nets are embed, lm_head, embedding_cache
+  if (is_exist("greedy_head", net_names, num_nets)) {
+    net_greedy_head = bmrt_get_network_info(p_bmrt, "greedy_head");
+    num_blocks--; // greedy_head is not a block
+  }
+  net_penalty_sample_head = nullptr;
+  if (is_exist("penalty_sample_head", net_names, num_nets)) {
+    net_penalty_sample_head =
+        bmrt_get_network_info(p_bmrt, "penalty_sample_head");
+    num_blocks--; // penalty_sample_head is not a block
+  }
+
+  SEQLEN = net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
+  lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
+
+  NUM_LAYERS = num_blocks / 2; // 2 nets for each block, one for cache
+  // net blocks
+  for (int i = 0; i < num_blocks / 2; i++) {
+    auto block_name = "block_" + std::to_string(i);
+    auto cache_name = "block_cache_" + std::to_string(i);
+    if ((!is_exist(block_name.c_str(), net_names, num_nets)) ||
+        (!is_exist(cache_name.c_str(), net_names, num_nets))) {
+      NUM_LAYERS = i;
+      printf("Warning: Only %d blocks found, expected %d blocks.\n", NUM_LAYERS,
+             num_blocks / 2);
+      break;
+    }
+    net_blocks.emplace_back(bmrt_get_network_info(p_bmrt, block_name.c_str()));
+    net_blocks_cache.emplace_back(
+        bmrt_get_network_info(p_bmrt, cache_name.c_str()));
+  }
+  free(net_names);
+}
+
 void Qwen::init(const std::vector<int> &devices, std::string model_path) {
 
   // request bm_handle
@@ -156,34 +206,10 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   assert(true == ret);
   printf("Done!\n");
 
-  // net embed and lm_head
-  net_embed = bmrt_get_network_info(p_bmrt, "embedding");
-  net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
-  net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
-  net_greedy_head = bmrt_get_network_info(p_bmrt, "greedy_head");
-  net_penalty_sample_head =
-      bmrt_get_network_info(p_bmrt, "penalty_sample_head");
-  SEQLEN = net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
-  auto num_nets = bmrt_get_network_number(p_bmrt);
-  if (net_greedy_head && net_penalty_sample_head) {
-    lmhead_with_topk = false;
-    NUM_LAYERS = (num_nets - 5) / 2;
-  } else {
-    lmhead_with_topk = true;
-    NUM_LAYERS = (num_nets - 3) / 2;
-  }
+  init_by_names();
 
   // resize
   visited_tokens.resize(SEQLEN);
-
-  // net blocks
-  for (int i = 0; i < NUM_LAYERS; i++) {
-    auto block_name = "block_" + std::to_string(i);
-    auto cache_name = "block_cache_" + std::to_string(i);
-    net_blocks.emplace_back(bmrt_get_network_info(p_bmrt, block_name.c_str()));
-    net_blocks_cache.emplace_back(
-        bmrt_get_network_info(p_bmrt, cache_name.c_str()));
-  }
 
   hidden_bytes =
       bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[0]);

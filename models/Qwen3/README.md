@@ -58,10 +58,11 @@ source ./envsetup.sh  #激活环境变量
 # 如果有提示transformers版本问题，pip3 install transformers --upgrade
 llm_convert.py -m /workspace/Qwen3-4B-AWQ -s 512 --quantize w4bf16 -c bm1684x --out_dir qwen3_4b
 ```
+编译完成后，在指定目录`qwen3_4b`生成`qwen3-xxx.bmodel`和`config`
 
 ## 编译与运行程序
 
-请将程序拷贝到PCIE环境或者SoC环境后再编译
+请将程序拷贝到PCIE环境或者SoC环境后再编译。然后把`qwen3-xxx.bmodel`和`config`拷贝过去。
 
 #### python demo
 
