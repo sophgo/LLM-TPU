@@ -2,7 +2,7 @@ import argparse
 
 import chat
 import time
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, GenerationConfig
 
 
 class Qwen3():
@@ -21,7 +21,7 @@ class Qwen3():
         # preprocess parameters, such as prompt & tokenizer
         self.system_prompt = "You are a helpful assistant."
         self.history = [{"role": "system", "content": self.system_prompt}]
-        self.EOS = self.tokenizer.eos_token_id
+        self.EOS = [self.tokenizer.eos_token_id]
         self.enable_history = args.enable_history
 
         self.model = chat.Qwen()
@@ -35,12 +35,16 @@ class Qwen3():
         print(f"\nLoad Time: {(load_end - load_start):.3f} s")
 
     def init_params(self, args):
-        self.model.temperature = args.temperature
-        self.model.top_p = args.top_p
-        self.model.repeat_penalty = args.repeat_penalty
-        self.model.repeat_last_n = args.repeat_last_n
-        self.model.max_new_tokens = args.max_new_tokens
-        self.model.generation_mode = args.generation_mode
+        self.model.generation_mode = "greedy"
+        if args.do_sample:
+            gen_config = GenerationConfig.from_pretrained(args.config_path)
+            self.model.generation_mode = "sample"
+            self.model.temperature = gen_config.temperature
+            self.model.top_p = gen_config.top_p
+            self.model.top_k = gen_config.top_k
+            self.model.penalty = gen_config.repetition_penalty
+            for i in gen_config.eos_token_id:
+                self.EOS.append(i)
 
     def clear(self):
         self.history = [{"role": "system", "content": self.system_prompt}]
@@ -109,7 +113,7 @@ class Qwen3():
         first_end = time.time()
         # Following tokens
         full_word_tokens = []
-        while token != self.EOS and self.model.token_length < self.model.SEQLEN:
+        while token not in self.EOS and self.model.token_length < self.model.SEQLEN:
             full_word_tokens.append(token)
             word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
             if "�" in word:
@@ -138,42 +142,6 @@ class Qwen3():
         print(f"FTL: {first_duration:.3f} s")
         print(f"TPS: {tps:.3f} token/s")
 
-    ## For Web Demo
-    def stream_predict(self, query):
-        """
-        Stream the prediction for the given query.
-        """
-        self.answer_cur = ""
-        self.input_str = query
-        tokens = self.encode_tokens()
-
-        for answer_cur, history in self._generate_predictions(tokens):
-            yield answer_cur, history
-
-    def _generate_predictions(self, tokens):
-        """
-        Generate predictions for the given tokens.
-        """
-        # First token
-        next_token = self.model.forward_first(tokens)
-        output_tokens = [next_token]
-
-        # Following tokens
-        while True:
-            next_token = self.model.forward_next()
-            if next_token == self.EOS:
-                break
-            output_tokens += [next_token]
-            self.answer_cur = self.tokenizer.decode(output_tokens)
-            if self.model.token_length >= self.model.SEQLEN:
-                self.update_history()
-                yield self.answer_cur + "\n\n\nReached the maximum length; The history context has been cleared.", self.history
-                break
-            else:
-                yield self.answer_cur, self.history
-
-        self.update_history()
-
 
 def main(args):
     model = Qwen3(args)
@@ -184,15 +152,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # yapf: disable
     parser.add_argument('-m', '--model_path', type=str, required=True, help='path to the bmodel file')
-    parser.add_argument('-c', '--config_path', type=str, default="config", help='path to the tokenizer file')
+    parser.add_argument('-c', '--config_path', type=str, default="../config", help='path to the tokenizer file')
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
-    parser.add_argument('--temperature', type=float, default=1.0, help='temperature scaling factor for the likelihood distribution')
-    parser.add_argument('--top_p', type=float, default=1.0, help='cumulative probability of token words to consider as a set of candidates')
-    parser.add_argument('--repeat_penalty', type=float, default=1.0, help='penalty for repeated tokens')
-    parser.add_argument('--repeat_last_n', type=int, default=32, help='repeat penalty for recent n tokens')
-    parser.add_argument('--max_new_tokens', type=int, default=1024, help='max new token length to generate')
-    parser.add_argument('--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
-    parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
+    parser.add_argument('--do_sample', action='store_true', help="if set, generate tokens by sample parameters")
     parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory")
     # yapf: enable
     args = parser.parse_args()
