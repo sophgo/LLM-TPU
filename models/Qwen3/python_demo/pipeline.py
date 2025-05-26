@@ -5,7 +5,7 @@ import time
 from transformers import AutoTokenizer
 
 
-class Qwen2():
+class Qwen3():
 
     def __init__(self, args):
         # devid
@@ -176,7 +176,7 @@ class Qwen2():
 
 
 def main(args):
-    model = Qwen2(args)
+    model = Qwen3(args)
     model.chat()
 
 

@@ -51,7 +51,7 @@
 |Llama2-7B                    |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf)              |
 |Llama2-13B                   |:white\_check\_mark:|                    |[LINK](https://huggingface.co/meta-llama/Llama-2-13b-chat-hf)             |
 |Llama3-8B                    |:white\_check\_mark:|                    |[LINK](https://huggingface.co/meta-llama/Meta-Llama-3-8B)                 |
-|Llama3.1-8B                  |:white\_check\_mark:|                    |[LINK](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B)               |
+|Llama3.2-3B                  |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct)               |
 |LWM-Text-Chat                |:white\_check\_mark:|                    |[LINK](https://huggingface.co/LargeWorldModel/LWM-Text-Chat-1M)           |
 |MiniCPM-2B                   |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/openbmb/MiniCPM3-4B)                        |
 |MiniCPM3-4B                  |:white\_check\_mark:|                    |[LINK](https://huggingface.co/openbmb/MiniCPM3-4B)                        |
@@ -120,7 +120,6 @@ git clone https://github.com/sophgo/LLM-TPU.git
 | :-------------- | :------------------------------------------ | :------------------------------------------- |
 | ChatGLM3-6B     | ./run.sh --model chatglm3-6b --arch soc     | ./run.sh --model chatglm3-6b --arch pcie     |
 | Llama2-7B       | ./run.sh --model llama2-7b --arch soc       | ./run.sh --model llama2-7b   --arch pcie     |
-| Llama3-7B       | ./run.sh --model llama3-7b --arch soc       | ./run.sh --model llama3-7b   --arch pcie     |
 | Qwen-7B         | ./run.sh --model qwen-7b --arch soc         | ./run.sh --model qwen-7b     --arch pcie     |
 | Qwen1.5-1.8B    | ./run.sh --model qwen1.5-1.8b --arch soc    | ./run.sh --model qwen1.5-1.8b  --arch pcie   |
 | Qwen2.5-7B      |                     \                       | ./run.sh --model qwen2.5-7b  --arch pcie     |
@@ -155,7 +154,7 @@ git clone https://github.com/sophgo/LLM-TPU.git
 # 精度优化
 
 1) 请优先用AWQ或者GPTQ模型转bmodel
-2) 如果是浮点模型，请用[llmc-tpu](https://github.com/sophgo/llmc-tpu)做校准；然后转bmodel
+2) 如果是浮点模型，如果要进一步提高W4A16的精度，请用[llmc-tpu](https://github.com/sophgo/llmc-tpu)做校准；然后转bmodel
 
 # 资料链接
 
