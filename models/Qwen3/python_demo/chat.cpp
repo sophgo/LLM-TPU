@@ -67,9 +67,10 @@ public:
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
-  void net_launch_dyn(const bm_net_info_t *net, int stage_idx = 0);
-  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src,
-                  int offset = 0, int size = 0);
+  void net_launch_dyn(const bm_net_info_t *net, int real_len,
+                      int stage_idx = 0);
+  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset = 0,
+                  int size = 0);
   void init_by_names();
   int greedy_search(bm_device_mem_t &logits_mem);
   int penalty_sample(bm_device_mem_t &logits_mem);
@@ -80,7 +81,6 @@ public:
   int token_length;
   int SEQLEN;     // read from bmodel
   int NUM_LAYERS; // read from bmodel
-  int TOKEN_LEN;
   bool lmhead_with_topk;
   bool io_alone;
   bool is_dynamic;
@@ -108,7 +108,8 @@ private:
 
 void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset,
                int size) {
-  if (!size) size = bm_mem_get_device_size(src);
+  if (!size)
+    size = bm_mem_get_device_size(src);
   bm_memcpy_d2d_byte(bm_handle, dst, offset, src, 0, size);
 }
 
@@ -135,8 +136,7 @@ void Qwen::init_by_names() {
   }
   net_sample_head = nullptr;
   if (is_exist("sample_head", net_names, num_nets)) {
-    net_sample_head =
-        bmrt_get_network_info(p_bmrt, "sample_head");
+    net_sample_head = bmrt_get_network_info(p_bmrt, "sample_head");
     num_blocks--; // sample_head is not a block
   }
 
@@ -259,7 +259,8 @@ void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
   bm_thread_sync(bm_handle);
 }
 
-void Qwen::net_launch_dyn(const bm_net_info_t *net, int stage_idx) {
+void Qwen::net_launch_dyn(const bm_net_info_t *net, int real_len,
+                          int stage_idx) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
   std::vector<bm_tensor_t> out_tensors(net->output_num);
 
@@ -275,21 +276,20 @@ void Qwen::net_launch_dyn(const bm_net_info_t *net, int stage_idx) {
   }
 
   int h_bytes = bm_mem_get_device_size(in_tensors[0].device_mem) / SEQLEN;
-  bm_set_device_mem(&in_tensors[0].device_mem, h_bytes * TOKEN_LEN,
+  bm_set_device_mem(&in_tensors[0].device_mem, h_bytes * real_len,
                     bm_mem_get_device_addr(in_tensors[0].device_mem));
   int pid_bytes = bm_mem_get_device_size(in_tensors[1].device_mem) / SEQLEN;
-  bm_set_device_mem(&in_tensors[1].device_mem, pid_bytes * TOKEN_LEN,
+  bm_set_device_mem(&in_tensors[1].device_mem, pid_bytes * real_len,
                     bm_mem_get_device_addr(in_tensors[1].device_mem));
   int mask_bytes =
       bm_mem_get_device_size(in_tensors[2].device_mem) / SEQLEN / SEQLEN;
-  bm_set_device_mem(&in_tensors[2].device_mem,
-                    mask_bytes * TOKEN_LEN * TOKEN_LEN,
+  bm_set_device_mem(&in_tensors[2].device_mem, mask_bytes * real_len * real_len,
                     bm_mem_get_device_addr(in_tensors[2].device_mem));
 
-  in_tensors[0].shape.dims[1] = TOKEN_LEN;
-  in_tensors[1].shape.dims[1] = TOKEN_LEN;
-  in_tensors[2].shape.dims[2] = TOKEN_LEN;
-  in_tensors[2].shape.dims[3] = TOKEN_LEN;
+  in_tensors[0].shape.dims[1] = real_len;
+  in_tensors[1].shape.dims[1] = real_len;
+  in_tensors[2].shape.dims[2] = real_len;
+  in_tensors[2].shape.dims[3] = real_len;
 
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
@@ -300,8 +300,7 @@ void Qwen::net_launch_dyn(const bm_net_info_t *net, int stage_idx) {
 
 int Qwen::greedy_search(bm_device_mem_t &logits_mem) {
   auto &out_mem = net_greedy_head->stages[0].output_mems[0];
-  bm_set_device_mem(&net_greedy_head->stages[0].input_mems[0],
-                    logits_mem.size,
+  bm_set_device_mem(&net_greedy_head->stages[0].input_mems[0], logits_mem.size,
                     logits_mem.u.device.device_addr);
   net_launch(net_greedy_head);
   int token = 0;
@@ -326,8 +325,7 @@ int Qwen::penalty_sample(bm_device_mem_t &logits_mem) {
   bm_memcpy_s2d(bm_handle, in5_mem, (void *)&top_p);
 
   // inference
-  bm_set_device_mem(&net_sample_head->stages[0].input_mems[0],
-                    logits_mem.size,
+  bm_set_device_mem(&net_sample_head->stages[0].input_mems[0], logits_mem.size,
                     logits_mem.u.device.device_addr);
   net_launch(net_sample_head);
 
@@ -352,25 +350,20 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
 
   token_length = tokens.size();
-  TOKEN_LEN = tokens.size();
 
   for (int i = 0; i < token_length; i++) {
     position_id[i] = i;
   }
   if (is_dynamic) {
     for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j < TOKEN_LEN; j++) {
-        if (j <= i) {
-          attention_mask[i * TOKEN_LEN + j] = 0;
-        }
+      for (int j = 0; j <= i; j++) {
+        attention_mask[i * token_length + j] = 0;
       }
     }
   } else {
     for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j < SEQLEN; j++) {
-        if (j <= i) {
-          attention_mask[i * SEQLEN + j] = 0;
-        }
+      for (int j = 0; j <= i; j++) {
+        attention_mask[i * SEQLEN + j] = 0;
       }
     }
   }
@@ -398,10 +391,11 @@ int Qwen::forward_first(std::vector<int> &tokens) {
       bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
       bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     }
-    if (is_dynamic)
-      net_launch_dyn(net_blocks[idx]);
-    else
+    if (is_dynamic) {
+      net_launch_dyn(net_blocks[idx], token_length);
+    } else {
       net_launch(net_blocks[idx]);
+    }
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1], 0,
         token_length * kv_bytes);
