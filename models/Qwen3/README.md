@@ -8,8 +8,11 @@
 ``` shell
 # 1684x 512
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-4b-awq_w4bf16_seq512_bm1684x_1dev_20250514_161445.bmodel
-# 1684x 8k
+# 1684x 8k, 静态模型
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-4b-awq_w4bf16_seq8192_bm1684x_1dev_20250514_161732.bmodel
+# 1684x 8k, 动态模型
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-4b-awq_w4bf16_seq8192_bm1684x_dyn.bmodel
+
 # 1688 512
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU_Lite/qwen3-4b-awq_w4bf16_seq512_bm1688_2core_20250514_162231.bmodel
 ```
