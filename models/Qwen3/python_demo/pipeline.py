@@ -125,7 +125,7 @@ class Qwen3():
                 continue
             self.answer_token += full_word_tokens
             self.answer_cur += word
-            if any(stop in self.answer_cur for stop in self.stop_strings):
+            if any(self.answer_cur.endswith(stop) for stop in self.stop_strings):
                 break
             print(word, flush=True, end="")
             tok_num += 1

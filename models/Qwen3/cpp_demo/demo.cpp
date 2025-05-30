@@ -19,6 +19,7 @@
 #include <memory.h>
 #include <random>
 #include <vector>
+#include "json.hpp"
 
 using tokenizers::Tokenizer;
 
@@ -37,6 +38,11 @@ static inline std::string LoadBytesFromFile(const std::string &path) {
   return data;
 }
 
+bool ends_with(const std::string& str, const std::string& suffix) {
+    if (str.size() < suffix.size()) return false;
+    return std::equal(suffix.rbegin(), suffix.rend(), str.rbegin());
+}
+
 void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
                int stage_idx = 0) {
   int value = 0;
@@ -50,11 +56,39 @@ void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
   }
 }
 
+struct GenerationConfig {
+    std::vector<int> eos_token_id;
+    float repetition_penalty = 1.0;
+    float temperature = 1.0;
+    int top_k = 50;
+    float top_p = 1.0;
+    std::vector<std::string> stop_strings;
+    static GenerationConfig from_json(const std::string& path) {
+        GenerationConfig config;
+        std::ifstream in(path);
+        nlohmann::json j;
+        in >> j;
+        if (j.contains("eos_token_id"))
+          config.eos_token_id = j["eos_token_id"].get<std::vector<int>>();
+        if (j.contains("repetition_penalty"))
+          config.repetition_penalty = j["repetition_penalty"].get<float>();
+        if (j.contains("temperature"))
+          config.temperature = j["temperature"].get<float>();
+        if (j.contains("top_k"))
+          config.top_k = j["top_k"].get<int>();
+        if (j.contains("top_p"))
+          config.top_p = j["top_p"].get<float>();
+        if (j.contains("stop_strings"))
+          config.stop_strings = j["stop_strings"].get<std::vector<std::string>>();
+        return config;
+    }
+};
+
 class Qwen3 {
 public:
   void init(std::string model_path, std::string config_path,
             std::string system_prompt, bool enable_history,
-            const std::vector<int> &devid);
+            bool do_sample, const std::vector<int> &devid);
   void deinit();
   void chat();
   void answer(const std::string input_str);
@@ -70,6 +104,8 @@ private:
                       int stage_idx = 0);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, size_t offset = 0,
                   size_t size = 0);
+  int greedy_search(bm_device_mem_t &logits_mem);
+  int penalty_sample(bm_device_mem_t &logits_mem);
   void init_by_names();
 
 public:
@@ -85,6 +121,13 @@ public:
   std::vector<int> visited_tokens;
   std::vector<std::pair<std::string, std::string>> history_vector;
   std::string sys_config;
+  // generation
+  std::string generation_mode;
+  std::vector<std::string> stop_strings;
+  float penalty;
+  float temperature;
+  int top_k;
+  float top_p;
 
 private:
   bm_handle_t bm_handle;
@@ -97,13 +140,12 @@ private:
   const bm_net_info_t *net_embed_cache;
   const bm_net_info_t *net_lm_head;
   const bm_net_info_t *net_greedy_head;
-  const bm_net_info_t *net_penalty_sample_head;
+  const bm_net_info_t *net_sample_head;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
   // tokenizer & processor
   std::unique_ptr<Tokenizer> tok;
-  int EOS;
-  int ID_IM_END;
+  std::vector<int> EOS;
 };
 
 void Qwen3::net_launch(const bm_net_info_t *net, int stage_idx) {
@@ -120,6 +162,45 @@ void Qwen3::net_launch(const bm_net_info_t *net, int stage_idx) {
         &out_tensors[i], net->stages[stage_idx].output_mems[i],
         net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
   }
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
+                                   net->input_num, out_tensors.data(),
+                                   net->output_num, true, false);
+  assert(ret);
+  bm_thread_sync(bm_handle);
+}
+
+void Qwen3::net_launch_dyn(const bm_net_info_t *net, int real_len,
+                           int stage_idx) {
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  for (int i = 0; i < net->input_num; i++) {
+    bmrt_tensor_with_device(
+        &in_tensors[i], net->stages[stage_idx].input_mems[i],
+        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(
+        &out_tensors[i], net->stages[stage_idx].output_mems[i],
+        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
+  }
+
+  int h_bytes = bm_mem_get_device_size(in_tensors[0].device_mem) / SEQLEN;
+  bm_set_device_mem(&in_tensors[0].device_mem, h_bytes * real_len,
+                    bm_mem_get_device_addr(in_tensors[0].device_mem));
+  int pid_bytes = bm_mem_get_device_size(in_tensors[1].device_mem) / SEQLEN;
+  bm_set_device_mem(&in_tensors[1].device_mem, pid_bytes * real_len,
+                    bm_mem_get_device_addr(in_tensors[1].device_mem));
+  int mask_bytes =
+      bm_mem_get_device_size(in_tensors[2].device_mem) / SEQLEN / SEQLEN;
+  bm_set_device_mem(&in_tensors[2].device_mem, mask_bytes * real_len * real_len,
+                    bm_mem_get_device_addr(in_tensors[2].device_mem));
+
+  in_tensors[0].shape.dims[1] = real_len;
+  in_tensors[1].shape.dims[1] = real_len;
+  in_tensors[2].shape.dims[2] = real_len;
+  in_tensors[2].shape.dims[3] = real_len;
+
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
@@ -155,11 +236,10 @@ void Qwen3::init_by_names() {
     net_greedy_head = bmrt_get_network_info(p_bmrt, "greedy_head");
     num_blocks--; // greedy_head is not a block
   }
-  net_penalty_sample_head = nullptr;
-  if (is_exist("penalty_sample_head", net_names, num_nets)) {
-    net_penalty_sample_head =
-        bmrt_get_network_info(p_bmrt, "penalty_sample_head");
-    num_blocks--; // penalty_sample_head is not a block
+  net_sample_head = nullptr;
+  if (is_exist("sample_head", net_names, num_nets)) {
+    net_sample_head = bmrt_get_network_info(p_bmrt, "sample_head");
+    num_blocks--; // sample_head is not a block
   }
 
   SEQLEN = net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
@@ -185,17 +265,38 @@ void Qwen3::init_by_names() {
 
 void Qwen3::init(std::string model_path, std::string config_path,
                  std::string system_prompt, bool save_history,
-                 const std::vector<int> &devices) {
+                 bool do_sample, const std::vector<int> &devices) {
   sys_config = "<|im_start|>system\n" + system_prompt + "<|im_end|>\n";
   enable_history = save_history;
 
   // load tokenizer
-  std::cout << "Processor [" << config_path.c_str() << "] loading .... ";
-  auto blob = LoadBytesFromFile((config_path + "/tokenizer.json").c_str());
+  std::string tokenizer_path = config_path + "/tokenizer.json";
+  std::cout << "Processor [" << tokenizer_path.c_str() << "] loading .... ";
+  auto blob = LoadBytesFromFile((tokenizer_path).c_str());
   tok = Tokenizer::FromBlobJSON(blob);
-  EOS = tok->TokenToId("<|endoftext|>");
-  ID_IM_END = tok->TokenToId("<|im_end|>");
+  EOS.push_back(tok->TokenToId("<|endoftext|>"));
+  EOS.push_back(tok->TokenToId("<|im_end|>"));
   std::cout << "Done!" << std::endl;
+
+  // load generation config
+  generation_mode = "greedy";
+  if (do_sample) {
+    generation_mode = "sample";
+    std::string generation_path = config_path + "/generation_config.json";
+    std::cout << "Generation Config [" << generation_path.c_str() << "] loading .... ";
+    auto gen_config = GenerationConfig::from_json(generation_path);
+    penalty = gen_config.repetition_penalty;
+    temperature = gen_config.temperature;
+    top_k = gen_config.top_k;
+    top_p = gen_config.top_p;
+    for (auto id : gen_config.eos_token_id) {
+        EOS.push_back(id);
+    }
+    if (!gen_config.stop_strings.empty()) {
+        stop_strings = gen_config.stop_strings;
+    }
+    std::cout << "Done!" << std::endl;
+  }
 
   // request bm_handle
   std::cout << "Device [ ";
@@ -271,6 +372,47 @@ void Qwen3::deinit() {
   }
 }
 
+int Qwen3::greedy_search(bm_device_mem_t &logits_mem) {
+  auto &out_mem = net_greedy_head->stages[0].output_mems[0];
+  bm_set_device_mem(&net_greedy_head->stages[0].input_mems[0], logits_mem.size,
+                    logits_mem.u.device.device_addr);
+  net_launch(net_greedy_head);
+  int token = 0;
+  bm_memcpy_d2s(bm_handle, (void *)&token, out_mem);
+  return token;
+}
+
+int Qwen3::penalty_sample(bm_device_mem_t &logits_mem) {
+  auto &in1_mem = net_sample_head->stages[0].input_mems[1];
+  auto &in2_mem = net_sample_head->stages[0].input_mems[2];
+  auto &in3_mem = net_sample_head->stages[0].input_mems[3];
+  auto &in4_mem = net_sample_head->stages[0].input_mems[4];
+  auto &in5_mem = net_sample_head->stages[0].input_mems[5];
+  auto &out0_mem = net_sample_head->stages[0].output_mems[0];
+  auto &out1_mem = net_sample_head->stages[0].output_mems[1];
+  // repeat_penalty + top_p + top_k + temperature
+  bm_memcpy_s2d(bm_handle, in1_mem, (void *)visited_tokens.data());
+  bm_memcpy_s2d(bm_handle, in2_mem, (void *)&penalty);
+  bm_memcpy_s2d(bm_handle, in3_mem, (void *)&temperature);
+  bm_memcpy_s2d(bm_handle, in4_mem, (void *)&top_k);
+  bm_memcpy_s2d(bm_handle, in5_mem, (void *)&top_p);
+  // inference
+  bm_set_device_mem(&net_sample_head->stages[0].input_mems[0], logits_mem.size,
+                    logits_mem.u.device.device_addr);
+  net_launch(net_sample_head);
+  // get logit & token
+  int candidate_num = top_k;
+  std::vector<float> probs(candidate_num);
+  bm_memcpy_d2s_partial_offset(bm_handle, probs.data(), out0_mem,
+                               top_k * sizeof(float), 0);
+  std::vector<int> tokens(candidate_num);
+  bm_memcpy_d2s_partial_offset(bm_handle, tokens.data(), out1_mem,
+                               top_k * sizeof(float), 0);
+  // sample
+  std::discrete_distribution<> dist(probs.begin(), probs.end());
+  return tokens[dist(sgen)];
+}
+
 int Qwen3::forward_first(std::vector<int> &inputs) {
   std::vector<int> position_id(SEQLEN, 0);
   std::copy(inputs.begin(), inputs.end(), visited_tokens.data());
@@ -327,57 +469,16 @@ int Qwen3::forward_first(std::vector<int> &inputs) {
                      (token_length - 1) * hidden_bytes, hidden_bytes);
   net_launch(net_lm_head);
   int token = 0;
-  if (net_greedy_head) {
-    auto &head_in_mem = net_greedy_head->stages[0].input_mems[0];
-    auto &head_out_mem = net_greedy_head->stages[0].output_mems[0];
-    d2d(head_in_mem, lm_out_mem);
-    net_launch(net_greedy_head);
-    bm_memcpy_d2s(bm_handle, (void *)&token, head_out_mem);
-  } else {
+  if (!net_greedy_head && !net_sample_head) {
     bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  } else if (generation_mode == "greedy") {
+    token = greedy_search(lm_out_mem);
+  } else if (generation_mode == "sample") {
+    token = penalty_sample(lm_out_mem);
   }
   visited_tokens[token_length] = token;
   token_length += 1;
   return token;
-}
-
-void Qwen3::net_launch_dyn(const bm_net_info_t *net, int real_len,
-                           int stage_idx) {
-  std::vector<bm_tensor_t> in_tensors(net->input_num);
-  std::vector<bm_tensor_t> out_tensors(net->output_num);
-
-  for (int i = 0; i < net->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net->stages[stage_idx].input_mems[i],
-        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
-  }
-  for (int i = 0; i < net->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net->stages[stage_idx].output_mems[i],
-        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
-  }
-
-  int h_bytes = bm_mem_get_device_size(in_tensors[0].device_mem) / SEQLEN;
-  bm_set_device_mem(&in_tensors[0].device_mem, h_bytes * real_len,
-                    bm_mem_get_device_addr(in_tensors[0].device_mem));
-  int pid_bytes = bm_mem_get_device_size(in_tensors[1].device_mem) / SEQLEN;
-  bm_set_device_mem(&in_tensors[1].device_mem, pid_bytes * real_len,
-                    bm_mem_get_device_addr(in_tensors[1].device_mem));
-  int mask_bytes =
-      bm_mem_get_device_size(in_tensors[2].device_mem) / SEQLEN / SEQLEN;
-  bm_set_device_mem(&in_tensors[2].device_mem, mask_bytes * real_len * real_len,
-                    bm_mem_get_device_addr(in_tensors[2].device_mem));
-
-  in_tensors[0].shape.dims[1] = real_len;
-  in_tensors[1].shape.dims[1] = real_len;
-  in_tensors[2].shape.dims[2] = real_len;
-  in_tensors[2].shape.dims[3] = real_len;
-
-  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
-                                   net->input_num, out_tensors.data(),
-                                   net->output_num, true, false);
-  assert(ret);
-  bm_thread_sync(bm_handle);
 }
 
 int Qwen3::forward_next() {
@@ -427,14 +528,12 @@ int Qwen3::forward_next() {
   d2d(lm_in_mem, out_mem);
   net_launch(net_lm_head);
   int token = 0;
-  if (net_greedy_head) {
-    auto &head_in_mem = net_greedy_head->stages[0].input_mems[0];
-    auto &head_out_mem = net_greedy_head->stages[0].output_mems[0];
-    d2d(head_in_mem, lm_out_mem);
-    net_launch(net_greedy_head);
-    bm_memcpy_d2s(bm_handle, (void *)&token, head_out_mem);
-  } else {
+  if (!net_greedy_head && !net_sample_head) {
     bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  } else if (generation_mode == "greedy") {
+    token = greedy_search(lm_out_mem);
+  } else if (generation_mode == "sample") {
+    token = penalty_sample(lm_out_mem);
   }
   visited_tokens[token_length] = token;
   token_length += 1;
@@ -465,13 +564,22 @@ void Qwen3::answer(const std::string input_str) {
   auto t1 = std::chrono::system_clock::now();
 
   std::string result;
-  while (token != EOS && token != ID_IM_END && token_length < SEQLEN) {
+  while (std::find(EOS.begin(), EOS.end(), token) == EOS.end()
+         && token_length < SEQLEN) {
     std::vector<int> pre_ids = {pre_token};
     std::vector<int> ids = {pre_token, token};
     std::string pre_word = tok->Decode(pre_ids);
     std::string word = tok->Decode(ids);
     std::string diff = word.substr(pre_word.size());
     result += diff;
+    bool stop_by_string = false;
+    for (const auto& stop : stop_strings) {
+        if (ends_with(result, stop)) {
+            stop_by_string = true;
+            break;
+        }
+    }
+    if (stop_by_string) break;
     std::cout << diff << std::flush;
     tok_num++;
     token = forward_next();
@@ -532,23 +640,25 @@ void Usage() {
          "  -m, --model     : Set model path \n"
          "  -c, --config    : Set processor config path \n"
          "  -e, --enable_history : if set, enable history memory\n"
+         "  -s, --do_sample : if set, sample by generation config\n"
          "  -d, --devid     : Set devices to run for model, default is '0'\n");
 }
 
 void processArguments(int argc, char *argv[], std::string &model_path,
                       std::string &config_path, std::vector<int> &devices,
-                      bool &enable_history) {
+                      bool &enable_history, bool &do_sample) {
   struct option longOptions[] = {{"model", required_argument, nullptr, 'm'},
                                  {"config", required_argument, nullptr, 'c'},
                                  {"devid", required_argument, nullptr, 'd'},
                                  {"enable_history", no_argument, nullptr, 'e'},
+                                 {"do_sample", no_argument, nullptr, 's'},
                                  {"help", no_argument, nullptr, 'h'},
                                  {nullptr, 0, nullptr, 0}};
 
   int optionIndex = 0;
   int option;
 
-  while ((option = getopt_long(argc, argv, "m:c:d:eh", longOptions,
+  while ((option = getopt_long(argc, argv, "m:c:d:esh", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -563,6 +673,9 @@ void processArguments(int argc, char *argv[], std::string &model_path,
     case 'e':
       enable_history = true;
       break;
+    case 's':
+      do_sample = true;
+      break;
     case 'h':
     case '?':
       Usage();
@@ -575,12 +688,13 @@ void processArguments(int argc, char *argv[], std::string &model_path,
 
 int main(int argc, char **argv) {
   std::string model_path;
-  std::string config_path;
+  std::string config_path = "../../config";
   std::vector<int> devices = {0};
   bool enable_history = false;
+  bool do_sample = false;
 
   processArguments(argc, argv, model_path, config_path, devices,
-                   enable_history);
+                   enable_history, do_sample);
   if (model_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);
@@ -590,7 +704,7 @@ int main(int argc, char **argv) {
 
   Qwen3 model;
   std::cout << "Init Environment ..." << std::endl;
-  model.init(model_path, config_path, system_prompt, enable_history, devices);
+  model.init(model_path, config_path, system_prompt, enable_history, do_sample, devices);
   model.chat();
   model.deinit();
   return 0;
