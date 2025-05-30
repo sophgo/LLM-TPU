@@ -45,6 +45,8 @@ class Qwen3():
             self.model.penalty = gen_config.repetition_penalty
             for i in gen_config.eos_token_id:
                 self.EOS.append(i)
+            if gen_config.stop_strings is not None:
+                self.stop_strings = gen_config.stop_strings
 
     def clear(self):
         self.history = [{"role": "system", "content": self.system_prompt}]
@@ -121,6 +123,9 @@ class Qwen3():
                 tok_num += 1
                 continue
             self.answer_token += full_word_tokens
+            self.answer_cur += word
+            if any(stop in self.answer_cur for stop in self.stop_strings):
+                break
             print(word, flush=True, end="")
             tok_num += 1
             full_word_tokens = []
@@ -133,7 +138,6 @@ class Qwen3():
         tps = tok_num / next_duration
 
         if self.enable_history:
-            self.answer_cur = self.tokenizer.decode(self.answer_token)
             self.update_history()
         else:
             self.clear()
