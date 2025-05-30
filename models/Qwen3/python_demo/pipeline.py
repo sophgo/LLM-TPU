@@ -36,6 +36,7 @@ class Qwen3():
 
     def init_params(self, args):
         self.model.generation_mode = "greedy"
+        self.stop_strings = []
         if args.do_sample:
             gen_config = GenerationConfig.from_pretrained(args.config_path)
             self.model.generation_mode = "sample"
