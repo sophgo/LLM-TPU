@@ -46,6 +46,7 @@ class ModelMapper:
         self.regist_qwen2_5_vl()
         self.regist_glm()
         self.regist_glm2()
+        self.regist_glm3()
         self.regist_phi()
 
     def default_map(self):
@@ -204,6 +205,34 @@ class ModelMapper:
         }
         self.regist('chatglm2', glm2_map)
 
+    def regist_glm3(self):
+        glm3_map = {
+            'config': {
+                'hidden_size': 'hidden_size',
+                'num_attention_heads': 'num_attention_heads',
+                'num_key_value_heads': 'multi_query_group_num',
+                'num_hidden_layers': 'num_layers',
+                'vocab_size': 'vocab_size'
+            },
+            'model': {
+                'lm_': 'transformer.output_layer',
+                'embed_': 'transformer.embedding.word_embeddings',
+                'blocks_': 'transformer.encoder.layers',
+                'final_layernorm_': 'transformer.encoder.final_layernorm',
+            },
+            'decoder': {
+                'self_attn': 'self_attention',
+                'mlp': 'mlp',
+                'input_layernorm': 'input_layernorm',
+                'post_attention_layernorm': 'post_attention_layernorm'
+            },
+            'attention': {
+                'qkv_proj': 'query_key_value',
+                'o_proj': 'dense'
+            }
+        }
+        self.regist('chatglm3', glm3_map)
+
     def regist_phi(self):
         phi_map = {
             'config': {
@@ -272,6 +301,8 @@ class OnnxRebuilder:
         self.config = config
         self.visual_length = visual_length
         self.model_mapper = ModelMapper()
+        self.num_key_value_heads = None
+        self.rope_theta = None
 
     def _replace_initializer(self, old_init, new_init):
         """
@@ -685,7 +716,7 @@ class Rotary(torch.nn.Module):
         position_ids = position_ids.float().reshape(-1, 1)
         idx_theta = position_ids * theta
         rotary_pos_emb = torch.stack([torch.cos(idx_theta), torch.sin(idx_theta)])
-        if self.model_type != 'chatglm2':
+        if self.model_type != 'chatglm2' and self.model_type != 'chatglm3':
             rotary_pos_emb = torch.cat((rotary_pos_emb, rotary_pos_emb), dim=-1)
         rotary_pos_emb = rotary_pos_emb.unsqueeze(2).unsqueeze(1)
         return rotary_pos_emb
@@ -695,6 +726,8 @@ class Rotary(torch.nn.Module):
             return self.chatglm_rotary_pos(x, cos, sin)
         if self.model_type == 'chatglm2':
             return self.chatglm2_rotary_pos(x, cos, sin)
+        if self.model_type == 'chatglm3':
+            return self.chatglm3_rotary_pos(x, cos, sin)
         if self.model_type == 'phi-msft':
             return self.phi_rotary_pos(x, cos, sin)
         return self.llama_rotary_pos(x, cos, sin)
@@ -709,6 +742,19 @@ class Rotary(torch.nn.Module):
         return torch.cat((x, x_pass), dim=-1)
 
     def chatglm2_rotary_pos(self, x, cos, sin):
+        x, x_pass = x[..., :self.rotary_dim], x[..., self.rotary_dim:]
+        b, s, n, h = x.shape
+        xshaped = x.view(b, s, n, h//2, 2)
+        x = torch.concat(
+            [
+                xshaped[..., 0] * cos - xshaped[..., 1] * sin,
+                xshaped[..., 1] * cos + xshaped[..., 0] * sin,
+            ],
+            -1,
+        )
+        return torch.cat((x, x_pass), dim=-1)
+
+    def chatglm3_rotary_pos(self, x, cos, sin):
         x, x_pass = x[..., :self.rotary_dim], x[..., self.rotary_dim:]
         b, s, n, h = x.shape
         xshaped = x.view(b, s, n, h//2, 2)
@@ -928,6 +974,8 @@ class VisionRotary(torch.nn.Module):
             return self.chatglm_rotary_pos(x, cos, sin)
         if self.model_type == 'chatglm2':
             return self.chatglm2_rotary_pos(x, cos, sin)
+        if self.model_type == 'chatglm3':
+            return self.chatglm3_rotary_pos(x, cos, sin)
         if self.model_type == 'phi-msft':
             return self.phi_rotary_pos(x, cos, sin)
         return self.llama_rotary_pos(x, cos, sin)
