@@ -17,6 +17,15 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-4
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU_Lite/qwen3-4b-awq_w4bf16_seq512_bm1688_2core_20250514_162231.bmodel
 ```
 
+### deepseek-r1-0528-qwen3-8b
+
+``` shell
+# 1684x 512
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-0528-qwen3-8b_w4bf16_seq512_bm1684x.tar
+# 1684x 4k
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-0528-qwen3-8b_w4bf16_seq4096_bm1684x.tar
+```
+
 ## 编译LLM模型
 
 此处介绍如何将LLM编译成bmodel。
