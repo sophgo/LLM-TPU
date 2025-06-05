@@ -183,7 +183,6 @@ void InternVL3::deinit() {
 
 int InternVL3::forward_first(pybind11::array_t<int> tokens,
                              pybind11::array_t<float> pixel_values) {
-  // 1. 解析 tokens
   auto tokens_buf = tokens.request();
   int* tokens_ptr = static_cast<int*>(tokens_buf.ptr);
   size_t tokens_len = tokens_buf.size;
@@ -215,7 +214,6 @@ int InternVL3::forward_first(pybind11::array_t<int> tokens,
 
   int bytes = out_mem.size / SEQLEN;
   if (pixel_values.size() > 0) {
-    // 2. 解析 pixel_values
     auto pixel_buf = pixel_values.request();
     float* pixel_ptr = static_cast<float*>(pixel_buf.ptr);
     size_t pixel_len = pixel_buf.size;
