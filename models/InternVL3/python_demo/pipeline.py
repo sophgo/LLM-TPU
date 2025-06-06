@@ -112,7 +112,7 @@ class InternVL3():
 
         # Following tokens
         full_word_tokens = []
-        while token not in self.EOS:
+        while token not in self.EOS and self.model.token_length < self.model.SEQLEN:
             self.answer_token.append(token)
             full_word_tokens.append(token)
             word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
