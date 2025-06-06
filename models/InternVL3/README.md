@@ -38,7 +38,7 @@ cd python_demo
 mkdir build && cd build 
 cmake .. && make && mv chat.*so ..
 
-python pipeline.py -m $bmodel_path -d $device_id
+python pipeline.py -m $bmodel_path -c $config_path -d $device_id
 ```
 如果在编译时打开了--do_sample，运行时也可以选择加上--do_sample，根据config路径中的generation_config.json采样参数进行采样。
 

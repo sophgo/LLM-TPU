@@ -44,8 +44,11 @@ class Qwen3():
             self.model.top_p = gen_config.top_p
             self.model.top_k = gen_config.top_k
             self.model.penalty = gen_config.repetition_penalty
-            for i in gen_config.eos_token_id:
-                self.EOS.append(i)
+            if gen_config.eos_token_id is not None:
+                if isinstance(gen_config.eos_token_id, int):
+                    self.EOS.append(gen_config.eos_token_id)
+                if isinstance(gen_config.eos_token_id, list):
+                    self.EOS.extend(gen_config.eos_token_id)
             if gen_config.stop_strings is not None:
                 self.stop_strings = gen_config.stop_strings
 

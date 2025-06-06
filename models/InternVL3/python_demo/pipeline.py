@@ -1,7 +1,7 @@
 import argparse
 import os, sys, time
 import torch
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, GenerationConfig
 import numpy as np
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -36,6 +36,25 @@ class InternVL3():
         self.model = chat.InternVL3()
         self.model.init(self.devices, args.model_path)
         self.SEQLEN = self.model.SEQLEN
+        self.init_params(args)
+
+    def init_params(self, args):
+        self.model.generation_mode = "greedy"
+        self.stop_strings = []
+        if args.do_sample:
+            gen_config = GenerationConfig.from_pretrained(args.config_path)
+            self.model.generation_mode = "sample"
+            self.model.temperature = gen_config.temperature
+            self.model.top_p = gen_config.top_p
+            self.model.top_k = gen_config.top_k
+            self.model.penalty = gen_config.repetition_penalty
+            if gen_config.eos_token_id is not None:
+                if isinstance(gen_config.eos_token_id, int):
+                    self.EOS.append(gen_config.eos_token_id)
+                if isinstance(gen_config.eos_token_id, list):
+                    self.EOS.extend(gen_config.eos_token_id)
+            if gen_config.stop_strings is not None:
+                self.stop_strings = gen_config.stop_strings
 
 
     def process_input(self, media_path):
@@ -102,7 +121,7 @@ class InternVL3():
         Stream the answer for the given inputs.
         """
         tok_num = 0
-        self.answer_token = []
+        self.answer_cur = ""
 
         # First token
         first_start = time.time()
@@ -113,15 +132,16 @@ class InternVL3():
         # Following tokens
         full_word_tokens = []
         while token not in self.EOS and self.model.token_length < self.model.SEQLEN:
-            self.answer_token.append(token)
             full_word_tokens.append(token)
             word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
             if "�" in word:
                 token = self.model.forward_next()
                 tok_num += 1
                 continue
+            self.answer_cur += word
+            if any(self.answer_cur.endswith(stop) for stop in self.stop_strings):
+                break
             print(word, flush=True, end="")
-
             token = self.model.forward_next()
             tok_num += 1
             full_word_tokens = []
@@ -146,5 +166,6 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--model_path', type=str, required=True, help='path to the bmodel file')
     parser.add_argument('-c', '--config_path', type=str, default="../support/processor", help='path to the processor file')
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
+    parser.add_argument('--do_sample', action='store_true', help="if set, generate tokens by sample parameters")
     args = parser.parse_args()
     main(args)
