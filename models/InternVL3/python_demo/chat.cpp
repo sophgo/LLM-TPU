@@ -7,38 +7,36 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <iostream>
-#include <cstdlib>
-#include <vector>
+#include "bmruntime_interface.h"
+#include "memory.h"
+#include <algorithm>
 #include <assert.h>
 #include <chrono>
-#include <algorithm>
+#include <cstdlib>
+#include <getopt.h>
+#include <inttypes.h>
+#include <iostream>
+#include <numeric>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include "memory.h"
-#include "bmruntime_interface.h"
-#include <getopt.h>
-#include <stdio.h>
-#include <inttypes.h>
 #include <random>
-#include <numeric>
-#include "utils.h"
-#include <chrono>
+#include <stdio.h>
+#include <vector>
 
 #include <pybind11/numpy.h>
 
-static const float ATTENTION_MASK = -10000.;
 static const int MEDIA_TOKEN_ID = 151667;
 
 class InternVL3 {
 public:
   void init(const std::vector<int> &devid, std::string model_path);
   void deinit();
-  int forward_first(pybind11::array_t<int> tokens, pybind11::array_t<float> pixel_values);
+  int forward_first(pybind11::array_t<int> tokens,
+                    pybind11::array_t<float> pixel_values);
   int forward_next();
 
   std::mt19937 sgen;
-  InternVL3() : sgen(std::random_device()()){};
+  InternVL3() : sgen(std::random_device()()) {};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -105,7 +103,7 @@ void InternVL3::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
 }
 
 void InternVL3::init(const std::vector<int> &devices, std::string model_path) {
-  
+
   // request bm_handle
   std::cout << "Device [ ";
   for (auto d : devices) {
@@ -135,11 +133,11 @@ void InternVL3::init(const std::vector<int> &devices, std::string model_path) {
   printf("Done!\n");
 
   init_by_names();
-  
+
   if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
-    mask_value = fp32_to_fp16_bits(ATTENTION_MASK);
+    mask_value = 0xF0E2; // float16
   } else if (net_embed_cache->output_dtypes[0] == BM_BFLOAT16) {
-    mask_value = fp32_to_bf16_bits(ATTENTION_MASK);
+    mask_value = 0xC61C; // -9984 by bfloat16
   } else {
     std::cerr << "\nError: Invalid attention dtype\n";
     std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
@@ -160,7 +158,8 @@ void InternVL3::init(const std::vector<int> &devices, std::string model_path) {
     past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
   }
 
-  auto buffer_size = bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
+  auto buffer_size =
+      bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
   bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
 }
 
@@ -276,7 +275,7 @@ int InternVL3::penalty_sample(bm_device_mem_t &logits_mem) {
 int InternVL3::forward_first(pybind11::array_t<int> tokens,
                              pybind11::array_t<float> pixel_values) {
   auto tokens_buf = tokens.request();
-  int* tokens_ptr = static_cast<int*>(tokens_buf.ptr);
+  int *tokens_ptr = static_cast<int *>(tokens_buf.ptr);
   size_t tokens_len = tokens_buf.size;
 
   std::vector<int> position_id(SEQLEN, 0);
@@ -287,7 +286,7 @@ int InternVL3::forward_first(pybind11::array_t<int> tokens,
   token_length = tokens_len;
 
   for (int i = 0; i < token_length; i++) {
-    position_id[i] = i; 
+    position_id[i] = i;
   }
   for (int i = 0; i < token_length; i++) {
     for (int j = 0; j < SEQLEN; j++) {
@@ -307,15 +306,15 @@ int InternVL3::forward_first(pybind11::array_t<int> tokens,
   int bytes = out_mem.size / SEQLEN;
   if (pixel_values.size() > 0) {
     auto pixel_buf = pixel_values.request();
-    float* pixel_ptr = static_cast<float*>(pixel_buf.ptr);
+    float *pixel_ptr = static_cast<float *>(pixel_buf.ptr);
     size_t pixel_len = pixel_buf.size;
 
     int vit_offset = 0;
     for (int i = 0; i < token_length; i++) {
-        if (visited_tokens[i]==MEDIA_TOKEN_ID) {
-          vit_offset = i;
-          break;
-        }
+      if (visited_tokens[i] == MEDIA_TOKEN_ID) {
+        vit_offset = i;
+        break;
+      }
     }
     auto &vit_in_mem = net_vit->stages[0].input_mems[0];
     auto &vit_out_mem = net_vit->stages[0].output_mems[0];
@@ -326,8 +325,8 @@ int InternVL3::forward_first(pybind11::array_t<int> tokens,
                     (void *)(pixel_ptr + i * pixel_bytes));
       net_launch(net_vit);
       bm_memcpy_d2d_byte(bm_handle, dev_buffer,
-                        (vit_offset + i * NUM_IMAGE_TOKEN) * bytes,
-                        vit_out_mem, 0, NUM_IMAGE_TOKEN * bytes);
+                         (vit_offset + i * NUM_IMAGE_TOKEN) * bytes,
+                         vit_out_mem, 0, NUM_IMAGE_TOKEN * bytes);
     }
   }
 
@@ -417,9 +416,9 @@ int InternVL3::forward_next() {
     net_launch(net_blocks_cache[idx]);
     out_mem = out0_mem;
     bm_memcpy_d2d_byte(bm_handle, past_key[idx], token_offset, out1_mem, 0,
-                      bytes);
+                       bytes);
     bm_memcpy_d2d_byte(bm_handle, past_value[idx], token_offset, out2_mem, 0,
-                      bytes);
+                       bytes);
   }
 
   // forward lmhead
@@ -442,20 +441,19 @@ int InternVL3::forward_next() {
   return token;
 }
 
-
 PYBIND11_MODULE(chat, m) {
-    pybind11::class_<InternVL3>(m, "InternVL3")
-        .def(pybind11::init<>())
-        .def("init", &InternVL3::init)
-        .def("forward_first", &InternVL3::forward_first)
-        .def("forward_next", &InternVL3::forward_next)
-        .def("deinit", &InternVL3::deinit)
-        .def_readwrite("SEQLEN", &InternVL3::SEQLEN)
-        .def_readwrite("NUM_IMAGE_TOKEN", &InternVL3::NUM_IMAGE_TOKEN)
-        .def_readwrite("token_length", &InternVL3::token_length)
-        .def_readwrite("generation_mode", &InternVL3::generation_mode)
-        .def_readwrite("penalty", &InternVL3::penalty)
-        .def_readwrite("temperature", &InternVL3::temperature)
-        .def_readwrite("top_k", &InternVL3::top_k)
-        .def_readwrite("top_p", &InternVL3::top_p);
+  pybind11::class_<InternVL3>(m, "InternVL3")
+      .def(pybind11::init<>())
+      .def("init", &InternVL3::init)
+      .def("forward_first", &InternVL3::forward_first)
+      .def("forward_next", &InternVL3::forward_next)
+      .def("deinit", &InternVL3::deinit)
+      .def_readwrite("SEQLEN", &InternVL3::SEQLEN)
+      .def_readwrite("NUM_IMAGE_TOKEN", &InternVL3::NUM_IMAGE_TOKEN)
+      .def_readwrite("token_length", &InternVL3::token_length)
+      .def_readwrite("generation_mode", &InternVL3::generation_mode)
+      .def_readwrite("penalty", &InternVL3::penalty)
+      .def_readwrite("temperature", &InternVL3::temperature)
+      .def_readwrite("top_k", &InternVL3::top_k)
+      .def_readwrite("top_p", &InternVL3::top_p);
 }

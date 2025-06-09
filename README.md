@@ -82,7 +82,7 @@
 |Qwen2.5-VL                   |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct)                |
 |InternVL2-4B                 |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/OpenGVLab/InternVL2-4B)                     |
 |InternVL2-2B                 |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/OpenGVLab/InternVL2-2B)                     |
-|InternVL3                    |:white\_check\_mark:|                    |[LINK](https://huggingface.co/OpenGVLab/InternVL3-8B)                     |
+|InternVL3                    |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/OpenGVLab/InternVL3-2B-AWQ)                     |
 |Stable Diffusion             |:white\_check\_mark:|                    |[LINK](https://huggingface.co/runwayml/stable-diffusion-v1-5)             |
 |Stable Diffusion XL          |:white\_check\_mark:|                    |[LINK](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)   |
 |MiniCPM-V-2_6                |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/openbmb/MiniCPM-V-2_6)                      |
