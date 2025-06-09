@@ -38,6 +38,7 @@ class InternVL3():
         self.SEQLEN = self.model.SEQLEN
         self.init_params(args)
 
+
     def init_params(self, args):
         self.model.generation_mode = "greedy"
         self.stop_strings = []
