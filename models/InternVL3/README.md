@@ -1,6 +1,6 @@
 # InternVL3
 
-本工程实现BM1684X/BM1688部署多模态大模型[InternVL3](https://huggingface.co/OpenGVLab/InternVL3-2B-AWQ)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X的PCIE环境，或者SoC环境。
+本工程实现BM1684X/BM1688部署多模态大模型[InternVL3](https://huggingface.co/OpenGVLab/InternVL3-2B-AWQ)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到PCIE环境，或者SoC环境。
 
 ## 编译
 

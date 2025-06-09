@@ -154,7 +154,7 @@ git clone https://github.com/sophgo/LLM-TPU.git
 # 精度优化
 
 1) 请优先用AWQ或者GPTQ模型转bmodel
-2) 如果是浮点模型，如果要进一步提高W4A16的精度，请用[llmc-tpu](https://github.com/sophgo/llmc-tpu)做校准；然后转bmodel
+2) 如果是浮点模型，如果要进一步提高W4A16的精度，请用[AutoAWQ](https://huggingface.co/docs/transformers/main/en/quantization/awq#awq)或者[AutoGPTQ](https://huggingface.co/docs/transformers/main/en/quantization/gptq)进行量化
 
 # 资料链接
 
