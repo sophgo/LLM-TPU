@@ -5,6 +5,7 @@ from qwen_vl_utils import process_vision_info
 import chat
 import os
 import torch
+import numpy as np
 import torch.nn.functional as F
 
 
@@ -193,12 +194,9 @@ class Qwen2_5VL():
         full_mask = self.get_attn_mask(seq_len, cu_seqlens)
         window_mask = self.get_attn_mask(seq_len, cu_window_seqlens)
         reverse_indices = torch.argsort(window_index)
-        self.model.forward_vit(hidden_states.flatten().tolist(),
-                               position_ids.flatten().tolist(),
-                               full_mask.flatten().tolist(),
-                               window_mask.flatten().tolist(),
-                               grid_thw.flatten().tolist(),
-                               reverse_indices.flatten().tolist(), vit_offset)
+        self.model.forward_vit(hidden_states.numpy(), position_ids.numpy(), full_mask.numpy(),
+                               window_mask.numpy(), grid_thw.numpy(), reverse_indices.numpy(),
+                               vit_offset)
 
     def vit_process_video(self, inputs, vit_offset):
         t, h, w = inputs.video_grid_thw.flatten().tolist()
@@ -238,12 +236,9 @@ class Qwen2_5VL():
             full_mask = self.get_attn_mask(seq_len, cu_seqlens)
             window_mask = self.get_attn_mask(seq_len, cu_window_seqlens)
             reverse_indices = torch.argsort(window_index)
-            self.model.forward_vit(hidden_states.flatten().tolist(),
-                                   position_ids.flatten().tolist(),
-                                   full_mask.flatten().tolist(),
-                                   window_mask.flatten().tolist(),
-                                   grid_thw.flatten().tolist(),
-                                   reverse_indices.flatten().tolist(), vit_offset)
+            self.model.forward_vit(hidden_states.numpy(), position_ids.numpy(), full_mask.numpy(),
+                                   window_mask.numpy(), grid_thw.numpy(), reverse_indices.numpy(),
+                                   vit_offset)
             vit_offset += seq_len // 4
             t_offset += t_i
 
@@ -376,7 +371,7 @@ class Qwen2_5VL():
                 position_ids = self.get_rope_index(inputs.input_ids, inputs.image_grid_thw,
                                                    self.ID_IMAGE_PAD)
                 max_posid = int(position_ids.max())
-                token = self.model.forward_first(position_ids.flatten().tolist())
+                token = self.model.forward_first(position_ids.numpy())
             elif media_type == "video":
                 vit_token_list = torch.where(inputs.input_ids == self.ID_VIDEO_PAD)[1].tolist()
                 vit_offset = vit_token_list[0]
@@ -384,7 +379,7 @@ class Qwen2_5VL():
                 position_ids = self.get_rope_index(inputs.input_ids, inputs.video_grid_thw,
                                                    self.ID_VIDEO_PAD)
                 max_posid = int(position_ids.max())
-                token = self.model.forward_first(position_ids.flatten().tolist())
+                token = self.model.forward_first(position_ids.numpy())
             else:
                 position_ids = 3 * [i for i in range(token_len)]
                 max_posid = token_len - 1
@@ -407,8 +402,8 @@ class Qwen2_5VL():
                     print(word, flush=True, end="")
                     full_word_tokens = []
                 max_posid += 1
-
-                token = self.model.forward_next([max_posid, max_posid, max_posid])
+                position_ids = np.array([max_posid, max_posid, max_posid], dtype=np.int32)
+                token = self.model.forward_next(position_ids)
                 tok_num += 1
             next_end = time.time()
             first_duration = first_end - first_start
