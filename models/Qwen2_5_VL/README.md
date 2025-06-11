@@ -89,9 +89,6 @@ python3 pipeline.py -m xxxx.bmodel -c config
 ```
 model为实际的model储存路径；config_path为配置文件路径
 
-* 运行效果
-
-![](../../assets/qwen2_5vl.png)
 
 ## 常见问题
 

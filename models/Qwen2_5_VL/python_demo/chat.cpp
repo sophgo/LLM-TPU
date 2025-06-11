@@ -86,7 +86,6 @@ public:
   int HIDDEN_SIZE;
   int NUM_LAYERS; // read from bmodel
   int VIT_DIMS;
-  std::string generation_mode;
   int MAX_PATCHES;
   int MAX_PIXELS;
   int max_pos;
@@ -415,6 +414,5 @@ PYBIND11_MODULE(chat, m) {
       .def_readonly("SEQLEN", &Qwen2_5VL::SEQLEN) // read SEQLEN in pipeline.py
       .def_readonly("MAX_PIXELS", &Qwen2_5VL::MAX_PIXELS)
       .def_readonly("MAX_PATCHES", &Qwen2_5VL::MAX_PATCHES)
-      .def_readwrite("token_length", &Qwen2_5VL::token_length)
-      .def_readwrite("generation_mode", &Qwen2_5VL::generation_mode);
+      .def_readwrite("token_length", &Qwen2_5VL::token_length);
 }

@@ -246,15 +246,8 @@ class Qwen2_5VL():
                        pad_id: int) -> torch.Tensor:
         total_input_ids = input_ids
         attention_mask = torch.ones_like(total_input_ids)
-        position_ids = torch.ones(
-            3,
-            input_ids.shape[0],
-            input_ids.shape[1],
-            dtype=input_ids.dtype,
-            device=input_ids.device,
-        )
+        position_ids = torch.ones(3, input_ids.shape[0], input_ids.shape[1], dtype=input_ids.dtype)
         image_index = 0
-        attention_mask = attention_mask.to(total_input_ids.device)
         for i, input_ids in enumerate(total_input_ids):
             input_ids = input_ids[attention_mask[i] == 1]
             image_nums = 0
@@ -276,7 +269,7 @@ class Qwen2_5VL():
                     grid_thw[image_index][1],
                     grid_thw[image_index][2],
                 )
-                second_per_grid_t = 0
+                second_per_grid_t = 0 if pad_id == self.ID_IMAGE_PAD else 1
                 image_index += 1
                 remain_images -= 1
                 ed = ed_image
@@ -315,7 +308,7 @@ class Qwen2_5VL():
                 llm_pos_ids_list.append(torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
 
             llm_positions = torch.cat(llm_pos_ids_list, dim=1).reshape(3, -1)
-            position_ids[..., i, attention_mask[i] == 1] = llm_positions.to(position_ids.device)
+            position_ids[..., i, attention_mask[i] == 1] = llm_positions
         return position_ids
 
     def chat(self):
