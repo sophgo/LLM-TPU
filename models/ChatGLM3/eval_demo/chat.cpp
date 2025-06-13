@@ -9,6 +9,7 @@
 
 #include "bmruntime_interface.h"
 #include "memory.h"
+#include "utils.h"
 #include <algorithm>
 #include <assert.h>
 #include <chrono>
@@ -22,7 +23,6 @@
 #include <random>
 #include <stdio.h>
 #include <vector>
-#include "utils.h"
 
 static const uint16_t ATTENTION_MASK = 0xF0E2;
 
@@ -33,10 +33,10 @@ public:
   int forward_first(std::vector<int> &tokens);
   std::string predict_option(std::vector<int> &tokens);
   int forward_next();
-  std::vector<float> forward_next_without_topk(); 
+  std::vector<float> forward_next_without_topk();
 
   std::mt19937 sgen;
-  ChatGLM() : sgen(std::random_device()()){};
+  ChatGLM() : sgen(std::random_device()()) {};
 
 private:
   void move2end(const bm_device_mem_t &kv);
@@ -51,7 +51,6 @@ public:
   int token_length;
   int SEQLEN;     // read from bmodel
   int NUM_LAYERS; // read from bmodel
-  bool io_alone;
   std::vector<int> visited_tokens;
 
   // generation
@@ -76,12 +75,7 @@ private:
   std::vector<bm_device_mem_t> past_value;
 
   std::vector<int> option_prompt{316, 347, 319, 367}; // A B C D
-  std::map<int, std::string> option_map {
-      {0, "A"},
-      {1, "B"},
-      {2, "C"},
-      {3, "D"}
-  };
+  std::map<int, std::string> option_map{{0, "A"}, {1, "B"}, {2, "C"}, {3, "D"}};
 };
 
 void ChatGLM::net_launch(const bm_net_info_t *net, int stage_idx) {
@@ -144,7 +138,8 @@ void ChatGLM::init(const std::vector<int> &devices, std::string model_path) {
   net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
   net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
   net_greedy_head = bmrt_get_network_info(p_bmrt, "greedy_head");
-  net_penalty_sample_head = bmrt_get_network_info(p_bmrt, "penalty_sample_head");
+  net_penalty_sample_head =
+      bmrt_get_network_info(p_bmrt, "penalty_sample_head");
   SEQLEN = net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
   auto num_nets = bmrt_get_network_number(p_bmrt);
   NUM_LAYERS = (num_nets - 5) / 2;
@@ -165,30 +160,14 @@ void ChatGLM::init(const std::vector<int> &devices, std::string model_path) {
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
   auto addr_mode = net_blocks_cache[0]->addr_mode;
-  io_alone = addr_mode == 1;
   for (int i = 0; i < NUM_LAYERS; i++) {
     assert(addr_mode == net_blocks_cache[i]->addr_mode);
-    if (io_alone) {
-      past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
-      past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
-    } else {
-      auto ret = bm_malloc_device_byte(bm_handle, &past_key[i],
-                                       net_blocks_cache[i]->max_input_bytes[3]);
-      assert(BM_SUCCESS == ret);
-      ret = bm_malloc_device_byte(bm_handle, &past_value[i],
-                                  net_blocks_cache[i]->max_input_bytes[4]);
-      assert(BM_SUCCESS == ret);
-    }
+    past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
+    past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
   }
 }
 
 void ChatGLM::deinit() {
-  if (false == io_alone) {
-    for (int i = 0; i < NUM_LAYERS; i++) {
-      bm_free_device(bm_handle, past_key[i]);
-      bm_free_device(bm_handle, past_value[i]);
-    }
-  }
   bmrt_destroy(p_bmrt);
   for (auto h : handles) {
     bm_dev_free(h);
@@ -203,8 +182,7 @@ void ChatGLM::move2end(const bm_device_mem_t &kv) {
   auto total_size = bm_mem_get_device_size(kv);
   auto bytes = total_size / SEQLEN;
   auto real_size = token_length * bytes;
-  auto mem =
-      bm_mem_from_device(bm_mem_get_device_addr(kv), real_size);
+  auto mem = bm_mem_from_device(bm_mem_get_device_addr(kv), real_size);
   auto buffer = new uint8_t[real_size];
   auto dst = new uint8_t[total_size];
   bm_memcpy_d2s(bm_handle, (void *)buffer, mem);
@@ -215,23 +193,23 @@ void ChatGLM::move2end(const bm_device_mem_t &kv) {
   delete[] dst;
 }
 
-void ChatGLM::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
+void ChatGLM::head_launch(const bm_net_info_t *net,
+                          bm_device_mem_t &logits_mem) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
   std::vector<bm_tensor_t> out_tensors(net->output_num);
 
-  bmrt_tensor_with_device(
-      &in_tensors[0], logits_mem,
-      net->input_dtypes[0], net->stages[0].input_shapes[0]);
+  bmrt_tensor_with_device(&in_tensors[0], logits_mem, net->input_dtypes[0],
+                          net->stages[0].input_shapes[0]);
 
   for (int i = 1; i < net->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net->stages[0].input_mems[i],
-        net->input_dtypes[i], net->stages[0].input_shapes[i]);
+    bmrt_tensor_with_device(&in_tensors[i], net->stages[0].input_mems[i],
+                            net->input_dtypes[i],
+                            net->stages[0].input_shapes[i]);
   }
   for (int i = 0; i < net->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net->stages[0].output_mems[i],
-        net->output_dtypes[i], net->stages[0].output_shapes[i]);
+    bmrt_tensor_with_device(&out_tensors[i], net->stages[0].output_mems[i],
+                            net->output_dtypes[i],
+                            net->stages[0].output_shapes[i]);
   }
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
@@ -240,7 +218,8 @@ void ChatGLM::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem)
   bm_thread_sync(bm_handle);
 }
 
-int ChatGLM::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
+int ChatGLM::greedy_search(const bm_net_info_t *net,
+                           bm_device_mem_t &logits_mem) {
   auto &out_mem = net->stages[0].output_mems[0];
   head_launch(net, logits_mem);
   int token = 0;
@@ -248,7 +227,8 @@ int ChatGLM::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem
   return token;
 }
 
-int ChatGLM::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
+int ChatGLM::penalty_sample(const bm_net_info_t *net,
+                            bm_device_mem_t &logits_mem) {
   auto &in1_mem = net->stages[0].input_mems[1];
   auto &in2_mem = net->stages[0].input_mems[2];
   auto &in3_mem = net->stages[0].input_mems[3];
@@ -259,9 +239,8 @@ int ChatGLM::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_me
   // repeat_penalty + top_p + top_k + temperature
   std::vector<int> generated_tokens(SEQLEN, visited_tokens[token_length - 1]);
   repeat_last_n = std::min(repeat_last_n, token_length);
-  std::copy(visited_tokens.begin() + token_length - repeat_last_n, 
-            visited_tokens.begin() + token_length,
-            generated_tokens.begin());
+  std::copy(visited_tokens.begin() + token_length - repeat_last_n,
+            visited_tokens.begin() + token_length, generated_tokens.begin());
   bm_memcpy_s2d(bm_handle, in1_mem, (void *)generated_tokens.data());
   bm_memcpy_s2d(bm_handle, in2_mem, (void *)&top_p);
   bm_memcpy_s2d(bm_handle, in3_mem, (void *)&temperature);
@@ -352,7 +331,7 @@ std::string ChatGLM::predict_option(std::vector<int> &tokens) {
   token = forward_next();
   std::vector<float> logits = forward_next_without_topk();
   std::vector<float> option_logits;
-  for(unsigned int i = 0; i < option_prompt.size(); i++){
+  for (unsigned int i = 0; i < option_prompt.size(); i++) {
     option_logits.push_back(logits[option_prompt[i]]);
   }
   // get the index of maximum and map the index to option_map
@@ -386,21 +365,12 @@ int ChatGLM::forward_next() {
     auto &out1_mem = net_blocks_cache[idx]->stages[0].output_mems[1];
     auto &out2_mem = net_blocks_cache[idx]->stages[0].output_mems[2];
     d2d(in0_mem, out_mem);
-    if (io_alone) {
-      if (idx == 0) {
-        bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
-        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-      } else {
-        d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
-        d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
-      }
+    if (idx == 0) {
+      bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
+      bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     } else {
-      if (idx == 0) {
-        bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
-        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-      }
-      in3_mem = past_key[idx];
-      in4_mem = past_value[idx];
+      d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
+      d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
     }
     net_launch(net_blocks_cache[idx]);
     out_mem = out0_mem;
@@ -427,7 +397,7 @@ int ChatGLM::forward_next() {
 }
 
 // for c-eval
-std::vector<float> ChatGLM::forward_next_without_topk(){
+std::vector<float> ChatGLM::forward_next_without_topk() {
   int cur_token = visited_tokens[token_length - 1];
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
@@ -452,21 +422,12 @@ std::vector<float> ChatGLM::forward_next_without_topk(){
     auto &out1_mem = net_blocks_cache[idx]->stages[0].output_mems[1];
     auto &out2_mem = net_blocks_cache[idx]->stages[0].output_mems[2];
     d2d(in0_mem, out_mem);
-    if (io_alone) {
-      if (idx == 0) {
-        bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
-        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-      } else {
-        d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
-        d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
-      }
+    if (idx == 0) {
+      bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
+      bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     } else {
-      if (idx == 0) {
-        bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
-        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-      }
-      in3_mem = past_key[idx];
-      in4_mem = past_value[idx];
+      d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
+      d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
     }
     net_launch(net_blocks_cache[idx]);
     out_mem = out0_mem;

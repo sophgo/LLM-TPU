@@ -103,7 +103,6 @@ public:
   int VIT_DIMS;
   int hidden_bytes;
   int kv_bytes;
-  bool io_alone;
   bool enable_history;
   uint16_t mask_value;
   std::vector<int> visited_tokens;
@@ -247,9 +246,7 @@ void Qwen2VL::init(std::string model_path,
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
   auto addr_mode = net_blocks_cache[0]->addr_mode;
-  io_alone = addr_mode == 1;
   for (int i = 0; i < NUM_LAYERS; i++) {
-    assert(io_alone);
     past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
     past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
   }
@@ -268,12 +265,6 @@ void Qwen2VL::init(std::string model_path,
 }
 
 void Qwen2VL::deinit() {
-  if (false == io_alone) {
-    for (int i = 0; i < NUM_LAYERS; i++) {
-      bm_free_device(bm_handle, past_key[i]);
-      bm_free_device(bm_handle, past_value[i]);
-    }
-  }
   bmrt_destroy(p_bmrt);
   for (auto h : handles) {
     bm_dev_free(h);

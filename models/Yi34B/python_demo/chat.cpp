@@ -7,21 +7,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <iostream>
-#include <cstdlib>
-#include <vector>
+#include "bmruntime_interface.h"
+#include "memory.h"
+#include <algorithm>
 #include <assert.h>
 #include <chrono>
-#include <algorithm>
+#include <cstdlib>
+#include <getopt.h>
+#include <inttypes.h>
+#include <iostream>
+#include <numeric>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include "memory.h"
-#include "bmruntime_interface.h"
-#include <getopt.h>
-#include <stdio.h>
-#include <inttypes.h>
 #include <random>
-#include <numeric>
+#include <stdio.h>
+#include <vector>
 
 static const uint16_t ATTENTION_MASK = 0xF0E2;
 
@@ -31,21 +31,18 @@ public:
   void deinit();
   int forward_first(std::vector<int> &tokens);
   int forward_next();
-  void net_launch(const std::string &net_name,
-                  std::vector<bm_tensor_t> &inputs,
-                  std::vector<bm_tensor_t> &outputs,
-                  int stage_idx = 0);
+  void net_launch(const std::string &net_name, std::vector<bm_tensor_t> &inputs,
+                  std::vector<bm_tensor_t> &outputs, int stage_idx = 0);
   // std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
   std::mt19937 sgen;
-  Yi() : sgen(std::random_device()()){};
+  Yi() : sgen(std::random_device()()) {};
 
 public:
   int device_num;
   int token_length;
   int SEQLEN;     // read from bmodel
   int NUM_LAYERS; // read from bmodel
-  bool io_alone;
   std::vector<int> visited_tokens;
 
   // generation
@@ -71,7 +68,7 @@ private:
   const bm_net_info_t *net_embed;
   const bm_net_info_t *net_embed_cache;
   const bm_net_info_t *net_lm;
-   std::vector<bm_tensor_t> inputs_embed, inputs_embed_cache;
+  std::vector<bm_tensor_t> inputs_embed, inputs_embed_cache;
   std::vector<bm_tensor_t> hidden_states, hidden_states_cache;
   std::vector<bm_tensor_t> inputs_pid, next_pid;
   std::vector<bm_tensor_t> inputs_attention, next_attention;
@@ -80,8 +77,7 @@ private:
   std::vector<bm_tensor_t> inputs_lm, outputs_lm;
 };
 
-void Yi::init(const std::vector<int> &devices,
-                    const std::string &model_path) {
+void Yi::init(const std::vector<int> &devices, const std::string &model_path) {
 
   // request bm_handle
   device_num = devices.size();
@@ -115,7 +111,8 @@ void Yi::init(const std::vector<int> &devices,
   net_embed_cache = bmrt_get_network_info(p_bmrt, name_embed_cache.c_str());
   net_lm = bmrt_get_network_info(p_bmrt, name_lm.c_str());
   int num_dims = net_embed->stages[0].input_shapes[0].num_dims;
-  SEQLEN = net_embed->stages[0].input_shapes[0].dims[num_dims - 1]; // real seqlen
+  SEQLEN =
+      net_embed->stages[0].input_shapes[0].dims[num_dims - 1]; // real seqlen
   auto num_nets = bmrt_get_network_number(p_bmrt);
   NUM_LAYERS = (num_nets - 3) / 2;
 
@@ -144,25 +141,22 @@ void Yi::init(const std::vector<int> &devices,
   int out_num_cache = net_blocks_cache[0]->output_num / device_num;
   for (int i = 0; i < device_num; ++i) {
     bmrt_tensor_with_device(
-      &hidden_states[i],
-      net_blocks[0]->stages[0].output_mems[0 + i * out_num],
-      net_blocks[0]->output_dtypes[0 + i * out_num],
-      net_blocks[0]->stages[0].output_shapes[0 + out_num]);
+        &hidden_states[i],
+        net_blocks[0]->stages[0].output_mems[0 + i * out_num],
+        net_blocks[0]->output_dtypes[0 + i * out_num],
+        net_blocks[0]->stages[0].output_shapes[0 + out_num]);
     bmrt_tensor_with_device(
-      &hidden_states_cache[i],
-      net_blocks_cache[0]->stages[0].output_mems[0 + i * out_num_cache],
-      net_blocks_cache[0]->output_dtypes[0 + i * out_num_cache],
-      net_blocks_cache[0]->stages[0].output_shapes[0 + out_num_cache]);
+        &hidden_states_cache[i],
+        net_blocks_cache[0]->stages[0].output_mems[0 + i * out_num_cache],
+        net_blocks_cache[0]->output_dtypes[0 + i * out_num_cache],
+        net_blocks_cache[0]->stages[0].output_shapes[0 + out_num_cache]);
     bmrt_tensor_with_device(
-      &inputs_embed[i],
-      net_embed->stages[0].input_mems[i],
-      net_embed->input_dtypes[i],
-      net_embed->stages[0].input_shapes[i]);
-    bmrt_tensor_with_device(
-      &inputs_embed_cache[i],
-      net_embed_cache->stages[0].input_mems[i],
-      net_embed_cache->input_dtypes[i],
-      net_embed_cache->stages[0].input_shapes[i]);
+        &inputs_embed[i], net_embed->stages[0].input_mems[i],
+        net_embed->input_dtypes[i], net_embed->stages[0].input_shapes[i]);
+    bmrt_tensor_with_device(&inputs_embed_cache[i],
+                            net_embed_cache->stages[0].input_mems[i],
+                            net_embed_cache->input_dtypes[i],
+                            net_embed_cache->stages[0].input_shapes[i]);
   }
 
   inputs_pid.resize(device_num);
@@ -172,76 +166,49 @@ void Yi::init(const std::vector<int> &devices,
   int in_num = net_blocks[0]->input_num / device_num;
   int in_num_cache = net_blocks_cache[0]->input_num / device_num;
   for (int i = 0; i < device_num; ++i) {
-    ret = bmrt_tensor_ex(
-      &inputs_pid[i], p_bmrt,
-      net_blocks[0]->input_loc_devices[1 + i * in_num],
-      net_blocks[0]->input_dtypes[1 + i * in_num],
-      net_blocks[0]->stages[0].input_shapes[1 + i * in_num]);
+    ret = bmrt_tensor_ex(&inputs_pid[i], p_bmrt,
+                         net_blocks[0]->input_loc_devices[1 + i * in_num],
+                         net_blocks[0]->input_dtypes[1 + i * in_num],
+                         net_blocks[0]->stages[0].input_shapes[1 + i * in_num]);
+    assert(true == ret);
+
+    ret = bmrt_tensor_ex(&inputs_attention[i], p_bmrt,
+                         net_blocks[0]->input_loc_devices[2 + i * in_num],
+                         net_blocks[0]->input_dtypes[2 + i * in_num],
+                         net_blocks[0]->stages[0].input_shapes[2 + i * in_num]);
     assert(true == ret);
 
     ret = bmrt_tensor_ex(
-      &inputs_attention[i], p_bmrt,
-      net_blocks[0]->input_loc_devices[2 + i * in_num],
-      net_blocks[0]->input_dtypes[2 + i * in_num],
-      net_blocks[0]->stages[0].input_shapes[2 + i * in_num]);
+        &next_pid[i], p_bmrt,
+        net_blocks_cache[0]->input_loc_devices[1 + i * in_num_cache],
+        net_blocks_cache[0]->input_dtypes[1 + i * in_num_cache],
+        net_blocks_cache[0]->stages[0].input_shapes[1 + i * in_num_cache]);
     assert(true == ret);
 
     ret = bmrt_tensor_ex(
-      &next_pid[i], p_bmrt,
-      net_blocks_cache[0]->input_loc_devices[1 + i * in_num_cache],
-      net_blocks_cache[0]->input_dtypes[1 + i * in_num_cache],
-      net_blocks_cache[0]->stages[0].input_shapes[1 + i * in_num_cache]);
-    assert(true == ret);
-
-    ret = bmrt_tensor_ex(
-      &next_attention[i], p_bmrt,
-      net_blocks_cache[0]->input_loc_devices[2 + i * in_num_cache],
-      net_blocks_cache[0]->input_dtypes[2 + i * in_num_cache],
-      net_blocks_cache[0]->stages[0].input_shapes[2 + i * in_num_cache]);
+        &next_attention[i], p_bmrt,
+        net_blocks_cache[0]->input_loc_devices[2 + i * in_num_cache],
+        net_blocks_cache[0]->input_dtypes[2 + i * in_num_cache],
+        net_blocks_cache[0]->stages[0].input_shapes[2 + i * in_num_cache]);
     assert(true == ret);
   }
 
   auto addr_mode = net_blocks_cache[0]->addr_mode;
-  io_alone = (addr_mode == 1);
   past_keys.resize(NUM_LAYERS);
   past_values.resize(NUM_LAYERS);
-  if (io_alone) {
-    for (int i = 0; i < NUM_LAYERS; i++) {
-      past_keys[i].resize(device_num);
-      past_values[i].resize(device_num);
-      auto &net = net_blocks_cache[i];
-      for (int j = 0; j < device_num; j++) {
-        bmrt_tensor_with_device(
-          &past_keys[i][j],
-          net->stages[0].input_mems[3 + j * in_num_cache],
+  for (int i = 0; i < NUM_LAYERS; i++) {
+    past_keys[i].resize(device_num);
+    past_values[i].resize(device_num);
+    auto &net = net_blocks_cache[i];
+    for (int j = 0; j < device_num; j++) {
+      bmrt_tensor_with_device(
+          &past_keys[i][j], net->stages[0].input_mems[3 + j * in_num_cache],
           net->input_dtypes[3 + j * in_num_cache],
           net->stages[0].input_shapes[3 + j * in_num_cache]);
-        bmrt_tensor_with_device(
-          &past_values[i][j],
-          net->stages[0].input_mems[4 + j * in_num_cache],
+      bmrt_tensor_with_device(
+          &past_values[i][j], net->stages[0].input_mems[4 + j * in_num_cache],
           net->input_dtypes[4 + j * in_num_cache],
           net->stages[0].input_shapes[4 + j * in_num_cache]);
-      }
-    }
-  } else {
-    for (int i = 0; i < NUM_LAYERS; i++) {
-      past_keys[i].resize(device_num);
-      past_values[i].resize(device_num);
-      auto &net = net_blocks_cache[i];
-      for (int j = 0; j < device_num; j++) {
-        ret = bmrt_tensor_ex(
-          &past_keys[i][j], p_bmrt,
-          net->input_loc_devices[3 + j * in_num_cache],
-          net->input_dtypes[3 + j * in_num_cache],
-          net->stages[0].input_shapes[3 + j * in_num_cache]);
-        assert(true == ret);
-        ret = bmrt_tensor_ex(
-          &past_values[i][j], p_bmrt,
-          net->input_loc_devices[4 + j * in_num_cache],
-          net->input_dtypes[4 + j * in_num_cache],
-          net->stages[0].input_shapes[4 + j *in_num_cache]);
-        assert(true == ret);
-      }
     }
   }
 
@@ -256,10 +223,10 @@ void Yi::init(const std::vector<int> &devices,
     present_value_cache[i].shape.dims[1] = 1;
 
     ret = bmrt_tensor_ex(&inputs_lm[i], p_bmrt, i, net_lm->input_dtypes[0],
-                        net_lm->stages[0].input_shapes[0]);
+                         net_lm->stages[0].input_shapes[0]);
     assert(true == ret);
     ret = bmrt_tensor_ex(&outputs_lm[i], p_bmrt, i, net_lm->output_dtypes[0],
-                        net_lm->stages[0].output_shapes[0]);
+                         net_lm->stages[0].output_shapes[0]);
     assert(true == ret);
   }
 }
@@ -273,26 +240,17 @@ void Yi::deinit() {
     bm_free_device(handles[i], inputs_lm[i].device_mem);
     bm_free_device(handles[i], outputs_lm[i].device_mem);
   }
-  if (!io_alone) {
-    for (int i = 0; i < NUM_LAYERS; i++) {
-      for (int j = 0; j < device_num; j++) {
-        bm_free_device(handles[j], past_keys[i][j].device_mem);
-        bm_free_device(handles[j], past_values[i][j].device_mem);
-      }
-    }
-  }
   bmrt_destroy(p_bmrt);
   for (auto h : handles) {
     bm_dev_free(h);
   }
 }
 void Yi::net_launch(const std::string &net_name,
-                std::vector<bm_tensor_t> &inputs,
-                std::vector<bm_tensor_t> &outputs,
-                int stage_idx) {
-  bool ret = bmrt_launch_tensor_ex(
-    p_bmrt, net_name.c_str(), inputs.data(), inputs.size(), outputs.data(),
-    outputs.size(), true, false);
+                    std::vector<bm_tensor_t> &inputs,
+                    std::vector<bm_tensor_t> &outputs, int stage_idx) {
+  bool ret = bmrt_launch_tensor_ex(p_bmrt, net_name.c_str(), inputs.data(),
+                                   inputs.size(), outputs.data(),
+                                   outputs.size(), true, false);
   assert(ret);
   bm_thread_sync(bm_handle);
 }
@@ -318,27 +276,26 @@ int Yi::forward_first(std::vector<int> &tokens) {
 
   // forward embeding
   std::vector<int> input_nums(device_num, 1);
-  std::vector<void*> datas(device_num, (void*)visited_tokens.data());
+  std::vector<void *> datas(device_num, (void *)visited_tokens.data());
   bmrt_memcpy_s2d_parallel(p_bmrt, inputs_embed.data(), datas.data(),
-                          input_nums.data(), device_num);
+                           input_nums.data(), device_num);
   auto output_embeds = hidden_states;
   for (int i = 0; i < device_num; ++i) {
     output_embeds[i].shape = net_embed[0].stages[0].output_shapes[0];
   }
-  auto ret = bmrt_launch_tensor_ex(p_bmrt, name_embed.c_str(),
-                                  inputs_embed.data(), inputs_embed.size(),
-                                  output_embeds.data(), output_embeds.size(),
-                                  true, false);
+  auto ret = bmrt_launch_tensor_ex(
+      p_bmrt, name_embed.c_str(), inputs_embed.data(), inputs_embed.size(),
+      output_embeds.data(), output_embeds.size(), true, false);
   assert(ret);
   bm_thread_sync(bm_handle);
 
   // forward blocks
-  std::vector<void*> pos_id_datas(device_num, (void*)position_id.data());
-  std::vector<void*> in_attn_datas(device_num, (void*)attention_mask.data());
+  std::vector<void *> pos_id_datas(device_num, (void *)position_id.data());
+  std::vector<void *> in_attn_datas(device_num, (void *)attention_mask.data());
   bmrt_memcpy_s2d_parallel(p_bmrt, inputs_pid.data(), pos_id_datas.data(),
-                          input_nums.data(), device_num);
-  bmrt_memcpy_s2d_parallel(p_bmrt, inputs_attention.data(),in_attn_datas.data(),
-                          input_nums.data(), device_num);
+                           input_nums.data(), device_num);
+  bmrt_memcpy_s2d_parallel(p_bmrt, inputs_attention.data(),
+                           in_attn_datas.data(), input_nums.data(), device_num);
   auto tmp_hidden_states = hidden_states;
   std::vector<bm_tensor_t> inputs_block;
   std::vector<bm_tensor_t> outputs_block;
@@ -365,11 +322,10 @@ int Yi::forward_first(std::vector<int> &tokens) {
                      hidden_states[0].device_mem, (token_length - 1) * bytes,
                      bytes);
   ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &inputs_lm[0], 1,
-                              &outputs_lm[0], 1,
-                              true, false);
+                              &outputs_lm[0], 1, true, false);
   assert(ret);
   bm_thread_sync(bm_handle);
-  
+
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);
 
@@ -388,33 +344,34 @@ int Yi::forward_next() {
 
   // embedding
   // std::vector<bm_tensor_t> inputs_embed;
-  std::vector<void*> input_datas;
+  std::vector<void *> input_datas;
   std::vector<int> input_nums(device_num, 1);
   for (int i = 0; i < device_num; ++i) {
     // inputs_embed_cache.push_back(outputs_lm[i]); // token_id
     // inputs_embed_cache[i].shape = net_embed_cache->stages[0].input_shapes[0];
-    input_datas.push_back((void*)(&cur_token));
+    input_datas.push_back((void *)(&cur_token));
   }
-  bmrt_memcpy_s2d_parallel(p_bmrt, inputs_embed_cache.data(), input_datas.data(),
-                          input_nums.data(), device_num);
+  bmrt_memcpy_s2d_parallel(p_bmrt, inputs_embed_cache.data(),
+                           input_datas.data(), input_nums.data(), device_num);
   auto outputs_embed_cache = hidden_states_cache;
   for (int i = 0; i < device_num; ++i) {
-    outputs_embed_cache[i].shape = net_embed_cache[0].stages[0].output_shapes[0];
+    outputs_embed_cache[i].shape =
+        net_embed_cache[0].stages[0].output_shapes[0];
   }
   auto ret = bmrt_launch_tensor_ex(
-    p_bmrt, name_embed_cache.c_str(), inputs_embed_cache.data(),
-    inputs_embed_cache.size(), outputs_embed_cache.data(),
-    outputs_embed_cache.size(), true, false);
+      p_bmrt, name_embed_cache.c_str(), inputs_embed_cache.data(),
+      inputs_embed_cache.size(), outputs_embed_cache.data(),
+      outputs_embed_cache.size(), true, false);
   assert(ret);
   bm_thread_sync(bm_handle);
 
   // blocks
-  std::vector<void*> attn_datas(device_num, attention_mask.data());
-  std::vector<void*> pid_datas(device_num, &position_id);
+  std::vector<void *> attn_datas(device_num, attention_mask.data());
+  std::vector<void *> pid_datas(device_num, &position_id);
   bmrt_memcpy_s2d_parallel(p_bmrt, next_attention.data(), attn_datas.data(),
-                          input_nums.data(), device_num);
+                           input_nums.data(), device_num);
   bmrt_memcpy_s2d_parallel(p_bmrt, next_pid.data(), pid_datas.data(),
-                          input_nums.data(), device_num);
+                           input_nums.data(), device_num);
   // WARNING: make inputs_lm device_num
   std::vector<bm_tensor_t> embed_1 = hidden_states_cache;
   for (int i = 0; i < device_num; ++i) {
@@ -440,16 +397,17 @@ int Yi::forward_next() {
       int bytes = bm_mem_get_device_size(past_keys[0][j].device_mem) / SEQLEN;
       int token_offset = (token_length - 1) * bytes;
       bm_set_device_mem(&outputs_block[1 + j * 3].device_mem, bytes,
-          bm_mem_get_device_addr(past_keys[i][j].device_mem) + token_offset);
+                        bm_mem_get_device_addr(past_keys[i][j].device_mem) +
+                            token_offset);
       bm_set_device_mem(&outputs_block[2 + j * 3].device_mem, bytes,
-          bm_mem_get_device_addr(past_values[i][j].device_mem) + token_offset);
+                        bm_mem_get_device_addr(past_values[i][j].device_mem) +
+                            token_offset);
     }
     net_launch(name_blocks_cache[i], inputs_block, outputs_block);
   }
 
-  ret = bmrt_launch_tensor_ex(
-    p_bmrt, name_lm.c_str(), &hidden_states_cache[0], 1, &outputs_lm[0], 1,
-    true, false);
+  ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &hidden_states_cache[0],
+                              1, &outputs_lm[0], 1, true, false);
   assert(ret);
   bm_thread_sync(bm_handle);
 
@@ -462,12 +420,12 @@ int Yi::forward_next() {
 }
 
 PYBIND11_MODULE(chat, m) {
-    pybind11::class_<Yi>(m, "Yi")
-        .def(pybind11::init<>())
-        .def("init", &Yi::init)
-        .def("forward_first", &Yi::forward_first)
-        .def("forward_next", &Yi::forward_next)
-        .def("deinit", &Yi::deinit)
-        .def_readwrite("SEQLEN", &Yi::SEQLEN) // read SEQLEN in pipeline.py
-        .def_readwrite("token_length", &Yi::token_length);
+  pybind11::class_<Yi>(m, "Yi")
+      .def(pybind11::init<>())
+      .def("init", &Yi::init)
+      .def("forward_first", &Yi::forward_first)
+      .def("forward_next", &Yi::forward_next)
+      .def("deinit", &Yi::deinit)
+      .def_readwrite("SEQLEN", &Yi::SEQLEN) // read SEQLEN in pipeline.py
+      .def_readwrite("token_length", &Yi::token_length);
 }

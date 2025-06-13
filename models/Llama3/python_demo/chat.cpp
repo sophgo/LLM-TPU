@@ -48,7 +48,6 @@ public:
   int token_length;
   int SEQLEN;     // read from bmodel
   int NUM_LAYERS; // read from bmodel
-  bool io_alone;
   std::vector<int> visited_tokens;
   bool lmhead_with_topk;
   // generation
@@ -188,30 +187,14 @@ void Llama3::init(const std::vector<int> &devices, std::string model_path) {
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
   auto addr_mode = net_blocks_cache[0]->addr_mode;
-  io_alone = addr_mode == 1;
   for (int i = 0; i < NUM_LAYERS; i++) {
     assert(addr_mode == net_blocks_cache[i]->addr_mode);
-    if (io_alone) {
-      past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
-      past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
-    } else {
-      auto ret = bm_malloc_device_byte(bm_handle, &past_key[i],
-                                       net_blocks_cache[i]->max_input_bytes[3]);
-      assert(BM_SUCCESS == ret);
-      ret = bm_malloc_device_byte(bm_handle, &past_value[i],
-                                  net_blocks_cache[i]->max_input_bytes[4]);
-      assert(BM_SUCCESS == ret);
-    }
+    past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
+    past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
   }
 }
 
 void Llama3::deinit() {
-  if (false == io_alone) {
-    for (int i = 0; i < NUM_LAYERS; i++) {
-      bm_free_device(bm_handle, past_key[i]);
-      bm_free_device(bm_handle, past_value[i]);
-    }
-  }
   bmrt_destroy(p_bmrt);
   for (auto h : handles) {
     bm_dev_free(h);
@@ -378,21 +361,12 @@ int Llama3::forward_next() {
     auto &out1_mem = net_blocks_cache[idx]->stages[0].output_mems[1];
     auto &out2_mem = net_blocks_cache[idx]->stages[0].output_mems[2];
     d2d(in0_mem, out_mem);
-    if (io_alone) {
-      if (idx == 0) {
-        bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
-        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-      } else {
-        d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
-        d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
-      }
+    if (idx == 0) {
+      bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
+      bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     } else {
-      if (idx == 0) {
-        bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
-        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-      }
-      d2d(in3_mem, past_key[idx]);
-      d2d(in4_mem, past_value[idx]);
+      d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
+      d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
     }
     net_launch(net_blocks_cache[idx]);
     out_mem = out0_mem;

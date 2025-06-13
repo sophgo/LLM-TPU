@@ -44,7 +44,6 @@ public:
   int token_length;
   int CHUNK_LEN;
   int NUM_LAYERS;
-  bool io_alone;
   std::vector<int> visited_tokens;
 
 private:

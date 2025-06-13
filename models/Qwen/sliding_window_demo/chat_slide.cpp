@@ -27,16 +27,17 @@
 
 static const float ATTENTION_MASK = -10000.;
 
-int compute_window_offset(int seq_length, int window_length, int layer, int max_layer) {
-    if (seq_length <= window_length) {
-        return 0;
-    }
-    int step = (seq_length - window_length) / (max_layer - 1) + 1;
-    int offset = step * layer;
-    if (layer == max_layer - 1) {
-        offset = seq_length - window_length;
-    }
-    return offset;
+int compute_window_offset(int seq_length, int window_length, int layer,
+                          int max_layer) {
+  if (seq_length <= window_length) {
+    return 0;
+  }
+  int step = (seq_length - window_length) / (max_layer - 1) + 1;
+  int offset = step * layer;
+  if (layer == max_layer - 1) {
+    offset = seq_length - window_length;
+  }
+  return offset;
 }
 
 class Qwen {
@@ -48,7 +49,7 @@ public:
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
   std::mt19937 sgen;
-  Qwen() : sgen(std::random_device()()){};
+  Qwen() : sgen(std::random_device()()) {};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -61,10 +62,9 @@ private:
 
 public:
   int token_length;
-  int SEQLEN;     // read from bmodel
-  int NUM_LAYERS; // read from bmodel
+  int SEQLEN;        // read from bmodel
+  int NUM_LAYERS;    // read from bmodel
   int WINDOW_SEQLEN; // read from bmodel
-  bool io_alone;
   std::vector<int> visited_tokens;
   uint16_t mask_value;
 
@@ -116,11 +116,12 @@ void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
 }
 
 void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset) {
-  bm_memcpy_d2d_byte(bm_handle, dst, 0, src, offset, bm_mem_get_device_size(dst));
+  bm_memcpy_d2d_byte(bm_handle, dst, 0, src, offset,
+                     bm_mem_get_device_size(dst));
 }
 
 void Qwen::init(const std::vector<int> &devices, std::string model_path) {
-  
+
   // request bm_handle
   std::cout << "Device [ ";
   for (auto d : devices) {
@@ -154,7 +155,8 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
   net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
   net_greedy_head = bmrt_get_network_info(p_bmrt, "greedy_head");
-  net_penalty_sample_head = bmrt_get_network_info(p_bmrt, "penalty_sample_head");
+  net_penalty_sample_head =
+      bmrt_get_network_info(p_bmrt, "penalty_sample_head");
   SEQLEN = net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
   auto num_nets = bmrt_get_network_number(p_bmrt);
   NUM_LAYERS = (num_nets - 5) / 2;
@@ -189,7 +191,6 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
   auto addr_mode = net_blocks_cache[0]->addr_mode;
-  io_alone = addr_mode == 1;
   for (int i = 0; i < NUM_LAYERS; i++) {
     assert(addr_mode == net_blocks_cache[i]->addr_mode);
     // past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
@@ -197,7 +198,7 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
     // past_key[i].size = net_blocks[i]->stages[0].output_mems[1].size;
     // past_value[i].size = net_blocks[i]->stages[0].output_mems[2].size;
     auto ret = bm_malloc_device_byte(bm_handle, &past_key[i],
-                                      net_blocks[i]->max_output_bytes[1]);
+                                     net_blocks[i]->max_output_bytes[1]);
     assert(BM_SUCCESS == ret);
     ret = bm_malloc_device_byte(bm_handle, &past_value[i],
                                 net_blocks[i]->max_output_bytes[2]);
@@ -206,12 +207,6 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
 }
 
 void Qwen::deinit() {
-  if (false == io_alone) {
-    for (int i = 0; i < NUM_LAYERS; i++) {
-      bm_free_device(bm_handle, past_key[i]);
-      bm_free_device(bm_handle, past_value[i]);
-    }
-  }
   bmrt_destroy(p_bmrt);
   for (auto h : handles) {
     bm_dev_free(h);
@@ -222,19 +217,18 @@ void Qwen::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
   std::vector<bm_tensor_t> out_tensors(net->output_num);
 
-  bmrt_tensor_with_device(
-      &in_tensors[0], logits_mem,
-      net->input_dtypes[0], net->stages[0].input_shapes[0]);
+  bmrt_tensor_with_device(&in_tensors[0], logits_mem, net->input_dtypes[0],
+                          net->stages[0].input_shapes[0]);
 
   for (int i = 1; i < net->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net->stages[0].input_mems[i],
-        net->input_dtypes[i], net->stages[0].input_shapes[i]);
+    bmrt_tensor_with_device(&in_tensors[i], net->stages[0].input_mems[i],
+                            net->input_dtypes[i],
+                            net->stages[0].input_shapes[i]);
   }
   for (int i = 0; i < net->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net->stages[0].output_mems[i],
-        net->output_dtypes[i], net->stages[0].output_shapes[i]);
+    bmrt_tensor_with_device(&out_tensors[i], net->stages[0].output_mems[i],
+                            net->output_dtypes[i],
+                            net->stages[0].output_shapes[i]);
   }
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
@@ -251,7 +245,8 @@ int Qwen::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
   return token;
 }
 
-int Qwen::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
+int Qwen::penalty_sample(const bm_net_info_t *net,
+                         bm_device_mem_t &logits_mem) {
   auto &in1_mem = net->stages[0].input_mems[1];
   auto &in2_mem = net->stages[0].input_mems[2];
   auto &in3_mem = net->stages[0].input_mems[3];
@@ -262,9 +257,8 @@ int Qwen::penalty_sample(const bm_net_info_t *net, bm_device_mem_t &logits_mem) 
   // repeat_penalty + top_p + top_k + temperature
   std::vector<int> generated_tokens(SEQLEN, visited_tokens[token_length - 1]);
   repeat_last_n = std::min(repeat_last_n, token_length);
-  std::copy(visited_tokens.begin() + token_length - repeat_last_n, 
-            visited_tokens.begin() + token_length,
-            generated_tokens.begin());
+  std::copy(visited_tokens.begin() + token_length - repeat_last_n,
+            visited_tokens.begin() + token_length, generated_tokens.begin());
   bm_memcpy_s2d(bm_handle, in1_mem, (void *)generated_tokens.data());
   bm_memcpy_s2d(bm_handle, in2_mem, (void *)&top_p);
   bm_memcpy_s2d(bm_handle, in3_mem, (void *)&temperature);
@@ -289,7 +283,7 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, mask_value);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
-  
+
   token_length = tokens.size();
 
   for (int i = 0; i < token_length; i++) {
@@ -375,18 +369,14 @@ int Qwen::forward_next() {
     auto &out1_mem = net_blocks_cache[idx]->stages[0].output_mems[1];
     auto &out2_mem = net_blocks_cache[idx]->stages[0].output_mems[2];
     d2d(in0_mem, out_mem);
-    int window_offset = compute_window_offset(token_length, WINDOW_SEQLEN, idx, NUM_LAYERS);
-    if (io_alone) {
-      if (idx == 0) {
-        bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
-        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-      } else {
-        d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
-        d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
-      }
-    } else {
+    int window_offset =
+        compute_window_offset(token_length, WINDOW_SEQLEN, idx, NUM_LAYERS);
+    if (idx == 0) {
       bm_memcpy_s2d(bm_handle, in1_mem, (void *)&position_id);
       bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+    } else {
+      d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
+      d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
     }
     d2d(in3_mem, past_key[idx], window_offset);
     d2d(in4_mem, past_value[idx], window_offset);
@@ -410,12 +400,11 @@ int Qwen::forward_next() {
   } else if (generation_mode == "penalty_sample") {
     token = penalty_sample(net_penalty_sample_head, lm_out_mem);
   }
-  
+
   visited_tokens[token_length] = token;
   token_length += 1;
   return token;
 }
-
 
 std::vector<int> Qwen::generate(std::vector<int> &history_tokens, int EOS) {
   if (history_tokens.empty()) {
@@ -442,20 +431,20 @@ std::vector<int> Qwen::generate(std::vector<int> &history_tokens, int EOS) {
 }
 
 PYBIND11_MODULE(chat_slide, m) {
-    pybind11::class_<Qwen>(m, "Qwen")
-        .def(pybind11::init<>())
-        .def("init", &Qwen::init)
-        .def("forward_first", &Qwen::forward_first)
-        .def("forward_next", &Qwen::forward_next)
-        .def("generate", &Qwen::generate)
-        .def("deinit", &Qwen::deinit)
-        .def_readwrite("SEQLEN", &Qwen::SEQLEN) // read SEQLEN in pipeline.py
-        .def_readwrite("token_length", &Qwen::token_length)
-        .def_readwrite("temperature", &Qwen::temperature)
-        .def_readwrite("top_p", &Qwen::top_p)
-        .def_readwrite("repeat_penalty", &Qwen::repeat_penalty)
-        .def_readwrite("repeat_last_n", &Qwen::repeat_last_n)
-        .def_readwrite("max_new_tokens", &Qwen::max_new_tokens)
-        .def_readwrite("generation_mode", &Qwen::generation_mode)
-        .def_readwrite("prompt_mode", &Qwen::prompt_mode);
+  pybind11::class_<Qwen>(m, "Qwen")
+      .def(pybind11::init<>())
+      .def("init", &Qwen::init)
+      .def("forward_first", &Qwen::forward_first)
+      .def("forward_next", &Qwen::forward_next)
+      .def("generate", &Qwen::generate)
+      .def("deinit", &Qwen::deinit)
+      .def_readwrite("SEQLEN", &Qwen::SEQLEN) // read SEQLEN in pipeline.py
+      .def_readwrite("token_length", &Qwen::token_length)
+      .def_readwrite("temperature", &Qwen::temperature)
+      .def_readwrite("top_p", &Qwen::top_p)
+      .def_readwrite("repeat_penalty", &Qwen::repeat_penalty)
+      .def_readwrite("repeat_last_n", &Qwen::repeat_last_n)
+      .def_readwrite("max_new_tokens", &Qwen::max_new_tokens)
+      .def_readwrite("generation_mode", &Qwen::generation_mode)
+      .def_readwrite("prompt_mode", &Qwen::prompt_mode);
 }

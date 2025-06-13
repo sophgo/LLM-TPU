@@ -7,21 +7,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <iostream>
-#include <cstdlib>
-#include <vector>
+#include "bmruntime_interface.h"
+#include "memory.h"
+#include <algorithm>
 #include <assert.h>
 #include <chrono>
-#include <algorithm>
+#include <cstdlib>
+#include <deque>
+#include <fstream>
+#include <getopt.h>
+#include <iostream>
+#include <map>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include "memory.h"
-#include "bmruntime_interface.h"
-#include <getopt.h>
 #include <random>
-#include <map>
-#include <fstream>
-#include <deque>
+#include <vector>
 
 static const int WINDOW_SIZE = 3;
 static const int N_GRAM = 3;
@@ -30,17 +30,21 @@ static const uint16_t ATTENTION_MASK = 0xC61C; // -9984 by bfloat16
 
 class Qwen {
 public:
-  void init(const std::vector<int> &devid, int eos_token_id, std::string model_path);
+  void init(const std::vector<int> &devid, int eos_token_id,
+            std::string model_path);
   void chat();
   void deinit();
-  int forward_first_with_topk(std::vector<int> &tokens, std::string generation_mode = "sample");
-  int forward_next_with_topk(int cur_token, std::string generation_mode = "sample");
+  int forward_first_with_topk(std::vector<int> &tokens,
+                              std::string generation_mode = "sample");
+  int forward_next_with_topk(int cur_token,
+                             std::string generation_mode = "sample");
   std::vector<int> answer(std::vector<int> history_tokens);
 
   std::mt19937 sgen;
   Qwen() : sgen(std::random_device()()) {};
-  int sample(const std::vector<float>& probs, const std::vector<int>& tokens);
-  std::vector<int> jacobi_sample(const std::vector<float>& probs, const std::vector<int>& tokens);
+  int sample(const std::vector<float> &probs, const std::vector<int> &tokens);
+  std::vector<int> jacobi_sample(const std::vector<float> &probs,
+                                 const std::vector<int> &tokens);
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -48,7 +52,6 @@ private:
   std::vector<uint16_t> make_next_mask();
   std::vector<int> make_next_pid();
   void lookahead_next(std::vector<int> &sampled_tokens);
-
 
 private:
   std::vector<bm_handle_t> handles;
@@ -64,7 +67,6 @@ private:
   int token_count;
   int SEQLEN;     // read from bmodel
   int NUM_LAYERS; // read from bmodel
-  bool io_alone;
   int EOS;
   std::vector<std::string> history;
 
@@ -108,7 +110,8 @@ void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
 }
 
-void Qwen::init(const std::vector<int> &devices, int eos_token_id, std::string model_path) {
+void Qwen::init(const std::vector<int> &devices, int eos_token_id,
+                std::string model_path) {
   // params
   EOS = eos_token_id;
 
@@ -166,46 +169,33 @@ void Qwen::init(const std::vector<int> &devices, int eos_token_id, std::string m
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
   auto addr_mode = net_blocks_cache[0]->addr_mode;
-  io_alone = addr_mode == 1;
   for (int i = 0; i < NUM_LAYERS; i++) {
     assert(addr_mode == net_blocks_cache[i]->addr_mode);
-    if (io_alone) {
-      past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
-      past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
-    } else {
-      auto ret = bm_malloc_device_byte(bm_handle, &past_key[i],
-                                       net_blocks_cache[i]->max_input_bytes[3]);
-      assert(BM_SUCCESS == ret);
-      ret = bm_malloc_device_byte(bm_handle, &past_value[i],
-                                  net_blocks_cache[i]->max_output_bytes[4]);
-      assert(BM_SUCCESS == ret);
-    }
+    past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
+    past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
   }
 }
 
 void Qwen::deinit() {
-  if (false == io_alone) {
-    for (int i = 0; i < NUM_LAYERS; i++) {
-      bm_free_device(bm_handle, past_key[i]);
-      bm_free_device(bm_handle, past_value[i]);
-    }
-  }
   bmrt_destroy(p_bmrt);
   for (auto h : handles) {
     bm_dev_free(h);
   }
 }
 
-std::vector<int> Qwen::jacobi_sample(const std::vector<float>& probs, const std::vector<int>& tokens) {
+std::vector<int> Qwen::jacobi_sample(const std::vector<float> &probs,
+                                     const std::vector<int> &tokens) {
   std::vector<int> sampled_tokens(GUESS_LEN);
   for (int i = 0; i < GUESS_LEN; i++) {
-    std::discrete_distribution<> dist(probs.begin()+i*GUESS_LEN, probs.begin()+(i+1)*GUESS_LEN);
-    sampled_tokens[i] = tokens[dist(sgen)+i*GUESS_LEN];
+    std::discrete_distribution<> dist(probs.begin() + i * GUESS_LEN,
+                                      probs.begin() + (i + 1) * GUESS_LEN);
+    sampled_tokens[i] = tokens[dist(sgen) + i * GUESS_LEN];
   }
   return sampled_tokens;
 }
 
-int Qwen::forward_first_with_topk(std::vector<int> &tokens, std::string generation_mode) {
+int Qwen::forward_first_with_topk(std::vector<int> &tokens,
+                                  std::string generation_mode) {
   std::vector<int> input_ids(SEQLEN, 0);
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
@@ -335,8 +325,7 @@ int Qwen::forward_next_with_topk(int cur_token, std::string generation_mode) {
     net_launch(net_embed_cache);
 
     // blocks
-    int bytes =
-        bm_mem_get_device_size(past_key[0]) / SEQLEN;
+    int bytes = bm_mem_get_device_size(past_key[0]) / SEQLEN;
     int token_offset = (token_count - 1) * bytes;
     for (int idx = 0; idx < NUM_LAYERS; idx++) {
       auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
@@ -348,28 +337,19 @@ int Qwen::forward_next_with_topk(int cur_token, std::string generation_mode) {
       auto &out1_mem = net_blocks_cache[idx]->stages[0].output_mems[1];
       auto &out2_mem = net_blocks_cache[idx]->stages[0].output_mems[2];
       d2d(in0_mem, out_mem);
-      if (io_alone) {
-        if (idx == 0) {
-          bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
-          bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-        } else {
-          d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
-          d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
-        }
+      if (idx == 0) {
+        bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
+        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
       } else {
-        if (idx == 0) {
-          bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
-          bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-        }
-        d2d(in3_mem, past_key[idx]);
-        d2d(in4_mem, past_value[idx]);
+        d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
+        d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
       }
       net_launch(net_blocks_cache[idx]);
       out_mem = out0_mem;
       bm_memcpy_d2d_byte(bm_handle, past_key[idx], token_offset, out1_mem, 0,
-                        bytes);
+                         bytes);
       bm_memcpy_d2d_byte(bm_handle, past_value[idx], token_offset, out2_mem, 0,
-                        bytes);
+                         bytes);
     }
     auto &lm_in_mem = net_lm->stages[0].input_mems[0];
     auto &lm_out_logits_mem = net_lm->stages[0].output_mems[0];
@@ -397,20 +377,21 @@ int Qwen::forward_next_with_topk(int cur_token, std::string generation_mode) {
 }
 
 void Qwen::lookahead_next(std::vector<int> &sampled_tokens) {
-  int bytes =
-      bm_mem_get_device_size(past_key[0]) / SEQLEN;
+  int bytes = bm_mem_get_device_size(past_key[0]) / SEQLEN;
 
   // process the lookahead tokens
   int out_tokens[GUESS_LEN] = {0};
   std::copy(sampled_tokens.begin(), sampled_tokens.end(), out_tokens);
   if (step < N_GRAM) {
-    memcpy(past_tokens[step], out_tokens + window_offset, WINDOW_SIZE * sizeof(int));
+    memcpy(past_tokens[step], out_tokens + window_offset,
+           WINDOW_SIZE * sizeof(int));
     step++;
   } else {
     for (int i = 0; i < N_GRAM - 1; i++) {
-      memcpy(past_tokens[i], past_tokens[i+1], WINDOW_SIZE * sizeof(int));
+      memcpy(past_tokens[i], past_tokens[i + 1], WINDOW_SIZE * sizeof(int));
     }
-    memcpy(past_tokens[N_GRAM-1], out_tokens + window_offset, WINDOW_SIZE * sizeof(int));
+    memcpy(past_tokens[N_GRAM - 1], out_tokens + window_offset,
+           WINDOW_SIZE * sizeof(int));
   }
   if (step == N_GRAM) {
     for (int i = 0; i < WINDOW_SIZE; i++) {
@@ -418,8 +399,9 @@ void Qwen::lookahead_next(std::vector<int> &sampled_tokens) {
       if (token_map[past_tokens[0][i]].size() > 0) {
         for (int g = 0; g < G_CANDI; g++) {
           int same_num = 0;
-          for (int j = 1; j <N_GRAM; j++) {
-            same_num += token_map[past_tokens[0][i]][g * (N_GRAM-1) + j] == past_tokens[j][i];
+          for (int j = 1; j < N_GRAM; j++) {
+            same_num += token_map[past_tokens[0][i]][g * (N_GRAM - 1) + j] ==
+                        past_tokens[j][i];
           }
           if (same_num == N_GRAM - 1) {
             exist = true;
@@ -433,8 +415,8 @@ void Qwen::lookahead_next(std::vector<int> &sampled_tokens) {
       for (int j = 1; j < N_GRAM; j++) {
         if (token_map[past_tokens[0][i]].size() >= G_CANDI * (N_GRAM - 1)) {
           memcpy(token_map[past_tokens[0][i]].data(),
-                token_map[past_tokens[0][i]].data() + N_GRAM - 1,
-                (N_GRAM - 1) * (G_CANDI - 1) * sizeof(int));
+                 token_map[past_tokens[0][i]].data() + N_GRAM - 1,
+                 (N_GRAM - 1) * (G_CANDI - 1) * sizeof(int));
           token_map[past_tokens[0][i]].resize((G_CANDI - 1) * (N_GRAM - 1));
         }
         token_map[past_tokens[0][i]].push_back(past_tokens[j][i]);
@@ -449,9 +431,8 @@ void Qwen::lookahead_next(std::vector<int> &sampled_tokens) {
   if (verify_num > 0) {
     std::vector<int> correct(N_GRAM, out_tokens[0]);
     for (int i = 0; i < verify_num; i++) {
-      memcpy(correct.data() + 1,
-            out_tokens + 1 + i * (N_GRAM - 1),
-            sizeof(int) * (N_GRAM - 1));
+      memcpy(correct.data() + 1, out_tokens + 1 + i * (N_GRAM - 1),
+             sizeof(int) * (N_GRAM - 1));
       int j = 0;
       for (j = 0; j < (N_GRAM - 1); j++) {
         if (correct[j] != my_guess[i * (N_GRAM - 1) + j]) {
@@ -461,7 +442,7 @@ void Qwen::lookahead_next(std::vector<int> &sampled_tokens) {
       if (j > max_hit) {
         hit_point = i;
         max_hit = j;
-        memcpy(max_hits, correct.data(), (max_hit+1) * sizeof(int));
+        memcpy(max_hits, correct.data(), (max_hit + 1) * sizeof(int));
       }
     }
   }
@@ -469,7 +450,7 @@ void Qwen::lookahead_next(std::vector<int> &sampled_tokens) {
   verified_tokens.clear();
   verified_tokens.push_back(out_tokens[0]);
   if (max_hit > 0) {
-    for (int i = 1; i < max_hit+1; i++) {
+    for (int i = 1; i < max_hit + 1; i++) {
       verified_tokens.push_back(max_hits[i]);
     }
     // process past_keys/past_values
@@ -478,12 +459,10 @@ void Qwen::lookahead_next(std::vector<int> &sampled_tokens) {
     for (int i = 0; i < NUM_LAYERS; ++i) {
       auto &out1_mem = net_blocks_cache[i]->stages[0].output_mems[1];
       auto &out2_mem = net_blocks_cache[i]->stages[0].output_mems[2];
-      bm_memcpy_d2d_byte(bm_handle, past_key[i], token_offset,
-                         out1_mem, guess_offset,
-                         max_hit * bytes);
-      bm_memcpy_d2d_byte(bm_handle, past_value[i], token_offset,
-                         out2_mem, guess_offset,
-                         max_hit * bytes);
+      bm_memcpy_d2d_byte(bm_handle, past_key[i], token_offset, out1_mem,
+                         guess_offset, max_hit * bytes);
+      bm_memcpy_d2d_byte(bm_handle, past_value[i], token_offset, out2_mem,
+                         guess_offset, max_hit * bytes);
     }
   }
 
@@ -493,7 +472,7 @@ void Qwen::lookahead_next(std::vector<int> &sampled_tokens) {
   auto it = token_map.find(out_tokens[0]);
   if (it != token_map.end()) {
     verify_num = it->second.size() / (N_GRAM - 1);
-    memcpy(out_tokens+1, it->second.data(), it->second.size() * sizeof(int));
+    memcpy(out_tokens + 1, it->second.data(), it->second.size() * sizeof(int));
     sampled_tokens.assign(out_tokens, out_tokens + GUESS_LEN);
     my_guess = it->second;
   } else {
@@ -522,11 +501,11 @@ std::vector<int> Qwen::answer(std::vector<int> history_tokens) {
 }
 
 PYBIND11_MODULE(chat_jacobi, m) {
-    pybind11::class_<Qwen>(m, "Qwen")
-        .def(pybind11::init<>())
-        .def("init", &Qwen::init)
-        .def("forward_first_with_topk", &Qwen::forward_first_with_topk)
-        .def("forward_next_with_topk", &Qwen::forward_next_with_topk)
-        .def("answer", &Qwen::answer)
-        .def("deinit", &Qwen::deinit);
+  pybind11::class_<Qwen>(m, "Qwen")
+      .def(pybind11::init<>())
+      .def("init", &Qwen::init)
+      .def("forward_first_with_topk", &Qwen::forward_first_with_topk)
+      .def("forward_next_with_topk", &Qwen::forward_next_with_topk)
+      .def("answer", &Qwen::answer)
+      .def("deinit", &Qwen::deinit);
 }
