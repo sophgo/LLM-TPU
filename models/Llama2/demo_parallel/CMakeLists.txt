@@ -5,8 +5,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE INTERNAL "")
 
 set(TARGET_ARCH pcie)
 
-include_directories(${PROJECT_SOURCE_DIR}/include)
-link_directories(${PROJECT_SOURCE_DIR}/lib/)
+include_directories(${PROJECT_SOURCE_DIR}/../support/include)
+link_directories(${PROJECT_SOURCE_DIR}/../support/lib)
 
 include_directories(/opt/sophon/libsophon-current/include)
 link_directories(/opt/sophon/libsophon-current/lib)

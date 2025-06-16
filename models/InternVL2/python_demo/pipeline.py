@@ -172,7 +172,7 @@ if __name__ == "__main__":
     parser.add_argument('-t',
                         '--tokenizer',
                         type=str,
-                        default="../support/token_config",
+                        default="../token_config",
                         help='path to the tokenizer file')
     parser.add_argument('-d', '--devid', type=int,
                         default=0, help='device ID to use')

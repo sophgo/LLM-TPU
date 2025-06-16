@@ -9,7 +9,6 @@
 
 #include "bmruntime_interface.h"
 #include "memory.h"
-#include "utils.h"
 #include <algorithm>
 #include <assert.h>
 #include <chrono>
@@ -24,7 +23,6 @@
 #include <stdio.h>
 #include <vector>
 
-static const float ATTENTION_MASK = -10000.;
 static const int MEDIA_TOKEN_ID = 151649;
 
 class NVILA {
@@ -141,15 +139,17 @@ void NVILA::init(const std::vector<int> &devices, std::string model_path) {
     bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
   } else
     NUM_LAYERS = (num_nets - 5) / 2;
-  if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
-    mask_value = fp32_to_fp16_bits(ATTENTION_MASK);
-  } else if (net_embed_cache->output_dtypes[0] == BM_BFLOAT16) {
-    mask_value = fp32_to_bf16_bits(ATTENTION_MASK);
+
+  if (net_blocks_cache[0]->output_dtypes[0] == BM_FLOAT16) {
+    mask_value = 0xF0E2; // float16
+  } else if (net_blocks_cache[0]->output_dtypes[0] == BM_BFLOAT16) {
+    mask_value = 0xC61C; // -9984 by bfloat16
   } else {
     std::cerr << "\nError: Invalid attention dtype\n";
     std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
     throw std::runtime_error("Invalid attention dtype");
   }
+
   // resize
   visited_tokens.resize(SEQLEN);
   forward_vit_mm = false;

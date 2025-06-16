@@ -24,4 +24,4 @@ else
 fi
 
 # run demo
-./demo/chatglm --model ../../bmodels/chatglm3-6b_int4_1dev_seq512.bmodel --tokenizer ./support/token_config/tokenizer.model --devid 0
+./demo/chatglm --model ../../bmodels/chatglm3-6b_int4_1dev_seq512.bmodel --tokenizer ./token_config/tokenizer.model --devid 0

@@ -23,7 +23,6 @@
 #include <random>
 #include <stdio.h>
 #include <dlfcn.h>
-#include "utils.h"
 
 class RWKV7 {
 public:

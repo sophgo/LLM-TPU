@@ -95,7 +95,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--model_path', type=str, required=True, help='path to the bmodel file')
-    parser.add_argument('-t', '--tokenizer_path', type=str, default="./support/token_config", help='path to the tokenizer file')
+    parser.add_argument('-t', '--tokenizer_path', type=str, default="./token_config", help='path to the tokenizer file')
     parser.add_argument('-d', '--devid', type=int, default=0, help='device ID to use')
     args = parser.parse_args()
     main(args)

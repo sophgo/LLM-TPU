@@ -9,7 +9,6 @@
 
 #include "bmruntime_interface.h"
 #include "memory.h"
-#include "utils.h"
 #include <algorithm>
 #include <assert.h>
 #include <chrono>
@@ -24,7 +23,6 @@
 #include <stdio.h>
 #include <vector>
 
-static const float ATTENTION_MASK = -10000.;
 
 class ChatGLM {
 public:
@@ -201,8 +199,16 @@ void ChatGLM::init(const std::vector<int> &devices, std::string model_path) {
                             net->input_dtypes[4],
                             net->stages[0].input_shapes[4]);
   }
-
-  mask_value = fp32_to_uint16(ATTENTION_MASK, net_blocks[0]->input_dtypes[0]);
+  
+  if (net_blocks_cache[0]->output_dtypes[0] == BM_FLOAT16) {
+    mask_value = 0xF0E2; // float16
+  } else if (net_blocks_cache[0]->output_dtypes[0] == BM_BFLOAT16) {
+    mask_value = 0xC61C; // -9984 by bfloat16
+  } else {
+    std::cerr << "\nError: Invalid attention dtype\n";
+    std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
+    throw std::runtime_error("Invalid attention dtype");
+  }
 }
 
 void ChatGLM::deinit() {

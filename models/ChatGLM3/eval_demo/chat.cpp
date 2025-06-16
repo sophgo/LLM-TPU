@@ -9,7 +9,6 @@
 
 #include "bmruntime_interface.h"
 #include "memory.h"
-#include "utils.h"
 #include <algorithm>
 #include <assert.h>
 #include <chrono>

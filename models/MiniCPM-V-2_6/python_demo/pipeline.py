@@ -146,7 +146,7 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--model_path', type=str,
                         required=True, help='path to the bmodel file')
     parser.add_argument('-p', '--processor_path', type=str,
-                        default="../support/processor_config", help='path to the processor file')
+                        default="../processor_config", help='path to the processor file')
     parser.add_argument('-d', '--devid', type=int,
                         default=0, help='device ID to use')
     args = parser.parse_args()

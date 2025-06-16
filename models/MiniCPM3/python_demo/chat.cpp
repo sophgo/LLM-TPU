@@ -9,7 +9,6 @@
 
 #include "bmruntime_interface.h"
 #include "memory.h"
-#include "utils.h"
 #include <algorithm>
 #include <assert.h>
 #include <chrono>
@@ -24,7 +23,7 @@
 #include <stdio.h>
 #include <vector>
 
-static const uint16_t ATTENTION_MASK = fp32_to_bf16_bits(-9984.);
+static const uint16_t ATTENTION_MASK = 0xC61C;
 
 class MiniCPM3 {
 public:

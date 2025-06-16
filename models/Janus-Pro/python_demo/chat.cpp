@@ -9,7 +9,6 @@
 
 #include "bmruntime_interface.h"
 #include "memory.h"
-#include "utils.h"
 #include <algorithm>
 #include <assert.h>
 #include <chrono>
@@ -24,7 +23,6 @@
 #include <stdio.h>
 #include <vector>
 
-static const float ATTENTION_MASK = -10000.;
 
 class JanusPro {
 public:
@@ -143,10 +141,11 @@ void JanusPro::init(const std::vector<int> &devices, std::string model_path) {
   HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[1]; // read hidden size
   auto num_nets = bmrt_get_network_number(p_bmrt);
   NUM_LAYERS = (num_nets - 6) / 2;
-  if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
-    mask_value = fp32_to_fp16_bits(ATTENTION_MASK);
-  } else if (net_embed_cache->output_dtypes[0] == BM_BFLOAT16) {
-    mask_value = fp32_to_bf16_bits(ATTENTION_MASK);
+  
+  if (net_blocks_cache[0]->output_dtypes[0] == BM_FLOAT16) {
+    mask_value = 0xF0E2; // float16
+  } else if (net_blocks_cache[0]->output_dtypes[0] == BM_BFLOAT16) {
+    mask_value = 0xC61C; // -9984 by bfloat16
   } else {
     std::cerr << "\nError: Invalid attention dtype\n";
     std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
