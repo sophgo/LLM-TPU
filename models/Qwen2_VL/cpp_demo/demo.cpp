@@ -245,7 +245,6 @@ void Qwen2VL::init(std::string model_path,
   // kv cache
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
-  auto addr_mode = net_blocks_cache[0]->addr_mode;
   for (int i = 0; i < NUM_LAYERS; i++) {
     past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
     past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];

@@ -9,7 +9,6 @@
 
 #include "bmruntime_interface.h"
 #include "memory.h"
-#include "utils.h"
 #include <algorithm>
 #include <assert.h>
 #include <chrono>
@@ -26,6 +25,36 @@
 #include <vector>
 
 static const uint16_t ATTENTION_MASK = 0xC61C;
+
+
+//===------------------------------------------------------------===//
+// Empty Func
+//===------------------------------------------------------------===//
+void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
+  int value = 0;
+  auto ret = bm_memset_device_ext(bm_handle, &value, 1, mem);
+  assert(BM_SUCCESS == ret);
+}
+
+void empty_in_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+                  int stage_idx = 0) {
+  for (int i = 0; i < net->input_num; i++) {
+    empty(bm_handle, net->stages[stage_idx].input_mems[i]);
+  }
+}
+
+void empty_out_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+                   int stage_idx = 0) {
+  for (int i = 0; i < net->output_num; i++) {
+    empty(bm_handle, net->stages[stage_idx].output_mems[i]);
+  }
+}
+
+void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+               int stage_idx = 0) {
+  empty_in_net(bm_handle, net, stage_idx);
+  empty_out_net(bm_handle, net, stage_idx);
+}
 
 class Qwen {
 public:
@@ -412,8 +441,6 @@ int Qwen::forward_next() {
     auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
     auto &in2_mem = net_blocks_cache[idx]->stages[0].input_mems[2];
-    auto &in3_mem = net_blocks_cache[idx]->stages[0].input_mems[3];
-    auto &in4_mem = net_blocks_cache[idx]->stages[0].input_mems[4];
     auto &out0_mem = net_blocks_cache[idx]->stages[0].output_mems[0];
     auto &out1_mem = net_blocks_cache[idx]->stages[0].output_mems[1];
     auto &out2_mem = net_blocks_cache[idx]->stages[0].output_mems[2];

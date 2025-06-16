@@ -6,14 +6,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE INTERNAL "")
 set(TARGET_ARCH pcie)
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
-include_directories(/opt/sophon/libsophon-current/include)
+link_directories(${PROJECT_SOURCE_DIR}/lib/)
 
-if (${TARGET_ARCH} STREQUAL "pcie")
-    add_definitions(-DPCIE_TARGET)
-    link_directories(${PROJECT_SOURCE_DIR}/lib/)
-    link_directories(/opt/sophon/libsophon-current/lib)
-	message("Pcie mode, starting......")
-endif()
+include_directories(/opt/sophon/libsophon-current/include)
+link_directories(/opt/sophon/libsophon-current/lib)
 
 add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -Werror)
 set(CMAKE_BUILD_TYPE "Debug")

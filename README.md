@@ -51,10 +51,12 @@
 |Llama2-7B                    |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf)              |
 |Llama2-13B                   |:white\_check\_mark:|                    |[LINK](https://huggingface.co/meta-llama/Llama-2-13b-chat-hf)             |
 |Llama3-8B                    |:white\_check\_mark:|                    |[LINK](https://huggingface.co/meta-llama/Meta-Llama-3-8B)                 |
-|Llama3.2-3B                  |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct)               |
+|Llama3.2-3B                  |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct)           |
 |LWM-Text-Chat                |:white\_check\_mark:|                    |[LINK](https://huggingface.co/LargeWorldModel/LWM-Text-Chat-1M)           |
 |MiniCPM-2B                   |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/openbmb/MiniCPM3-4B)                        |
 |MiniCPM3-4B                  |:white\_check\_mark:|                    |[LINK](https://huggingface.co/openbmb/MiniCPM3-4B)                        |
+|MiniCPM4-0.5B                |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/openbmb/MiniCPM4-0.5B)                      |
+|MiniCPM4-8B                  |:white\_check\_mark:|                    |[LINK](https://huggingface.co/openbmb/MiniCPM4-8B)                        |
 |Mistral-7B-Instruct          |:white\_check\_mark:|                    |[LINK](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2)         |
 |Phi-3-mini-4k                |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct/)          |
 |Qwen-7B                      |:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen-7B-Chat)                          |
@@ -68,7 +70,7 @@
 |Qwen2.5-1.5B                 |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct)                   |
 |Qwen2.5-7B                   |:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct)                   |
 |QWQ-32B                      |:white\_check\_mark:|                    |[LINK](https://huggingface.co/Qwen/QWQ-32B)                               |
-|Qwen3-4B                     |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen3-4B)                   |
+|Qwen3-4B                     |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen3-4B)                              |
 |WizardCoder-15B              |:white\_check\_mark:|                    |[LINK](https://huggingface.co/WizardLM/WizardCoder-15B-V1.0)              |
 |Yi-6B-chat                   |:white\_check\_mark:|                    |[LINK](https://huggingface.co/01-ai/Yi-6B-Chat)                           |
 |Yi-34B-chat                  |:white\_check\_mark:|                    |[LINK](https://huggingface.co/01-ai/Yi-34B-Chat)                          |
@@ -82,7 +84,7 @@
 |Qwen2.5-VL                   |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct)                |
 |InternVL2-4B                 |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/OpenGVLab/InternVL2-4B)                     |
 |InternVL2-2B                 |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/OpenGVLab/InternVL2-2B)                     |
-|InternVL3                    |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/OpenGVLab/InternVL3-2B-AWQ)                     |
+|InternVL3                    |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/OpenGVLab/InternVL3-2B-AWQ)                 |
 |Stable Diffusion             |:white\_check\_mark:|                    |[LINK](https://huggingface.co/runwayml/stable-diffusion-v1-5)             |
 |Stable Diffusion XL          |:white\_check\_mark:|                    |[LINK](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)   |
 |MiniCPM-V-2_6                |:white\_check\_mark:|:white\_check\_mark:|[LINK](https://huggingface.co/openbmb/MiniCPM-V-2_6)                      |

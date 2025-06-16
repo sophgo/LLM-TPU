@@ -182,6 +182,6 @@ if __name__ == "__main__":
     parser.add_argument('--max_new_tokens', type=int, default=50, help='max new token length to generate')
     parser.add_argument('--generation_mode', type=str, choices=["greedy", "penalty_sample"], default="greedy", help='mode for generating next token')
     parser.add_argument('--prompt_mode', type=str, choices=["prompted", "unprompted"], default="prompted", help='use prompt format or original input')
-    parser.add_argument('--enable_history', action='store_true', default=True, help="if set, enables storing of history memory.")
+    parser.add_argument('--enable_history', action='store_true',  help="if set, enables storing of history memory.")
     args = parser.parse_args()
     main(args)

@@ -408,8 +408,6 @@ int Llama3_2::forward_next() {
         cross_attn_layers.end()) {
       auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
       auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
-      auto &in2_mem = net_blocks_cache[idx]->stages[0].input_mems[2];
-      auto &in3_mem = net_blocks_cache[idx]->stages[0].input_mems[3];
       auto &out0_mem = net_blocks_cache[idx]->stages[0].output_mems[0];
       d2d(in0_mem, out_mem);
       if (idx == cross_attn_layers[0]) {
@@ -424,8 +422,6 @@ int Llama3_2::forward_next() {
       auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
       auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
       auto &in2_mem = net_blocks_cache[idx]->stages[0].input_mems[2];
-      auto &in3_mem = net_blocks_cache[idx]->stages[0].input_mems[3];
-      auto &in4_mem = net_blocks_cache[idx]->stages[0].input_mems[4];
       auto &out0_mem = net_blocks_cache[idx]->stages[0].output_mems[0];
       auto &out1_mem = net_blocks_cache[idx]->stages[0].output_mems[1];
       auto &out2_mem = net_blocks_cache[idx]->stages[0].output_mems[2];

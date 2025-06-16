@@ -101,6 +101,7 @@ private:
   const bm_net_info_t *net_embed;
   const bm_net_info_t *net_embed_cache;
   const bm_net_info_t *net_lm, *net_greedy_head, *net_sample_head;
+  bm_device_mem_t dev_buffer;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
 };
@@ -202,6 +203,13 @@ void MiniCPM4::init(const std::vector<int> &devices, std::string model_path) {
   kv_bytes =
       bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
 
+  auto buffer_size =
+      bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
+  bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
+
+  bm_set_device_mem(&net_embed->stages[0].output_mems[0], dev_buffer.size,
+                  dev_buffer.u.device.device_addr);
+
   // kv cache
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
@@ -215,6 +223,7 @@ void MiniCPM4::init(const std::vector<int> &devices, std::string model_path) {
 }
 
 void MiniCPM4::deinit() {
+  bm_free_device(bm_handle, dev_buffer);
   bmrt_destroy(p_bmrt);
   for (auto h : handles) {
     bm_dev_free(h);
@@ -427,8 +436,6 @@ int MiniCPM4::forward_next() {
     auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
     auto &in2_mem = net_blocks_cache[idx]->stages[0].input_mems[2];
-    auto &in3_mem = net_blocks_cache[idx]->stages[0].input_mems[3];
-    auto &in4_mem = net_blocks_cache[idx]->stages[0].input_mems[4];
     auto &out0_mem = net_blocks_cache[idx]->stages[0].output_mems[0];
     auto &out1_mem = net_blocks_cache[idx]->stages[0].output_mems[1];
     auto &out2_mem = net_blocks_cache[idx]->stages[0].output_mems[2];

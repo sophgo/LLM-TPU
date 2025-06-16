@@ -220,7 +220,6 @@ void ChatGLM::init(const std::vector<int> &devices, std::string model_path) {
     assert(true == ret);
   }
 
-  auto addr_mode = net_blocks_cache[0]->addr_mode;
   past_keys.resize(NUM_LAYERS);
   past_values.resize(NUM_LAYERS);
     for (int i = 0; i < NUM_LAYERS; i++) {
