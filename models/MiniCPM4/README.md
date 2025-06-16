@@ -6,10 +6,16 @@
 本文包括如何编译bmodel，和如何在BM1684X/BM1688环境运行bmodel。编译LLM环节可以省去，直接用以下链接下载：
 
 ``` shell
-# 1684x 512
+# minicpm4-8b 1684x 512
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpm4-8b_w4bf16_seq512_bm1684x_1dev_20250613_175044.bmodel
-# 1684x 8k, 动态模型
+# minicpm4-8b 1684x 8k, 动态模型
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpm4-8b_w4bf16_seq8192_bm1684x_1dev_20250613_182940.bmodel
+
+# minicpm4-0.5b bm1688 512
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU_Lite/minicpm4-0.5b-gptq_w4bf16_seq512_bm1688_2core_20250616_122001.bmodel
+# minicpm4-0.5b cv186x 512
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU_Lite/minicpm4-0.5b-gptq_w4bf16_seq512_cv186x_1core_20250616_122126.bmodel
+
 ```
 
 ## 编译LLM模型
