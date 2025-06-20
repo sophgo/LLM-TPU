@@ -68,9 +68,7 @@ private:
   int spatial_merge_unit;
   // 分词器和处理器
   std::unique_ptr<Tokenizer> tok;
-  bool enable_history = false;
   std::unique_ptr<Maker> maker;
-  std::string result;
 
   // 获取窗口索引和累积窗口序列长度
   std::pair<std::vector<int>, std::vector<int>>
@@ -85,7 +83,7 @@ private:
   rot_pos(const std::vector<std::vector<int>> &grid_thw);
 
   // 构建提示
-  std::string build_prompt(std::string input_str);
+  std::string build_prompt(std::string input_str, bool has_image);
 
   // 重新整理hidden_states
   std::vector<float>
@@ -109,12 +107,19 @@ private:
   // 编码输入
   std::vector<int> encode_input(const std::string &sentence_input);
 
-  // 更新聊天历史
-  void update_history(const std::string &input_str, const std::string &result);
-
   // 打印聊天说明
   void print_chat_instructions();
 };
+
+std::vector<int> ChatPipe::get_position_ids(int token_len) {
+  std::vector<int> position_ids(token_len * 3);
+  for (int j = 0; j < 3; j++) {
+    for (int i = 0; i < token_len; ++i) {
+      position_ids[j * token_len + i] = i;
+    }
+  }
+  return position_ids;
+}
 
 // ChatPipe 类构造函数
 ChatPipe::ChatPipe(int devid, const std::string &model_path,
@@ -536,64 +541,83 @@ ChatPipe::get_rope_index(const std::vector<std::vector<int>> &input_ids,
   return position_ids;
 }
 
+std::string strip(const std::string &s) {
+  const std::string WHITESPACE = " \n\r\t\f\v";
+  // 找到第一个非空白字符位置
+  size_t start = s.find_first_not_of(WHITESPACE);
+  if (start == std::string::npos) {
+    // 全是空白
+    return "";
+  }
+  // 找到最后一个非空白字符位置
+  size_t end = s.find_last_not_of(WHITESPACE);
+  // substr(pos, len)，len = end-start+1
+  return s.substr(start, end - start + 1);
+}
+
 // 聊天主循环
 void ChatPipe::chat() {
   print_chat_instructions();
   while (true) {
     std::string input_str;
+    int token = 0;
+    int tok_num = 0;
+    int max_posid = 0;
     std::cout << "\nQuestion: ";
     std::getline(std::cin, input_str);
+    input_str = strip(input_str);
     if (input_str == "exit" || input_str == "q" || input_str == "quit")
       break;
 
     std::string media_path;
     std::cout << "\nImage Path: ";
     std::getline(std::cin, media_path);
+    media_path = strip(media_path);
+    bool has_image = !media_path.empty();
 
-    std::string sentence_input = build_prompt(input_str);
+    std::cout << "\nAnswer:\n";
+    std::string sentence_input = build_prompt(input_str, has_image);
     // std::cout << "Prompt: " << sentence_input << std::endl;
 
     std::vector<int> raw_tokens = encode_input(sentence_input);
-    std::replace(raw_tokens.begin(), raw_tokens.end(), VISION_PAD_TOKEN,
-                 IMAGE_PAD_TOKEN);
-    std::vector<float> pixel_values;
-    process_image(pixel_values, media_path, config);
-    std::vector<int> tokens = maker->insert_tokens(raw_tokens, IMAGE_PAD_TOKEN);
+    if (has_image) {
+      std::replace(raw_tokens.begin(), raw_tokens.end(), VISION_PAD_TOKEN,
+                   IMAGE_PAD_TOKEN);
+      std::vector<float> pixel_values;
+      process_image(pixel_values, media_path, config);
+      std::vector<int> tokens =
+          maker->insert_tokens(raw_tokens, IMAGE_PAD_TOKEN);
 
-    int vit_offset = 0;
-    vit_offset = find_token_offset(tokens, ID_IMAGE_PAD);
-    model.forward_embed(tokens);
-    vit_process_image(pixel_values, vit_offset);
+      int vit_offset = 0;
+      vit_offset = find_token_offset(tokens, ID_IMAGE_PAD);
+      model.forward_embed(tokens);
+      vit_process_image(pixel_values, vit_offset);
+      std::vector<std::vector<std::vector<int>>> position_ids =
+          get_rope_index({tokens}, {config.grid_thw}, ID_IMAGE_PAD);
 
-    int token = 0;
-    int tok_num = 0;
-
-    int max_posid = 0;
-    result.clear();
-
-    std::vector<std::vector<std::vector<int>>> position_ids =
-        get_rope_index({tokens}, {config.grid_thw}, ID_IMAGE_PAD);
-
-    // 找到三维数组position_ids中的最大值
-    for (const auto &sub_tensor : position_ids[0]) {
-      for (int val : sub_tensor) {
-        if (val > max_posid) {
-          max_posid = val;
+      // 找到三维数组position_ids中的最大值
+      for (const auto &sub_tensor : position_ids[0]) {
+        for (int val : sub_tensor) {
+          if (val > max_posid) {
+            max_posid = val;
+          }
         }
       }
-    }
-
-    std::cout << "\nAnswer:\n";
-    // 将三维数组position_ids转换维1维
-    std::vector<int> position_ids_1d;
-    for (const auto &two_dim_tensor : position_ids) {
-      for (const auto &one_dim_tensor : two_dim_tensor) {
-        position_ids_1d.insert(position_ids_1d.end(), one_dim_tensor.begin(),
-                               one_dim_tensor.end());
+      // 将三维数组position_ids转换维1维
+      std::vector<int> position_ids_1d;
+      for (const auto &two_dim_tensor : position_ids) {
+        for (const auto &one_dim_tensor : two_dim_tensor) {
+          position_ids_1d.insert(position_ids_1d.end(), one_dim_tensor.begin(),
+                                 one_dim_tensor.end());
+        }
       }
+      token = model.forward_first(position_ids_1d);
+    } else {
+      model.forward_embed(raw_tokens);
+      auto position_ids_1d = get_position_ids(raw_tokens.size());
+      max_posid = raw_tokens.size() - 1;
+      token = model.forward_first(position_ids_1d);
     }
-
-    token = model.forward_first(position_ids_1d);
 
     // 后续分词
     std::vector<int> full_word_tokens;
@@ -621,23 +645,16 @@ void ChatPipe::chat() {
       tok_num++;
     }
 
-    if (enable_history) {
-      update_history(input_str, result);
-    }
     std::cout << std::endl;
-    break;
   }
 }
 
 // 构建提示
-std::string ChatPipe::build_prompt(std::string input_str) {
+std::string ChatPipe::build_prompt(std::string input_str, bool has_image) {
   std::string prompt = sys_config;
-  prompt += "<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>";
-  if (enable_history) {
-    for (const auto &item : history_vector) {
-      prompt += item.first + "<|im_end|>\n" + "<|im_start|>assistant\n" +
-                item.second + "<|im_end|>\n<|im_start|>user\n";
-    }
+  prompt += "<|im_start|>user\n";
+  if (has_image) {
+    prompt += "<|vision_start|><|image_pad|><|vision_end|>";
   }
   prompt += input_str + "<|im_end|>\n<|im_start|>assistant\n";
   return prompt;
@@ -784,20 +801,6 @@ std::vector<int> ChatPipe::encode_input(const std::string &sentence_input) {
   return tok->Encode(sentence_input);
 }
 
-void ChatPipe::update_history(const std::string &input_str,
-                              const std::string &result) {
-  if (model.token_length >= model.SEQLEN) {
-    history_vector.push_back({input_str, result});
-    size_t half_size = history_vector.size() / 2;
-    history_vector.erase(history_vector.begin(),
-                         history_vector.begin() + half_size);
-    std::cout << "history length exceed max sequence length, erase half"
-              << std::endl;
-  } else {
-    history_vector.push_back({input_str, result});
-  }
-}
-
 void ChatPipe::print_chat_instructions() {
   std::cout
       << "\n=================================================================\n"
@@ -811,24 +814,22 @@ void Usage() {
          "  -h, --help      : Show help info \n"
          "  -m, --model     : Set model path \n"
          "  -c, --config    : Set config path \n"
-         "  -d, --devid     : Set devices to run for model, default is '0'\n"
-         "  -e, --enable_history : if set, enable history memory \n");
+         "  -d, --devid     : Set devices to run for model, default is '0'\n");
 }
 
 void processArguments(int argc, char *argv[], std::string &model_path,
                       std::string &config_path, std::string &image_path,
-                      int &device, bool &enable_history) {
+                      int &device) {
   struct option longOptions[] = {{"model", required_argument, nullptr, 'm'},
                                  {"config", required_argument, nullptr, 'c'},
                                  {"devid", required_argument, nullptr, 'd'},
-                                 {"enable_history", no_argument, nullptr, 'e'},
                                  {"help", no_argument, nullptr, 'h'},
                                  {nullptr, 0, nullptr, 0}};
 
   int optionIndex = 0;
   int option;
 
-  while ((option = getopt_long(argc, argv, "m:c:d:eh:", longOptions,
+  while ((option = getopt_long(argc, argv, "m:c:d:h", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -839,9 +840,6 @@ void processArguments(int argc, char *argv[], std::string &model_path,
       break;
     case 'd':
       device = atoi(optarg);
-      break;
-    case 'e':
-      enable_history = true;
       break;
     case 'h':
       Usage();
@@ -860,10 +858,8 @@ int main(int argc, char *argv[]) {
   std::string config_path;
   std::string image_path;
   int device = 0;
-  bool enable_history = false;
 
-  processArguments(argc, argv, model_path, config_path, image_path, device,
-                   enable_history);
+  processArguments(argc, argv, model_path, config_path, image_path, device);
   if (model_path.empty() || config_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);

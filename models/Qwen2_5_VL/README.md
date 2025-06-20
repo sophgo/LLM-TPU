@@ -65,7 +65,7 @@ source ./envsetup.sh  #激活环境变量
 llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 --quantize w4bf16  -c bm1684x --out_dir qwen2.5vl_3b --max_pixels 672,896
 ```
 
-## 编译与运行程序
+## 编译与运行程序(python)
 
 * 环境准备
 > （python_demo运行之前都需要执行这个）
@@ -80,15 +80,22 @@ pip3 install torchvision pillow qwen_vl_utils transformers>=4.49.0
 cd python_demo
 mkdir build 
 cd build && cmake .. && make && cp *cpython* .. && cd ..
-```
 
-* python demo
-
-``` shell
+# run demo
 python3 pipeline.py -m xxxx.bmodel -c config 
 ```
 model为实际的model储存路径；config_path为配置文件路径
 
+## 编译和运行程序(cpp)
+
+``` shell
+cd cpp_demo
+mkdir build 
+cd build && cmake .. && make && cp pipeline .. && cd ..
+
+# run demo
+./pipeline -m xxx.bmodel -c config
+```
 
 ## 常见问题
 
