@@ -673,6 +673,30 @@ std::vector<float> ChatPipe::reorder_hidden_states(const std::vector<float>& hid
     return final_result;
 }
 
+std::vector<int> calculate_cu_seqlens(const std::vector<std::vector<int>>& grid_thw) {
+    std::vector<int> intermediate;
+    // 对应 torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0])
+    for (size_t i = 0; i < grid_thw.size(); ++i) {
+        int product = grid_thw[i][1] * grid_thw[i][2];
+        for (int j = 0; j < grid_thw[i][0]; ++j) {
+            intermediate.push_back(product);
+        }
+    }
+
+    // 对应 cumsum(dim=0, dtype=torch.int32)
+    std::vector<int> cu_seqlens;
+    int sum = 0;
+    for (int val : intermediate) {
+        sum += val;
+        cu_seqlens.push_back(sum);
+    }
+
+    // 对应 F.pad(cu_seqlens, (1, 0), value=0)
+    cu_seqlens.insert(cu_seqlens.begin(), 0);
+
+    return cu_seqlens;
+}
+
 // 处理图像
 void ChatPipe::vit_process_image(std::vector<float> pixel_values, int vit_offset) {
 
@@ -701,8 +725,9 @@ void ChatPipe::vit_process_image(std::vector<float> pixel_values, int vit_offset
     std::vector<float> processed_position_ids = reorder_hidden_states(float_position_ids, seq_len, window_index);
     std::vector<int> int_processed_position_ids = convertFloatToInt(processed_position_ids);
 
+    std::vector<int> cu_seqlens = calculate_cu_seqlens(grid_thw);
     // 生成掩码
-    std::vector<float> full_attn_mask = get_attn_mask(seq_len, cu_window_seqlens);
+    std::vector<float> full_attn_mask = get_attn_mask(seq_len, cu_seqlens);
     std::vector<float> window_attn_mask = get_attn_mask(seq_len, cu_window_seqlens);
 
     // reverse_indices
