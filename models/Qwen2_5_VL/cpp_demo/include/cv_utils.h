@@ -14,12 +14,11 @@
 
 #include "PillowResize.h"
 #include <iostream>
+#include <numeric>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/opencv.hpp>
 #include <string>
 #include <vector>
-#include <numeric>
-
 
 struct Config {
   std::string model_type;
@@ -30,7 +29,9 @@ struct Config {
 
   // vit config
   int max_pos;
+  int MAX_PATCHES;
   int MAX_PIXELS;
+  int MIN_PIXELS;
   std::vector<int> grid_thw;
   int media_offset;
   int media_size;
@@ -106,7 +107,6 @@ public:
     }
   }
 
-
 private:
   Config &config_;
 
@@ -118,8 +118,7 @@ private:
         std::accumulate(config_.grid_thw.begin(), config_.grid_thw.end(), 1,
                         std::multiplies<int>()) /
         merge_length;
-    
-    std::cout << "repeat num for insert tokens: " << repeat_num << std::endl;
+
     std::vector<int> result;
     result.reserve((int)raw_tokens.size() + repeat_num);
     for (int token : raw_tokens) {
@@ -163,7 +162,7 @@ private:
     }
 
     int valid_vit_pixels = h * w;
-    pos_ids.resize(config_.MAX_PIXELS * 2, 0);
+    pos_ids.resize(config_.MAX_PATCHES * 2, 0);
     for (int i = 0; i < t; ++i) {
       for (int j = 0; j < valid_vit_pixels; ++j) {
         pos_ids[i * valid_vit_pixels + 2 * j] = hpos_ids[j];
@@ -187,8 +186,7 @@ private:
     }
 
     // Initialize attention_mask with -10000
-    attention_mask.resize(config_.MAX_PIXELS * config_.MAX_PIXELS,
-                          -10000.);
+    attention_mask.resize(config_.MAX_PATCHES * config_.MAX_PATCHES, -10000.);
 
     // Update attention_mask based on cu_seqlens
     for (size_t i = 1; i < cu_seqlens.size(); ++i) {
@@ -196,7 +194,7 @@ private:
       int end = cu_seqlens[i];
       for (int row = start; row < end; ++row) {
         for (int col = start; col < end; ++col) {
-          size_t index = row * config_.MAX_PIXELS + col;
+          size_t index = row * config_.MAX_PATCHES + col;
           if (index < attention_mask.size()) {
             attention_mask[index] = 0;
           }
@@ -345,80 +343,9 @@ private:
 };
 
 //===------------------------------------------------------------===//
-// Open image & video (Official OpenCV implementation)
-//===------------------------------------------------------------===//
-void opencv_extract_frames(std::vector<cv::Mat> &images, std::string video_file,
-                           int num_frames) {
-  // Open video
-  cv::VideoCapture vidcap(video_file);
-  if (!vidcap.isOpened()) {
-    std::cerr << "Error: Unable to open video file: " << video_file
-              << std::endl;
-    exit(1);
-  }
-
-  // Get total frame count
-  int frame_count = static_cast<int>(vidcap.get(cv::CAP_PROP_FRAME_COUNT));
-  if (frame_count <= 0) {
-    std::cerr
-        << "Error: Video file has no frames or failed to retrieve frame count."
-        << std::endl;
-    exit(1);
-  }
-
-  // Calculate frame indices to extract
-  std::vector<int> frame_indices;
-  frame_indices.push_back(0); // Always include the first frame
-  for (int i = 1; i < num_frames - 1; ++i) {
-    frame_indices.push_back(
-        static_cast<int>((frame_count - 1.0) / (num_frames - 1.0) * i));
-  }
-  if (num_frames > 1) {
-    frame_indices.push_back(frame_count - 1); // Include the last frame
-  }
-
-  // Extract frames
-  int count = 0;
-  while (true) {
-    cv::Mat frame;
-    if (!vidcap.read(frame)) {
-      break; // End of video
-    }
-
-    // Check if the current frame is one of the desired frames
-    if (std::find(frame_indices.begin(), frame_indices.end(), count) !=
-        frame_indices.end()) {
-      cv::Mat rgb_frame;
-      cv::cvtColor(frame, rgb_frame, cv::COLOR_BGR2RGB); // Convert to RGB
-      images.push_back(rgb_frame);
-      if (images.size() >= static_cast<size_t>(num_frames)) {
-        break;
-      }
-    }
-    ++count;
-  }
-
-  vidcap.release();
-}
-
-void opencv_read_image(std::vector<cv::Mat> &images, std::string image_path) {
-  // Read image
-  cv::Mat image = cv::imread(image_path);
-  if (image.empty()) {
-    std::cerr << "Error: Unable to open image file: " << image_path
-              << std::endl;
-    exit(1);
-  }
-
-  images.push_back(image);
-}
-
-//===------------------------------------------------------------===//
 // Resize
 //===------------------------------------------------------------===//
 const int IMAGE_FACTOR = 28;
-const int MIN_PIXELS = 4 * 28 * 28;
-const int MAX_PIXELS = 16384 * 28 * 28;
 const int MAX_RATIO = 200;
 
 int round_by_factor(int number, int factor) {
@@ -434,10 +361,8 @@ int floor_by_factor(double number, int factor) {
   return static_cast<int>(std::floor(number / factor)) * factor;
 }
 
-std::pair<int, int> smart_resize(int height, int width,
-                                 int factor = IMAGE_FACTOR,
-                                 int min_pixels = MIN_PIXELS,
-                                 int max_pixels = MAX_PIXELS) {
+std::pair<int, int> smart_resize(int height, int width, int min_pixels,
+                                 int max_pixels, int factor = IMAGE_FACTOR) {
   // Check aspect ratio
   double aspect_ratio =
       static_cast<double>(std::max(height, width)) / std::min(height, width);
@@ -483,41 +408,34 @@ void flatten(const std::vector<std::vector<float>> &x, std::vector<float> &y) {
   }
 }
 
-std::vector<int> calc_grid_thw(const std::vector<std::vector<float>> &patches,
-                               int resized_height, int resized_width,
+std::vector<int> calc_grid_thw(int resized_height, int resized_width,
                                const Config &config) {
-  int grid_t = std::max((int)patches.size() / config.temporal_patch_size, 1);
+  int grid_t = 1; // Default for single image
   int grid_h = resized_height / config.patch_size;
   int grid_w = resized_width / config.patch_size;
   return {grid_t, grid_h, grid_w};
 }
 
 // refs:transformers/models/qwen2_vl/image_processing_qwen2_vl.py
-std::vector<float> rearrange_patches(const std::vector<std::vector<float>> &patches,
-                  int resized_height, int resized_width, const Config &config) {
+void rearrange_patches(const std::vector<float> &image, std::vector<float> &out,
+                       int resized_height, int resized_width,
+                       const Config &config) {
   int grid_t = config.grid_thw[0];
   int grid_h = config.grid_thw[1];
   int grid_w = config.grid_thw[2];
   int channel = 3;
 
   int grid_prod = grid_t * grid_h * grid_w;
-  std::cout << "grid_prod: " << grid_prod << std::endl;
-  int conv_dim = channel * config.temporal_patch_size * config.patch_size * config.patch_size;
+  int conv_dim = channel * config.temporal_patch_size * config.patch_size *
+                 config.patch_size;
   int total_elements = grid_prod * conv_dim;
-  if (grid_prod > config.MAX_PIXELS) {
-    throw std::runtime_error("the resized image exceeds MAX_PIXELS, please use --resized_width/--resized_height in pipeline.py.");
-  }
+  assert(grid_prod <= config.MAX_PATCHES);
 
   std::vector<float> in(total_elements, 0);
-  if (patches.size() == 1) {
-    tile(patches[0], in, config.temporal_patch_size);
-  } else {
-    flatten(patches, in); // multi image
-  }
+  tile(image, in, config.temporal_patch_size);
   int merge_h = grid_h / config.spatial_merge_size; // grid_h=12 --> merge_h=6
   int merge_w = grid_w / config.spatial_merge_size; // grid_w=12 --> merge_w=6
-
-  std::vector<float> out(total_elements, 0);
+  out.assign(total_elements, 0);
   for (size_t i = 0; i < in.size(); ++i) {
     // (t, s, c, gh, mh, ph, gw, mw, pw)
     int idx = i;
@@ -551,8 +469,6 @@ std::vector<float> rearrange_patches(const std::vector<std::vector<float>> &patc
 
     out[new_idx] = in[i];
   }
-
-  return out;
 }
 
 cv::Mat convert_to_rgb(const cv::Mat &input_image) {
@@ -604,22 +520,14 @@ cv::Mat convert_to_rgb(const cv::Mat &input_image) {
   return output_image;
 }
 
-std::vector<float> bicubic_resize(const cv::Mat &image, int resized_height,
-                                  int resized_width,
-                                  const std::vector<float> &image_mean,
-                                  const std::vector<float> &image_std) {
+void bicubic_resize(const cv::Mat &image, std::vector<float> &image_new,
+                    int resized_height, int resized_width,
+                    const std::vector<float> &image_mean,
+                    const std::vector<float> &image_std) {
   auto rgb_image = convert_to_rgb(image);
   auto resized_image =
       PillowResize::resize(rgb_image, cv::Size(resized_width, resized_height),
                            PillowResize::INTERPOLATION_BICUBIC);
-  // cv::Mat resized_image;
-  // cv::resize(
-  //       rgb_image, 
-  //       resized_image, 
-  //       cv::Size(resized_width, resized_height),
-  //       0, 0,
-  //       cv::INTER_CUBIC
-  // );
   // rescale
   resized_image.convertTo(resized_image, CV_32FC3, 0.00392156862745098, 0);
 
@@ -637,60 +545,39 @@ std::vector<float> bicubic_resize(const cv::Mat &image, int resized_height,
   cv::merge(rgbChannels, normalized_image);
 
   // convert to 1D
-  std::vector<float> processed_image;
-  processed_image.reserve(resized_height * resized_width * 3);
+  image_new.reserve(resized_height * resized_width * 3);
   std::vector<cv::Mat> chw(3);
   cv::split(normalized_image, chw);
   for (int c = 0; c < 3; c++) {
-    processed_image.insert(processed_image.end(), (float *)chw[c].datastart,
-                           (float *)chw[c].dataend);
+    image_new.insert(image_new.end(), (float *)chw[c].datastart,
+                     (float *)chw[c].dataend);
   }
-  return processed_image;
 }
 
-std::vector<float> process_image(const std::string &media_path,
-                                 Config* config) {
-  std::vector<cv::Mat> images;
-  opencv_read_image(images, media_path);
-
-  std::vector<std::vector<float>> patches;
-  int resized_height;
-  int resized_width;
-
-  std::cout << "images size: " << images.size() << std::endl;
-  for (size_t i = 0; i < images.size(); i++) {
-    auto image = images[i];
-    int width = image.cols;
-    int height = image.rows;
-    if ((*config).model_type == "qwen2_vl" || (*config).model_type == "qwen2_5_vl") {
-      std::vector<float> image_mean = {0.48145466f, 0.4578275f, 0.40821073f};
-      std::vector<float> image_std = {0.26862954f, 0.26130258f, 0.27577711f};
-
-      if ((*config).resized_height == 0 || (*config).resized_width == 0) {
-        auto resized = smart_resize(height, width);
-        resized_height = (*config).resized_height == 0 ? resized.first : (*config).resized_height;
-        resized_width = (*config).resized_width == 0 ? resized.second : (*config).resized_width;
-      } else {
-        resized_height = (*config).resized_height;
-        resized_width = (*config).resized_width;
-      }
-      auto resized_image = bicubic_resize(image, resized_height, resized_width,
-                                          image_mean, image_std);
-      patches.push_back(resized_image);
-    }
+void process_image(std::vector<float> &data, const std::string &media_path,
+                   Config &config) {
+  cv::Mat image = cv::imread(media_path);
+  if (image.empty()) {
+    std::cerr << "Error: Unable to open image file: " << media_path
+              << std::endl;
+    exit(1);
   }
 
-  if (patches.size() == 0) {
-    throw std::runtime_error("patches are empty!");
-  }
+  int width = image.cols;
+  int height = image.rows;
+  std::vector<float> image_mean = {0.48145466f, 0.4578275f, 0.40821073f};
+  std::vector<float> image_std = {0.26862954f, 0.26130258f, 0.27577711f};
 
-  (*config).grid_thw =
-      calc_grid_thw(patches, resized_height, resized_width, *config);
-  std::cout << "grid thw: " << (*config).grid_thw[0] << ", " << (*config).grid_thw[1]
-            << ", " << (*config).grid_thw[2] << std::endl;
-  std::vector<float> flatten_patches =
-      rearrange_patches(patches, resized_height, resized_width, *config);
-  return flatten_patches;
+  auto resized =
+      smart_resize(height, width, config.MIN_PIXELS, config.MAX_PIXELS);
+  auto resized_height = resized.first;
+  auto resized_width = resized.second;
+  std::vector<float> image_new;
+  bicubic_resize(image, image_new, resized_height, resized_width, image_mean,
+                 image_std);
+
+  config.grid_thw = calc_grid_thw(resized_height, resized_width, config);
+  rearrange_patches(image_new, data, resized_height, resized_width, config);
 }
 
 void process_video(const std::string &media_path) { return; }

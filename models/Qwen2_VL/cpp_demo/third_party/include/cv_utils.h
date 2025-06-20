@@ -14,11 +14,11 @@
 
 #include "PillowResize.h"
 #include <iostream>
+#include <numeric>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/opencv.hpp>
 #include <string>
 #include <vector>
-#include <numeric>
 
 struct Config {
   std::string model_type;
@@ -412,8 +412,6 @@ void opencv_read_image(std::vector<cv::Mat> &images, std::string image_path) {
 // Resize
 //===------------------------------------------------------------===//
 const int IMAGE_FACTOR = 28;
-const int MIN_PIXELS = 4 * 28 * 28;
-const int MAX_PATCHES = 16384 * 28 * 28;
 const int MAX_RATIO = 200;
 
 int round_by_factor(int number, int factor) {
@@ -430,9 +428,8 @@ int floor_by_factor(double number, int factor) {
 }
 
 std::pair<int, int> smart_resize(int height, int width,
-                                 int factor = IMAGE_FACTOR,
-                                 int min_pixels = MIN_PIXELS,
-                                 int max_pixels = MAX_PATCHES) {
+                                 int factor, // 28
+                                 int min_pixels, int max_pixels) {
   // Check aspect ratio
   double aspect_ratio =
       static_cast<double>(std::max(height, width)) / std::min(height, width);
@@ -500,11 +497,7 @@ rearrange_patches(const std::vector<std::vector<float>> &patches,
   int conv_dim = channel * config.temporal_patch_size * config.patch_size *
                  config.patch_size;
   int total_elements = grid_prod * conv_dim;
-  if (grid_prod > config.MAX_PATCHES) {
-    throw std::runtime_error(
-        "the resized image exceeds MAX_PATCHES, please use "
-        "--resized_width/--resized_height in pipeline.py.");
-  }
+  assert(grid_prod <= config.MAX_PATCHES);
 
   std::vector<float> in(total_elements, 0);
   if (patches.size() == 1) {
