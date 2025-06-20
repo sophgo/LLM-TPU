@@ -21,7 +21,7 @@ class Qwen2_5VL():
         self.processor = AutoProcessor.from_pretrained(args.config_path,
                                                        trust_remote_code=True,
                                                        max_pixels=self.model.MAX_PIXELS,
-                                                       min_pixels=256 * 28 * 28)
+                                                       min_pixels=64 * 28 * 28)
         self.tokenizer = self.processor.tokenizer
         self.ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
         self.ID_IM_END = self.tokenizer.convert_tokens_to_ids("<|im_end|>")

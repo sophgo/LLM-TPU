@@ -22,7 +22,7 @@ class Qwen2VL():
                                                        trust_remote_code=True,
                                                        size=None,
                                                        max_pixels=self.model.MAX_PIXELS,
-                                                       min_pixels=256 * 28 * 28)
+                                                       min_pixels=64 * 28 * 28)
         self.tokenizer = self.processor.tokenizer
         self.ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
         self.ID_IM_END = self.tokenizer.convert_tokens_to_ids("<|im_end|>")

@@ -655,7 +655,7 @@ std::vector<float> process_image(const std::string &media_path,
       std::vector<float> image_mean = {0.48145466f, 0.4578275f, 0.40821073f};
       std::vector<float> image_std = {0.26862954f, 0.26130258f, 0.27577711f};
 
-      auto resized = smart_resize(height, width, 28, 256 * 28 * 28,
+      auto resized = smart_resize(height, width, 28, 64 * 28 * 28,
                                   config.MAX_PATCHES * 14 * 14);
       resized_height = resized.first;
       resized_width = resized.second;

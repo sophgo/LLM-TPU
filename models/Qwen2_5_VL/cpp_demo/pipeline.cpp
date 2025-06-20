@@ -149,7 +149,7 @@ ChatPipe::ChatPipe(int devid, const std::string &model_path,
   config.resized_height = 0;
   config.MAX_PIXELS = model.MAX_PIXELS;
   config.MAX_PATCHES = model.MAX_PATCHES;
-  config.MIN_PIXELS = 256 * 28 * 28;
+  config.MIN_PIXELS = 64 * 28 * 28;
   maker = std::make_unique<Maker>(config);
 }
 
