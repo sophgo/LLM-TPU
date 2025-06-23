@@ -7,7 +7,8 @@ if (NOT DEFINED TARGET_ARCH)
     set(TARGET_ARCH pcie)
 endif()
 
-include_directories(${PROJECT_SOURCE_DIR}/../support/include)
+include_directories(${PROJECT_SOURCE_DIR}/include)
+link_directories(${PROJECT_SOURCE_DIR}/lib)
 
 include_directories(/opt/sophon/libsophon-current/include)
 link_directories(/opt/sophon/libsophon-current/lib)

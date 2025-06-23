@@ -67,14 +67,16 @@ docker run --privileged --name myname --network host -v $PWD:/workspace -it soph
 ## 3 配置MLIR
 MLIR目前支持三种安装方法：
 
-### 3.1 从pypi下载安装MLIR
+### 3.1 从github源码编译
+下载源码：[TPU-MLIR Github](https://github.com/sophgo/tpu-mlir)
+参考编译文档：[how-to-build](https://github.com/sophgo/tpu-mlir?tab=readme-ov-file#how-to-build)
+
+### 3.2 从github下载MLIR包
 直接从pypi下载并安装：
 ```bash
 pip install tpu_mlir -i https://pypi.tuna.tsinghua.edu.cn/simple 
 ```
-
-### 3.2 从github下载MLIR包
-从[TPU-MLIR Github](https://github.com/sophgo/tpu-mlir/releases)下载最新`tpu_mlir-*-py3-none-any.whl`，然后使用pip安装：
+或者从[TPU-MLIR Github](https://github.com/sophgo/tpu-mlir/releases)下载最新`tpu_mlir-*-py3-none-any.whl`，然后使用pip安装：
 ```bash
 pip install tpu_mlir-*-py3-none-any.whl
 ```

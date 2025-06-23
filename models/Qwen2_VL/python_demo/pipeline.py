@@ -340,7 +340,7 @@ if __name__ == "__main__":
     # yapf: disable
     parser.add_argument('-m', '--model_path', type=str, required=True,
                         help='path to the bmodel file')
-    parser.add_argument('-c', '--config_path', type=str, default="config",
+    parser.add_argument('-c', '--config_path', type=str, default="../config",
                         help='path to the processor file')
     parser.add_argument('-d', '--devid', type=int, default=0, help='device ID to use')
     # yapf: enable
