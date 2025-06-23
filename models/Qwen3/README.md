@@ -95,9 +95,10 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 * python demo
 
 ``` shell
-python3 pipeline.py -m qwen3_xxx.bmodel -c config 
+python3 pipeline.py -m qwen_xxx.bmodel -c config
 ```
-model为实际的model储存路径；config为配置文件路径
+model为实际的bmodel储存路径；config为编译模型时生成的配置文件，demo中存放了qwen3的config。
+* 如果更换其他系列模型，如deepseek-r1-distill-qwen，需要指定新的config
 
 #### cpp demo
 

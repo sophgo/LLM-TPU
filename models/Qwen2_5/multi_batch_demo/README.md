@@ -1,0 +1,1 @@
+本例将模型分3个阶段，阶段一是共享输入的tokens，采用batch 1；阶段二是不共享输入的tokens，采用batch 4；阶段三是decode阶段，根据各个batch的完成情况逐步变为batch 1。

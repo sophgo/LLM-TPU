@@ -199,7 +199,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--model_path', type=str, required=True, help='path to the bmodel file')
-    parser.add_argument('-t', '--tokenizer_path', type=str, default="../support/qwq_token_config", help='path to the tokenizer file')
+    parser.add_argument('-c', '--config', type=str, default="../config", help='path to the config file')
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
     parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory")
     args = parser.parse_args()

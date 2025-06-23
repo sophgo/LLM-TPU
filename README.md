@@ -90,7 +90,7 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 除了一键编译外，其他模型可以采用传统方法编译，先转onnx再转bmodel，具体可以参考每个模型的Demo介绍。
 
 # 模型库
-我们已经部署过的LLM模型包括：
+我们已经部署过的LLM模型包括:  
 
 `Baichuan2`  
 `ChatGLM3`/`ChatGLM4`/`CodeFuse`  
@@ -103,7 +103,8 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 `Qwen`/`Qwen1.5`/`Qwen2`/`Qwen2.5`/`QwQ-32B`/`Qwen3`  
 `WizardCoder`  
 `Yi`  
-多模态模型包括：
+
+多模态模型包括:  
 `Qwen2.5-VL`/`Qwen2-VL`/`Qwen-VL`  
 `InternVL3`/`InternVL2`  
 `MiniCPM-V-2_6`  

@@ -8,7 +8,7 @@
     - [2.1 docker安装](#21-docker安装)
     - [2.2 docker创建](#22-docker创建)
   - [3. 配置MLIR](#3-配置MLIR)
-    - [3.1 从pypi下载安装MLIR](#31-从pypi下载安装MLIR)
+    - [3.1 从github源码编译](#31-从github源码编译)
     - [3.2 从github下载MLIR包](#32-从github下载MLIR包)
     - [3.2 从release包直接安装](#33-从release包直接安装)
 
