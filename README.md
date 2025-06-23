@@ -15,6 +15,7 @@
 
 # 最近更新！ 🔥🔥🔥
 
+- **2025.06.01**：🚀 最新VLM模型**Qwen2.5VL**与**InternVL3**，BM1684X/1688已支持，详情见[Qwen2.5VL](./models/Qwen2_5_VL/)与[InternVL3](./models/InternVL3/)。其中**Qwen2.5VL**的demo有python和c++两个版本，且都支持图片和视频。
 - **2025.04.29**：🚀 Qwen最新推理模型**Qwen3**，BM1684X/1688已支持，详情见[Qwen3 Demo](./models/Qwen3/)。
 - **2025.03.07**：🚀 Qwen最新推理模型**QWQ-32B**和**DeepSeek-R1-Distill-Qwen-32B**，1684x多芯demo已适配，详情见[Qwen2.5 Demo](./models/Qwen2_5/)。
 - **2025.02.05**：🚀 DeepSeek时刻！！我们适配了**DeepSeek-R1-Distill-Qwen**系列模型，包括1.5B、7B和14B版本，详情见[Qwen2.5 Demo](./models/Qwen2_5/)。
@@ -22,11 +23,12 @@
 
 # 目录
   - [介绍](#介绍)
-  - [模型库](#模型库)
+  - [LLM编译方法](#LLM编译方法)
   - [快速开始](#快速开始)
   - [精度优化](#精度优化)
   - [常见问题](#常见问题)
   - [资料链接](#资料链接)
+
 
 # 介绍
 
@@ -37,22 +39,22 @@
 
 各个模型的Demo见此目录[models](./models)。
 
-## 编译方法
+# LLM编译方法
 
 以`Qwen2.5-VL`为例介绍模型编译方法。
 
-#### 1.下载权重
+## 1.下载权重
 下载LLM模型，注意优先使用AWQ或者GPTQ模型，如下：
 
 ```shell
 git lfs install
 git clone git@hf.co:Qwen/Qwen2.5-VL-3B-Instruct-AWQ
 ```
-#### 2.配置TPU-MLIR
+## 2.配置TPU-MLIR
 
 MLIR环境支持多种安装方式，请参考：[MLIR环境安装指南](https://github.com/sophgo/LLM-TPU/blob/main/docs/Mlir_Install_Guide.md)
 
-#### 3.编译模型
+## 3.编译模型
 
 编译命令如下：
 ```shell
@@ -73,23 +75,24 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 | max_pixels    |  -       | 否    | 多模态参数, 指定最大尺寸, 可以是`672,896`,也可以是`602112`  |
 | out_dir       |  o       | 是    | 指定输出目录 |
 
-执行完成后在指定目录会生成对应的bmodel
+执行完成后在指定目录会生成对应的bmodel和配置目录config
 
-支持如此一键编译的**VLM模型**包括：
+支持一键编译的**VLM模型**包括：
 * [Qwen2.5VL](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct-AWQ)
 * [Qwen2VL](https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct-AWQ)
 * [InternVL3](https://huggingface.co/OpenGVLab/InternVL3-2B-AWQ)
 * [Gemma3](https://huggingface.co/google/gemma-3-4b-it)
 
 **LLM模型**包括：
-* Qwen系列：Qwen1.5/Qwen2/Qwen2.5/[Qwen3](https://huggingface.co/Qwen/Qwen3-4B-AWQ)/[QwQ32B](https://huggingface.co/Qwen/QWQ-32B)
-* Qwen延伸：[DeepSeek-R1-Distill-Qwen](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B)
+* Qwen系列：Qwen1.5/Qwen2/Qwen2.5/[Qwen3](https://huggingface.co/Qwen/Qwen3-4B-AWQ)/[QwQ-32B](https://huggingface.co/Qwen/QwQ-32B-AWQ)
+* Qwen相关：[DeepSeek-R1-Distill-Qwen](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B)
 * Llama系列：[Llama2](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf)/[Llama3](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct)
 * [MiniCPM4](https://huggingface.co/openbmb/MiniCPM4-0.5B-QAT-Int4-GPTQ-format)
 
 除了一键编译外，其他模型可以采用传统方法编译，先转onnx再转bmodel，具体可以参考每个模型的Demo介绍。
 
-# 模型库
+## 4.已部署模型
+
 我们已经部署过的LLM模型包括:  
 
 `Baichuan2`  
@@ -129,12 +132,12 @@ git clone https://github.com/sophgo/LLM-TPU.git
 
 详细请参考[Quick Start](./docs/Quick_Start.md)
 
-### 效果图
+## 效果图
 跑通后效果如下图所示
 
 ![](./assets/qwen-7b.png)
 
-### Command Table
+## Command Table
 
 目前用于演示的模型，全部命令如下表所示
 
@@ -151,7 +154,7 @@ git clone https://github.com/sophgo/LLM-TPU.git
 | MiniCPM-V-2_6   | ./run.sh --model minicpmv2_6  --arch soc    | ./run.sh --model minicpmv2_6 --arch pcie     |
 | Molmo-7B-D-0924 |                     \                       | ./run.sh --model molmo-7b --arch pcie        |
 
-## 进阶功能
+# 进阶功能
 进阶功能说明：
 
 | 功能        | 目录                                                                       | 功能说明              |

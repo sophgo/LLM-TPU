@@ -2,7 +2,7 @@
 
 本工程实现BM1684X/BM1688部署多模态大模型[Qwen2.5-VL](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct-AWQ)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到PCIE环境，或者SoC环境。
 
-该模型可以用于图片或者视频的识别。
+该模型可以用于图片或者视频的识别，有python和cpp两个版本的demo。
 
 本文包括如何编译bmodel，和如何在BM1684X/BM1688环境运行bmodel。如何编译bmodel环节可以省去，直接用以下链接下载：
 

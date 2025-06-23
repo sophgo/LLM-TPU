@@ -38,10 +38,7 @@ struct Config {
   int spatial_merge_size;
   int patch_size;
   int temporal_patch_size;
-  int image_token_id;
-  int video_token_id;
-  int resized_height = 0;
-  int resized_width = 0;
+  float video_ratio;
 };
 
 class Maker {
@@ -418,7 +415,6 @@ std::vector<int> calc_grid_thw(int resized_height, int resized_width,
 
 // refs:transformers/models/qwen2_vl/image_processing_qwen2_vl.py
 void rearrange_patches(const std::vector<float> &image, std::vector<float> &out,
-                       int resized_height, int resized_width,
                        const Config &config) {
   int grid_t = config.grid_thw[0];
   int grid_h = config.grid_thw[1];
@@ -429,10 +425,19 @@ void rearrange_patches(const std::vector<float> &image, std::vector<float> &out,
   int conv_dim = channel * config.temporal_patch_size * config.patch_size *
                  config.patch_size;
   int total_elements = grid_prod * conv_dim;
-  assert(grid_prod <= config.MAX_PATCHES);
+  int image_size = image.size();
+  assert(grid_h * grid_w <= config.MAX_PATCHES);
 
-  std::vector<float> in(total_elements, 0);
-  tile(image, in, config.temporal_patch_size);
+  std::vector<float> in;
+  if (image_size * 2 == total_elements) {
+    in.assign(total_elements, 0);
+    tile(image, in, config.temporal_patch_size);
+  } else if (image_size != total_elements) {
+    throw std::runtime_error(
+        "Image size does not match the expected size for rearrangement.");
+  } else {
+    in = image;
+  }
   int merge_h = grid_h / config.spatial_merge_size; // grid_h=12 --> merge_h=6
   int merge_w = grid_w / config.spatial_merge_size; // grid_w=12 --> merge_w=6
   out.assign(total_elements, 0);
@@ -554,13 +559,13 @@ void bicubic_resize(const cv::Mat &image, std::vector<float> &image_new,
   }
 }
 
-void process_image(std::vector<float> &data, const std::string &media_path,
+bool process_image(std::vector<float> &data, const std::string &media_path,
                    Config &config) {
   cv::Mat image = cv::imread(media_path);
   if (image.empty()) {
     std::cerr << "Error: Unable to open image file: " << media_path
               << std::endl;
-    exit(1);
+    return false;
   }
 
   int width = image.cols;
@@ -577,10 +582,68 @@ void process_image(std::vector<float> &data, const std::string &media_path,
                  image_std);
 
   config.grid_thw = calc_grid_thw(resized_height, resized_width, config);
-  rearrange_patches(image_new, data, resized_height, resized_width, config);
+  rearrange_patches(image_new, data, config);
+  return true;
 }
 
-void process_video(const std::string &media_path) { return; }
+bool process_video(std::vector<float> &data, const std::string &media_path,
+                   Config &config) {
+  cv::VideoCapture cap(media_path);
+  if (!cap.isOpened()) {
+    std::cerr << "Error: Unable to open video file: " << media_path
+              << std::endl;
+    return false;
+  }
+  int max_seconds =
+      (config.SEQLEN - 128) * 2 / (config.MAX_PATCHES * config.video_ratio / 4);
+
+  double fps = cap.get(cv::CAP_PROP_FPS);
+  if (fps <= 0.0) {
+    fps = 1.0;
+  }
+  double frame_count = cap.get(cv::CAP_PROP_FRAME_COUNT);
+  int seconds = (int)(frame_count / fps);
+  if (seconds < 1) {
+    std::cerr << "Error: Video is too short, must be at least 1 seconds."
+              << std::endl;
+    return false;
+  }
+  if (seconds > max_seconds) {
+    seconds = max_seconds;
+  }
+  if (seconds % 2 == 0) {
+    seconds -= 1;
+  }
+  std::vector<float> image_mean = {0.48145466f, 0.4578275f, 0.40821073f};
+  std::vector<float> image_std = {0.26862954f, 0.26130258f, 0.27577711f};
+  int resized_height = 0;
+  int resized_width = 0;
+  cv::Mat frame;
+  std::vector<float> buffers;
+  for (int sec = 0; sec <= seconds; sec++) {
+    cap.set(cv::CAP_PROP_POS_FRAMES, sec * fps);
+    if (!cap.read(frame)) {
+      break;
+    }
+    int width = frame.cols;
+    int height = frame.rows;
+    auto resized =
+        smart_resize(height, width, config.MIN_PIXELS * config.video_ratio,
+                     config.MAX_PIXELS * config.video_ratio);
+    resized_height = resized.first;
+    resized_width = resized.second;
+    std::vector<float> image_new;
+    bicubic_resize(frame, image_new, resized_height, resized_width, image_mean,
+                   image_std);
+    buffers.insert(buffers.end(), image_new.begin(), image_new.end());
+  }
+  int grid_t = (seconds + 1) / config.temporal_patch_size;
+  int grid_h = resized_height / config.patch_size;
+  int grid_w = resized_width / config.patch_size;
+  config.grid_thw = {grid_t, grid_h, grid_w};
+  rearrange_patches(buffers, data, config);
+  return true;
+}
 
 void process_audio(const std::string &media_path) { return; }
 

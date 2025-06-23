@@ -35,7 +35,7 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 link_directories(${OpenCV_LIBRARY_DIRS})
 message(STATUS "OpenCV version: ${OpenCV_VERSION}")
 
-set(OPENCV_LIBS opencv_core opencv_imgcodecs)
+set(OPENCV_LIBS opencv_core opencv_imgcodecs opencv_videoio)
 add_executable(pipeline pipeline.cpp chat.cpp)
 target_link_libraries(pipeline PUBLIC bmrt bmlib tokenizers_cpp tokenizers_c sentencepiece ${OPENCV_LIBS} pthread dl)
 target_compile_options(pipeline PRIVATE -Wno-error=attributes)

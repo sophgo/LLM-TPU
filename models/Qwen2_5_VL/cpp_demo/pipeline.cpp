@@ -1,3 +1,12 @@
+//===----------------------------------------------------------------------===//
+//
+// Copyright (C) 2025 Sophgo Technologies Inc.  All rights reserved.
+//
+// TPU-MLIR is licensed under the 2-Clause BSD License except for the
+// third-party components.
+//
+//===----------------------------------------------------------------------===//
+
 #include "chat.hpp"
 #include "cv_utils.h"
 #include "tokenizers-cpp/tokenizers_cpp.h"
@@ -16,6 +25,7 @@ using tokenizers::Tokenizer;
 
 static const int VISION_PAD_TOKEN = 151654;
 static const int IMAGE_PAD_TOKEN = 151655;
+static const int VIDEO_PAD_TOKEN = 151656;
 
 // 从文件加载字节数据
 static inline std::string LoadBytesFromFile(const std::string &path) {
@@ -54,18 +64,18 @@ public:
   std::vector<std::pair<std::string, std::string>> history_vector;
   Config config;
 
-  ChatPipe(int devid, const std::string &model_path,
+  ChatPipe(int devid, float video_ratio, const std::string &model_path,
            const std::string &vocab_path, const std::string &system_prompt);
   // 聊天主循环
   void chat();
 
 private:
   Qwen2_5VL model;
-  int ID_END, ID_IM_END, ID_VIDEO_PAD, ID_VISION_START, EOS;
-  int ID_IMAGE_PAD = 151655;
+  int ID_IM_END, ID_VISION_START;
   int tokens_per_second = 2;
   int spatial_merge_size;
   int spatial_merge_unit;
+  float video_ratio;
   // 分词器和处理器
   std::unique_ptr<Tokenizer> tok;
   std::unique_ptr<Maker> maker;
@@ -82,8 +92,12 @@ private:
   std::vector<std::vector<int>>
   rot_pos(const std::vector<std::vector<int>> &grid_thw);
 
+  // 获取媒体类型
+  typedef enum { IMAGE, VIDEO, TEXT, UNKNOWN } MediaType;
+  MediaType get_media_type(const std::string &file_path);
+
   // 构建提示
-  std::string build_prompt(std::string input_str, bool has_image);
+  std::string build_prompt(std::string input_str, MediaType media_type);
 
   // 重新整理hidden_states
   std::vector<float>
@@ -104,12 +118,33 @@ private:
   // 处理图像
   void vit_process_image(std::vector<float> &pixel_values, int vit_offset);
 
+  // 处理视频
+  void vit_process_video(std::vector<float> &pixel_values, int &vit_offset);
+
   // 编码输入
   std::vector<int> encode_input(const std::string &sentence_input);
 
   // 打印聊天说明
   void print_chat_instructions();
 };
+
+// 获取媒体类型
+ChatPipe::MediaType ChatPipe::get_media_type(const std::string &file_path) {
+  if (file_path.empty()) {
+    return TEXT;
+  }
+  std::string ext = file_path.substr(file_path.find_last_of('.') + 1);
+  std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+  if (ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "bmp" ||
+      ext == "webp") {
+    return IMAGE;
+  }
+  if (ext == "mp4" || ext == "avi" || ext == "mov" || ext == "mkv" ||
+      ext == "flv" || ext == "wmv") {
+    return VIDEO;
+  }
+  return UNKNOWN;
+}
 
 std::vector<int> ChatPipe::get_position_ids(int token_len) {
   std::vector<int> position_ids(token_len * 3);
@@ -122,19 +157,19 @@ std::vector<int> ChatPipe::get_position_ids(int token_len) {
 }
 
 // ChatPipe 类构造函数
-ChatPipe::ChatPipe(int devid, const std::string &model_path,
+ChatPipe::ChatPipe(int devid, float vratio, const std::string &model_path,
                    const std::string &vocab_path,
                    const std::string &system_prompt) {
   model.init(devid, model_path);
   spatial_merge_size = 2;
   spatial_merge_unit = spatial_merge_size * spatial_merge_size;
   tokens_per_second = 2;
+  video_ratio = vratio;
   sys_config = "<|im_start|>system\n" + system_prompt + "<|im_end|>\n";
 
   std::cout << "Processor [" << vocab_path.c_str() << "] loading .... ";
   auto blob = LoadBytesFromFile((vocab_path + "/tokenizer.json").c_str());
   tok = Tokenizer::FromBlobJSON(blob);
-  EOS = tok->TokenToId("<|endoftext|>");
   ID_IM_END = tok->TokenToId("<|im_end|>");
   ID_VISION_START = tok->TokenToId("<|vision_start|>");
   std::cout << "Done!" << std::endl;
@@ -145,8 +180,7 @@ ChatPipe::ChatPipe(int devid, const std::string &model_path,
   config.patch_size = 14;
   config.SEQLEN = model.SEQLEN;
   config.mask_value = model.mask_value;
-  config.resized_width = 0;
-  config.resized_height = 0;
+  config.video_ratio = video_ratio;
   config.MAX_PIXELS = model.MAX_PIXELS;
   config.MAX_PATCHES = model.MAX_PATCHES;
   config.MIN_PIXELS = 64 * 28 * 28;
@@ -411,7 +445,7 @@ ChatPipe::get_rope_index(const std::vector<std::vector<int>> &input_ids,
     std::vector<std::vector<std::vector<int>>> llm_pos_ids_list;
     size_t st = 0;
     int remain_images = image_nums;
-
+    int second_per_grid_t = pad_id == VIDEO_PAD_TOKEN ? 1 : 0;
     for (int img_idx = 0; img_idx < image_nums; ++img_idx) {
       size_t ed_image = input_tokens.size();
       if (remain_images > 0) {
@@ -425,7 +459,7 @@ ChatPipe::get_rope_index(const std::vector<std::vector<int>> &input_ids,
       int t = grid_thw[image_index][0];
       int h = grid_thw[image_index][1];
       int w = grid_thw[image_index][2];
-      int second_per_grid_t = 0;
+
       ++image_index;
       --remain_images;
       size_t ed = ed_image;
@@ -460,17 +494,11 @@ ChatPipe::get_rope_index(const std::vector<std::vector<int>> &input_ids,
       llm_pos_ids_list.push_back(text_pos);
 
       // 处理图像部分的位置索引
-      std::vector<int> range_tensor = arange(0, llm_grid_t);
-      std::vector<int> expanded_range;
-      for (int n = 0; n < llm_grid_t; ++n) {
-        for (int p = 0; p < llm_grid_h * llm_grid_w; ++p) {
-          expanded_range.push_back(range_tensor[n]);
-        }
-      }
 
-      std::vector<int> time_tensor;
-      for (int val : expanded_range) {
-        time_tensor.push_back(val * second_per_grid_t * tokens_per_second);
+      std::vector<int> t_index;
+      for (int i = 0; i < llm_grid_t; i++) {
+        auto time_val = i * second_per_grid_t * tokens_per_second;
+        t_index.insert(t_index.end(), llm_grid_h * llm_grid_w, time_val);
       }
 
       std::vector<int> h_index;
@@ -491,7 +519,7 @@ ChatPipe::get_rope_index(const std::vector<std::vector<int>> &input_ids,
         }
       }
 
-      std::vector<std::vector<int>> grid_pos = {time_tensor, h_index, w_index};
+      std::vector<std::vector<int>> grid_pos = {t_index, h_index, w_index};
       for (auto &row : grid_pos) {
         for (int &val : row) {
           val += text_len + st_idx;
@@ -570,30 +598,39 @@ void ChatPipe::chat() {
       break;
 
     std::string media_path;
-    std::cout << "\nImage Path: ";
+    std::cout << "\nImage or Video Path: ";
     std::getline(std::cin, media_path);
     media_path = strip(media_path);
-    bool has_image = !media_path.empty();
+    auto media_type = get_media_type(media_path);
+    if (media_type == ChatPipe::UNKNOWN) {
+      std::cout
+          << "Unsupported media type. Please provide a valid image or video."
+          << std::endl;
+      continue;
+    }
 
     std::cout << "\nAnswer:\n";
-    std::string sentence_input = build_prompt(input_str, has_image);
+    std::string sentence_input = build_prompt(input_str, media_type);
     // std::cout << "Prompt: " << sentence_input << std::endl;
 
     std::vector<int> raw_tokens = encode_input(sentence_input);
-    if (has_image) {
-      std::replace(raw_tokens.begin(), raw_tokens.end(), VISION_PAD_TOKEN,
-                   IMAGE_PAD_TOKEN);
+    switch (media_type) {
+    case ChatPipe::IMAGE: {
       std::vector<float> pixel_values;
-      process_image(pixel_values, media_path, config);
+      auto ret = process_image(pixel_values, media_path, config);
+      if (ret == false) {
+        std::cerr << "Error processing image: " << media_path << std::endl;
+        continue;
+      }
       std::vector<int> tokens =
           maker->insert_tokens(raw_tokens, IMAGE_PAD_TOKEN);
 
       int vit_offset = 0;
-      vit_offset = find_token_offset(tokens, ID_IMAGE_PAD);
+      vit_offset = find_token_offset(tokens, IMAGE_PAD_TOKEN);
       model.forward_embed(tokens);
       vit_process_image(pixel_values, vit_offset);
       std::vector<std::vector<std::vector<int>>> position_ids =
-          get_rope_index({tokens}, {config.grid_thw}, ID_IMAGE_PAD);
+          get_rope_index({tokens}, {config.grid_thw}, IMAGE_PAD_TOKEN);
 
       // 找到三维数组position_ids中的最大值
       for (const auto &sub_tensor : position_ids[0]) {
@@ -612,18 +649,56 @@ void ChatPipe::chat() {
         }
       }
       token = model.forward_first(position_ids_1d);
-    } else {
+    } break;
+    case VIDEO: {
+      std::vector<float> pixel_values;
+      auto ret = process_video(pixel_values, media_path, config);
+      if (ret == false) {
+        std::cerr << "Error processing video: " << media_path << std::endl;
+        continue;
+      }
+      std::vector<int> tokens =
+          maker->insert_tokens(raw_tokens, VIDEO_PAD_TOKEN);
+
+      auto vit_offset = find_token_offset(tokens, VIDEO_PAD_TOKEN);
+      model.forward_embed(tokens);
+      vit_process_video(pixel_values, vit_offset);
+      std::vector<std::vector<std::vector<int>>> position_ids =
+          get_rope_index({tokens}, {config.grid_thw}, VIDEO_PAD_TOKEN);
+
+      // 找到三维数组position_ids中的最大值
+      for (const auto &sub_tensor : position_ids[0]) {
+        for (int val : sub_tensor) {
+          if (val > max_posid) {
+            max_posid = val;
+          }
+        }
+      }
+      // 将三维数组position_ids转换维1维
+      std::vector<int> position_ids_1d;
+      for (const auto &two_dim_tensor : position_ids) {
+        for (const auto &one_dim_tensor : two_dim_tensor) {
+          position_ids_1d.insert(position_ids_1d.end(), one_dim_tensor.begin(),
+                                 one_dim_tensor.end());
+        }
+      }
+      token = model.forward_first(position_ids_1d);
+    } break;
+    case TEXT: {
       model.forward_embed(raw_tokens);
       auto position_ids_1d = get_position_ids(raw_tokens.size());
       max_posid = raw_tokens.size() - 1;
       token = model.forward_first(position_ids_1d);
+    } break;
+    default:
+      std::cerr << "Unsupported media type." << std::endl;
+      continue;
     }
 
     // 后续分词
     std::vector<int> full_word_tokens;
     std::string text;
-    while (token != ID_IM_END && token != ID_END &&
-           model.token_length < model.SEQLEN) {
+    while (token != ID_IM_END && model.token_length < model.SEQLEN) {
 
       // std::cout << "\nfull_word_tokens: " << token << "  " << std::endl;
       full_word_tokens.push_back(token);
@@ -650,11 +725,19 @@ void ChatPipe::chat() {
 }
 
 // 构建提示
-std::string ChatPipe::build_prompt(std::string input_str, bool has_image) {
+std::string ChatPipe::build_prompt(std::string input_str,
+                                   MediaType media_type) {
   std::string prompt = sys_config;
   prompt += "<|im_start|>user\n";
-  if (has_image) {
+  switch (media_type) {
+  case IMAGE:
     prompt += "<|vision_start|><|image_pad|><|vision_end|>";
+    break;
+  case VIDEO:
+    prompt += "<|vision_start|><|video_pad|><|vision_end|>";
+    break;
+  default:
+    break;
   }
   prompt += input_str + "<|im_end|>\n<|im_start|>assistant\n";
   return prompt;
@@ -796,6 +879,70 @@ void ChatPipe::vit_process_image(std::vector<float> &pixel_values,
                     reverse_indices, vit_offset);
 }
 
+void ChatPipe::vit_process_video(std::vector<float> &pixel_values,
+                                 int &vit_offset) {
+  // hidden_states 在长度上等于pixel_values
+  int t = config.grid_thw[0];
+  int h = config.grid_thw[1];
+  int w = config.grid_thw[2];
+  int per_t = config.MAX_PATCHES / (h * w);
+  std::vector<int> t_list;
+  if (per_t >= t) {
+    t_list.push_back(t);
+  } else {
+    for (int i = 0; i < t; i += per_t) {
+      int unit = std::min(per_t, t - i);
+      t_list.push_back(unit);
+    }
+  }
+  int t_offset = 0;
+  int v_offset = vit_offset;
+  for (auto t_i : t_list) {
+    // 调用 rot_pos 生成 position_ids
+    std::vector<std::vector<int>> grid_thw = {{t_i, h, w}};
+    std::vector<std::vector<int>> pos_ids_vec = rot_pos(grid_thw);
+
+    std::vector<int> position_ids;
+    for (const auto &v : pos_ids_vec) {
+      position_ids.insert(position_ids.end(), v.begin(), v.end());
+    }
+
+    // 调用 get_window_index
+    auto [window_index, cu_window_seqlens] = get_window_index(grid_thw);
+
+    int seq_len = t_i * h * w;
+    std::vector<float> pixel_current(t_i * h * w * model.VIT_DIMS);
+    std::copy(pixel_values.begin() + t_offset * h * w * model.VIT_DIMS,
+              pixel_values.begin() + (t_offset + t_i) * h * w * model.VIT_DIMS,
+              pixel_current.begin());
+    std::vector<float> processed_hidden_states =
+        reorder_hidden_states(pixel_current, seq_len, window_index);
+    std::vector<float> float_position_ids = convertIntToFloat(position_ids);
+    std::vector<float> processed_position_ids =
+        reorder_hidden_states(float_position_ids, seq_len, window_index);
+    std::vector<int> int_processed_position_ids =
+        convertFloatToInt(processed_position_ids);
+
+    std::vector<int> cu_seqlens = calculate_cu_seqlens(grid_thw);
+    // 生成掩码
+    std::vector<float> full_attn_mask = get_attn_mask(seq_len, cu_seqlens);
+    std::vector<float> window_attn_mask =
+        get_attn_mask(seq_len, cu_window_seqlens);
+
+    // reverse_indices
+    std::vector<int> reverse_indices(window_index.size());
+    for (size_t i = 0; i < window_index.size(); ++i) {
+      reverse_indices[window_index[i]] = i;
+    }
+
+    model.forward_vit(processed_hidden_states, int_processed_position_ids,
+                      full_attn_mask, window_attn_mask, config.grid_thw,
+                      reverse_indices, v_offset);
+    t_offset += t_i;
+    v_offset += (t_i * h * w / 4);
+  }
+}
+
 // 编码输入
 std::vector<int> ChatPipe::encode_input(const std::string &sentence_input) {
   return tok->Encode(sentence_input);
@@ -814,22 +961,25 @@ void Usage() {
          "  -h, --help      : Show help info \n"
          "  -m, --model     : Set model path \n"
          "  -c, --config    : Set config path \n"
+         "  -v, --video_ratio : Set video ratio, default is 0.25\n"
          "  -d, --devid     : Set devices to run for model, default is '0'\n");
 }
 
 void processArguments(int argc, char *argv[], std::string &model_path,
                       std::string &config_path, std::string &image_path,
-                      int &device) {
-  struct option longOptions[] = {{"model", required_argument, nullptr, 'm'},
-                                 {"config", required_argument, nullptr, 'c'},
-                                 {"devid", required_argument, nullptr, 'd'},
-                                 {"help", no_argument, nullptr, 'h'},
-                                 {nullptr, 0, nullptr, 0}};
+                      int &device, float &video_ratio) {
+  struct option longOptions[] = {
+      {"model", required_argument, nullptr, 'm'},
+      {"config", required_argument, nullptr, 'c'},
+      {"devid", required_argument, nullptr, 'd'},
+      {"video_ratio", required_argument, nullptr, 'v'},
+      {"help", no_argument, nullptr, 'h'},
+      {nullptr, 0, nullptr, 0}};
 
   int optionIndex = 0;
   int option;
-
-  while ((option = getopt_long(argc, argv, "m:c:d:h", longOptions,
+  video_ratio = 0.25f; // 默认视频比例为0.25
+  while ((option = getopt_long(argc, argv, "m:c:d:v:h", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -840,6 +990,9 @@ void processArguments(int argc, char *argv[], std::string &model_path,
       break;
     case 'd':
       device = atoi(optarg);
+      break;
+    case 'v':
+      video_ratio = atof(optarg);
       break;
     case 'h':
       Usage();
@@ -857,9 +1010,11 @@ int main(int argc, char *argv[]) {
   std::string model_path;
   std::string config_path;
   std::string image_path;
-  int device = 0;
+  int dev_id = 0;
+  float video_ratio = 0.25f; // 默认视频比例为0.25
 
-  processArguments(argc, argv, model_path, config_path, image_path, device);
+  processArguments(argc, argv, model_path, config_path, image_path, dev_id,
+                   video_ratio);
   if (model_path.empty() || config_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);
@@ -867,7 +1022,8 @@ int main(int argc, char *argv[]) {
 
   std::string system_prompt = "You are a helpful assistant.";
 
-  ChatPipe pipeline(device, model_path, config_path, system_prompt);
+  ChatPipe pipeline(dev_id, video_ratio, model_path, config_path,
+                    system_prompt);
   pipeline.chat();
   return 0;
 }

@@ -1,6 +1,6 @@
 # MiniCPM4
 
-本工程实现BM1684X/BM1688部署大模型[MiniCPM4](https://huggingface.co/openbmb/MiniCPM4-8B)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到PCIE环境，或者SoC环境。
+本工程实现BM1684X/BM1688部署大模型[MiniCPM4](https://huggingface.co/openbmb/MiniCPM4-0.5B-QAT-Int4-GPTQ-format)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到PCIE环境，或者SoC环境。
 
 
 本文包括如何编译bmodel，和如何在BM1684X/BM1688环境运行bmodel。编译LLM环节可以省去，直接用以下链接下载：
@@ -29,7 +29,7 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU_Lite/mi
 ``` shell
 # 下载模型
 git lfs install
-git clone git@hf.co:openbmb/MiniCPM4-0.5B
+git clone git@hf.co:openbmb/MiniCPM4-0.5B-QAT-Int4-GPTQ-format
 # 如果是8B，则如下：
 git clone git@hf.co:openbmb/MiniCPM4-8B
 ```
@@ -60,14 +60,14 @@ source ./envsetup.sh  #激活环境变量
 
 ``` shell
 # 如果有提示transformers版本问题，pip3 install transformers --upgrade
-llm_convert.py -m /workspace/MiniCPM4-8B -s 512 --quantize w4bf16 -c bm1684x --out_dir minicpm4-8b
+llm_convert.py -m /workspace/MiniCPM4-0.5B-QAT-Int4-GPTQ-format -s 512 --quantize w4bf16 -c bm1684x --out_dir minicpm4_0.5b
 ```
-编译完成后，在指定目录`minicpm4-8b`生成`minicpm4-xxx.bmodel`和`config`
+编译完成后，在指定目录`minicpm4_0.5b`生成`minicpm4-xxx.bmodel`和`config`
 
 另外如果指定的seqlen比较长的话，比如8K，可以指定`--dynamic`编译，首token延时会根据实际长度变化，如下：
 ``` shell
 # 如果有提示transformers版本问题，pip3 install transformers --upgrade
-llm_convert.py -m /workspace/MiniCPM4-8B -s 8192 --quantize w4bf16 -c bm1684x --dynamic --out_dir minicpm4-8b
+llm_convert.py -m /workspace/MiniCPM4-0.5B-QAT-Int4-GPTQ-format -s 8192 --quantize w4bf16 -c bm1684x --dynamic --out_dir minicpm4_0.5b
 ```
 
 ## 编译与运行程序
