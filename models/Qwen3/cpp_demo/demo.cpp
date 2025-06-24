@@ -351,7 +351,6 @@ void Qwen3::init(std::string model_path, std::string config_path,
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
   is_dynamic = net_blocks[0]->is_dynamic;
-  auto addr_mode = net_blocks_cache[0]->addr_mode;
   for (int i = 0; i < NUM_LAYERS; i++) {
     past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
     past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
