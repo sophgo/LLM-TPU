@@ -11,9 +11,9 @@ class Qwen2():
         self.devices = [int(d) for d in args.devid.split(",")]
 
         # load tokenizer
-        print("Load " + args.tokenizer_path + " ...")
+        print("Load " + args.config_path + " ...")
         self.tokenizer = AutoTokenizer.from_pretrained(
-            args.tokenizer_path, trust_remote_code=True
+            args.config_path, trust_remote_code=True
         )
 
         # warm up
@@ -141,56 +141,6 @@ class Qwen2():
         print(f"FTL: {first_duration:.3f} s")
         print(f"TPS: {tps:.3f} token/s")
 
-
-    ## For Web Demo
-    def stream_predict(self, query):
-        """
-        Stream the prediction for the given query.
-        """
-        self.answer_cur = ""
-        self.input_str = query
-        tokens = self.encode_tokens()
-
-        for answer_cur, history in self._generate_predictions(tokens):
-            yield answer_cur, history
-
-
-    def _generate_predictions(self, tokens):
-        """
-        Generate predictions for the given tokens.
-        """
-        # First token
-        tok_num = 0
-        first_start = time.time()
-        next_token = self.model.forward_first(tokens)
-        first_end = time.time()
-        output_tokens = [next_token]
-
-        # Following tokens
-        while True:
-            next_token = self.model.forward_next(next_token)
-            if next_token == self.EOS:
-                next_end = time.time()
-                first_duration = first_end - first_start
-                next_duration = next_end - first_end
-                tps = tok_num / next_duration
-                yield self.answer_cur + f"\n\nFTL: {first_duration:.3f} s\nTPS: {tps:.3f} token/s", self.history
-                break
-            output_tokens += [next_token]
-            self.answer_cur = self.tokenizer.decode(output_tokens)
-            tok_num += 1
-            if self.model.token_length >= self.model.SEQLEN:
-                self.update_history()
-                yield self.answer_cur + "\n\n\nReached the maximum length; The history context has been cleared.", self.history
-                break
-            else:
-                yield self.answer_cur, self.history
-
-        if self.enable_history:
-            self.update_history()
-        else:
-            self.clear()
-
 def main(args):
     model = Qwen2(args)
     model.chat()
@@ -199,7 +149,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--model_path', type=str, required=True, help='path to the bmodel file')
-    parser.add_argument('-c', '--config', type=str, default="../config", help='path to the config file')
+    parser.add_argument('-c', '--config_path', type=str, default="../config", help='path to the config file')
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
     parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory")
     args = parser.parse_args()

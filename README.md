@@ -15,7 +15,7 @@
 
 # 最近更新！ 🔥🔥🔥
 
-- **2025.05.22**：🚀 **InternVL3** BM1684X/1688已支持，详情见[InternVL3](./models/InternVL3/)。
+- **2025.05.22**：🚀 **InternVL3** BM1684X/1688已支持，详情见[InternVL3](./models/InternVL3/)。支持图片和视频
 - **2025.04.30**：🚀 **Qwen2.5VL** BM1684X/1688已支持，详情见[Qwen2.5VL](./models/Qwen2_5_VL/)。其中demo有python和c++两个版本，且都支持图片和视频。
 - **2025.04.29**：🚀 Qwen最新推理模型**Qwen3**，BM1684X/1688已支持，详情见[Qwen3 Demo](./models/Qwen3/)。
 - **2025.03.07**：🚀 Qwen最新推理模型**QWQ-32B**和**DeepSeek-R1-Distill-Qwen-32B**，1684x多芯demo已适配，详情见[Qwen2.5 Demo](./models/Qwen2_5/)。
@@ -71,7 +71,7 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 | model_path    |  m       | 是    | 指定权重路径        |
 | seq_length    |  s       | 是    | 指定序列最大长度    |
 | quantize      |  q       | 是    | 指定量化类型, w4bf16/w4f16/bf16/f16等等 |
-| chip          |  c       | 是    | 指定平台, 如bm1684x/bm1688/cv186ah |
+| chip          |  c       | 是    | 指定平台, 如bm1684x/bm1688/cv186x |
 | q_group_size  |  g       | 否    | 指定每组量化的组大小, 默认64 |
 | max_pixels    |  -       | 否    | 多模态参数, 指定最大尺寸, 可以是`672,896`,也可以是`602112`  |
 | out_dir       |  o       | 是    | 指定输出目录 |

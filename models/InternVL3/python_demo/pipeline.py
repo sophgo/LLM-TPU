@@ -14,10 +14,7 @@ from PIL import Image
 import torchvision.transforms as T
 from torchvision.transforms.functional import InterpolationMode
 import numpy as np
-
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.abspath(os.path.join(current_dir, ".."))
-sys.path.insert(0, parent_dir)
+import cv2
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -95,6 +92,49 @@ def process_image(image_file, input_size=448, max_num=4):
     return pixel_values
 
 
+def get_index(bound, fps, max_frame, first_idx=0, num_segments=32):
+    if bound:
+        start, end = bound[0], bound[1]
+    else:
+        start, end = -100000, 100000
+    start_idx = max(first_idx, round(start * fps))
+    end_idx = min(round(end * fps), max_frame)
+    seg_size = float(end_idx - start_idx) / num_segments
+    frame_indices = np.array(
+        [int(start_idx + (seg_size / 2) + np.round(seg_size * idx)) for idx in range(num_segments)])
+    return frame_indices
+
+
+def process_video(video_path, bound=None, input_size=448, max_num=1, num_segments=8):
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise RuntimeError(f"Failed to open video {video_path!r}")
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = float(cap.get(cv2.CAP_PROP_FPS) or 30.0)
+    max_frame_idx = max(0, total_frames - 1)
+    frame_indices = get_index(bound, fps, max_frame_idx, first_idx=0, num_segments=num_segments)
+    pixel_values_list = []
+    num_patches_list = []
+    transform = build_transform(input_size=input_size)
+    for idx in frame_indices:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+        ret, frame_bgr = cap.read()
+        if not ret:
+            continue
+        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        img = Image.fromarray(frame_rgb)
+        tiles = dynamic_preprocess(img, image_size=input_size, use_thumbnail=True, max_num=max_num)
+        patches = [transform(t) for t in tiles]
+        patches = torch.stack(patches, dim=0)
+        pixel_values_list.append(patches)
+        num_patches_list.append(patches.shape[0])
+    cap.release()
+    if not pixel_values_list:
+        return torch.empty(0), []
+    pixel_values = torch.cat(pixel_values_list, dim=0)
+    return pixel_values, num_patches_list
+
+
 class InternVL3():
 
     def __init__(self, args):
@@ -145,19 +185,29 @@ class InternVL3():
             media_tokens = ""
             pixel_values = torch.tensor([])
         elif os.path.exists(media_path):
-            media_tokens = "<image>\n"
-            pixel_values = process_image(media_path)
-            num_patches = pixel_values.shape[0]
-            IMG_START_TOKEN = '<img>'
-            IMG_END_TOKEN = '</img>'
-            IMG_CONTEXT_TOKEN = '<IMG_CONTEXT>'
-            visual_length = self.model.NUM_IMAGE_TOKEN * num_patches
-            image_tokens = IMG_START_TOKEN + IMG_CONTEXT_TOKEN * visual_length + IMG_END_TOKEN
-            media_tokens = media_tokens.replace('<image>', image_tokens, 1)
+            VIDEO_EXTS = [".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".mpeg", ".mpg"]
+            ext = os.path.splitext(media_path)[1].lower()
+            if ext in VIDEO_EXTS:
+                pixel_values, num_patches_list = process_video(media_path)
+            else:
+                pixel_values = process_image(media_path)
+                num_patches_list = [pixel_values.shape[0]] if pixel_values is not None else []
+            image_tags = ''.join([f'Frame{i+1}: <image>\n' for i in range(len(num_patches_list))])
+            question = image_tags + self.input_str
         else:
             raise FileNotFoundError(f"Media file not found: {media_path}")
 
-        prompt = f'<|im_start|>system\n{self.system_prompt}<|im_end|>\n<|im_start|>user\n{media_tokens}{self.input_str}<|im_end|>\n<|im_start|>assistant\n'
+        IMG_START_TOKEN = '<img>'
+        IMG_END_TOKEN = '</img>'
+        IMG_CONTEXT_TOKEN = '<IMG_CONTEXT>'
+        for num_patches in num_patches_list:
+            image_tokens = IMG_START_TOKEN + IMG_CONTEXT_TOKEN * self.model.NUM_IMAGE_TOKEN * num_patches + IMG_END_TOKEN
+            question = question.replace('<image>', image_tokens, 1)
+
+        prompt = (f'<|im_start|>system\n{self.system_prompt}<|im_end|>\n'
+                  f'<|im_start|>user\n{question}<|im_end|>\n'
+                  f'<|im_start|>assistant\n')
+
         input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids
         return input_ids.flatten().numpy().astype(np.int32), pixel_values.flatten().numpy().astype(
             np.float32)
@@ -178,7 +228,7 @@ class InternVL3():
             if self.input_str in ["exit", "q", "quit"]:
                 break
 
-            media_path = input("\nImage Path: ")
+            media_path = input("\nImage or Video Path: ")
             media_path = media_path.strip()
             inputs = self.process_input(media_path)
             token_len = len(inputs[0])
@@ -251,7 +301,7 @@ if __name__ == "__main__":
     parser.add_argument('-c',
                         '--config_path',
                         type=str,
-                        default="../support/processor",
+                        default="../config",
                         help='path to the processor file')
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
     parser.add_argument('--do_sample',
