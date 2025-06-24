@@ -57,22 +57,9 @@ bm_module is null!
 ```
 
 **解决方案**  
-这是由于docker内部缺少 `libsophon` 导致的。解决方法如下：
-1. 安装必要的依赖：
-   ```bash
-   pip3 install dfss
-   ```
-2. 下载并安装 `libsophon`：
-   ```bash
-   python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/libsophon_club/20240717/sophon-driver_0.5.1_amd64.deb
-   python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/libsophon_club/20240717/sophon-libsophon-dev_0.5.1_amd64.deb
-   python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/libsophon_club/20240717/sophon-libsophon_0.5.1_amd64.deb
-   sudo dpkg -i sophon-*.deb
-   source /etc/profile
-   ```
-3. 完成上述步骤后，下次推理时此类warning将不会出现。
 
----
+这是由于SDK版本过低导致，请到官网下载最新SDK:
+https://developer.sophgo.com/site/index/material/all/all.html
 
 ### Q3：推理出来精度异常，输出全是“！”
 
