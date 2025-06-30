@@ -31,41 +31,6 @@ git lfs install
 git clone git@hf.co:THUDM/chatglm3-6b
 ```
 
-并对该工程做三点修改（也可以直接使用`files/chatglm3-6b`下的`config.json`和`modeling_chatglm.py`替换原模型的对应文件）：
-- 将`config.json`文件中`seq_length`配置为512；
-
-- 将`modeling_chatglm.py`文件中的如下代码：
-
-```python
-if attention_mask is not None:
-    attention_scores = attention_scores.masked_fill(attention_mask, float("-inf"))
-```
-
-修改为：
-
-```python
-if attention_mask is not None:
-    attention_scores = attention_scores + (attention_mask * -10000.0)
-```
-
-这样修改可以提升效率，使用`masked_fill`效率低下；另一方面`masked_fill`转ONNX存在些bug。
-
-- 将`modeling_chatglm.py`文件中的如下代码：
-
-```python
-pytorch_major_version = int(torch.__version__.split('.')[0])
-if pytorch_major_version >= 2:
-```
-
-修改为：
-
-```python
-pytorch_major_version = int(torch.__version__.split('.')[0])
-if False:
-```
-
-这是因为ONNX无法支持`torch.nn.functional.scaled_dot_product_attention`算子的转换。
-
 3. 下载`TPU-MLIR`代码并编译，(也可以直接下载编译好的release包解压)
 
 ``` shell
@@ -77,38 +42,22 @@ source ./envsetup.sh
 
 ## 编译模型
 
-1. 指定`ChatGLM3-6B`的python路径
-
-``` shell
-export PYTHONPATH=your_chatglm3-6b_path:$PYTHONPATH
-```
-
-2. 导出所有onnx模型，如果过程中提示缺少某些组件，直接`pip3 install 组件`即可；seq_length需与config.json中的设置相同，device默认为cpu。
-
-``` shell
-cd compile
-python3 export_onnx.py --model_path your_chatglm3-6b_path --seq_length 512 --device cpu
-```
-此时有大量onnx模型被导出到tmp目录。
-
-3. 对onnx模型进行编译
-
-目前TPU-MLIR支持对ChatGLM3进行F16、INT8和INT4量化，且支持多芯分布式推理，默认情况下会进行F16量化和单芯推理，最终生成`chatglm3-6b_f16_1devv.bmodel`文件
+编译时采用一键编译指令即可，生成的编译文件保存在 ./chatglm3 目录中
 
 ```shell
-./compile.sh --name chatglm3-6b
+llm_convert.py -m /workspace/Chatglm3-6 -s 384 -q w4f16 -g 128 --num_device 1  -c bm1684x  -o chatglm3
 ```
 
 若想进行INT8或INT4量化，则执行以下命令，最终生成`chatglm3-6b_int8_1dev.bmodel`或`chatglm3-6b_int4_1dev.bmodel`文件，如下命令：
 
 ```shell
-./compile.sh --mode int8 --name chatglm3-6b # or int4
+llm_convert.py -m /workspace/Chatglm3-6 -s 384 -q int8 -g 128 --num_device 1  -c bm1684x  -o chatglm3 # or int4
 ```
 
-若想进行2芯推理，则执行以下命令，最终生成`chatglm3-6b_f16_2dev.bmodel`文件，4芯8芯同理（python_demo目前仅支持单芯）：
+若想进行2芯推理，则执行以下命令，最终生成`chatglm3-6b_w4f16_2dev.bmodel`文件，4芯8芯同理（python_demo目前仅支持单芯）：
 
 ```shell
-./compile.sh --num_device 2 --name chatglm3-6b
+llm_convert.py -m /workspace/Chatglm3-6 -s 384 -q w4f16 -g 128 --num_device 2  -c bm1688  -o chatglm3
 ```
 
 ## 编译程序(python_demo版本)
@@ -144,19 +93,14 @@ make
 ```
 
 编译生成chatglm可执行程序，将`chatglm`放到demo目录下，同时按照下列方式指定芯片数量和bmodel路径。
-运行`chatglm`，默认单芯运行`chatglm3-6b_f16_1dev.bmodel`:
+运行`chatglm`，默认单芯运行`chatglm3-xxx.bmodel`:
 ```shell
-./chatglm --model chatglm3-6b_f16_1dev.bmodel --tokenizer ../support/tokenizer.model
-```
-
-如果是要运行INT8或INT4模型，则命令如下：
-```shell
-./chatglm --model chatglm3-6b_int8_1dev.bmodel --tokenizer ../support/tokenizer.model # same with int4
+./chatglm --model chatglm3-xxx.bmodel --tokenizer ../support/tokenizer.model
 ```
 
 如果是2芯分布式推理，使用如下命令(比如指定在2号和3号芯片上运行, 用`source /etc/profiel`后使用`bm-smi`查询芯片id号)：
 ```shell
-./chatglm --model chatglm3-6b_f16_2dev.bmodel --devid 2,3 --tokenizer ../support/tokenizer.model
+./chatglm --model chatglm3-xxx.bmodel --devid 2,3 --tokenizer ../support/tokenizer.model
 ```
 
 ## 编译程序(Python Web版本)
