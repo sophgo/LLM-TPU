@@ -5,35 +5,19 @@ if (NOT DEFINED TARGET_ARCH)
     set(TARGET_ARCH pcie)
 endif()
 
-include_directories(${PROJECT_SOURCE_DIR}/../../../support/include)
+include_directories(${PROJECT_SOURCE_DIR}/include)
 
-if (${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "aarch64")
-    add_definitions(-DSOC_TARGET)
-    link_directories(${PROJECT_SOURCE_DIR}/../../../support/lib_soc)
-    message("SoC mode, starting......")
-elseif (${TARGET_ARCH} STREQUAL "pcie")
-    add_definitions(-DPCIE_TARGET)
-    link_directories(${PROJECT_SOURCE_DIR}/../../../support/lib_pcie)
-    message("PCIE mode, starting......")
-endif()
-
-# OpenCV configuration
-find_package(OpenCV REQUIRED)
-include_directories(${OpenCV_INCLUDE_DIRS})
-link_directories(${OpenCV_LIBRARY_DIRS})
-message(STATUS "OpenCV version: ${OpenCV_VERSION}")
+include_directories(/opt/sophon/libsophon-current/include)
+link_directories(/opt/sophon/libsophon-current/lib)
 
 add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -Werror)
 set(CMAKE_BUILD_TYPE "Debug")
 
+find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development)
+set(pybind11_DIR "$ENV{HOME}/.local/lib/python3.10/site-packages/pybind11/share/cmake/pybind11")
 find_package(pybind11 REQUIRED CONFIG)
 
-file(GLOB CPP_FILES ${PROJECT_SOURCE_DIR}/*.cpp)
-
-foreach(CPP_FILE ${CPP_FILES})
-    get_filename_component(MODULE_NAME ${CPP_FILE} NAME_WE)
-    pybind11_add_module(${MODULE_NAME} ${CPP_FILE})
-    target_link_libraries(${MODULE_NAME} PUBLIC bmrt bmlib opencv_core opencv_imgcodecs opencv_videoio)
-    install(TARGETS ${MODULE_NAME} DESTINATION python)
-endforeach()
+pybind11_add_module(chat chat.cpp)
+target_link_libraries(chat PUBLIC bmrt bmlib)
+install(TARGETS chat DESTINATION python)
 

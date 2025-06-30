@@ -1,6 +1,0 @@
-[submodule "models/Qwen/demo_parallel/third_party/re2"]
-	path = models/Qwen/demo_parallel/third_party/re2
-	url = https://github.com/google/re2.git
-[submodule "models/Qwen/demo_parallel/third_party/abseil-cpp"]
-	path = models/Qwen/demo_parallel/third_party/abseil-cpp
-	url = https://github.com/abseil/abseil-cpp.git

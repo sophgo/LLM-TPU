@@ -1,6 +1,6 @@
 //===----------------------------------------------------------------------===//
 //
-// Copyright (C) 2023 Sophgo Technologies Inc.  All rights reserved.
+// Copyright (C) 2025 Sophgo Technologies Inc.  All rights reserved.
 //
 // TPU-MLIR is licensed under the 2-Clause BSD License except for the
 // third-party components.
@@ -75,7 +75,6 @@ public:
   int NUM_LAYERS;
   int hidden_bytes;
   int kv_bytes;
-  bool io_alone;
   bool enable_history;
   uint16_t mask_value;
   std::vector<int> visited_tokens;
@@ -211,22 +210,13 @@ void Qwen2::init(std::string model_path, std::string config_path,
   // kv cache
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
-  auto addr_mode = net_blocks_cache[0]->addr_mode;
-  io_alone = addr_mode == 1;
   for (int i = 0; i < NUM_LAYERS; i++) {
-    assert(io_alone);
     past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
     past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
   }
 }
 
 void Qwen2::deinit() {
-  if (false == io_alone) {
-    for (int i = 0; i < NUM_LAYERS; i++) {
-      bm_free_device(bm_handle, past_key[i]);
-      bm_free_device(bm_handle, past_value[i]);
-    }
-  }
   bmrt_destroy(p_bmrt);
   for (auto h : handles) {
     bm_dev_free(h);

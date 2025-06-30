@@ -1,6 +1,6 @@
 //===----------------------------------------------------------------------===//
 //
-// Copyright (C) 2023 Sophgo Technologies Inc.  All rights reserved.
+// Copyright (C) 2025 Sophgo Technologies Inc.  All rights reserved.
 //
 // TPU-MLIR is licensed under the 2-Clause BSD License except for the
 // third-party components.
@@ -22,7 +22,6 @@
 #include <random>
 #include <stdio.h>
 #include <vector>
-#include "utils.h"
 
 static const uint16_t ATTENTION_MASK = 0xF0E2;
 
@@ -53,7 +52,6 @@ public:
   int token_length;
   int SEQLEN;     // read from bmodel
   int NUM_LAYERS; // read from bmodel
-  bool io_alone;
   std::vector<int> visited_tokens;
   uint16_t mask_value;
 
@@ -221,11 +219,8 @@ void ChatGLM::init(const std::vector<int> &devices, std::string model_path) {
     assert(true == ret);
   }
 
-  auto addr_mode = net_blocks_cache[0]->addr_mode;
-  io_alone = (addr_mode == 1);
   past_keys.resize(NUM_LAYERS);
   past_values.resize(NUM_LAYERS);
-  if (io_alone) {
     for (int i = 0; i < NUM_LAYERS; i++) {
       past_keys[i].resize(device_num);
       past_values[i].resize(device_num);
@@ -243,27 +238,6 @@ void ChatGLM::init(const std::vector<int> &devices, std::string model_path) {
           net->stages[0].input_shapes[4 + in_num_cache]);
       }
     }
-  } else {
-    for (int i = 0; i < NUM_LAYERS; i++) {
-      past_keys[i].resize(device_num);
-      past_values[i].resize(device_num);
-      auto &net = net_blocks_cache[i];
-      for (int j = 0; j < device_num; j++) {
-        ret = bmrt_tensor_ex(
-          &past_keys[i][j], p_bmrt,
-          net->input_loc_devices[3 + j * in_num_cache],
-          net->input_dtypes[3 + j * in_num_cache],
-          net->stages[0].input_shapes[3 + j * in_num_cache]);
-        assert(true == ret);
-        ret = bmrt_tensor_ex(
-          &past_values[i][j], p_bmrt,
-          net->input_loc_devices[4 + j * in_num_cache],
-          net->input_dtypes[4 + j * in_num_cache],
-          net->stages[0].input_shapes[4 + j *in_num_cache]);
-        assert(true == ret);
-      }
-    }
-  }
 
   present_key_cache.resize(device_num);
   present_value_cache.resize(device_num);
@@ -292,14 +266,6 @@ void ChatGLM::deinit() {
     bm_free_device(handles[i], next_attention[i].device_mem);
     bm_free_device(handles[i], inputs_lm[i].device_mem);
     bm_free_device(handles[i], outputs_lm[i].device_mem);
-  }
-  if (!io_alone) {
-    for (int i = 0; i < NUM_LAYERS; i++) {
-      for (int j = 0; j < device_num; j++) {
-        bm_free_device(handles[j], past_keys[i][j].device_mem);
-        bm_free_device(handles[j], past_values[i][j].device_mem);
-      }
-    }
   }
   bmrt_destroy(p_bmrt);
   for (auto h : handles) {

@@ -1,6 +1,6 @@
 # Llama3
 
-本工程实现BM1684X/BM1688部署大模型[Llama3](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X/BM1688的PCIE环境，或者SoC环境。
+本工程实现BM1684X/BM1688部署大模型[Llama3](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到PCIE环境，或者SoC环境。
 
 
 本文包括如何编译bmodel，和如何在BM1684X/BM1688环境运行bmodel。编译LLM环节可以省去，直接用以下链接下载：

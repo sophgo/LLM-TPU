@@ -1,6 +1,6 @@
 //===----------------------------------------------------------------------===//
 //
-// Copyright (C) 2023 Sophgo Technologies Inc.  All rights reserved.
+// Copyright (C) 2025 Sophgo Technologies Inc.  All rights reserved.
 //
 // TPU-MLIR is licensed under the 2-Clause BSD License except for the
 // third-party components.
@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "bmruntime_interface.h"
+#include "json.hpp"
 #include "tokenizers-cpp/tokenizers_cpp.h"
 #include <algorithm>
 #include <assert.h>
@@ -19,7 +20,6 @@
 #include <memory.h>
 #include <random>
 #include <vector>
-#include "json.hpp"
 
 using tokenizers::Tokenizer;
 
@@ -38,9 +38,10 @@ static inline std::string LoadBytesFromFile(const std::string &path) {
   return data;
 }
 
-bool ends_with(const std::string& str, const std::string& suffix) {
-    if (str.size() < suffix.size()) return false;
-    return std::equal(suffix.rbegin(), suffix.rend(), str.rbegin());
+bool ends_with(const std::string &str, const std::string &suffix) {
+  if (str.size() < suffix.size())
+    return false;
+  return std::equal(suffix.rbegin(), suffix.rend(), str.rbegin());
 }
 
 void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
@@ -57,38 +58,38 @@ void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
 }
 
 struct GenerationConfig {
-    std::vector<int> eos_token_id;
-    float repetition_penalty = 1.0;
-    float temperature = 1.0;
-    int top_k = 50;
-    float top_p = 1.0;
-    std::vector<std::string> stop_strings;
-    static GenerationConfig from_json(const std::string& path) {
-        GenerationConfig config;
-        std::ifstream in(path);
-        nlohmann::json j;
-        in >> j;
-        if (j.contains("eos_token_id"))
-          config.eos_token_id = j["eos_token_id"].get<std::vector<int>>();
-        if (j.contains("repetition_penalty"))
-          config.repetition_penalty = j["repetition_penalty"].get<float>();
-        if (j.contains("temperature"))
-          config.temperature = j["temperature"].get<float>();
-        if (j.contains("top_k"))
-          config.top_k = j["top_k"].get<int>();
-        if (j.contains("top_p"))
-          config.top_p = j["top_p"].get<float>();
-        if (j.contains("stop_strings"))
-          config.stop_strings = j["stop_strings"].get<std::vector<std::string>>();
-        return config;
-    }
+  std::vector<int> eos_token_id;
+  float repetition_penalty = 1.0;
+  float temperature = 1.0;
+  int top_k = 50;
+  float top_p = 1.0;
+  std::vector<std::string> stop_strings;
+  static GenerationConfig from_json(const std::string &path) {
+    GenerationConfig config;
+    std::ifstream in(path);
+    nlohmann::json j;
+    in >> j;
+    if (j.contains("eos_token_id"))
+      config.eos_token_id = j["eos_token_id"].get<std::vector<int>>();
+    if (j.contains("repetition_penalty"))
+      config.repetition_penalty = j["repetition_penalty"].get<float>();
+    if (j.contains("temperature"))
+      config.temperature = j["temperature"].get<float>();
+    if (j.contains("top_k"))
+      config.top_k = j["top_k"].get<int>();
+    if (j.contains("top_p"))
+      config.top_p = j["top_p"].get<float>();
+    if (j.contains("stop_strings"))
+      config.stop_strings = j["stop_strings"].get<std::vector<std::string>>();
+    return config;
+  }
 };
 
 class Qwen3 {
 public:
   void init(std::string model_path, std::string config_path,
-            std::string system_prompt, bool enable_history,
-            bool do_sample, const std::vector<int> &devid);
+            std::string system_prompt, bool enable_history, bool do_sample,
+            const std::vector<int> &devid);
   void deinit();
   void chat();
   void answer(const std::string input_str);
@@ -114,7 +115,6 @@ public:
   int NUM_LAYERS;
   int hidden_bytes;
   int kv_bytes;
-  bool io_alone;
   bool is_dynamic;
   bool enable_history;
   uint16_t mask_value;
@@ -264,8 +264,8 @@ void Qwen3::init_by_names() {
 }
 
 void Qwen3::init(std::string model_path, std::string config_path,
-                 std::string system_prompt, bool save_history,
-                 bool do_sample, const std::vector<int> &devices) {
+                 std::string system_prompt, bool save_history, bool do_sample,
+                 const std::vector<int> &devices) {
   sys_config = "<|im_start|>system\n" + system_prompt + "<|im_end|>\n";
   enable_history = save_history;
 
@@ -283,17 +283,18 @@ void Qwen3::init(std::string model_path, std::string config_path,
   if (do_sample) {
     generation_mode = "sample";
     std::string generation_path = config_path + "/generation_config.json";
-    std::cout << "Generation Config [" << generation_path.c_str() << "] loading .... ";
+    std::cout << "Generation Config [" << generation_path.c_str()
+              << "] loading .... ";
     auto gen_config = GenerationConfig::from_json(generation_path);
     penalty = gen_config.repetition_penalty;
     temperature = gen_config.temperature;
     top_k = gen_config.top_k;
     top_p = gen_config.top_p;
     for (auto id : gen_config.eos_token_id) {
-        EOS.push_back(id);
+      EOS.push_back(id);
     }
     if (!gen_config.stop_strings.empty()) {
-        stop_strings = gen_config.stop_strings;
+      stop_strings = gen_config.stop_strings;
     }
     std::cout << "Done!" << std::endl;
   }
@@ -350,22 +351,13 @@ void Qwen3::init(std::string model_path, std::string config_path,
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
   is_dynamic = net_blocks[0]->is_dynamic;
-  auto addr_mode = net_blocks_cache[0]->addr_mode;
-  io_alone = addr_mode == 1;
   for (int i = 0; i < NUM_LAYERS; i++) {
-    assert(io_alone);
     past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
     past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
   }
 }
 
 void Qwen3::deinit() {
-  if (false == io_alone) {
-    for (int i = 0; i < NUM_LAYERS; i++) {
-      bm_free_device(bm_handle, past_key[i]);
-      bm_free_device(bm_handle, past_value[i]);
-    }
-  }
   bmrt_destroy(p_bmrt);
   for (auto h : handles) {
     bm_dev_free(h);
@@ -564,8 +556,8 @@ void Qwen3::answer(const std::string input_str) {
   auto t1 = std::chrono::system_clock::now();
 
   std::string result;
-  while (std::find(EOS.begin(), EOS.end(), token) == EOS.end()
-         && token_length < SEQLEN) {
+  while (std::find(EOS.begin(), EOS.end(), token) == EOS.end() &&
+         token_length < SEQLEN) {
     std::vector<int> pre_ids = {pre_token};
     std::vector<int> ids = {pre_token, token};
     std::string pre_word = tok->Decode(pre_ids);
@@ -573,13 +565,14 @@ void Qwen3::answer(const std::string input_str) {
     std::string diff = word.substr(pre_word.size());
     result += diff;
     bool stop_by_string = false;
-    for (const auto& stop : stop_strings) {
-        if (ends_with(result, stop)) {
-            stop_by_string = true;
-            break;
-        }
+    for (const auto &stop : stop_strings) {
+      if (ends_with(result, stop)) {
+        stop_by_string = true;
+        break;
+      }
     }
-    if (stop_by_string) break;
+    if (stop_by_string)
+      break;
     std::cout << diff << std::flush;
     tok_num++;
     token = forward_next();
@@ -693,8 +686,8 @@ int main(int argc, char **argv) {
   bool enable_history = false;
   bool do_sample = false;
 
-  processArguments(argc, argv, model_path, config_path, devices,
-                   enable_history, do_sample);
+  processArguments(argc, argv, model_path, config_path, devices, enable_history,
+                   do_sample);
   if (model_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);
@@ -704,7 +697,8 @@ int main(int argc, char **argv) {
 
   Qwen3 model;
   std::cout << "Init Environment ..." << std::endl;
-  model.init(model_path, config_path, system_prompt, enable_history, do_sample, devices);
+  model.init(model_path, config_path, system_prompt, enable_history, do_sample,
+             devices);
   model.chat();
   model.deinit();
   return 0;

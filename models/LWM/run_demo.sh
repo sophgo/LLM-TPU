@@ -23,4 +23,4 @@ fi
 
 # run demo
 echo $PWD
-./demo/lwm --model ../../bmodels/lwm-text-chat-1m_int4_1dev_seq512.bmodel --tokenizer ./support/tokenizer.model --devid 0
+./demo/lwm --model ../../bmodels/lwm-text-chat-1m_int4_1dev_seq512.bmodel --tokenizer ./tokenizer/tokenizer.model --devid 0

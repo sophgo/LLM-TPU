@@ -7,7 +7,7 @@ endif()
 
 set(CMAKE_CXX_STANDARD 17)
 
-include_directories(${PROJECT_SOURCE_DIR}/../../../support/include)
+include_directories(/opt/sophon/libsophon-current/include)
 link_directories(/opt/sophon/libsophon-current/lib)
 
 add_definitions(-DDEBUG -fPIC -Wall -Werror)

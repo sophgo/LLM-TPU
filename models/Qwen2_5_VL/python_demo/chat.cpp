@@ -1,6 +1,6 @@
 //===----------------------------------------------------------------------===//
 //
-// Copyright (C) 2023 Sophgo Technologies Inc.  All rights reserved.
+// Copyright (C) 2025 Sophgo Technologies Inc.  All rights reserved.
 //
 // TPU-MLIR is licensed under the 2-Clause BSD License except for the
 // third-party components.
@@ -17,12 +17,18 @@
 #include <inttypes.h>
 #include <iostream>
 #include <numeric>
+#include <pybind11/iostream.h>
+#include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <random>
 #include <stdio.h>
 #include <vector>
 
+namespace py = pybind11;
+using ArrayFloat =
+    py::array_t<float, py::array::c_style | py::array::forcecast>;
+using ArrayInt = py::array_t<int, py::array::c_style | py::array::forcecast>;
 static const uint16_t ATTENTION_MASK = 0xC61C; // -9984 by bfloat16
 
 //===------------------------------------------------------------===//
@@ -58,15 +64,13 @@ class Qwen2_5VL {
 public:
   void init(int devid, std::string model_path);
   void deinit();
-  void forward_embed(std::vector<int> &tokens);
-  void forward_vit(std::vector<float> &pixel_values,
-                   std::vector<int> &position_ids,
-                   std::vector<float> &full_attn_mask,
-                   std::vector<float> &window_attn_mask,
-                   std::vector<int> &grid_thw,
-                   std::vector<int> &reverse_indices, int vit_offset);
-  int forward_first(std::vector<int> &position_ids);
-  int forward_next(std::vector<int> &position_ids);
+  void forward_embed(ArrayInt const &tokens);
+  void forward_vit(ArrayFloat const &pixel_values, ArrayInt const &position_ids,
+                   ArrayFloat const &full_attn_mask,
+                   ArrayFloat const &window_attn_mask, ArrayInt const &grid_thw,
+                   ArrayInt const &reverse_indices, int vit_offset);
+  int forward_first(ArrayInt const &position_ids);
+  int forward_next(ArrayInt const &position_ids);
 
   std::mt19937 sgen;
   Qwen2_5VL() : sgen(std::random_device()()) {};
@@ -81,8 +85,7 @@ public:
   int SEQLEN; // read from bmodel
   int HIDDEN_SIZE;
   int NUM_LAYERS; // read from bmodel
-  uint64_t VIT_DIMS;
-  std::string generation_mode;
+  int VIT_DIMS;
   int MAX_PATCHES;
   int MAX_PIXELS;
   int max_pos;
@@ -189,9 +192,12 @@ void Qwen2_5VL::deinit() {
   bm_dev_free(bm_handle);
 }
 
-void Qwen2_5VL::forward_embed(std::vector<int> &tokens) {
+void Qwen2_5VL::forward_embed(ArrayInt const &tokens) {
   std::vector<int> input_ids(SEQLEN, 0);
-  std::copy(tokens.begin(), tokens.end(), input_ids.data());
+  auto num = tokens.size();
+  auto p_buffer = tokens.request();
+  auto p_tokens = static_cast<int *>(p_buffer.ptr);
+  std::copy(p_tokens, p_tokens + num, input_ids.data());
 
   auto &in_mem = net_embed->stages[0].input_mems[0];
   auto &out_mem = net_embed->stages[0].output_mems[0];
@@ -201,22 +207,30 @@ void Qwen2_5VL::forward_embed(std::vector<int> &tokens) {
   token_length = tokens.size();
 }
 
-void Qwen2_5VL::forward_vit(std::vector<float> &pixel_values,
-                            std::vector<int> &position_ids,
-                            std::vector<float> &full_attn_mask,
-                            std::vector<float> &window_attn_mask,
-                            std::vector<int> &grid_thw,
-                            std::vector<int> &reverse_indices, int vit_offset) {
-  int t = grid_thw[0];
-  int h = grid_thw[1];
-  int w = grid_thw[2];
+void Qwen2_5VL::forward_vit(ArrayFloat const &pixel_values,
+                            ArrayInt const &position_ids,
+                            ArrayFloat const &full_attn_mask,
+                            ArrayFloat const &window_attn_mask,
+                            ArrayInt const &grid_thw,
+                            ArrayInt const &reverse_indices, int vit_offset) {
+  auto p_grid_thw = grid_thw.request();
+  auto p_thw = static_cast<int *>(p_grid_thw.ptr);
+  int t = p_thw[0];
+  int h = p_thw[1];
+  int w = p_thw[2];
   int hw = t * h * w;
-  assert(full_attn_mask.size() == (size_t)(hw * hw));
-  assert(window_attn_mask.size() == (size_t)(hw * hw));
-  assert(pixel_values.size() == (size_t)(hw * VIT_DIMS));
-  assert(position_ids.size() == (size_t)(hw * 2));
-  assert(reverse_indices.size() == (size_t)(hw / 4));
-
+  assert(full_attn_mask.size() == (hw * hw));
+  assert(window_attn_mask.size() == (hw * hw));
+  assert(pixel_values.size() == (hw * VIT_DIMS));
+  assert(position_ids.size() == (hw * 2));
+  assert(reverse_indices.size() == (hw / 4));
+  auto p_pixel_values = pixel_values.request();
+  auto p_position_ids = position_ids.request();
+  auto p_full_attn_mask = full_attn_mask.request();
+  auto p_window_attn_mask = window_attn_mask.request();
+  auto p_reverse_indices = reverse_indices.request();
+  auto p_full = static_cast<float *>(p_full_attn_mask.ptr);
+  auto p_window = static_cast<float *>(p_window_attn_mask.ptr);
   empty_net(bm_handle, net_vit);
   auto &vit_in0_mem = net_vit->stages[0].input_mems[0];
   auto &vit_in1_mem = net_vit->stages[0].input_mems[1];
@@ -224,26 +238,25 @@ void Qwen2_5VL::forward_vit(std::vector<float> &pixel_values,
   auto &vit_in3_mem = net_vit->stages[0].input_mems[3];
   auto &vit_in4_mem = net_vit->stages[0].input_mems[4];
   auto &vit_out_mem = net_vit->stages[0].output_mems[0];
-  bm_memcpy_s2d_partial(bm_handle, vit_in0_mem, (void *)pixel_values.data(),
+  bm_memcpy_s2d_partial(bm_handle, vit_in0_mem, (void *)p_pixel_values.ptr,
                         pixel_values.size() * sizeof(float));
-  bm_memcpy_s2d_partial(bm_handle, vit_in1_mem, (void *)position_ids.data(),
+  bm_memcpy_s2d_partial(bm_handle, vit_in1_mem, (void *)p_position_ids.ptr,
                         position_ids.size() * sizeof(int));
-  bm_memcpy_s2d_partial(bm_handle, vit_in4_mem, (void *)reverse_indices.data(),
+  bm_memcpy_s2d_partial(bm_handle, vit_in4_mem, (void *)p_reverse_indices.ptr,
                         reverse_indices.size() * sizeof(int));
   if (full_attn_mask.size() == MAX_PATCHES * MAX_PATCHES) {
-    bm_memcpy_s2d(bm_handle, vit_in2_mem, (void *)full_attn_mask.data());
-    bm_memcpy_s2d(bm_handle, vit_in3_mem, (void *)window_attn_mask.data());
+    bm_memcpy_s2d(bm_handle, vit_in2_mem, (void *)p_full);
+    bm_memcpy_s2d(bm_handle, vit_in3_mem, (void *)p_window);
   } else {
     std::vector<float> mask_full(MAX_PATCHES * MAX_PATCHES, -10000.0f);
     std::vector<float> mask_window(MAX_PATCHES * MAX_PATCHES, -10000.0f);
+
     for (int i = 0; i < hw; i++) {
       int mask_offset = i * MAX_PATCHES;
       int ori_offset = i * hw;
-      std::copy(full_attn_mask.begin() + ori_offset,
-                full_attn_mask.begin() + ori_offset + hw,
+      std::copy(p_full + ori_offset, p_full + ori_offset + hw,
                 mask_full.begin() + mask_offset);
-      std::copy(window_attn_mask.begin() + ori_offset,
-                window_attn_mask.begin() + ori_offset + hw,
+      std::copy(p_window + ori_offset, p_window + ori_offset + hw,
                 mask_window.begin() + mask_offset);
     }
     bm_memcpy_s2d(bm_handle, vit_in2_mem, (void *)mask_full.data());
@@ -284,7 +297,7 @@ void Qwen2_5VL::head_launch(const bm_net_info_t *net,
   bm_thread_sync(bm_handle);
 }
 
-int Qwen2_5VL::forward_first(std::vector<int> &position_ids) {
+int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
   for (int i = 0; i < token_length; i++) {
     for (int j = 0; j < token_length; j++) {
@@ -293,13 +306,14 @@ int Qwen2_5VL::forward_first(std::vector<int> &position_ids) {
       }
     }
   }
+  auto p_position_ids = position_ids.request();
+  auto p_ids = static_cast<int *>(p_position_ids.ptr);
   std::vector<int> position_ids_pad(3 * SEQLEN, 0);
   int ori_length = position_ids.size() / 3;
   for (int i = 0; i < 3; i++) {
     int ori_offset = i * ori_length;
     int dst_offset = i * SEQLEN;
-    std::copy(position_ids.begin() + ori_offset,
-              position_ids.begin() + ori_offset + ori_length,
+    std::copy(p_ids + ori_offset, p_ids + ori_offset + ori_length,
               position_ids_pad.begin() + dst_offset);
   }
   auto out_mem = dev_buffer;
@@ -333,13 +347,14 @@ int Qwen2_5VL::forward_first(std::vector<int> &position_ids) {
   return token;
 }
 
-int Qwen2_5VL::forward_next(std::vector<int> &position_ids) {
+int Qwen2_5VL::forward_next(ArrayInt const &position_ids) {
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = token_length - 1; i < SEQLEN; i++) {
     attention_mask[i] = ATTENTION_MASK;
   }
   assert(position_ids.size() == 3);
-
+  auto p_position_ids = position_ids.request();
+  auto p_ids = static_cast<int *>(p_position_ids.ptr);
   // embedding
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
   auto &lm_out_mem = net_lm->stages[0].output_mems[0];
@@ -362,7 +377,7 @@ int Qwen2_5VL::forward_next(std::vector<int> &position_ids) {
     auto &out2_mem = net_blocks_cache[idx]->stages[0].output_mems[2];
     d2d(in0_mem, out_mem);
     if (idx == 0) {
-      bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_ids.data());
+      bm_memcpy_s2d(bm_handle, in1_mem, (void *)p_ids);
       bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     } else {
       d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
@@ -399,6 +414,5 @@ PYBIND11_MODULE(chat, m) {
       .def_readonly("SEQLEN", &Qwen2_5VL::SEQLEN) // read SEQLEN in pipeline.py
       .def_readonly("MAX_PIXELS", &Qwen2_5VL::MAX_PIXELS)
       .def_readonly("MAX_PATCHES", &Qwen2_5VL::MAX_PATCHES)
-      .def_readwrite("token_length", &Qwen2_5VL::token_length)
-      .def_readwrite("generation_mode", &Qwen2_5VL::generation_mode);
+      .def_readwrite("token_length", &Qwen2_5VL::token_length);
 }

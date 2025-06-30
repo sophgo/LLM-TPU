@@ -1,6 +1,6 @@
 //===----------------------------------------------------------------------===//
 //
-// Copyright (C) 2023 Sophgo Technologies Inc.  All rights reserved.
+// Copyright (C) 2025 Sophgo Technologies Inc.  All rights reserved.
 //
 // TPU-MLIR is licensed under the 2-Clause BSD License except for the
 // third-party components.
@@ -93,7 +93,6 @@ private:
   void ioalone_error();
 
 public:
-  bool io_alone;
   bool is_dynamic;
   uint32_t prefill_reuse;
   std::vector<int> total_tokens;
@@ -463,8 +462,6 @@ void Qwen::init_nets() {
 void Qwen::init_params() {
   // read parameters from bmodel
   is_dynamic = net_blocks[0]->is_dynamic;
-  auto addr_mode = net_blocks_cache[0]->addr_mode;
-  io_alone = addr_mode == 1;
   hidden_bytes = bm_mem_get_device_size(
       net_blocks_cache[0]->stages[stage_idx].output_mems[0]);
   kv_bytes = bm_mem_get_device_size(

@@ -7,27 +7,11 @@ endif()
 
 set(CMAKE_INSTALL_PREFIX install)
 
-if (${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "aarch64")
-	add_definitions(-DSOC_TARGET)
-	link_directories(${PROJECT_SOURCE_DIR}/../src/lib_soc)
-	message("SoC mode, starting......")
-elseif (${TARGET_ARCH} STREQUAL "pcie")
-    add_definitions(-DPCIE_TARGET)
-    link_directories(${PROJECT_SOURCE_DIR}/../src/lib_pcie)
-	message("Pcie mode, starting......")
-elseif (${TARGET_ARCH} STREQUAL "soc")
-    add_definitions(-DSOC_TARGET)
-    set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc)
-    set(CMAKE_ASM_COMPILER aarch64-linux-gnu-gcc)
-    set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
-    link_directories(${PROJECT_SOURCE_DIR}/lib_soc)
-	message("SoC mode, starting......")
-endif()
+include_directories(${PROJECT_SOURCE_DIR}/../demo/include)
+link_directories(${PROJECT_SOURCE_DIR}/../demo/lib)
 
-
-
-
-include_directories(${PROJECT_SOURCE_DIR}/../src/include)
+include_directories(/opt/sophon/libsophon-current/include)
+link_directories(/opt/sophon/libsophon-current/lib)
 
 add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -Werror)
 set(CMAKE_BUILD_TYPE "Debug")

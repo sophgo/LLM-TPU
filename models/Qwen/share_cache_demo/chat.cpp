@@ -1,6 +1,6 @@
 //===----------------------------------------------------------------------===//
 //
-// Copyright (C) 2023 Sophgo Technologies Inc.  All rights reserved.
+// Copyright (C) 2025 Sophgo Technologies Inc.  All rights reserved.
 //
 // TPU-MLIR is licensed under the 2-Clause BSD License except for the
 // third-party components.
@@ -93,7 +93,6 @@ private:
   void ioalone_error();
 
 public:
-  bool io_alone;
   bool is_dynamic;
   uint32_t prefill_reuse;
   std::vector<int> total_tokens;
@@ -166,7 +165,7 @@ Qwen::Qwen() {
   MAX_SHARE_LENGTH = 0;
   MAX_UNSHARE_LENGTH = 0;
 
-  // 
+  //
   sgen = std::mt19937(std::random_device()());
   bm_handle = nullptr;
   p_bmrt = nullptr;
@@ -410,7 +409,8 @@ void Qwen::load_bmodel(const std::vector<int> &devices,
 void Qwen::init_nets() {
   // net embed and lm_head
   ASSERT(bmrt_get_network_index(p_bmrt, "embedding") != -1 ||
-         !embedding_path.empty(), "bmodel is lack of embedding or embedding_path is empty");
+             !embedding_path.empty(),
+         "bmodel is lack of embedding or embedding_path is empty");
   if (embedding_path.empty()) {
     net_embed = bmrt_get_network_info(p_bmrt, "embedding");
     net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
@@ -463,8 +463,6 @@ void Qwen::init_nets() {
 void Qwen::init_params() {
   // read parameters from bmodel
   is_dynamic = net_blocks[0]->is_dynamic;
-  auto addr_mode = net_blocks_cache[0]->addr_mode;
-  io_alone = addr_mode == 1;
   hidden_bytes = bm_mem_get_device_size(
       net_blocks_cache[0]->stages[stage_idx].output_mems[0]);
   kv_bytes = bm_mem_get_device_size(
@@ -506,7 +504,7 @@ void Qwen::init_params() {
 }
 
 void Qwen::make_in_tensors(bool read_bmodel) {
-  if (!read_bmodel){
+  if (!read_bmodel) {
     free_in_tensors();
   }
 

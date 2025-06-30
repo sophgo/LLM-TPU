@@ -1,6 +1,6 @@
 # Qwen3
 
-本工程实现BM1684X/BM1688部署大模型[Qwen3](https://huggingface.co/Qwen/Qwen3-4B-AWQ)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X/BM1688的PCIE环境，或者SoC环境。
+本工程实现BM1684X/BM1688部署大模型[Qwen3](https://huggingface.co/Qwen/Qwen3-4B-AWQ)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到PCIE环境，或者SoC环境。
 
 
 本文包括如何编译bmodel，和如何在BM1684X/BM1688环境运行bmodel。编译LLM环节可以省去，直接用以下链接下载：
@@ -15,6 +15,15 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-4
 
 # 1688 512
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU_Lite/qwen3-4b-awq_w4bf16_seq512_bm1688_2core_20250514_162231.bmodel
+```
+
+### deepseek-r1-0528-qwen3-8b
+
+``` shell
+# 1684x 512
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-0528-qwen3-8b_w4bf16_seq512_bm1684x.tar
+# 1684x 4k
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-0528-qwen3-8b_w4bf16_seq4096_bm1684x.tar
 ```
 
 ## 编译LLM模型
@@ -86,9 +95,10 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 * python demo
 
 ``` shell
-python3 pipeline.py -m qwen3_xxx.bmodel -c config 
+python3 pipeline.py -m qwen_xxx.bmodel -c config
 ```
-model为实际的model储存路径；config为配置文件路径
+model为实际的bmodel储存路径；config为编译模型时生成的配置文件，demo中存放了qwen3的config。
+* 如果更换其他系列模型，如deepseek-r1-distill-qwen，需要指定新的config
 
 #### cpp demo
 

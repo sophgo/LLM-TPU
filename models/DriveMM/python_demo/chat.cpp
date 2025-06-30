@@ -1,6 +1,6 @@
 //===----------------------------------------------------------------------===//
 //
-// Copyright (C) 2023 Sophgo Technologies Inc.  All rights reserved.
+// Copyright (C) 2025 Sophgo Technologies Inc.  All rights reserved.
 //
 // TPU-MLIR is licensed under the 2-Clause BSD License except for the
 // third-party components.
@@ -23,10 +23,36 @@
 
 #include "bmruntime_interface.h"
 #include "memory.h"
-#include "cnpy.h"
-#include "utils.h"
 
-static const float ATTENTION_MASK = -10000.;
+
+//===------------------------------------------------------------===//
+// Empty Func
+//===------------------------------------------------------------===//
+void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
+  int value = 0;
+  auto ret = bm_memset_device_ext(bm_handle, &value, 1, mem);
+  assert(BM_SUCCESS == ret);
+}
+
+void empty_in_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+                  int stage_idx = 0) {
+  for (int i = 0; i < net->input_num; i++) {
+    empty(bm_handle, net->stages[stage_idx].input_mems[i]);
+  }
+}
+
+void empty_out_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+                   int stage_idx = 0) {
+  for (int i = 0; i < net->output_num; i++) {
+    empty(bm_handle, net->stages[stage_idx].output_mems[i]);
+  }
+}
+
+void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+               int stage_idx = 0) {
+  empty_in_net(bm_handle, net, stage_idx);
+  empty_out_net(bm_handle, net, stage_idx);
+}
 
 class Model {
 public:
@@ -150,7 +176,15 @@ void Model::init(int dev_id, std::string model_path) {
   status = bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
   assert(BM_SUCCESS == status);
 
-  mask_value = fp32_to_uint16(ATTENTION_MASK, net_blocks[0]->input_dtypes[0]);
+  if (net_blocks_cache[0]->output_dtypes[0] == BM_FLOAT16) {
+    mask_value = 0xF0E2; // float16
+  } else if (net_blocks_cache[0]->output_dtypes[0] == BM_BFLOAT16) {
+    mask_value = 0xC61C; // -9984 by bfloat16
+  } else {
+    std::cerr << "\nError: Invalid attention dtype\n";
+    std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
+    throw std::runtime_error("Invalid attention dtype");
+  }
 }
 
 void Model::deinit() {

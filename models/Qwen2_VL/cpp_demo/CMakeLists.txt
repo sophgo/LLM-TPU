@@ -7,6 +7,8 @@ if (NOT DEFINED TARGET_ARCH)
 endif()
 
 include_directories(${PROJECT_SOURCE_DIR}/third_party/include)
+include_directories(/opt/sophon/libsophon-current/include)
+link_directories(/opt/sophon/libsophon-current/lib)
 
 if (${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "aarch64")
     add_definitions(-DSOC_TARGET)
@@ -28,4 +30,4 @@ add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -Werror)
 set(CMAKE_BUILD_TYPE "Debug")
 
 add_executable(qwen2_vl demo.cpp)
-target_link_libraries(qwen2_vl PUBLIC bmlib bmrt tokenizers_cpp -lpthread -ltokenizers_c ${OPENCV_LIBS})
+target_link_libraries(qwen2_vl PUBLIC bmlib bmrt tokenizers_cpp  -lpthread -ltokenizers_c ${OPENCV_LIBS} dl)

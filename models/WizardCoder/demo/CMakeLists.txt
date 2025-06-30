@@ -9,13 +9,7 @@ project(wizardocder-tpu)
 message(STATUS "Host arch is: ${CMAKE_HOST_SYSTEM_PROCESSOR}")
 
 
-if(${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "x86_64")
-  set(LIBSOPHON_DIR ${CMAKE_SOURCE_DIR}/lib_pcie CACHE STRING "The directory of libsophon")
-elseif(${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "aarch64")
-  set(LIBSOPHON_DIR ${CMAKE_SOURCE_DIR}/lib_soc CACHE STRING "The directory of libsophon")
-else()
-  message(FATAL_ERROR "Detected architecture is neither x86_64 nor aarch64, Exit")
-endif()
+set(LIBSOPHON_DIR /opt/sophon/libsophon-current  CACHE STRING "The directory of libsophon")
 
 message(STATUS "LIBSOPHON_DIR is set to: ${LIBSOPHON_DIR}")
 

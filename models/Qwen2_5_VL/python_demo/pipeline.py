@@ -1,3 +1,11 @@
+# ==============================================================================
+# Copyright (C) 2025 Sophgo Technologies Inc.  All rights reserved.
+#
+# TPU-MLIR is licensed under the 2-Clause BSD License except for the
+# third-party components.
+#
+# ==============================================================================
+
 import time
 import argparse
 from transformers import AutoProcessor
@@ -5,6 +13,7 @@ from qwen_vl_utils import process_vision_info
 import chat
 import os
 import torch
+import numpy as np
 import torch.nn.functional as F
 
 
@@ -20,7 +29,7 @@ class Qwen2_5VL():
         self.processor = AutoProcessor.from_pretrained(args.config_path,
                                                        trust_remote_code=True,
                                                        max_pixels=self.model.MAX_PIXELS,
-                                                       min_pixels=256 * 28 * 28)
+                                                       min_pixels=64 * 28 * 28)
         self.tokenizer = self.processor.tokenizer
         self.ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
         self.ID_IM_END = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
@@ -193,12 +202,9 @@ class Qwen2_5VL():
         full_mask = self.get_attn_mask(seq_len, cu_seqlens)
         window_mask = self.get_attn_mask(seq_len, cu_window_seqlens)
         reverse_indices = torch.argsort(window_index)
-        self.model.forward_vit(hidden_states.flatten().tolist(),
-                               position_ids.flatten().tolist(),
-                               full_mask.flatten().tolist(),
-                               window_mask.flatten().tolist(),
-                               grid_thw.flatten().tolist(),
-                               reverse_indices.flatten().tolist(), vit_offset)
+        self.model.forward_vit(hidden_states.numpy(), position_ids.numpy(), full_mask.numpy(),
+                               window_mask.numpy(), grid_thw.numpy(), reverse_indices.numpy(),
+                               vit_offset)
 
     def vit_process_video(self, inputs, vit_offset):
         t, h, w = inputs.video_grid_thw.flatten().tolist()
@@ -238,12 +244,9 @@ class Qwen2_5VL():
             full_mask = self.get_attn_mask(seq_len, cu_seqlens)
             window_mask = self.get_attn_mask(seq_len, cu_window_seqlens)
             reverse_indices = torch.argsort(window_index)
-            self.model.forward_vit(hidden_states.flatten().tolist(),
-                                   position_ids.flatten().tolist(),
-                                   full_mask.flatten().tolist(),
-                                   window_mask.flatten().tolist(),
-                                   grid_thw.flatten().tolist(),
-                                   reverse_indices.flatten().tolist(), vit_offset)
+            self.model.forward_vit(hidden_states.numpy(), position_ids.numpy(), full_mask.numpy(),
+                                   window_mask.numpy(), grid_thw.numpy(), reverse_indices.numpy(),
+                                   vit_offset)
             vit_offset += seq_len // 4
             t_offset += t_i
 
@@ -251,15 +254,8 @@ class Qwen2_5VL():
                        pad_id: int) -> torch.Tensor:
         total_input_ids = input_ids
         attention_mask = torch.ones_like(total_input_ids)
-        position_ids = torch.ones(
-            3,
-            input_ids.shape[0],
-            input_ids.shape[1],
-            dtype=input_ids.dtype,
-            device=input_ids.device,
-        )
+        position_ids = torch.ones(3, input_ids.shape[0], input_ids.shape[1], dtype=input_ids.dtype)
         image_index = 0
-        attention_mask = attention_mask.to(total_input_ids.device)
         for i, input_ids in enumerate(total_input_ids):
             input_ids = input_ids[attention_mask[i] == 1]
             image_nums = 0
@@ -281,7 +277,7 @@ class Qwen2_5VL():
                     grid_thw[image_index][1],
                     grid_thw[image_index][2],
                 )
-                second_per_grid_t = 0
+                second_per_grid_t = 0 if pad_id == self.ID_IMAGE_PAD else 1
                 image_index += 1
                 remain_images -= 1
                 ed = ed_image
@@ -320,7 +316,7 @@ class Qwen2_5VL():
                 llm_pos_ids_list.append(torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
 
             llm_positions = torch.cat(llm_pos_ids_list, dim=1).reshape(3, -1)
-            position_ids[..., i, attention_mask[i] == 1] = llm_positions.to(position_ids.device)
+            position_ids[..., i, attention_mask[i] == 1] = llm_positions
         return position_ids
 
     def chat(self):
@@ -376,7 +372,7 @@ class Qwen2_5VL():
                 position_ids = self.get_rope_index(inputs.input_ids, inputs.image_grid_thw,
                                                    self.ID_IMAGE_PAD)
                 max_posid = int(position_ids.max())
-                token = self.model.forward_first(position_ids.flatten().tolist())
+                token = self.model.forward_first(position_ids.numpy())
             elif media_type == "video":
                 vit_token_list = torch.where(inputs.input_ids == self.ID_VIDEO_PAD)[1].tolist()
                 vit_offset = vit_token_list[0]
@@ -384,7 +380,7 @@ class Qwen2_5VL():
                 position_ids = self.get_rope_index(inputs.input_ids, inputs.video_grid_thw,
                                                    self.ID_VIDEO_PAD)
                 max_posid = int(position_ids.max())
-                token = self.model.forward_first(position_ids.flatten().tolist())
+                token = self.model.forward_first(position_ids.numpy())
             else:
                 position_ids = 3 * [i for i in range(token_len)]
                 max_posid = token_len - 1
@@ -407,8 +403,8 @@ class Qwen2_5VL():
                     print(word, flush=True, end="")
                     full_word_tokens = []
                 max_posid += 1
-
-                token = self.model.forward_next([max_posid, max_posid, max_posid])
+                position_ids = np.array([max_posid, max_posid, max_posid], dtype=np.int32)
+                token = self.model.forward_next(position_ids)
                 tok_num += 1
             next_end = time.time()
             first_duration = first_end - first_start
@@ -428,7 +424,7 @@ if __name__ == "__main__":
     # yapf: disable
     parser.add_argument('-m', '--model_path', type=str, required=True,
                         help='path to the bmodel file')
-    parser.add_argument('-c', '--config_path', type=str, default="config",
+    parser.add_argument('-c', '--config_path', type=str, default="../config",
                         help='path to the processor file')
     parser.add_argument('-d', '--devid', type=int, default=0, help='device ID to use')
     # yapf: enable
