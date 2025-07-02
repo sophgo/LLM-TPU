@@ -72,6 +72,7 @@ private:
 public:
   int token_length;
   int SEQLEN;
+  int MAX_INPUT_LENGTH;
   int NUM_LAYERS;
   int hidden_bytes;
   int kv_bytes;
@@ -185,7 +186,8 @@ void Qwen2::init(std::string model_path, std::string config_path,
   }
 
   // init parameters
-  SEQLEN = net_embed->stages[0].input_shapes[0].dims[1];
+  MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
+  SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[3].dims[1];
   hidden_bytes =
       bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[0]);
   kv_bytes =
@@ -224,15 +226,14 @@ void Qwen2::deinit() {
 }
 
 int Qwen2::forward_first(std::vector<int> &inputs) {
-  std::vector<int> position_id(SEQLEN, 0);
+  std::vector<int> position_id(MAX_INPUT_LENGTH, 0);
   std::copy(inputs.begin(), inputs.end(), visited_tokens.data());
   token_length = inputs.size();
-  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, mask_value);
+  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH,
+                                       mask_value);
   for (int i = 0; i < token_length; i++) {
-    for (int j = 0; j < token_length; j++) {
-      if (j <= i) {
-        attention_mask[i * SEQLEN + j] = 0;
-      }
+    for (int j = 0; j <= i; j++) {
+      attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
     }
   }
   for (int i = 0; i < token_length; i++) {

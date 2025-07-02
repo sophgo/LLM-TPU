@@ -112,6 +112,7 @@ private:
 public:
   int token_length;
   int SEQLEN;
+  int MAX_INPUT_LENGTH;
   int NUM_LAYERS;
   int hidden_bytes;
   int kv_bytes;
@@ -242,8 +243,6 @@ void Qwen3::init_by_names() {
     num_blocks--; // sample_head is not a block
   }
 
-  SEQLEN = net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
-
   NUM_LAYERS = num_blocks / 2; // 2 nets for each block, one for cache
   // net blocks
   for (int i = 0; i < num_blocks / 2; i++) {
@@ -261,6 +260,9 @@ void Qwen3::init_by_names() {
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
   }
   free(net_names);
+  MAX_INPUT_LENGTH =
+      net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
+  SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[3].dims[1];
 }
 
 void Qwen3::init(std::string model_path, std::string config_path,
@@ -406,10 +408,11 @@ int Qwen3::penalty_sample(bm_device_mem_t &logits_mem) {
 }
 
 int Qwen3::forward_first(std::vector<int> &inputs) {
-  std::vector<int> position_id(SEQLEN, 0);
+  std::vector<int> position_id(MAX_INPUT_LENGTH, 0);
   std::copy(inputs.begin(), inputs.end(), visited_tokens.data());
   token_length = inputs.size();
-  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, mask_value);
+  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH,
+                                       mask_value);
   if (is_dynamic) {
     for (int i = 0; i < token_length; i++) {
       for (int j = 0; j <= i; j++) {
@@ -419,7 +422,7 @@ int Qwen3::forward_first(std::vector<int> &inputs) {
   } else {
     for (int i = 0; i < token_length; i++) {
       for (int j = 0; j <= i; j++) {
-        attention_mask[i * SEQLEN + j] = 0;
+        attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
       }
     }
   }

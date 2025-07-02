@@ -79,8 +79,9 @@ public:
   int hidden_bytes;
   int kv_bytes;
   int token_length;
-  int SEQLEN;     // read from bmodel
-  int NUM_LAYERS; // read from bmodel
+  int SEQLEN;           // read from bmodel
+  int MAX_INPUT_LENGTH; // read from bmodel
+  int NUM_LAYERS;       // read from bmodel
   bool lmhead_with_topk;
   bool is_dynamic;
   std::vector<int> visited_tokens;
@@ -139,7 +140,6 @@ void Qwen::init_by_names() {
     num_blocks--; // sample_head is not a block
   }
 
-  SEQLEN = net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
   lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
 
   NUM_LAYERS = num_blocks / 2; // 2 nets for each block, one for cache
@@ -159,6 +159,9 @@ void Qwen::init_by_names() {
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
   }
   free(net_names);
+  MAX_INPUT_LENGTH =
+      net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
+  SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[3].dims[1];
 }
 
 void Qwen::init(const std::vector<int> &devices, std::string model_path) {
@@ -327,8 +330,9 @@ int Qwen::penalty_sample(bm_device_mem_t &logits_mem) {
 }
 
 int Qwen::forward_first(std::vector<int> &tokens) {
-  std::vector<int> position_id(SEQLEN, 0);
-  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
+  std::vector<int> position_id(MAX_INPUT_LENGTH, 0);
+  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH,
+                                       ATTENTION_MASK);
   std::fill(visited_tokens.begin(), visited_tokens.end(), 0);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
 
@@ -346,7 +350,7 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   } else {
     for (int i = 0; i < token_length; i++) {
       for (int j = 0; j <= i; j++) {
-        attention_mask[i * SEQLEN + j] = 0;
+        attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
       }
     }
   }

@@ -57,7 +57,8 @@ public:
   int hidden_bytes;
   int kv_bytes;
   int token_length;
-  int SEQLEN;     // read from bmodel
+  int SEQLEN; // read from bmodel
+  int MAX_INPUT_LENGTH;
   int NUM_LAYERS; // read from bmodel
   int TOKEN_LEN;
   bool lmhead_with_topk;
@@ -195,9 +196,6 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
     NUM_LAYERS = (num_nets - 3) / 2;
   }
 
-  // resize
-  visited_tokens.resize(SEQLEN);
-
   // net blocks
   for (int i = 0; i < NUM_LAYERS; i++) {
     auto block_name = "block_" + std::to_string(i);
@@ -206,6 +204,9 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
     net_blocks_cache.emplace_back(
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
   }
+  MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
+  SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[3].dims[1];
+  visited_tokens.resize(SEQLEN);
 
   hidden_bytes =
       bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[0]);
@@ -358,8 +359,9 @@ int Qwen::penalty_sample(const bm_net_info_t *net,
 }
 
 int Qwen::forward_first(std::vector<int> &tokens) {
-  std::vector<int> position_id(SEQLEN, 0);
-  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
+  std::vector<int> position_id(MAX_INPUT_LENGTH, 0);
+  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH,
+                                       ATTENTION_MASK);
   std::fill(visited_tokens.begin(), visited_tokens.end(), 0);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
 
@@ -371,18 +373,14 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   }
   if (is_dynamic) {
     for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j < TOKEN_LEN; j++) {
-        if (j <= i) {
-          attention_mask[i * TOKEN_LEN + j] = 0;
-        }
+      for (int j = 0; j <= i; j++) {
+        attention_mask[i * TOKEN_LEN + j] = 0;
       }
     }
   } else {
     for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j < SEQLEN; j++) {
-        if (j <= i) {
-          attention_mask[i * SEQLEN + j] = 0;
-        }
+      for (int j = 0; j <= i; j++) {
+        attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
       }
     }
   }
