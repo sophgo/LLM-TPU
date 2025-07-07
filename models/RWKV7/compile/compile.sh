@@ -29,6 +29,6 @@ mkdir -p bmodel
 cd bmodel
 
 rwkv F16
-model_tool --combine rwkv_forward_seq.bmodel, rwkv_forward_one.bmodel -o ../rwkv7_f16.bmodel
+model_tool --combine rwkv_forward_seq.bmodel rwkv_forward_one.bmodel -o ../rwkv7_f16.bmodel
 
 popd

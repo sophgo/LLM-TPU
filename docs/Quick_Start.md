@@ -1,8 +1,8 @@
 # 快速开始
 
-如果您手上有1684X芯片的SoC板卡或者PCIE板卡，例如Airbox（SoC），那么可以参考以下步骤跑通大语言模型，这里以Llama2-7B为例。
+如果您手上有1684X芯片的SoC板卡或者PCIE板卡，例如Airbox（SoC），那么可以参考以下步骤跑通大语言模型，这里以Qwen3-4B为例。
 
-另外SoC的执行步骤和PCIE的有些区别，PCIE必须要安装docker后才能运行，这里将其分开说明。
+另外SoC的执行步骤和PCIE的有些区别，PCIE建议安装docker后运行，这里将其分开说明。
 
 ## 跑通Demo
 
@@ -11,8 +11,9 @@
 #### 1. 克隆LLM-TPU项目，并执行run.sh脚本
 ```
 git clone https://github.com/sophgo/LLM-TPU.git
-./run.sh --model llama2-7b
+./run.sh --model qwen3
 ```
+如果提示有python库缺失，直接pip3 install或者pip3 install xxx --upgrade
 
 ### PCIE如何跑通Demo
 
@@ -26,7 +27,7 @@ docker exec -it mlir bash
 #### 2. 克隆LLM-TPU项目，并执行run.sh脚本
 ```
 git clone https://github.com/sophgo/LLM-TPU.git
-./run.sh --model llama2-7b
+./run.sh --model qwen3
 ```
 
 ## 版本检查

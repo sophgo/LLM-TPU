@@ -15,7 +15,7 @@
 
 # 最近更新！ 🔥🔥🔥
 
-- **2025.05.22**：🚀 **InternVL3** BM1684X/1688已支持，详情见[InternVL3](./models/InternVL3/)。支持图片和视频
+- **2025.05.22**：🚀 **InternVL3** BM1684X/1688已支持，详情见[InternVL3](./models/InternVL3/)。支持图片和视频。
 - **2025.04.30**：🚀 **Qwen2.5VL** BM1684X/1688已支持，详情见[Qwen2.5VL](./models/Qwen2_5_VL/)。其中demo有python和c++两个版本，且都支持图片和视频。
 - **2025.04.29**：🚀 Qwen最新推理模型**Qwen3**，BM1684X/1688已支持，详情见[Qwen3 Demo](./models/Qwen3/)。
 - **2025.03.07**：🚀 Qwen最新推理模型**QWQ-32B**和**DeepSeek-R1-Distill-Qwen-32B**，1684x多芯demo已适配，详情见[Qwen2.5 Demo](./models/Qwen2_5/)。
@@ -24,8 +24,8 @@
 
 # 目录
   - [介绍](#介绍)
-  - [LLM编译方法](#LLM编译方法)
   - [快速开始](#快速开始)
+  - [LLM编译方法](#LLM编译方法)
   - [精度优化](#精度优化)
   - [常见问题](#常见问题)
   - [资料链接](#资料链接)
@@ -39,6 +39,31 @@
 也可以直接用各类Demo中编译好的bmodel。
 
 各个模型的Demo见此目录[models](./models)。
+
+# 快速开始
+
+克隆LLM-TPU项目，并执行run.sh脚本
+```shell
+git clone https://github.com/sophgo/LLM-TPU.git
+./run.sh --model qwen2.5vl
+```
+
+详细请参考[Quick Start](./docs/Quick_Start.md)
+
+## 效果图
+跑通后效果如下图所示
+![](./assets/test.jpg)
+![](./assets/qwen2_5-vl.png)
+
+## Command Table
+
+目前用于演示的模型如下:
+
+| Model           | Command                           |
+| :-------------- | :-------------------------------- |
+| Qwen3-4B        | ./run.sh --model qwen3            |
+| Qwen2.5-VL-3B   | ./run.sh --model qwen2.5vl        |
+| InternVL3-2B    | ./run.sh --model internvl3        |
 
 # LLM编译方法
 
@@ -74,6 +99,7 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 | chip          |  c       | 是    | 指定平台, 如bm1684x/bm1688/cv186x |
 | q_group_size  |  g       | 否    | 指定每组量化的组大小, 默认64 |
 | max_pixels    |  -       | 否    | 多模态参数, 指定最大尺寸, 可以是`672,896`,也可以是`602112`  |
+| do_sample     |  -       | 否    | 指定每组量化的组大小, 默认64 |
 | out_dir       |  o       | 是    | 指定输出目录 |
 
 执行完成后在指定目录会生成对应的bmodel和配置目录config
@@ -107,53 +133,20 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 `Qwen`/`Qwen1.5`/`Qwen2`/`Qwen2.5`/`QwQ-32B`/`Qwen3`  
 `WizardCoder`  
 `Yi`  
-
 多模态模型包括:  
 `Qwen2.5-VL`/`Qwen2-VL`/`Qwen-VL`  
 `InternVL3`/`InternVL2`  
 `MiniCPM-V-2_6`  
 `Llama3.2-Vision`  
 `Stable Diffusion`  
-`Molmo-7B`  
+`Molmo`  
 `OpenClip`  
-`NVILA-8b`  
+`NVILA`  
 `DeepSeek-Janus-Pro`  
 
 如果您想要知道转换细节和源码，可以到本项目[models](./models)子目录查看各类模型部署细节。
 
 如果您对我们的芯片感兴趣，也可以通过官网[SOPHGO](https://www.sophgo.com/)联系我们。
-
-# 快速开始
-
-克隆LLM-TPU项目，并执行run.sh脚本
-```shell
-git clone https://github.com/sophgo/LLM-TPU.git
-./run.sh --model llama2-7b
-```
-
-详细请参考[Quick Start](./docs/Quick_Start.md)
-
-## 效果图
-跑通后效果如下图所示
-
-![](./assets/qwen-7b.png)
-
-## Command Table
-
-目前用于演示的模型，全部命令如下表所示
-
-| Model           | SoC                                         | PCIE                                         |
-| :-------------- | :------------------------------------------ | :------------------------------------------- |
-| ChatGLM3-6B     | ./run.sh --model chatglm3-6b --arch soc     | ./run.sh --model chatglm3-6b --arch pcie     |
-| Llama2-7B       | ./run.sh --model llama2-7b --arch soc       | ./run.sh --model llama2-7b   --arch pcie     |
-| Qwen-7B         | ./run.sh --model qwen-7b --arch soc         | ./run.sh --model qwen-7b     --arch pcie     |
-| Qwen1.5-1.8B    | ./run.sh --model qwen1.5-1.8b --arch soc    | ./run.sh --model qwen1.5-1.8b  --arch pcie   |
-| Qwen2.5-7B      |                     \                       | ./run.sh --model qwen2.5-7b  --arch pcie     |
-| LWM-Text-Chat   | ./run.sh --model lwm-text-chat --arch soc   | ./run.sh --model lwm-text-chat  --arch pcie  |
-| WizardCoder-15B | ./run.sh --model wizardcoder-15b --arch soc | ./run.sh --model wizardcoder-15b --arch pcie |
-| InternVL2-4B    | ./run.sh --model internvl2-4b --arch soc    | ./run.sh --model internvl2-4b --arch pcie    |
-| MiniCPM-V-2_6   | ./run.sh --model minicpmv2_6  --arch soc    | ./run.sh --model minicpmv2_6 --arch pcie     |
-| Molmo-7B-D-0924 |                     \                       | ./run.sh --model molmo-7b --arch pcie        |
 
 # 进阶功能
 进阶功能说明：
