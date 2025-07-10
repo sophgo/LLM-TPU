@@ -49,7 +49,9 @@ git clone https://github.com/sophgo/LLM-TPU.git
 ./run.sh --model qwen2.5vl
 ```
 
-详细请参考[Quick Start](./docs/Quick_Start.md), 跑通后效果如下图所示:    
+详细请参考[Quick Start](./docs/Quick_Start.md), 跑通后效果如下图所示:
+
+
 ![](./assets/test.jpg)
 ![](./assets/qwen2_5-vl.png)
 
@@ -97,7 +99,7 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 | chip          |  c       | 是    | 指定平台, 如bm1684x/bm1688/cv186x |
 | q_group_size  |  g       | 否    | 指定每组量化的组大小, 默认64 |
 | max_pixels    |  -       | 否    | 多模态参数, 指定最大尺寸, 可以是`672,896`,也可以是`602112`  |
-| do_sample     |  -       | 否    | 指定模型是否包含采样模型，默认关闭 |
+| do_sample     |  -       | 否    | 指定输出是否包含采样模型，默认关闭 |
 | out_dir       |  o       | 是    | 指定输出目录 |
 
 执行完成后在指定目录会生成对应的bmodel和配置目录config
@@ -131,6 +133,8 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 `Qwen`/`Qwen1.5`/`Qwen2`/`Qwen2.5`/`QwQ-32B`/`Qwen3`  
 `WizardCoder`  
 `Yi`  
+
+
 多模态模型包括:  
 `Qwen2.5-VL`/`Qwen2-VL`/`Qwen-VL`  
 `InternVL3`/`InternVL2`  

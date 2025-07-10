@@ -142,6 +142,7 @@ private:
   const bm_net_info_t *net_lm_head;
   const bm_net_info_t *net_greedy_head;
   const bm_net_info_t *net_sample_head;
+  bm_device_mem_t dev_buffer;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
   // tokenizer & processor
@@ -332,6 +333,14 @@ void Qwen3::init(std::string model_path, std::string config_path,
       bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[0]);
   kv_bytes =
       bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
+
+  auto buffer_size =
+      bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
+  bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
+
+  bm_set_device_mem(&net_embed->stages[0].output_mems[0], dev_buffer.size,
+                    dev_buffer.u.device.device_addr);
+
   visited_tokens.resize(SEQLEN);
   if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
     mask_value = 0xF0E2; // ATTENTION_MASK in fp16
@@ -360,6 +369,7 @@ void Qwen3::init(std::string model_path, std::string config_path,
 }
 
 void Qwen3::deinit() {
+  bm_free_device(bm_handle, dev_buffer);
   bmrt_destroy(p_bmrt);
   for (auto h : handles) {
     bm_dev_free(h);
