@@ -25,15 +25,11 @@ popd
 ```
 
 ### compile basic bmodel
-```shell
-./compile.sh --mode int4 --name phi3-4b
-```
 
-PS：
-1. mode：量化方式，目前支持fp16/int8/int4
-2. name：模型名称，目前phi3系列支持 phi3-4b
-3. addr_mode：地址分配方式，可以使用io_alone方式来加速
-4. seq_length：模型支持的最大token长度
+编译时采用一键编译指令即可，生成的编译文件保存在 ./phi3 目录中
+```shell
+llm_convert.py -m /workspace/Phi-3-mini-4k-instruct -s 512 -q w4f16 -g 128 --num_device 1  -c bm1684x  -o phi3
+```
 
 ## Run Demo
 
@@ -57,5 +53,5 @@ mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 
-python3 pipeline.py --model_path phi3-4b_int4_1dev.bmodel --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy
+python3 pipeline.py --model_path phi3-4b_int4_1dev.bmodel --tokenizer_path ../support/token_config/ --devid 0
 ```

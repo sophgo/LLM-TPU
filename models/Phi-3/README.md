@@ -28,60 +28,10 @@ source ./envsetup.sh  #激活环境变量
 ./build.sh #编译mlir
 ```
 
-### 3. 导出onnx模型
+### 3. 编译模型
 
 参考[compile](./compile) 与 [compile](./compile) 下面的README.md
 
-### 4. 编译模型
-
-参考[compile](./compile) 与 [compile](./compile) 下面的README.md
-
-### 5. 编译与运行程序
+### 4. 编译与运行程序
 
 参考[python_demo](./python_demo) 与 [demo](./demo) 下面的README.md
-
-
-# 对`modeling_qwen.py`文件代码做调整
-
-1) 第一点修改如下（这是因为transpose计算量较大）：
-
-    ``` python
-        #query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        #key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-        #value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-        query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim)
-        key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim)
-        value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim)
-
-    ```
-
-2) 第二点修改如下：
-
-    ```python
-        #kv_seq_len = key_states.shape[-2]
-        #if past_key_value is not None:
-        #    if self.layer_idx is None:
-        #    kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
-        #cos, sin = self.rotary_emb(value_states, position_ids, seq_len=kv_seq_len)
-        kv_seq_len = key_states.shape[-3]
-        if past_key_value is not None:
-            kv_seq_len += past_key_value[0].shape[-3]
-
-        if past_key_value is not None:
-          cos, sin = self.rotary_emb(value_states, position_ids, seq_len=kv_seq_len-1)
-        else:
-          cos, sin = self.rotary_emb(value_states, position_ids, seq_len=kv_seq_len)
-    ```
-
-3) 第三点修改如下：
-
-    ```python
-        #if past_key_value is not None:
-        #    cache_kwargs = {"sin": sin, "cos": cos}  # Specific to RoPE models
-        #    key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
-        past_kv = (key_states, value_states)
-        if past_key_value is not None:
-            key_states = torch.cat([past_key_value[0], key_states], dim=1)
-            value_states = torch.cat([past_key_value[1], value_states], dim=1)
-
-    ```
