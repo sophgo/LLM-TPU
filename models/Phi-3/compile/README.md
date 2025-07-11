@@ -1,21 +1,5 @@
 # Command
 
-## Export onnx
-
-```shell
-cp files/Phi-3-mini-4k-instruct/* your_torch_path
-export PYTHONPATH=your_torch_path:$PYTHONPATH
-pip install transformers_stream_generator einops tiktoken accelerate transformers==4.39.3
-```
-
-### export basic onnx
-```shell
-python export_onnx.py --model_path your_torch_path --seq_length your_length
-```
-
-PS：
-1. your_torch_path：从官网下载的或者自己训练的模型的路径，例如./Phi-3-mini-4k-instruct/
-
 ## Compile bmodel
 
 ```shell
