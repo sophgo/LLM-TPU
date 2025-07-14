@@ -79,17 +79,19 @@ private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
   void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
+  void init_by_names();
 
 public:
   int token_length;
-  int SEQLEN; // read from bmodel
+  int SEQLEN;           // read from bmodel
+  int MAX_INPUT_LENGTH; // read from bmodel
   int HIDDEN_SIZE;
   int NUM_LAYERS; // read from bmodel
   int VIT_DIMS;
   int MAX_PATCHES;
   int MAX_PIXELS;
   int max_pos;
-  const int spatial_merge_size = 2;
+  bool lmhead_with_topk;
 
 private:
   bm_handle_t bm_handle;
@@ -100,6 +102,7 @@ private:
   const bm_net_info_t *net_embed_cache;
   const bm_net_info_t *net_lm;
   const bm_net_info_t *net_vit;
+  const bm_net_info_t *net_greedy_head, *net_sample_head;
   bm_device_mem_t dev_buffer;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
@@ -131,6 +134,62 @@ void Qwen2_5VL::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
 }
 
+void Qwen2_5VL::init_by_names() {
+  auto is_exist = [](const char *name, const char **names, int num) {
+    for (int i = 0; i < num; i++) {
+      if (strcmp(name, names[i]) == 0) {
+        return true;
+      }
+    }
+    return false;
+  };
+  net_embed = bmrt_get_network_info(p_bmrt, "embedding");
+  net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
+  net_vit = bmrt_get_network_info(p_bmrt, "vit");
+  net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
+  const char **net_names = nullptr;
+  auto num_nets = bmrt_get_network_number(p_bmrt);
+  bmrt_get_network_names(p_bmrt, &net_names);
+  net_greedy_head = nullptr;
+  auto num_blocks =
+      num_nets - 4; // 4 nets are embed, lm_head, embedding_cache, vit
+  if (is_exist("greedy_head", net_names, num_nets)) {
+    net_greedy_head = bmrt_get_network_info(p_bmrt, "greedy_head");
+    num_blocks--; // greedy_head is not a block
+  }
+  net_sample_head = nullptr;
+  if (is_exist("sample_head", net_names, num_nets)) {
+    net_sample_head = bmrt_get_network_info(p_bmrt, "sample_head");
+    num_blocks--; // sample_head is not a block
+  }
+
+  lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
+
+  NUM_LAYERS = num_blocks / 2; // 2 nets for each block, one for cache
+  // net blocks
+  for (int i = 0; i < num_blocks / 2; i++) {
+    auto block_name = "block_" + std::to_string(i);
+    auto cache_name = "block_cache_" + std::to_string(i);
+    if ((!is_exist(block_name.c_str(), net_names, num_nets)) ||
+        (!is_exist(cache_name.c_str(), net_names, num_nets))) {
+      NUM_LAYERS = i;
+      printf("Warning: Only %d blocks found, expected %d blocks.\n", NUM_LAYERS,
+             num_blocks / 2);
+      break;
+    }
+    net_blocks.emplace_back(bmrt_get_network_info(p_bmrt, block_name.c_str()));
+    net_blocks_cache.emplace_back(
+        bmrt_get_network_info(p_bmrt, cache_name.c_str()));
+  }
+  free(net_names);
+  MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
+  HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[1];
+  SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[3].dims[1];
+  MAX_PATCHES = net_vit->stages[0].input_shapes[0].dims[0];
+  MAX_PIXELS = MAX_PATCHES * 14 * 14;
+  VIT_DIMS = net_vit->stages[0].input_shapes[0].dims[1];
+}
+
 void Qwen2_5VL::init(int dev_id, std::string model_path) {
 
   // request bm_handle
@@ -148,28 +207,7 @@ void Qwen2_5VL::init(int dev_id, std::string model_path) {
   assert(true == ret);
   printf("Done!\n");
 
-  // net embed and lm_head
-  net_embed = bmrt_get_network_info(p_bmrt, "embedding");
-  net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
-  net_vit = bmrt_get_network_info(p_bmrt, "vit");
-  net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
-  SEQLEN = net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
-  HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[1];
-  MAX_PATCHES = net_vit->stages[0].input_shapes[0].dims[0];
-  MAX_PIXELS = MAX_PATCHES * 14 * 14;
-  VIT_DIMS = net_vit->stages[0].input_shapes[0].dims[1];
-  auto num_nets = bmrt_get_network_number(p_bmrt);
-  NUM_LAYERS = (num_nets - 4) / 2;
-  printf("Num Layers:%d\n", NUM_LAYERS);
-  printf("Max Pixels: %d*%d*%d\n", MAX_PATCHES / 4, 28, 28);
-  // net blocks
-  for (int i = 0; i < NUM_LAYERS; i++) {
-    auto block_name = "block_" + std::to_string(i);
-    auto cache_name = "block_cache_" + std::to_string(i);
-    net_blocks.emplace_back(bmrt_get_network_info(p_bmrt, block_name.c_str()));
-    net_blocks_cache.emplace_back(
-        bmrt_get_network_info(p_bmrt, cache_name.c_str()));
-  }
+  init_by_names();
 
   // kv cache
   past_key.resize(NUM_LAYERS);
@@ -298,21 +336,20 @@ void Qwen2_5VL::head_launch(const bm_net_info_t *net,
 }
 
 int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
-  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
+  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH,
+                                       ATTENTION_MASK);
   for (int i = 0; i < token_length; i++) {
-    for (int j = 0; j < token_length; j++) {
-      if (j <= i) {
-        attention_mask[i * SEQLEN + j] = 0;
-      }
+    for (int j = 0; j <= i; j++) {
+      attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
     }
   }
   auto p_position_ids = position_ids.request();
   auto p_ids = static_cast<int *>(p_position_ids.ptr);
-  std::vector<int> position_ids_pad(3 * SEQLEN, 0);
+  std::vector<int> position_ids_pad(3 * MAX_INPUT_LENGTH, 0);
   int ori_length = position_ids.size() / 3;
   for (int i = 0; i < 3; i++) {
     int ori_offset = i * ori_length;
-    int dst_offset = i * SEQLEN;
+    int dst_offset = i * MAX_INPUT_LENGTH;
     std::copy(p_ids + ori_offset, p_ids + ori_offset + ori_length,
               position_ids_pad.begin() + dst_offset);
   }

@@ -25,7 +25,6 @@ struct Config {
   int SEQLEN;
   int MAX_PREFILL_LENGTH;
   int total_length;
-  uint16_t mask_value;
 
   // vit config
   int max_pos;
@@ -74,11 +73,6 @@ public:
     }
   }
 
-  // Prefill
-  std::vector<uint16_t> make_attention_mask() {
-    return make_default_attention_mask();
-  }
-
   std::vector<int> make_position_id() {
     if ((config_.model_type == "qwen2_vl" ||
          config_.model_type == "qwen2_5_vl") &&
@@ -87,11 +81,6 @@ public:
     } else {
       return make_default_position_id();
     }
-  }
-
-  // Decode
-  std::vector<uint16_t> make_next_attention_mask() {
-    return make_default_next_attention_mask();
   }
 
   std::vector<int> make_next_position_id() {
@@ -303,30 +292,6 @@ private:
       position_id[i] = i;
     }
     return position_id;
-  }
-
-  std::vector<uint16_t> make_default_attention_mask() {
-    std::vector<uint16_t> attention_mask(config_.MAX_PREFILL_LENGTH *
-                                             config_.MAX_PREFILL_LENGTH,
-                                         config_.mask_value);
-    for (int i = 0; i < config_.total_length; i++) {
-      for (int j = 0; j < config_.total_length; j++) {
-        if (j <= i) {
-          attention_mask[i * config_.MAX_PREFILL_LENGTH + j] = 0;
-        }
-      }
-    }
-
-    return attention_mask;
-  }
-
-  // LLM position utilities (Decode)
-  std::vector<uint16_t> make_default_next_attention_mask() {
-    std::vector<uint16_t> attention_mask(config_.SEQLEN + 1, 0);
-    for (int i = config_.total_length - 1; i < config_.SEQLEN; i++) {
-      attention_mask[i] = config_.mask_value;
-    }
-    return attention_mask;
   }
 
   std::vector<int> make_qwen2vl_next_position_id() {

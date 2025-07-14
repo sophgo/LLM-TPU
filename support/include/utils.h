@@ -692,16 +692,6 @@ public:
     }
   }
 
-  // ViT
-  std::vector<uint16_t> make_vit_attention_mask() {
-    if (config_.model_type == "qwen2_vl" ||
-        config_.model_type == "qwen2_5_vl") {
-      return make_qwen2vl_vit_attention_mask();
-    } else {
-      throw std::runtime_error("Not support now");
-    }
-  }
-
   std::vector<int> make_vit_position_id() {
     if (config_.model_type == "qwen2_vl" ||
         config_.model_type == "qwen2_5_vl") {
@@ -709,11 +699,6 @@ public:
     } else {
       throw std::runtime_error("Not support now");
     }
-  }
-
-  // Prefill
-  std::vector<uint16_t> make_attention_mask() {
-    return make_default_attention_mask();
   }
 
   std::vector<int> make_position_id() {
@@ -724,11 +709,6 @@ public:
     } else {
       return make_default_position_id();
     }
-  }
-
-  // Decode
-  std::vector<uint16_t> make_next_attention_mask() {
-    return make_default_next_attention_mask();
   }
 
   std::vector<int> make_next_position_id() {
@@ -805,39 +785,6 @@ private:
     }
 
     return pos_ids;
-  }
-
-  std::vector<uint16_t> make_qwen2vl_vit_attention_mask() {
-    std::vector<uint16_t> attention_mask;
-    int t = config_.grid_thw[0];
-    int h = config_.grid_thw[1];
-    int w = config_.grid_thw[2];
-
-    // Compute cu_seqlens
-    std::vector<int> cu_seqlens(t + 1, 0);
-    for (int i = 0; i <= t; ++i) {
-      cu_seqlens[i] = h * w * i;
-    }
-
-    // Initialize attention_mask with -10000
-    attention_mask.resize(config_.MAX_PIXELS * config_.MAX_PIXELS,
-                          config_.mask_value);
-
-    // Update attention_mask based on cu_seqlens
-    for (size_t i = 1; i < cu_seqlens.size(); ++i) {
-      int start = cu_seqlens[i - 1];
-      int end = cu_seqlens[i];
-      for (int row = start; row < end; ++row) {
-        for (int col = start; col < end; ++col) {
-          size_t index = row * config_.MAX_PIXELS + col;
-          if (index < attention_mask.size()) {
-            attention_mask[index] = 0;
-          }
-        }
-      }
-    }
-
-    return attention_mask;
   }
 
   // LLM position utilities (Prefill)
@@ -941,30 +888,6 @@ private:
       position_id[i] = i;
     }
     return position_id;
-  }
-
-  std::vector<uint16_t> make_default_attention_mask() {
-    std::vector<uint16_t> attention_mask(config_.MAX_PREFILL_LENGTH *
-                                             config_.MAX_PREFILL_LENGTH,
-                                         config_.mask_value);
-    for (int i = 0; i < config_.total_length; i++) {
-      for (int j = 0; j < config_.total_length; j++) {
-        if (j <= i) {
-          attention_mask[i * config_.MAX_PREFILL_LENGTH + j] = 0;
-        }
-      }
-    }
-
-    return attention_mask;
-  }
-
-  // LLM position utilities (Decode)
-  std::vector<uint16_t> make_default_next_attention_mask() {
-    std::vector<uint16_t> attention_mask(config_.SEQLEN + 1, 0);
-    for (int i = config_.total_length - 1; i < config_.SEQLEN; i++) {
-      attention_mask[i] = config_.mask_value;
-    }
-    return attention_mask;
   }
 
   std::vector<int> make_qwen2vl_next_position_id() {
