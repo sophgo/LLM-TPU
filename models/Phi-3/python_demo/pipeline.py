@@ -20,6 +20,7 @@ class Phi3():
         # preprocess parameters, such as prompt & tokenizer
         self.system_prompt = 'You are a helpful digital assistant. Please provide safe, ethical and accurate information to the user.'
         self.EOS = [32000, 32007]
+        # self.EOS = [self.tokenizer.eos_token_id]  # support for phi-4
         self.system = {"role":"system","content":self.system_prompt}
         self.history = [self.system]
         self.enable_history = args.enable_history
