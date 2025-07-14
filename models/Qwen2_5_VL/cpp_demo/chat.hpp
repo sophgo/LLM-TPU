@@ -46,19 +46,19 @@ private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
   void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
+  void init_by_names();
 
 public:
   int token_length;
   int SEQLEN; // read from bmodel
+  int MAX_INPUT_LENGTH; // read from bmodel
   int HIDDEN_SIZE;
   int NUM_LAYERS; // read from bmodel
   int VIT_DIMS;
-  std::string generation_mode;
   int MAX_PATCHES;
   int MAX_PIXELS;
   int max_pos;
-  const int spatial_merge_size = 2;
-  uint16_t mask_value;
+  bool lmhead_with_topk;
 
 private:
   bm_handle_t bm_handle;
@@ -69,6 +69,7 @@ private:
   const bm_net_info_t *net_embed_cache;
   const bm_net_info_t *net_lm;
   const bm_net_info_t *net_vit;
+  const bm_net_info_t *net_greedy_head, *net_sample_head;
   bm_device_mem_t dev_buffer;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;

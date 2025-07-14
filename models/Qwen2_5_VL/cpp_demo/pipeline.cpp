@@ -179,7 +179,6 @@ ChatPipe::ChatPipe(int devid, float vratio, const std::string &model_path,
   config.spatial_merge_size = 2;
   config.patch_size = 14;
   config.SEQLEN = model.SEQLEN;
-  config.mask_value = model.mask_value;
   config.video_ratio = video_ratio;
   config.MAX_PIXELS = model.MAX_PIXELS;
   config.MAX_PATCHES = model.MAX_PATCHES;

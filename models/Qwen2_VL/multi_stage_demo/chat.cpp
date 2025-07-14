@@ -33,8 +33,7 @@ static const float ATTENTION_MASK = -10000.;
 class Model {
 public:
   // Initialization
-  void init(const std::vector<int> &devid, const std::string &model_path
-             );
+  void init(const std::vector<int> &devid, const std::string &model_path);
   void deinit();
   void init_decrypt();
   void deinit_decrypt();
@@ -44,7 +43,7 @@ public:
   void init_forward(pybind11::array_t<int> tokens);
   int forward_first();
   int forward_next();
-  std::vector<int> generate(const std::vector<int>& EOS);
+  std::vector<int> generate(const std::vector<int> &EOS);
 
   // Media Processing
   void process_media(const std::string &media_path,
@@ -393,10 +392,10 @@ void Model::init_parameter() {
 
   // read parameters from bmodel
   is_dynamic = net_blocks[0]->is_dynamic;
-  hidden_bytes = bm_mem_get_device_size(
-      net_blocks_cache[0]->stages[0].output_mems[0]);
-  kv_bytes = bm_mem_get_device_size(
-      net_blocks_cache[0]->stages[0].output_mems[1]);
+  hidden_bytes =
+      bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[0]);
+  kv_bytes =
+      bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
   MAX_PREFILL_LENGTH = net_blocks[0]->stages[1].input_shapes[0].dims[1];
   SEQLEN = net_blocks_cache[0]->stages[1].input_shapes[3].dims[1];
 
@@ -411,8 +410,8 @@ void Model::init_parameter() {
   total_tokens.resize(SEQLEN);
 }
 
-void Model::init(const std::vector<int> &devices, const std::string &model_path
-                    ) {
+void Model::init(const std::vector<int> &devices,
+                 const std::string &model_path) {
   // step1 : load bmodel
   load_bmodel(devices, model_path);
 
@@ -421,9 +420,7 @@ void Model::init(const std::vector<int> &devices, const std::string &model_path
 
   // step3 : init parameters
   init_parameter();
-
 }
-
 
 int Model::greedy_search(const bm_net_info_t *net,
                          bm_device_mem_t &logits_mem) {
@@ -520,15 +517,15 @@ bm_device_mem_t Model::embedding_launch(const bm_net_info_t *net0,
 
 #ifdef ENABLE_MEDIA
 #include "cv_utils.h"
-void Model::process_media(const std::string &media_path,
-                          const std::string &media_type,
-                          pybind11::array_t<float> pixel_values_arr = pybind11::array_t<float>()) {
+void Model::process_media(
+    const std::string &media_path, const std::string &media_type,
+    pybind11::array_t<float> pixel_values_arr = pybind11::array_t<float>()) {
   int media_token_id;
   std::vector<float> pixel_values;
 
   if (pixel_values_arr.size() != 0) {
     pybind11::buffer_info buf = pixel_values_arr.request();
-    float* ptr = static_cast<float*>(buf.ptr);
+    float *ptr = static_cast<float *>(buf.ptr);
     size_t size = buf.size;
     pixel_values.assign(ptr, ptr + size);
   } else {
@@ -548,7 +545,6 @@ void Model::process_media(const std::string &media_path,
   } else if (media_type == "video") {
     media_token_id = config.video_token_id;
   }
-
 
   // token process & vit launch
   raw_tokens = maker->insert_tokens(raw_tokens, media_token_id);
@@ -614,7 +610,6 @@ void Model::update_config() {
   config.SEQLEN = SEQLEN;
   config.MAX_PREFILL_LENGTH = MAX_PREFILL_LENGTH;
   config.total_length = total_length;
-  config.mask_value = mask_value;
 
   config.max_pos = 0;
   config.MAX_PIXELS = MAX_PIXELS;
@@ -640,7 +635,8 @@ void Model::init_forward(pybind11::array_t<int> tokens) {
     MAX_PREFILL_LENGTH = prefill_length_0;
     SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[3].dims[1];
   }
-  std::cout << "use stage_idx : " << stage_idx << "  input tokens : " << size << std::endl;
+  std::cout << "use stage_idx : " << stage_idx << "  input tokens : " << size
+            << std::endl;
   for (int i = 0; i < NUM_LAYERS; i++) {
     ASSERT(net_blocks_cache[i]->addr_mode == 1, "");
     past_key[i] = net_blocks_cache[i]->stages[stage_idx].input_mems[3];
@@ -664,7 +660,12 @@ int Model::forward_first() {
   std::copy(raw_tokens.begin(), raw_tokens.end(), first_tokens.data());
 
   auto position_id = maker->make_position_id();
-  auto attention_mask = maker->make_attention_mask();
+  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, mask_value);
+  for (int i = 0; i < total_length; i++) {
+    for (int j = 0; j <= i; j++) {
+      attention_mask[i * SEQLEN + j] = 0;
+    }
+  }
 
   // empty
   for (int i = 0; i < NUM_LAYERS; i++) {
@@ -694,8 +695,7 @@ int Model::forward_first() {
     // move to device
     d2d(in0_mem, out_mem, 0, total_length * hidden_bytes);
     bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
-    bm_memcpy_s2d(bm_handle, in2_mem,
-                  (void *)attention_mask.data());
+    bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
 
     // net forward
     net_launch(net_blocks[idx], stage_idx);
@@ -728,7 +728,10 @@ int Model::forward_next() {
   int cur_token = total_tokens[total_length - 1];
 
   config.total_length = total_length;
-  auto attention_mask = maker->make_next_attention_mask();
+  std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
+  for (int i = total_length - 1; i < SEQLEN; i++) {
+    attention_mask[i] = mask_value;
+  }
   auto position_id = maker->make_next_position_id();
 
   // embedding
@@ -751,8 +754,7 @@ int Model::forward_next() {
     // empty(bm_handle, in0_mem);
     d2d(in0_mem, out_mem, 0, hidden_bytes);
     bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
-    bm_memcpy_s2d(bm_handle, in2_mem,
-                  (void *)attention_mask.data());
+    bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
 
     // net forward
     net_launch(net_blocks_cache[idx], stage_idx);
@@ -779,10 +781,11 @@ int Model::forward_next() {
   return token;
 }
 
-std::vector<int> Model::generate(const std::vector<int>& EOS) {
+std::vector<int> Model::generate(const std::vector<int> &EOS) {
   std::vector<int> result_tokens;
   int token = forward_first();
-  while (std::find(EOS.begin(), EOS.end(), token) == EOS.end() && total_length < SEQLEN && (int)result_tokens.size() < max_new_tokens) {
+  while (std::find(EOS.begin(), EOS.end(), token) == EOS.end() &&
+         total_length < SEQLEN && (int)result_tokens.size() < max_new_tokens) {
     result_tokens.emplace_back(token);
     token = forward_next();
   }
@@ -809,8 +812,7 @@ PYBIND11_MODULE(chat, m) {
       .def("forward_first", &Model::forward_first)
       .def("forward_next", &Model::forward_next)
 #ifdef ENABLE_MEDIA
-      .def("process_media", &Model::process_media, 
-           pybind11::arg("media_path"), 
+      .def("process_media", &Model::process_media, pybind11::arg("media_path"),
            pybind11::arg("media_type"),
            pybind11::arg("pixel_values_arr") = pybind11::array_t<float>())
 #endif

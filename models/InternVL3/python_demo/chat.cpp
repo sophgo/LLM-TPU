@@ -51,6 +51,7 @@ public:
   int HIDDEN_SIZE;
   int NUM_LAYERS;
   int NUM_IMAGE_TOKEN;
+  int MAX_INPUT_LENGTH;
   uint16_t mask_value;
   bool lmhead_with_topk;
   std::vector<int> visited_tokens;
@@ -188,12 +189,6 @@ void InternVL3::init_by_names() {
     net_sample_head = bmrt_get_network_info(p_bmrt, "sample_head");
     num_blocks--; // sample_head is not a block
   }
-
-  SEQLEN = net_embed->stages[0].input_shapes[0].dims[1];
-  HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[1];
-  NUM_IMAGE_TOKEN = net_vit->stages[0].output_shapes[0].dims[0];
-  lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
-
   NUM_LAYERS = num_blocks / 2;
 
   for (int i = 0; i < num_blocks / 2; i++) {
@@ -211,6 +206,11 @@ void InternVL3::init_by_names() {
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
   }
   free(net_names);
+  HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[1];
+  NUM_IMAGE_TOKEN = net_vit->stages[0].output_shapes[0].dims[0];
+  lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
+  MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
+  SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[3].dims[1];
 }
 
 void InternVL3::deinit() {
@@ -270,8 +270,9 @@ int InternVL3::forward_first(pybind11::array_t<int> tokens,
   int *tokens_ptr = static_cast<int *>(tokens_buf.ptr);
   size_t tokens_len = tokens_buf.size;
 
-  std::vector<int> position_id(SEQLEN, 0);
-  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, mask_value);
+  std::vector<int> position_id(MAX_INPUT_LENGTH, 0);
+  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH,
+                                       mask_value);
 
   std::fill(visited_tokens.begin(), visited_tokens.end(), 0);
   std::copy(tokens_ptr, tokens_ptr + tokens_len, visited_tokens.data());
@@ -281,10 +282,8 @@ int InternVL3::forward_first(pybind11::array_t<int> tokens,
     position_id[i] = i;
   }
   for (int i = 0; i < token_length; i++) {
-    for (int j = 0; j < SEQLEN; j++) {
-      if (j <= i) {
-        attention_mask[i * SEQLEN + j] = 0;
-      }
+    for (int j = 0; j <= i; j++) {
+      attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
     }
   }
 

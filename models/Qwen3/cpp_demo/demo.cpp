@@ -261,8 +261,7 @@ void Qwen3::init_by_names() {
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
   }
   free(net_names);
-  MAX_INPUT_LENGTH =
-      net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
+  MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
   SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[3].dims[1];
 }
 

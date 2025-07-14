@@ -230,7 +230,6 @@ void Qwen2VL::init(std::string model_path, std::string config_path,
   config.patch_size = 14;
   config.MAX_PATCHES = MAX_PATCHES;
   config.SEQLEN = SEQLEN;
-  config.mask_value = mask_value;
   maker = std::make_unique<Maker>(config);
 }
 
@@ -260,10 +259,8 @@ int Qwen2VL::forward_first(std::vector<int> &raw_tokens,
   auto position_id = maker->make_position_id();
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, mask_value);
   for (int i = 0; i < token_length; i++) {
-    for (int j = 0; j < SEQLEN; j++) {
-      if (j <= i) {
-        attention_mask[i * SEQLEN + j] = 0;
-      }
+    for (int j = 0; j <= i; j++) {
+      attention_mask[i * SEQLEN + j] = 0;
     }
   }
 
