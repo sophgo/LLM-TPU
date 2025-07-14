@@ -7,12 +7,15 @@
 本文包括如何编译bmodel，和如何在BM1684X/BM1688环境运行bmodel。如何编译bmodel环节可以省去，直接用以下链接下载：
 
 ``` shell
-# 1684x 3B 2K,max_pixel 672x896, 视频可以支持20s (每秒1帧)
+# 1684x 3B 2K,max_pixel 672x896, 视频最长可以支持20s (每秒1帧)
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-3b-instruct-awq_w4bf16_seq2048_bm1684x_1dev_20250428_143625.bmodel
 # 1684x 7B 2K,max_pixel 672x896
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-7b-instruct-awq_w4bf16_seq2048_bm1684x_1dev_20250428_150810.bmodel
-# 1684x 7B 8K,max_pixel 672x896, 视频可以支持80s (每秒1帧)
+# 1684x 7B 8K,max_pixel 672x896, 视频最长可以支持80s (每秒1帧)
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-7b-instruct-awq_w4bf16_seq8192_bm1684x_1dev_20250430_115515.bmodel
+# 1684x 7B 4K,max_pixel 672x896, 支持历史上下文，最大输入长度是1024
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-3b-instruct-awq_w4bf16_seq4096_bm1684x_1dev_20250717_171504.bmodel
+
 
 # 1688 3B 2K,max_pixel 672x896
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-3b-instruct-awq_w4bf16_seq2048_bm1688_2core_20250428_144952.bmodel
@@ -97,6 +100,20 @@ cd build && cmake .. && make && cp pipeline .. && cd ..
 ./pipeline -m xxx.bmodel -c config
 ```
 
+## 进阶应用
+
+### 支持历史上下文
+
+默认情况下模型是不支持历史上下文，需要加上`--use_block_with_kv`参数；另外需要指定输入最大长度`--max_input_length`，不指定时默认是seq_length的1/4。
+如下：
+``` shell
+# 如果有提示transformers版本问题，pip3 install transformers --upgrade
+llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 4096 --quantize w4bf16  -c bm1684x --out_dir qwen2.5vl_3b --max_pixels 672,896 --use_block_with_kv --max_input_length 1024
+```
+使用cpp_demo或者python_demo都支持。历史记录输入clear清理。效果如下：
+
+![](../../assets/qwen2.5vl_history.png)
+
 ## 常见问题
 
 #### SoC如何配置python3.10环境 ?
@@ -128,3 +145,16 @@ rm get-pip.py
 pip3 install torchvision pillow qwen_vl_utils transformers --upgrade
 
 ```
+
+#### 一张图片占多少Token ?
+
+计算公式 $ token数 = 长 × 宽 ÷ 28 ÷ 28 $
+比如672x896尺寸图片占token数为768
+
+#### 视频占多少Token ?
+
+本例中视频尺寸默认为图片的1/4，比如672x896情况下取尺寸336x448，也就是每两帧(`temporal_patch_size`)占192个token。
+
+默认每秒1帧。
+
+20秒视频取20帧，总token数为 $ 192 × 20 ÷ 2 = 1920 $

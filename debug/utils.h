@@ -620,10 +620,29 @@ void dump_net_output_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
 
 void dump_net_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
                       const std::string &filename) {
-  dump_net_input_to_file(bm_handle, net, filename);
-  dump_net_output_to_file(bm_handle, net, filename);
-}
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  cnpy::npz_t npz_map;
+  for (int i = 0; i < net->input_num; i++) {
+    bmrt_tensor_with_device(&in_tensors[i], net->stages[0].input_mems[i],
+                            net->input_dtypes[i],
+                            net->stages[0].input_shapes[i]);
 
+    dump_tensor_to_file(bm_handle, in_tensors[i],
+                        net->stages[0].input_shapes[i], npz_map,
+                        net->input_dtypes[i], net->input_names[i]);
+  }
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(&out_tensors[i], net->stages[0].output_mems[i],
+                            net->output_dtypes[i],
+                            net->stages[0].output_shapes[i]);
+
+    dump_tensor_to_file(bm_handle, out_tensors[i],
+                        net->stages[0].output_shapes[i], npz_map,
+                        net->output_dtypes[i], net->output_names[i]);
+  }
+  cnpy::npz_save_all(filename, npz_map);
+}
 
 //===------------------------------------------------------------===//
 // Config

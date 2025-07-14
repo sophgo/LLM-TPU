@@ -294,7 +294,7 @@ int InternVL3::forward_first(pybind11::array_t<int> tokens,
   net_launch(net_embed);
   d2d(dev_buffer, out_mem);
 
-  int bytes = out_mem.size / SEQLEN;
+  int bytes = HIDDEN_SIZE * sizeof(uint16_t);
   if (pixel_values.size() > 0) {
     auto pixel_buf = pixel_values.request();
     float *pixel_ptr = static_cast<float *>(pixel_buf.ptr);

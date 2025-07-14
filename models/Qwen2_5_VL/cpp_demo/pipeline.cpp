@@ -61,7 +61,6 @@ std::vector<int> convertFloatToInt(const std::vector<float> &position_ids) {
 class ChatPipe {
 public:
   std::string sys_config;
-  std::vector<std::pair<std::string, std::string>> history_vector;
   Config config;
 
   ChatPipe(int devid, float video_ratio, const std::string &model_path,
@@ -76,6 +75,7 @@ private:
   int spatial_merge_size;
   int spatial_merge_unit;
   float video_ratio;
+  bool support_history;
   // 分词器和处理器
   std::unique_ptr<Tokenizer> tok;
   std::unique_ptr<Maker> maker;
@@ -126,6 +126,10 @@ private:
 
   // 打印聊天说明
   void print_chat_instructions();
+
+  // 推理
+  int forward_prefill(std::vector<int> &position_ids_1d, int &max_posid,
+                      int &history_max_posid);
 };
 
 // 获取媒体类型
@@ -165,6 +169,7 @@ ChatPipe::ChatPipe(int devid, float vratio, const std::string &model_path,
   spatial_merge_unit = spatial_merge_size * spatial_merge_size;
   tokens_per_second = 2;
   video_ratio = vratio;
+  support_history = model.support_history;
   sys_config = "<|im_start|>system\n" + system_prompt + "<|im_end|>\n";
 
   std::cout << "Processor [" << vocab_path.c_str() << "] loading .... ";
@@ -582,9 +587,33 @@ std::string strip(const std::string &s) {
   return s.substr(start, end - start + 1);
 }
 
+int ChatPipe::forward_prefill(std::vector<int> &position_ids_1d, int &max_posid,
+                              int &history_max_posid) {
+  if (model.history_length == 0 || support_history == false) {
+    history_max_posid = 0;
+    return model.forward_first(position_ids_1d);
+  }
+
+  if (model.history_length + model.token_length + 128 > model.SEQLEN ||
+      model.history_length > model.PREFILL_KV_LENGTH) {
+    std::cerr << "Warning: History is full and clear it to continue."
+              << std::endl;
+    model.clear_history();
+    history_max_posid = 0;
+    return model.forward_first(position_ids_1d);
+  }
+  // all id should increase by history_max_posid
+  for (auto &x : position_ids_1d) {
+    x += history_max_posid;
+  }
+  max_posid += history_max_posid;
+  return model.forward_first(position_ids_1d);
+}
+
 // 聊天主循环
 void ChatPipe::chat() {
   print_chat_instructions();
+  int history_max_posid = 0;
   while (true) {
     std::string input_str;
     int token = 0;
@@ -593,8 +622,15 @@ void ChatPipe::chat() {
     std::cout << "\nQuestion: ";
     std::getline(std::cin, input_str);
     input_str = strip(input_str);
-    if (input_str == "exit" || input_str == "q" || input_str == "quit")
+    if (input_str == "exit" || input_str == "q" || input_str == "quit") {
       break;
+    }
+    if (input_str == "clear" || input_str == "c" || input_str == "new") {
+      model.clear_history();
+      history_max_posid = 0;
+      std::cout << "Chat history cleared." << std::endl;
+      continue;
+    }
 
     std::string media_path;
     std::cout << "\nImage or Video Path: ";
@@ -623,6 +659,11 @@ void ChatPipe::chat() {
       }
       std::vector<int> tokens =
           maker->insert_tokens(raw_tokens, IMAGE_PAD_TOKEN);
+      if ((int)(tokens.size()) > model.MAX_INPUT_LENGTH) {
+        std::cerr << "Input tokens exceed maximum length: "
+                  << model.MAX_INPUT_LENGTH << std::endl;
+        continue;
+      }
 
       int vit_offset = 0;
       vit_offset = find_token_offset(tokens, IMAGE_PAD_TOKEN);
@@ -647,7 +688,7 @@ void ChatPipe::chat() {
                                  one_dim_tensor.end());
         }
       }
-      token = model.forward_first(position_ids_1d);
+      token = forward_prefill(position_ids_1d, max_posid, history_max_posid);
     } break;
     case VIDEO: {
       std::vector<float> pixel_values;
@@ -658,7 +699,11 @@ void ChatPipe::chat() {
       }
       std::vector<int> tokens =
           maker->insert_tokens(raw_tokens, VIDEO_PAD_TOKEN);
-
+      if ((int)(tokens.size()) > model.MAX_INPUT_LENGTH) {
+        std::cerr << "Input tokens exceed maximum length: "
+                  << model.MAX_INPUT_LENGTH << std::endl;
+        continue;
+      }
       auto vit_offset = find_token_offset(tokens, VIDEO_PAD_TOKEN);
       model.forward_embed(tokens);
       vit_process_video(pixel_values, vit_offset);
@@ -681,24 +726,27 @@ void ChatPipe::chat() {
                                  one_dim_tensor.end());
         }
       }
-      token = model.forward_first(position_ids_1d);
+      token = forward_prefill(position_ids_1d, max_posid, history_max_posid);
     } break;
     case TEXT: {
+      if ((int)(raw_tokens.size()) > model.MAX_INPUT_LENGTH) {
+        std::cerr << "Input tokens exceed maximum length: "
+                  << model.MAX_INPUT_LENGTH << std::endl;
+        continue;
+      }
       model.forward_embed(raw_tokens);
       auto position_ids_1d = get_position_ids(raw_tokens.size());
       max_posid = raw_tokens.size() - 1;
-      token = model.forward_first(position_ids_1d);
+      token = forward_prefill(position_ids_1d, max_posid, history_max_posid);
     } break;
     default:
       std::cerr << "Unsupported media type." << std::endl;
       continue;
     }
-
     // 后续分词
     std::vector<int> full_word_tokens;
     std::string text;
-    while (token != ID_IM_END && model.token_length < model.SEQLEN) {
-
+    while (token != ID_IM_END && model.history_length < model.SEQLEN) {
       // std::cout << "\nfull_word_tokens: " << token << "  " << std::endl;
       full_word_tokens.push_back(token);
       std::string word = tok->Decode(full_word_tokens);
@@ -718,7 +766,7 @@ void ChatPipe::chat() {
       token = model.forward_next(following_position_ids);
       tok_num++;
     }
-
+    history_max_posid = max_posid + 2;
     std::cout << std::endl;
   }
 }
@@ -977,7 +1025,6 @@ void processArguments(int argc, char *argv[], std::string &model_path,
 
   int optionIndex = 0;
   int option;
-  video_ratio = 0.25f; // 默认视频比例为0.25
   while ((option = getopt_long(argc, argv, "m:c:d:v:h", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {

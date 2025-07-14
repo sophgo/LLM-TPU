@@ -71,6 +71,7 @@ public:
                    ArrayInt const &reverse_indices, int vit_offset);
   int forward_first(ArrayInt const &position_ids);
   int forward_next(ArrayInt const &position_ids);
+  void clear_history();
 
   std::mt19937 sgen;
   Qwen2_5VL() : sgen(std::random_device()()) {};
@@ -80,18 +81,23 @@ private:
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
   void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   void init_by_names();
+  int forward_first_with_kv(ArrayInt const &position_ids);
 
 public:
   int token_length;
-  int SEQLEN;           // read from bmodel
-  int MAX_INPUT_LENGTH; // read from bmodel
+  int history_length;
+  int SEQLEN;
+  int MAX_INPUT_LENGTH;
+  int PREFILL_KV_LENGTH;
   int HIDDEN_SIZE;
-  int NUM_LAYERS; // read from bmodel
+  int KV_BYTES; // kv bytes for one token
+  int NUM_LAYERS;
   int VIT_DIMS;
   int MAX_PATCHES;
   int MAX_PIXELS;
   int max_pos;
   bool lmhead_with_topk;
+  bool support_history;
 
 private:
   bm_handle_t bm_handle;
@@ -134,6 +140,17 @@ void Qwen2_5VL::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
 }
 
+void Qwen2_5VL::clear_history() {
+  if (!support_history) {
+    return;
+  }
+  for (int i = 0; i < NUM_LAYERS; i++) {
+    empty(bm_handle, past_key[i]);
+    empty(bm_handle, past_value[i]);
+  }
+  history_length = 0;
+}
+
 void Qwen2_5VL::init_by_names() {
   auto is_exist = [](const char *name, const char **names, int num) {
     for (int i = 0; i < num; i++) {
@@ -162,12 +179,11 @@ void Qwen2_5VL::init_by_names() {
     net_sample_head = bmrt_get_network_info(p_bmrt, "sample_head");
     num_blocks--; // sample_head is not a block
   }
+  // 2 nets for each block, one for cache
+  NUM_LAYERS = num_blocks / 2;
 
-  lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
-
-  NUM_LAYERS = num_blocks / 2; // 2 nets for each block, one for cache
   // net blocks
-  for (int i = 0; i < num_blocks / 2; i++) {
+  for (int i = 0; i < NUM_LAYERS; i++) {
     auto block_name = "block_" + std::to_string(i);
     auto cache_name = "block_cache_" + std::to_string(i);
     if ((!is_exist(block_name.c_str(), net_names, num_nets)) ||
@@ -182,12 +198,26 @@ void Qwen2_5VL::init_by_names() {
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
   }
   free(net_names);
+  support_history = net_blocks[0]->input_num == 5; // with kv cache
+  history_length = 0;
+  lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
   MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
   HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[1];
   SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[3].dims[1];
   MAX_PATCHES = net_vit->stages[0].input_shapes[0].dims[0];
   MAX_PIXELS = MAX_PATCHES * 14 * 14;
   VIT_DIMS = net_vit->stages[0].input_shapes[0].dims[1];
+  KV_BYTES =
+      bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
+  printf("Num Layers:%d\n", NUM_LAYERS);
+  printf("Max Pixels: %d*%d*%d\n", MAX_PATCHES / 4, 28, 28);
+  PREFILL_KV_LENGTH = 0;
+  if (support_history) {
+    PREFILL_KV_LENGTH = net_blocks[0]->stages[0].input_shapes[3].dims[1];
+    printf("History Support: True\n");
+  } else {
+    printf("History Support: False\n");
+  }
 }
 
 void Qwen2_5VL::init(int dev_id, std::string model_path) {
@@ -231,7 +261,7 @@ void Qwen2_5VL::deinit() {
 }
 
 void Qwen2_5VL::forward_embed(ArrayInt const &tokens) {
-  std::vector<int> input_ids(SEQLEN, 0);
+  std::vector<int> input_ids(MAX_INPUT_LENGTH, 0);
   auto num = tokens.size();
   auto p_buffer = tokens.request();
   auto p_tokens = static_cast<int *>(p_buffer.ptr);
@@ -336,6 +366,9 @@ void Qwen2_5VL::head_launch(const bm_net_info_t *net,
 }
 
 int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
+  if (support_history) {
+    return forward_first_with_kv(position_ids);
+  }
   std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH,
                                        ATTENTION_MASK);
   for (int i = 0; i < token_length; i++) {
@@ -372,7 +405,7 @@ int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
   }
 
   // forward lmhead
-  int bytes = out_mem.size / SEQLEN;
+  int bytes = HIDDEN_SIZE * sizeof(uint16_t);
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
   auto &lm_out_mem = net_lm->stages[0].output_mems[0];
   bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
@@ -381,12 +414,86 @@ int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
   token_length++;
+  history_length = token_length;
+  return token;
+}
+
+int Qwen2_5VL::forward_first_with_kv(ArrayInt const &position_ids) {
+  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * SEQLEN,
+                                       ATTENTION_MASK);
+  auto old_length = history_length;
+  history_length += token_length;
+  assert(history_length < SEQLEN);
+  assert(old_length <= PREFILL_KV_LENGTH);
+  for (int i = 0; i < token_length; i++) {
+    for (int j = 0; j < old_length; j++) {
+      attention_mask[i * SEQLEN + j] = 0;
+    }
+    for (int j = 0; j <= i; j++) {
+      attention_mask[i * SEQLEN + j + PREFILL_KV_LENGTH] = 0;
+    }
+  }
+  auto p_position_ids = position_ids.request();
+  auto p_ids = static_cast<int *>(p_position_ids.ptr);
+
+  std::vector<int> position_ids_pad(3 * MAX_INPUT_LENGTH, 0);
+  int ori_length = position_ids.size() / 3;
+  assert(ori_length == token_length);
+  assert(ori_length <= MAX_INPUT_LENGTH);
+  for (int i = 0; i < 3; i++) {
+    int ori_offset = i * ori_length;
+    int dst_offset = i * MAX_INPUT_LENGTH;
+    std::copy(p_ids + ori_offset, p_ids + ori_offset + ori_length,
+              position_ids_pad.begin() + dst_offset);
+  }
+
+  auto out_mem = dev_buffer;
+  for (int idx = 0; idx < NUM_LAYERS; idx++) {
+    auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
+    auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
+    auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
+    auto &in3_mem = net_blocks[idx]->stages[0].input_mems[3];
+    auto &in4_mem = net_blocks[idx]->stages[0].input_mems[4];
+
+    d2d(in0_mem, out_mem);
+    if (old_length > 0) {
+      bm_memcpy_d2d_byte(bm_handle, in3_mem, 0, past_key[idx], 0,
+                         KV_BYTES * old_length);
+      bm_memcpy_d2d_byte(bm_handle, in4_mem, 0, past_value[idx], 0,
+                         KV_BYTES * old_length);
+    } else if (idx == 0) {
+      empty(bm_handle, in3_mem);
+      empty(bm_handle, in4_mem);
+    }
+    bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_ids_pad.data());
+    bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+    net_launch(net_blocks[idx]);
+    out_mem = net_blocks[idx]->stages[0].output_mems[0];
+    auto &out1_mem = net_blocks[idx]->stages[0].output_mems[1];
+    auto &out2_mem = net_blocks[idx]->stages[0].output_mems[2];
+    bm_memcpy_d2d_byte(bm_handle, past_key[idx], old_length * KV_BYTES,
+                       out1_mem, 0, KV_BYTES * token_length);
+    bm_memcpy_d2d_byte(bm_handle, past_value[idx], old_length * KV_BYTES,
+                       out2_mem, 0, KV_BYTES * token_length);
+  }
+
+  // forward lmhead
+  int bytes = HIDDEN_SIZE * sizeof(uint16_t);
+  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
+  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
+  bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
+                     (token_length - 1) * bytes, bytes);
+  net_launch(net_lm);
+  int token = 0;
+  bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  token_length++;
+  history_length++;
   return token;
 }
 
 int Qwen2_5VL::forward_next(ArrayInt const &position_ids) {
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
-  for (int i = token_length - 1; i < SEQLEN; i++) {
+  for (int i = history_length - 1; i < SEQLEN; i++) {
     attention_mask[i] = ATTENTION_MASK;
   }
   assert(position_ids.size() == 3);
@@ -404,7 +511,7 @@ int Qwen2_5VL::forward_next(ArrayInt const &position_ids) {
   // blocks
   int bytes =
       bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
-  int token_offset = (token_length - 1) * bytes;
+  int token_offset = (history_length - 1) * bytes;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
@@ -436,6 +543,7 @@ int Qwen2_5VL::forward_next(ArrayInt const &position_ids) {
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
   token_length++;
+  history_length++;
   return token;
 }
 
@@ -447,9 +555,13 @@ PYBIND11_MODULE(chat, m) {
       .def("forward_vit", &Qwen2_5VL::forward_vit)
       .def("forward_first", &Qwen2_5VL::forward_first)
       .def("forward_next", &Qwen2_5VL::forward_next)
+      .def("clear_history", &Qwen2_5VL::clear_history)
       .def("deinit", &Qwen2_5VL::deinit)
       .def_readonly("SEQLEN", &Qwen2_5VL::SEQLEN) // read SEQLEN in pipeline.py
       .def_readonly("MAX_PIXELS", &Qwen2_5VL::MAX_PIXELS)
       .def_readonly("MAX_PATCHES", &Qwen2_5VL::MAX_PATCHES)
-      .def_readwrite("token_length", &Qwen2_5VL::token_length);
+      .def_readonly("MAX_INPUT_LENGTH", &Qwen2_5VL::MAX_INPUT_LENGTH)
+      .def_readonly("PREFILL_KV_LENGTH", &Qwen2_5VL::PREFILL_KV_LENGTH)
+      .def_readonly("support_history", &Qwen2_5VL::support_history)
+      .def_readonly("history_length", &Qwen2_5VL::history_length);
 }

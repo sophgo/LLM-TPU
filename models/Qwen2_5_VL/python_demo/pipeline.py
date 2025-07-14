@@ -39,6 +39,9 @@ class Qwen2_5VL():
         self.spatial_merge_size = 2
         self.spatial_merge_unit = self.spatial_merge_size**2
         self.tokens_per_second = 2
+        self.support_history = self.model.support_history
+        self.max_posid = 0
+        self.history_max_posid = 0
 
     def text_message(self):
         # yapf: disable
@@ -319,6 +322,14 @@ class Qwen2_5VL():
             position_ids[..., i, attention_mask[i] == 1] = llm_positions
         return position_ids
 
+    def forward_prefill(self, position_ids):
+        if self.model.history_length == 0 or not self.support_history:
+            self.history_max_posid = 0
+            return self.model.forward_first(position_ids)
+        self.max_posid += self.history_max_posid
+        position_ids = position_ids + self.history_max_posid
+        return self.model.forward_first(position_ids)
+
     def chat(self):
         """
         Start a chat session.
@@ -334,6 +345,11 @@ class Qwen2_5VL():
             # Quit
             if self.input_str in ["exit", "q", "quit"]:
                 break
+            if self.input_str in ["clear", "new", "c"]:
+                print("New chat session created.")
+                self.model.clear_history()
+                self.history_max_posid = 0
+                continue
 
             media_path = input("\nImage or Video Path: ")
             media_path = media_path.strip()
@@ -355,11 +371,17 @@ class Qwen2_5VL():
 
             inputs = self.process(messages)
             token_len = inputs.input_ids.numel()
-            if token_len >= self.model.SEQLEN - 128:
+            if token_len > self.model.MAX_INPUT_LENGTH:
                 print(
-                    "The maximum question length should be shorter than {} but we get {} instead.".
-                    format(self.model.SEQLEN, token_len))
+                    "Error: The maximum question length should be shorter than {} but we get {} instead."
+                    .format(self.model.MAX_INPUT_LENGTH, token_len))
                 continue
+            if self.support_history:
+                if (token_len + self.model.history_length > self.model.SEQLEN - 128) or \
+                (self.model.history_length > self.model.PREFILL_KV_LENGTH):
+                    print("Warning: History is full and clear it to continue.")
+                    self.model.clear_history()
+                    self.history_max_posid = 0
             print("\nAnswer:")
 
             # Chat
@@ -371,27 +393,27 @@ class Qwen2_5VL():
                 self.vit_process_image(inputs, vit_offset)
                 position_ids = self.get_rope_index(inputs.input_ids, inputs.image_grid_thw,
                                                    self.ID_IMAGE_PAD)
-                max_posid = int(position_ids.max())
-                token = self.model.forward_first(position_ids.numpy())
+                self.max_posid = int(position_ids.max())
+                token = self.forward_prefill(position_ids.numpy())
             elif media_type == "video":
                 vit_token_list = torch.where(inputs.input_ids == self.ID_VIDEO_PAD)[1].tolist()
                 vit_offset = vit_token_list[0]
                 self.vit_process_video(inputs, vit_offset)
                 position_ids = self.get_rope_index(inputs.input_ids, inputs.video_grid_thw,
                                                    self.ID_VIDEO_PAD)
-                max_posid = int(position_ids.max())
-                token = self.model.forward_first(position_ids.numpy())
+                self.max_posid = int(position_ids.max())
+                token = self.forward_prefill(position_ids.numpy())
             else:
                 position_ids = 3 * [i for i in range(token_len)]
-                max_posid = token_len - 1
-                token = self.model.forward_first(position_ids)
+                self.max_posid = token_len - 1
+                token = self.forward_prefill(np.array(position_ids, dtype=np.int32))
             first_end = time.time()
             tok_num = 0
             # Following tokens
             full_word_tokens = []
             text = ""
             while token not in [self.ID_IM_END, self.ID_END
-                                ] and self.model.token_length < self.model.SEQLEN:
+                                ] and self.model.history_length < self.model.SEQLEN:
                 full_word_tokens.append(token)
                 word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
                 if "�" not in word:
@@ -402,10 +424,12 @@ class Qwen2_5VL():
                     text += word
                     print(word, flush=True, end="")
                     full_word_tokens = []
-                max_posid += 1
-                position_ids = np.array([max_posid, max_posid, max_posid], dtype=np.int32)
+                self.max_posid += 1
+                position_ids = np.array([self.max_posid, self.max_posid, self.max_posid],
+                                        dtype=np.int32)
                 token = self.model.forward_next(position_ids)
                 tok_num += 1
+            self.history_max_posid = self.max_posid + 2
             next_end = time.time()
             first_duration = first_end - first_start
             next_duration = next_end - first_end

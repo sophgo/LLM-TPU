@@ -365,7 +365,7 @@ int Qwen2VL::forward_first(ArrayInt const &position_ids) {
   }
 
   // forward lmhead
-  int bytes = out_mem.size / SEQLEN;
+  int bytes = HIDDEN_SIZE * sizeof(uint16_t);
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
   auto &lm_out_mem = net_lm->stages[0].output_mems[0];
   bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
