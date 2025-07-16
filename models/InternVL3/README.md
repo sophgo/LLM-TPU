@@ -7,12 +7,12 @@
 可以直接下载编译好的模型:
 ``` shell
 # InternVL3-8b bm1684x
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/internvl3-8b_w4bf16_seq4096_bm1684x.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/internvl3-8b-awq_w4bf16_seq2048_bm1684x_1dev_20250716_105016.bmodel
 # InternVL3-2b bm1684x
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/internvl3-2b_w4bf16_seq4096_bm1684x.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/internvl3-2b-awq_w4bf16_seq2048_bm1684x_1dev_20250716_105401.bmodel
 
 # InternVL3-2b bm1688
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/internvl3-2b-awq_w4bf16_seq2048_bm1688_2core.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/internvl3-2b-awq_w4bf16_seq2048_bm1688_2core_20250716_105519.bmodel
 ```
 
 #### 1. 从Huggingface下载`InternVL3-2B-AWQ`
