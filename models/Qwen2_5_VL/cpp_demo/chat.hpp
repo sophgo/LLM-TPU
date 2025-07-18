@@ -45,10 +45,12 @@ public:
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
+  void net_launch_block_dyn(const bm_net_info_t *net, int real_len);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
   void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   void init_by_names();
   int forward_first_with_kv(ArrayInt const &position_ids);
+  int greedy_search(bm_device_mem_t &logits_mem);
 
 public:
   int token_length;
@@ -65,6 +67,7 @@ public:
   int max_pos;
   bool lmhead_with_topk;
   bool support_history;
+  bool is_dynamic;
 
 private:
   bm_handle_t bm_handle;

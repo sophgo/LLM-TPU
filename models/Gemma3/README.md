@@ -41,7 +41,7 @@ source ./envsetup.sh  #激活环境变量
 #### 3. 编译模型生成bmodel
 
 ``` shell
-# 如果有提示transformers版本问题，pip3 install transformers --upgrade
+# 如果有提示transformers版本问题，pip3 install transformers -U
 llm_convert.py -m /workspace/gemma-3-4b-it -s 2048 --quantize w4bf16 -c bm1684x --out_dir gemma3_4b
 ```
 编译完成后，在指定目录`gemma3_4b`生成`gemma3-xxx.bmodel`和`config`

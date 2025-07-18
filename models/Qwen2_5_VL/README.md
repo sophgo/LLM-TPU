@@ -7,16 +7,20 @@
 本文包括如何编译bmodel，和如何在BM1684X/BM1688环境运行bmodel。如何编译bmodel环节可以省去，直接用以下链接下载：
 
 ``` shell
+# =============== 1684x =====================
 # 1684x 3B 2K,max_pixel 672x896, 视频最长可以支持20s (每秒1帧)
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-3b-instruct-awq_w4bf16_seq2048_bm1684x_1dev_20250428_143625.bmodel
 # 1684x 7B 2K,max_pixel 672x896
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-7b-instruct-awq_w4bf16_seq2048_bm1684x_1dev_20250428_150810.bmodel
 # 1684x 7B 8K,max_pixel 672x896, 视频最长可以支持80s (每秒1帧)
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-7b-instruct-awq_w4bf16_seq8192_bm1684x_1dev_20250430_115515.bmodel
-# 1684x 7B 4K,max_pixel 672x896, 支持历史上下文，最大输入长度是1024
+
+# 进阶1： 1684x 7B 4K,max_pixel 672x896, 支持历史上下文，最大输入长度是1024
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-3b-instruct-awq_w4bf16_seq4096_bm1684x_1dev_20250717_171504.bmodel
+# 进阶2： 1684x 3B 2K, 动态编译，输入长短不同，延时不同
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-3b-instruct-awq_w4bf16_seq2048_bm1684x_1dev_dyn_20250721_141023.bmodel
 
-
+# =============== 1684x =====================
 # 1688 3B 2K,max_pixel 672x896
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-vl-3b-instruct-awq_w4bf16_seq2048_bm1688_2core_20250428_144952.bmodel
 # 1688 7B 2K,max_pixel 672x896
@@ -64,7 +68,7 @@ source ./envsetup.sh  #激活环境变量
 #### 3. 编译模型生成bmodel
 
 ``` shell
-# 如果有提示transformers版本问题，pip3 install transformers --upgrade
+# 如果有提示transformers版本问题，pip3 install transformers -U
 llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 --quantize w4bf16  -c bm1684x --out_dir qwen2.5vl_3b --max_pixels 672,896
 ```
 
@@ -102,17 +106,26 @@ cd build && cmake .. && make && cp pipeline .. && cd ..
 
 ## 进阶应用
 
-### 支持历史上下文
+### 1. 支持历史上下文
 
 默认情况下模型是不支持历史上下文，需要加上`--use_block_with_kv`参数；另外需要指定输入最大长度`--max_input_length`，不指定时默认是seq_length的1/4。
 如下：
 ``` shell
-# 如果有提示transformers版本问题，pip3 install transformers --upgrade
+# 如果有提示transformers版本问题，pip3 install transformers -U
 llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 4096 --quantize w4bf16  -c bm1684x --out_dir qwen2.5vl_3b --max_pixels 672,896 --use_block_with_kv --max_input_length 1024
 ```
 使用cpp_demo或者python_demo都支持。历史记录输入clear清理。效果如下：
 
 ![](../../assets/qwen2.5vl_history.png)
+
+### 2. 支持动态编译
+
+默认情况下模型是静态编译，输入按照指定的`seq_length`长度推理，不足部分会补0和mask掉。动态编译可以根据输入长度动态推理，在输入长短变化幅度较大的情况下，可以减少短输入的延时。命令加入`--dynamic`即可。
+```shell
+llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 --quantize w4bf16  -c bm1684x --out_dir qwen2.5vl_3b_dyn  --max_pixels 672,896 --dynamic
+```
+使用cpp_demo或者python_demo都支持，效果如下：
+![](../../assets/qwen2.5vl_dyn.png)
 
 ## 常见问题
 

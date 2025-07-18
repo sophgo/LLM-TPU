@@ -59,14 +59,14 @@ source ./envsetup.sh  #激活环境变量
 #### 3. 编译模型生成bmodel
 
 ``` shell
-# 如果有提示transformers版本问题，pip3 install transformers --upgrade
+# 如果有提示transformers版本问题，pip3 install transformers -U
 llm_convert.py -m /workspace/MiniCPM4-0.5B-QAT-Int4-GPTQ-format -s 512 --quantize w4bf16 -c bm1684x --out_dir minicpm4_0.5b
 ```
 编译完成后，在指定目录`minicpm4_0.5b`生成`minicpm4-xxx.bmodel`和`config`
 
 另外如果指定的seqlen比较长的话，比如8K，可以指定`--dynamic`编译，首token延时会根据实际长度变化，如下：
 ``` shell
-# 如果有提示transformers版本问题，pip3 install transformers --upgrade
+# 如果有提示transformers版本问题，pip3 install transformers -U
 llm_convert.py -m /workspace/MiniCPM4-0.5B-QAT-Int4-GPTQ-format -s 8192 --quantize w4bf16 -c bm1684x --dynamic --out_dir minicpm4_0.5b
 ```
 

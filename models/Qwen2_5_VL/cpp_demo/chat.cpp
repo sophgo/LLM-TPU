@@ -60,6 +60,44 @@ void Qwen2_5VL::net_launch(const bm_net_info_t *net, int stage_idx) {
   bm_thread_sync(bm_handle);
 }
 
+void Qwen2_5VL::net_launch_block_dyn(const bm_net_info_t *net, int real_len) {
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  for (int i = 0; i < net->input_num; i++) {
+    bmrt_tensor_with_device(&in_tensors[i], net->stages[0].input_mems[i],
+                            net->input_dtypes[i],
+                            net->stages[0].input_shapes[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(&out_tensors[i], net->stages[0].output_mems[i],
+                            net->output_dtypes[i],
+                            net->stages[0].output_shapes[i]);
+  }
+  int h_bytes =
+      bm_mem_get_device_size(in_tensors[0].device_mem) / MAX_INPUT_LENGTH;
+  bm_set_device_mem(&in_tensors[0].device_mem, h_bytes * real_len,
+                    bm_mem_get_device_addr(in_tensors[0].device_mem));
+  int pid_bytes =
+      bm_mem_get_device_size(in_tensors[1].device_mem) / MAX_INPUT_LENGTH;
+  bm_set_device_mem(&in_tensors[1].device_mem, pid_bytes * real_len,
+                    bm_mem_get_device_addr(in_tensors[1].device_mem));
+  int mask_bytes = bm_mem_get_device_size(in_tensors[2].device_mem) /
+                   MAX_INPUT_LENGTH / MAX_INPUT_LENGTH;
+  bm_set_device_mem(&in_tensors[2].device_mem, mask_bytes * real_len * real_len,
+                    bm_mem_get_device_addr(in_tensors[2].device_mem));
+  in_tensors[0].shape.dims[1] = real_len;
+  in_tensors[1].shape.dims[1] = real_len;
+  in_tensors[2].shape.dims[2] = real_len;
+  in_tensors[2].shape.dims[3] = real_len;
+
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
+                                   net->input_num, out_tensors.data(),
+                                   net->output_num, true, false);
+  assert(ret);
+  bm_thread_sync(bm_handle);
+}
+
 void Qwen2_5VL::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
 }
@@ -123,6 +161,7 @@ void Qwen2_5VL::init_by_names() {
   }
   free(net_names);
   support_history = net_blocks[0]->input_num == 5; // with kv cache
+  is_dynamic = net_blocks[0]->is_dynamic;
   history_length = 0;
   lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
   MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
@@ -182,6 +221,16 @@ void Qwen2_5VL::deinit() {
   bm_free_device(bm_handle, dev_buffer);
   bmrt_destroy(p_bmrt);
   bm_dev_free(bm_handle);
+}
+
+int Qwen2_5VL::greedy_search(bm_device_mem_t &logits_mem) {
+  auto &out_mem = net_greedy_head->stages[0].output_mems[0];
+  bm_set_device_mem(&net_greedy_head->stages[0].input_mems[0], logits_mem.size,
+                    logits_mem.u.device.device_addr);
+  net_launch(net_greedy_head);
+  int token = 0;
+  bm_memcpy_d2s(bm_handle, (void *)&token, out_mem);
+  return token;
 }
 
 void Qwen2_5VL::forward_embed(ArrayInt const &tokens) {
@@ -291,23 +340,39 @@ int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
   if (support_history) {
     return forward_first_with_kv(position_ids);
   }
-  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH,
-                                       ATTENTION_MASK);
-  for (int i = 0; i < token_length; i++) {
-    for (int j = 0; j <= i; j++) {
-      attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
+  std::vector<uint16_t> attention_mask;
+  if (is_dynamic) {
+    attention_mask.assign(token_length * token_length, ATTENTION_MASK);
+    for (int i = 0; i < token_length; i++) {
+      for (int j = 0; j <= i; j++) {
+        attention_mask[i * token_length + j] = 0;
+      }
+    }
+  } else {
+    attention_mask.assign(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH, ATTENTION_MASK);
+    for (int i = 0; i < token_length; i++) {
+      for (int j = 0; j <= i; j++) {
+        attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
+      }
     }
   }
 
   const int *p_ids = position_ids.data();
 
-  std::vector<int> position_ids_pad(3 * MAX_INPUT_LENGTH, 0);
-  int ori_length = position_ids.size() / 3;
-  for (int i = 0; i < 3; i++) {
-    int ori_offset = i * ori_length;
-    int dst_offset = i * MAX_INPUT_LENGTH;
-    std::copy(p_ids + ori_offset, p_ids + ori_offset + ori_length,
-              position_ids_pad.begin() + dst_offset);
+  std::vector<int> position_ids_pad;
+  if (is_dynamic) {
+    position_ids_pad.assign(3 * token_length, 0);
+    assert((int)position_ids.size() == token_length * 3);
+    std::copy(p_ids, p_ids + token_length * 3, position_ids_pad.begin());
+  } else {
+    position_ids_pad.assign(3 * MAX_INPUT_LENGTH, 0);
+    int ori_length = position_ids.size() / 3;
+    for (int i = 0; i < 3; i++) {
+      int ori_offset = i * ori_length;
+      int dst_offset = i * MAX_INPUT_LENGTH;
+      std::copy(p_ids + ori_offset, p_ids + ori_offset + ori_length,
+                position_ids_pad.begin() + dst_offset);
+    }
   }
 
   auto out_mem = dev_buffer;
@@ -316,11 +381,24 @@ int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
     auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
     auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
     d2d(in0_mem, out_mem);
-    if (idx == 0) {
-      bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_ids_pad.data());
-      bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+    if (is_dynamic) {
+      if (idx == 0) {
+        // only first time need copy
+        bm_memcpy_s2d_partial(bm_handle, in1_mem,
+                              (void *)position_ids_pad.data(),
+                              token_length * 3 * sizeof(int));
+        bm_memcpy_s2d_partial(bm_handle, in2_mem, (void *)attention_mask.data(),
+                              token_length * token_length * sizeof(uint16_t));
+      }
+      net_launch_block_dyn(net_blocks[idx], token_length);
+    } else {
+      if (idx == 0) {
+        // only first time need copy
+        bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_ids_pad.data());
+        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+      }
+      net_launch(net_blocks[idx]);
     }
-    net_launch(net_blocks[idx]);
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1]);
     d2d(past_value[idx], net_blocks[idx]->stages[0].output_mems[2]);
@@ -334,7 +412,11 @@ int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
                      (token_length - 1) * bytes, bytes);
   net_launch(net_lm);
   int token = 0;
-  bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  if (lmhead_with_topk) {
+    bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  } else {
+    token = greedy_search(lm_out_mem);
+  }
   token_length++;
   history_length = token_length;
   return token;
@@ -407,7 +489,11 @@ int Qwen2_5VL::forward_first_with_kv(ArrayInt const &position_ids) {
                      (token_length - 1) * bytes, bytes);
   net_launch(net_lm);
   int token = 0;
-  bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  if (lmhead_with_topk) {
+    bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  } else {
+    token = greedy_search(lm_out_mem);
+  }
   token_length++;
   history_length++;
   return token;
@@ -462,7 +548,11 @@ int Qwen2_5VL::forward_next(ArrayInt const &position_ids) {
   net_launch(net_lm);
 
   int token = 0;
-  bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  if (lmhead_with_topk) {
+    bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  } else {
+    token = greedy_search(lm_out_mem);
+  }
   token_length++;
   history_length++;
   return token;

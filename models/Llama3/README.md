@@ -51,7 +51,7 @@ source ./envsetup.sh  #激活环境变量
 #### 3. 编译模型生成bmodel
 
 ``` shell
-# 如果有提示transformers版本问题，pip3 install transformers --upgrade
+# 如果有提示transformers版本问题，pip3 install transformers -U
 # 如果要编译bm1688，只需要-c bm1688即可
 llm_convert.py -m /workspace/Llama-3.2-3B-Instruct -s 512 -q w4f16 -g 128 -c bm1684x -o llama3.2_3b
 ```
