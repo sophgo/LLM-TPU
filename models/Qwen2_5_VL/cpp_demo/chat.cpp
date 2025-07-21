@@ -423,7 +423,8 @@ int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
 }
 
 int Qwen2_5VL::forward_first_with_kv(ArrayInt const &position_ids) {
-  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * SEQLEN,
+  int max_kv_length = MAX_INPUT_LENGTH + PREFILL_KV_LENGTH;
+  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * max_kv_length,
                                        ATTENTION_MASK);
   auto old_length = history_length;
   history_length += token_length;
@@ -431,10 +432,10 @@ int Qwen2_5VL::forward_first_with_kv(ArrayInt const &position_ids) {
   assert(old_length <= PREFILL_KV_LENGTH);
   for (int i = 0; i < token_length; i++) {
     for (int j = 0; j < old_length; j++) {
-      attention_mask[i * SEQLEN + j] = 0;
+      attention_mask[i * max_kv_length + j] = 0;
     }
     for (int j = 0; j <= i; j++) {
-      attention_mask[i * SEQLEN + j + PREFILL_KV_LENGTH] = 0;
+      attention_mask[i * max_kv_length + j + PREFILL_KV_LENGTH] = 0;
     }
   }
 

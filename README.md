@@ -98,7 +98,7 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 | quantize      |  q       | 是    | 指定量化类型, w4bf16/w4f16/bf16/f16等等 |
 | chip          |  c       | 是    | 指定平台, 如bm1684x/bm1688/cv186x |
 | q_group_size  |  g       | 否    | 指定每组量化的组大小, 默认64 |
-| max_pixels    |  -       | 否    | 多模态参数, 指定最大尺寸, 可以是`672,896`,也可以是`602112`  |
+| max_pixels    |  -       | 否    | qwen vl参数, 指定最大图片尺寸, 可以是`672,896`,也可以是`602112`  |
 | do_sample     |  -       | 否    | 指定输出是否包含采样模型，默认关闭 |
 | out_dir       |  o       | 是    | 指定输出目录 |
 
@@ -160,6 +160,7 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 | 动态编译    | [Qwen3](./models/Qwen3) (python与cpp demo都支持)                            | Qwen3为例,支持动态编译   |
 |             | [MiniCPM4](./models/MiniCPM4/)                                             | MiniCPM4为例 |
 |             | [Qwen2.5VL](./models/Qwen2_5_VL) (python与cpp demo都支持)                   | Qwen2.5VL为例  |
+| prefill with kv | [Qwen2.5VL](./models/Qwen2_5_VL) (python与cpp demo都支持)              | Qwen2.5VL为例，支持prefill包含kv输入，支持历史记录 |
 | 多芯        | [Qwen2_5/python_demo_parallel](./models/Qwen2_5/python_demo_parallel)      | 支持qwen系列 2/4/6/8芯  |
 | 随机采样    | [Qwen3](./models/Qwen3) (python与cpp demo都支持)                            | 根据generation.config采样 |
 |             | [InternVL3](./models/InternVL3/)                                           | 以InternVL3为例       |

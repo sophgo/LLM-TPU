@@ -108,7 +108,10 @@ cd build && cmake .. && make && cp pipeline .. && cd ..
 
 ### 1. 支持历史上下文
 
-默认情况下模型是不支持历史上下文，需要加上`--use_block_with_kv`参数；另外需要指定输入最大长度`--max_input_length`，不指定时默认是seq_length的1/4。
+默认情况下模型是不支持历史上下文，需要加上`--use_block_with_kv`参数；
+需要指定输入最大长度`--max_input_length`，不指定时默认是seq_length的1/4；
+需要指定输入最大kv长度`--max_prefill_kv_length`, 不指定时默认是seq_length.
+
 如下：
 ``` shell
 # 如果有提示transformers版本问题，pip3 install transformers -U
