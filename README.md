@@ -115,6 +115,8 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 * Qwen相关：[DeepSeek-R1-Distill-Qwen](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B)
 * Llama系列：[Llama2](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf)/[Llama3](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct)
 * MiniCPM系列：[MiniCPM4](https://huggingface.co/openbmb/MiniCPM4-0.5B-QAT-Int4-GPTQ-format)
+* Phi系列：[Phi3](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct)/[Phi4](https://huggingface.co/microsoft/Phi-4-mini-instruct)
+* ChatGLM系列：[ChatGLM3](https://huggingface.co/THUDM/chatglm3-6b)
 
 除了一键编译外，其他模型可以采用传统方法编译，先转onnx再转bmodel，具体可以参考每个模型的Demo介绍。
 
@@ -155,12 +157,12 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 
 | 功能        | 目录                                                                       | 功能说明              |
 | ----------- | -------------------------------------------------------------------------- | --------------------- |
-| 多芯        | [ChatGLM3/parallel_demo](./models/ChatGLM3/parallel_demo)                   | 支持ChatGLM3 2芯      |
-|             | [Llama2/demo_parallel](./models/Llama2/demo_parallel)                       | 支持Llama2 4/6/8芯    |
-|             | [Qwen/demo_parallel](./models/Qwen/demo_parallel)                           | 支持Qwen 4/6/8芯      |
-|             | [Qwen1_5/demo_parallel](./models/Qwen1_5/demo_parallel)                     | 支持Qwen1_5 4/6/8芯   |
-| 投机采样    | [Qwen/jacobi_demo](./models/Qwen/jacobi_demo)                               | LookaheadDecoding     |
-|             | [Qwen1_5/speculative_sample_demo](./models/Qwen1_5/speculative_sample_demo) | 投机采样              |
+| 动态编译    | [Qwen3](./models/Qwen3) (python与cpp demo都支持)                            | Qwen3为例,支持动态编译   |
+|             | [MiniCPM4](./models/MiniCPM4/)                                             | MiniCPM4为例 |
+|             | [Qwen2.5VL](./models/Qwen2_5_VL) (python与cpp demo都支持)                   | Qwen2.5VL为例  |
+| 多芯        | [Qwen2_5/python_demo_parallel](./models/Qwen2_5/python_demo_parallel)      | 支持qwen系列 2/4/6/8芯  |
+| 随机采样    | [Qwen3](./models/Qwen3) (python与cpp demo都支持)                            | 根据generation.config采样 |
+|             | [InternVL3](./models/InternVL3/)                                           | 以InternVL3为例       |
 | prefill复用 | [Qwen/prompt_cache_demo](./models/Qwen/prompt_cache_demo)                   | 公共序列prefill复用   |
 |             | [Qwen/share_cache_demo](./models/Qwen/share_cache_demo)                     | 公共序列prefill复用   |
 |             | [Qwen1_5/share_cache_demo](./models/Qwen1_5/share_cache_demo)               | 公共序列prefill复用   |

@@ -28,10 +28,24 @@ source ./envsetup.sh  #激活环境变量
 ./build.sh #编译mlir
 ```
 
-### 3. 编译模型
+## 编译模型
 
-参考[compile](./compile) 与 [compile](./compile) 下面的README.md
+编译时采用一键编译指令即可，生成的编译文件保存在 ./phi3 目录中
+```shell
+llm_convert.py -m /workspace/Phi-3-mini-4k-instruct -s 512 -q w4f16 -g 128 --num_device 1  -c bm1684x  -o phi3
+```
 
-### 4. 编译与运行程序
+## 运行Demo
 
-参考[python_demo](./python_demo) 与 [demo](./demo) 下面的README.md
+
+### python demo
+
+
+```
+cd python_demo
+mkdir build
+cd build && cmake .. && make && cp *cpython* .. && cd ..
+
+
+python3 pipeline.py --model_path phi-xxxx.bmodel --tokenizer_path config --devid 0
+```
