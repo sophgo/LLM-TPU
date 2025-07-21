@@ -161,9 +161,10 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 |             | [MiniCPM4](./models/MiniCPM4/)                                             | MiniCPM4为例 |
 |             | [Qwen2.5VL](./models/Qwen2_5_VL) (python与cpp demo都支持)                   | Qwen2.5VL为例  |
 | prefill with kv | [Qwen2.5VL](./models/Qwen2_5_VL) (python与cpp demo都支持)              | Qwen2.5VL为例，支持prefill包含kv输入，支持历史记录 |
+|             | [Qwen3](./models/Qwen3) (python与cpp demo都支持)                            | Qwen3为例 |
 | 多芯        | [Qwen2_5/python_demo_parallel](./models/Qwen2_5/python_demo_parallel)      | 支持qwen系列 2/4/6/8芯  |
 | 随机采样    | [Qwen3](./models/Qwen3) (python与cpp demo都支持)                            | 根据generation.config采样 |
-|             | [InternVL3](./models/InternVL3/)                                           | 以InternVL3为例       |
+|             | [InternVL3](./models/InternVL3/)                                           |  InternVL3为例       |
 | prefill复用 | [Qwen/prompt_cache_demo](./models/Qwen/prompt_cache_demo)                   | 公共序列prefill复用   |
 |             | [Qwen/share_cache_demo](./models/Qwen/share_cache_demo)                     | 公共序列prefill复用   |
 |             | [Qwen1_5/share_cache_demo](./models/Qwen1_5/share_cache_demo)               | 公共序列prefill复用   |

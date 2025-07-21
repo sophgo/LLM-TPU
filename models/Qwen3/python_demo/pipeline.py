@@ -35,6 +35,9 @@ class Qwen3():
         self.model = chat.Qwen()
         self.init_params(args)
         self.load_model(args.model_path)
+        if self.model.support_prefill_kv:
+            print("Model supports prefill kv, using prefill mode.")
+            self.enable_history = True
 
     def load_model(self, model_path):
         load_start = time.time()
@@ -61,12 +64,16 @@ class Qwen3():
                 self.stop_strings = gen_config.stop_strings
 
     def clear(self):
+        if self.model.support_prefill_kv:
+            self.model.clear_kv()
         self.history = [{"role": "system", "content": self.system_prompt}]
 
     def update_history(self):
-        if self.model.token_length >= self.model.SEQLEN:
+        if self.model.history_length >= self.model.SEQLEN:
             print("... (reach the maximal length)", flush=True, end="")
-            self.history = [{"role": "system", "content": self.system_prompt}]
+            self.clear()
+        elif self.model.support_prefill_kv:
+            self.history.clear()
         else:
             self.history.append({"role": "assistant", "content": self.answer_cur})
 
@@ -104,10 +111,10 @@ class Qwen3():
                 if not tokens:
                     print("Sorry: your question is empty!!")
                     return
-                if len(tokens) > self.model.SEQLEN:
+                if len(tokens) > self.model.MAX_INPUT_LENGTH:
                     print(
                         "The maximum question length should be shorter than {} but we get {} instead."
-                        .format(self.model.SEQLEN, len(tokens)))
+                        .format(self.model.MAX_INPUT_LENGTH, len(tokens)))
                     return
 
                 print("\nAnswer: ", end="")
@@ -127,7 +134,7 @@ class Qwen3():
         first_end = time.time()
         # Following tokens
         full_word_tokens = []
-        while token not in self.EOS and self.model.token_length < self.model.SEQLEN:
+        while token not in self.EOS and self.model.history_length < self.model.SEQLEN:
             full_word_tokens.append(token)
             word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
             if "�" in word:

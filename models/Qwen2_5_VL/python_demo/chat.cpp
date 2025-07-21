@@ -421,15 +421,16 @@ int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
   if (support_history) {
     return forward_first_with_kv(position_ids);
   }
-  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH,
-                                       ATTENTION_MASK);
+  std::vector<uint16_t> attention_mask;
   if (is_dynamic) {
+    attention_mask.assign(token_length * token_length, ATTENTION_MASK);
     for (int i = 0; i < token_length; i++) {
       for (int j = 0; j <= i; j++) {
         attention_mask[i * token_length + j] = 0;
       }
     }
   } else {
+    attention_mask.assign(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH, ATTENTION_MASK);
     for (int i = 0; i < token_length; i++) {
       for (int j = 0; j <= i; j++) {
         attention_mask[i * MAX_INPUT_LENGTH + j] = 0;

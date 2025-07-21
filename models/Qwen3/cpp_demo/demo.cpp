@@ -44,6 +44,12 @@ bool ends_with(const std::string &str, const std::string &suffix) {
   return std::equal(suffix.rbegin(), suffix.rend(), str.rbegin());
 }
 
+void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
+  int value = 0;
+  auto ret = bm_memset_device_ext(bm_handle, &value, 1, mem);
+  assert(BM_SUCCESS == ret);
+}
+
 void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
                int stage_idx = 0) {
   int value = 0;
@@ -95,11 +101,13 @@ public:
   void answer(const std::string input_str);
   int forward_first(std::vector<int> &tokens);
   int forward_next();
+  void clear_kv();
   std::string build_prompt(std::string input_str);
   std::mt19937 sgen;
   Qwen3() : sgen(std::random_device()()) {};
 
 private:
+  int forward_first_with_kv(std::vector<int> &tokens);
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
   void net_launch_dyn(const bm_net_info_t *net, int real_len,
                       int stage_idx = 0);
@@ -113,11 +121,14 @@ public:
   int token_length;
   int SEQLEN;
   int MAX_INPUT_LENGTH;
+  int PREFILL_KV_LENGTH;
   int NUM_LAYERS;
   int hidden_bytes;
   int kv_bytes;
   bool is_dynamic;
   bool enable_history;
+  bool support_prefill_kv;
+  int history_length;
   uint16_t mask_value;
   std::vector<int> visited_tokens;
   std::vector<std::pair<std::string, std::string>> history_vector;
@@ -263,6 +274,14 @@ void Qwen3::init_by_names() {
   free(net_names);
   MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
   SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[3].dims[1];
+  support_prefill_kv = net_blocks[0]->input_num == 5; // with kv cache
+  history_length = 0;
+  printf("Num Layers:%d\n", NUM_LAYERS);
+  if (support_prefill_kv) {
+    enable_history = true;
+    PREFILL_KV_LENGTH = net_blocks[0]->stages[0].input_shapes[3].dims[1];
+    printf("History by kv: True\n");
+  }
 }
 
 void Qwen3::init(std::string model_path, std::string config_path,
@@ -417,6 +436,9 @@ int Qwen3::penalty_sample(bm_device_mem_t &logits_mem) {
 }
 
 int Qwen3::forward_first(std::vector<int> &inputs) {
+  if (support_prefill_kv) {
+    return forward_first_with_kv(inputs);
+  }
   std::vector<int> position_id(MAX_INPUT_LENGTH, 0);
   std::copy(inputs.begin(), inputs.end(), visited_tokens.data());
   token_length = inputs.size();
@@ -482,6 +504,85 @@ int Qwen3::forward_first(std::vector<int> &inputs) {
   }
   visited_tokens[token_length] = token;
   token_length += 1;
+  history_length = token_length;
+  return token;
+}
+
+int Qwen3::forward_first_with_kv(std::vector<int> &inputs) {
+  int max_kv_length = MAX_INPUT_LENGTH + PREFILL_KV_LENGTH;
+  std::vector<int> position_id(MAX_INPUT_LENGTH, 0);
+  std::copy(inputs.begin(), inputs.end(), visited_tokens.data());
+  auto old_length = history_length;
+  token_length = inputs.size();
+  history_length += token_length;
+  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * max_kv_length,
+                                       mask_value);
+  assert(history_length < SEQLEN);
+  assert(old_length <= PREFILL_KV_LENGTH);
+  for (int i = 0; i < token_length; i++) {
+    for (int j = 0; j < old_length; j++) {
+      attention_mask[i * max_kv_length + j] = 0;
+    }
+    for (int j = 0; j <= i; j++) {
+      attention_mask[i * max_kv_length + j + PREFILL_KV_LENGTH] = 0;
+    }
+  }
+  for (int i = 0; i < token_length; i++) {
+    position_id[i] = i + old_length;
+  }
+  // forward embeding
+  auto &in_mem = net_embed->stages[0].input_mems[0];
+  auto &out_mem = net_embed->stages[0].output_mems[0];
+  bm_memcpy_s2d(bm_handle, in_mem, (void *)inputs.data());
+  net_launch(net_embed);
+
+  // forward blocks
+  for (int idx = 0; idx < NUM_LAYERS; idx++) {
+    auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
+    auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
+    auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
+    auto &in3_mem = net_blocks[idx]->stages[0].input_mems[3];
+    auto &in4_mem = net_blocks[idx]->stages[0].input_mems[4];
+
+    d2d(in0_mem, out_mem);
+    if (old_length > 0) {
+      bm_memcpy_d2d_byte(bm_handle, in3_mem, 0, past_key[idx], 0,
+                         kv_bytes * old_length);
+      bm_memcpy_d2d_byte(bm_handle, in4_mem, 0, past_value[idx], 0,
+                         kv_bytes * old_length);
+    } else if (idx == 0) {
+      empty(bm_handle, in3_mem);
+      empty(bm_handle, in4_mem);
+    }
+    bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
+    bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+    net_launch(net_blocks[idx]);
+    out_mem = net_blocks[idx]->stages[0].output_mems[0];
+    auto &out1_mem = net_blocks[idx]->stages[0].output_mems[1];
+    auto &out2_mem = net_blocks[idx]->stages[0].output_mems[2];
+    bm_memcpy_d2d_byte(bm_handle, past_key[idx], old_length * kv_bytes,
+                       out1_mem, 0, kv_bytes * token_length);
+    bm_memcpy_d2d_byte(bm_handle, past_value[idx], old_length * kv_bytes,
+                       out2_mem, 0, kv_bytes * token_length);
+  }
+
+  // forward lmhead
+  auto &lm_in_mem = net_lm_head->stages[0].input_mems[0];
+  auto &lm_out_mem = net_lm_head->stages[0].output_mems[0];
+  bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
+                     (token_length - 1) * hidden_bytes, hidden_bytes);
+  net_launch(net_lm_head);
+  int token = 0;
+  if (!net_greedy_head && !net_sample_head) {
+    bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  } else if (generation_mode == "greedy") {
+    token = greedy_search(lm_out_mem);
+  } else if (generation_mode == "sample") {
+    token = penalty_sample(lm_out_mem);
+  }
+  visited_tokens[token_length] = token;
+  token_length++;
+  history_length++;
   return token;
 }
 
@@ -489,10 +590,10 @@ int Qwen3::forward_next() {
   int cur_token = visited_tokens[token_length - 1];
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
-  for (int i = token_length - 1; i < SEQLEN; i++) {
+  for (int i = history_length - 1; i < SEQLEN; i++) {
     attention_mask[i] = mask_value;
   }
-  int32_t position_id = token_length - 1;
+  int32_t position_id = history_length - 1;
   // embedding
   auto &in_mem = net_embed_cache->stages[0].input_mems[0];
   auto &out_mem = net_embed_cache->stages[0].output_mems[0];
@@ -540,14 +641,29 @@ int Qwen3::forward_next() {
     token = penalty_sample(lm_out_mem);
   }
   visited_tokens[token_length] = token;
-  token_length += 1;
+  token_length++;
+  history_length++;
   return token;
 }
 
+void Qwen3::clear_kv() {
+  if (!support_prefill_kv) {
+    return;
+  }
+  for (int i = 0; i < NUM_LAYERS; i++) {
+    empty(bm_handle, past_key[i]);
+    empty(bm_handle, past_value[i]);
+  }
+  history_length = 0;
+}
+
 std::string Qwen3::build_prompt(std::string input_str) {
-  std::string prompt = sys_config;
+  std::string prompt;
+  if (history_length == 0) {
+    prompt = sys_config;
+  }
   prompt += "<|im_start|>user\n";
-  if (enable_history) {
+  if (enable_history && !support_prefill_kv) {
     for (const auto &item : history_vector) {
       prompt += item.first + "<|im_end|>\n" + "<|im_start|>assistant\n" +
                 item.second + "<|im_end|>\n<|im_start|>user\n";
@@ -562,7 +678,11 @@ void Qwen3::answer(const std::string input_str) {
   std::vector<int> tokens = tok->Encode(sentence_input);
   int pre_token = 0;
   int tok_num = 0;
-
+  if ((int)tokens.size() > MAX_INPUT_LENGTH) {
+    std::cerr << "Error: Input length exceeds maximum input length of "
+              << MAX_INPUT_LENGTH << std::endl;
+    return;
+  }
   auto t0 = std::chrono::system_clock::now();
   int token = forward_first(tokens);
   auto t1 = std::chrono::system_clock::now();
@@ -596,8 +716,11 @@ void Qwen3::answer(const std::string input_str) {
   std::cout << "FTL: " << (use0.count() * 1e-6) << " s" << std::endl;
   std::cout << "TPS: " << tok_num / (use1.count() * 1e-6) << " token/s"
             << std::endl;
-
-  if (enable_history) {
+  if (support_prefill_kv) {
+    if (history_length >= SEQLEN) {
+      clear_kv();
+    }
+  } else if (enable_history) {
     if (token_length >= SEQLEN) {
       history_vector.push_back({input_str, result});
       size_t half_size = history_vector.size() / 2;
@@ -631,6 +754,8 @@ void Qwen3::chat() {
     }
     if (input_str == "clear" || input_str == "new") {
       history_vector = {};
+      clear_kv();
+      std::cout << "New chat session created." << std::endl;
       continue;
     }
     std::cout << "\nAnswer: " << std::flush;
