@@ -67,6 +67,7 @@ public:
   void forward_vit(ArrayFloat const &pixel_values, int vit_offset);
   int forward_first();
   int forward_next();
+  void clear_history();
 
   std::mt19937 sgen;
   InternVL3() : sgen(std::random_device()()) {};
@@ -76,18 +77,23 @@ private:
   void net_launch_block_dyn(const bm_net_info_t *net, int real_len);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
   void init_by_names();
+  int forward_first_with_kv();
   int greedy_search(bm_device_mem_t &logits_mem);
   int penalty_sample(bm_device_mem_t &logits_mem);
 
 public:
   int token_length;
+  int history_length;
   int SEQLEN;
   int HIDDEN_SIZE;
+  int KV_BYTES;
   int NUM_LAYERS;
   int NUM_IMAGE_TOKEN;
   int MAX_INPUT_LENGTH;
+  int PREFILL_KV_LENGTH;
   uint16_t mask_value;
   bool lmhead_with_topk;
+  bool support_history;
   std::vector<int> visited_tokens;
   bool is_dynamic;
 
@@ -266,12 +272,35 @@ void InternVL3::init_by_names() {
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
   }
   free(net_names);
+  KV_BYTES =
+      bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
   HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[1];
   NUM_IMAGE_TOKEN = net_vit->stages[0].output_shapes[0].dims[0];
   lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
   MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
   SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[3].dims[1];
   is_dynamic = net_blocks[0]->is_dynamic;
+  support_history = net_blocks[0]->input_num == 5; // with kv cache
+  history_length = 0;
+  printf("Num Layers:%d\n", NUM_LAYERS);
+  PREFILL_KV_LENGTH = 0;
+  if (support_history) {
+    PREFILL_KV_LENGTH = net_blocks[0]->stages[0].input_shapes[3].dims[1];
+    printf("History Support: True\n");
+  } else {
+    printf("History Support: False\n");
+  }
+}
+
+void InternVL3::clear_history() {
+  if (!support_history) {
+    return;
+  }
+  for (int i = 0; i < NUM_LAYERS; i++) {
+    empty(bm_handle, past_key[i]);
+    empty(bm_handle, past_value[i]);
+  }
+  history_length = 0;
 }
 
 void InternVL3::deinit() {
@@ -361,6 +390,9 @@ void InternVL3::forward_vit(ArrayFloat const &pixel_values, int vit_offset) {
 }
 
 int InternVL3::forward_first() {
+  if (support_history) {
+    return forward_first_with_kv();
+  }
   std::vector<int> position_id(MAX_INPUT_LENGTH, 0);
 
   for (int i = 0; i < token_length; i++) {
@@ -396,7 +428,7 @@ int InternVL3::forward_first() {
       if (idx == 0) {
         // only first time need copy
         bm_memcpy_s2d_partial(bm_handle, in1_mem, (void *)position_id.data(),
-                              token_length * 3 * sizeof(int));
+                              token_length * sizeof(int));
         bm_memcpy_s2d_partial(bm_handle, in2_mem, (void *)attention_mask.data(),
                               token_length * token_length * sizeof(uint16_t));
       }
@@ -432,6 +464,83 @@ int InternVL3::forward_first() {
 
   visited_tokens[token_length] = token;
   token_length += 1;
+  history_length = token_length;
+  return token;
+}
+
+int InternVL3::forward_first_with_kv() {
+  int max_kv_length = MAX_INPUT_LENGTH + PREFILL_KV_LENGTH;
+  auto old_length = history_length;
+  history_length += token_length;
+  assert(history_length < SEQLEN);
+  assert(old_length <= PREFILL_KV_LENGTH);
+  std::vector<int> position_id(MAX_INPUT_LENGTH, 0);
+  for (int i = 0; i < token_length; i++) {
+    position_id[i] = i + old_length;
+  }
+  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * max_kv_length,
+                                       mask_value);
+  for (int i = 0; i < token_length; i++) {
+    for (int j = 0; j < old_length; j++) {
+      attention_mask[i * max_kv_length + j] = 0;
+    }
+    for (int j = 0; j <= i; j++) {
+      attention_mask[i * max_kv_length + j + PREFILL_KV_LENGTH] = 0;
+    }
+  }
+
+  int bytes = HIDDEN_SIZE * sizeof(uint16_t);
+  // forward blocks
+  auto out_mem = dev_buffer;
+  empty_net(bm_handle, net_blocks[0]);
+  for (int idx = 0; idx < NUM_LAYERS; idx++) {
+    auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
+    auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
+    auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
+    auto &in3_mem = net_blocks[idx]->stages[0].input_mems[3];
+    auto &in4_mem = net_blocks[idx]->stages[0].input_mems[4];
+
+    d2d(in0_mem, out_mem);
+    bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
+    bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+    if (old_length > 0) {
+      bm_memcpy_d2d_byte(bm_handle, in3_mem, 0, past_key[idx], 0,
+                         KV_BYTES * old_length);
+      bm_memcpy_d2d_byte(bm_handle, in4_mem, 0, past_value[idx], 0,
+                         KV_BYTES * old_length);
+    } else if (idx == 0) {
+      empty(bm_handle, in3_mem);
+      empty(bm_handle, in4_mem);
+    }
+    net_launch(net_blocks[idx]);
+    out_mem = net_blocks[idx]->stages[0].output_mems[0];
+    auto &out1_mem = net_blocks[idx]->stages[0].output_mems[1];
+    auto &out2_mem = net_blocks[idx]->stages[0].output_mems[2];
+    bm_memcpy_d2d_byte(bm_handle, past_key[idx], old_length * KV_BYTES,
+                       out1_mem, 0, KV_BYTES * token_length);
+    bm_memcpy_d2d_byte(bm_handle, past_value[idx], old_length * KV_BYTES,
+                       out2_mem, 0, KV_BYTES * token_length);
+  }
+
+  // forward lmhead
+  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
+  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
+  bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
+                     (token_length - 1) * bytes, bytes);
+  net_launch(net_lm);
+  int token = 0;
+
+  if (lmhead_with_topk) {
+    bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
+  } else if (generation_mode == "greedy") {
+    token = greedy_search(lm_out_mem);
+  } else if (generation_mode == "sample") {
+    token = penalty_sample(lm_out_mem);
+  }
+
+  visited_tokens[token_length] = token;
+  token_length += 1;
+  history_length++;
   return token;
 }
 
@@ -439,10 +548,10 @@ int InternVL3::forward_next() {
   int cur_token = visited_tokens[token_length - 1];
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
-  for (int i = token_length - 1; i < SEQLEN; i++) {
+  for (int i = history_length - 1; i < SEQLEN; i++) {
     attention_mask[i] = mask_value;
   }
-  int32_t position_id = token_length - 1;
+  int32_t position_id = history_length - 1;
 
   // embedding
   auto &in_mem = net_embed_cache->stages[0].input_mems[0];
@@ -453,7 +562,7 @@ int InternVL3::forward_next() {
   // blocks
   int bytes =
       bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
-  int token_offset = (token_length - 1) * bytes;
+  int token_offset = (history_length - 1) * bytes;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
@@ -494,6 +603,7 @@ int InternVL3::forward_next() {
 
   visited_tokens[token_length] = token;
   token_length += 1;
+  history_length++;
   return token;
 }
 
@@ -510,6 +620,9 @@ PYBIND11_MODULE(chat, m) {
       .def_readonly("NUM_IMAGE_TOKEN", &InternVL3::NUM_IMAGE_TOKEN)
       .def_readonly("MAX_INPUT_LENGTH", &InternVL3::MAX_INPUT_LENGTH)
       .def_readonly("token_length", &InternVL3::token_length)
+      .def_readonly("PREFILL_KV_LENGTH", &InternVL3::PREFILL_KV_LENGTH)
+      .def_readonly("support_history", &InternVL3::support_history)
+      .def_readonly("history_length", &InternVL3::history_length)
       .def_readwrite("generation_mode", &InternVL3::generation_mode)
       .def_readwrite("penalty", &InternVL3::penalty)
       .def_readwrite("temperature", &InternVL3::temperature)

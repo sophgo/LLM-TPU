@@ -153,24 +153,64 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 如果您对我们的芯片感兴趣，也可以通过官网[SOPHGO](https://www.sophgo.com/)联系我们。
 
 # 进阶功能
-进阶功能说明：
 
-| 功能        | 目录                                                                       | 功能说明              |
-| ----------- | -------------------------------------------------------------------------- | --------------------- |
-| 动态编译    | [Qwen3](./models/Qwen3) (python与cpp demo都支持)                            | Qwen3为例,支持动态编译   |
-|             | [MiniCPM4](./models/MiniCPM4/)                                             | MiniCPM4为例 |
-|             | [Qwen2.5VL](./models/Qwen2_5_VL) (python与cpp demo都支持)                   | Qwen2.5VL为例  |
-|             | [InternVL3](./models/InternVL3/)                                           | InternVL3为例  |
-| prefill with kv | [Qwen2.5VL](./models/Qwen2_5_VL) (python与cpp demo都支持)              | Qwen2.5VL为例，支持prefill包含kv输入，支持历史记录 |
-|             | [Qwen3](./models/Qwen3) (python与cpp demo都支持)                            | Qwen3为例 |
-| 多芯        | [Qwen2_5/python_demo_parallel](./models/Qwen2_5/python_demo_parallel)      | 支持qwen系列 2/4/6/8芯  |
-| 随机采样    | [Qwen3](./models/Qwen3) (python与cpp demo都支持)                            | 根据generation.config采样 |
-|             | [InternVL3](./models/InternVL3/)                                           |  InternVL3为例       |
-| prefill复用 | [Qwen/prompt_cache_demo](./models/Qwen/prompt_cache_demo)                   | 公共序列prefill复用   |
-|             | [Qwen/share_cache_demo](./models/Qwen/share_cache_demo)                     | 公共序列prefill复用   |
-|             | [Qwen1_5/share_cache_demo](./models/Qwen1_5/share_cache_demo)               | 公共序列prefill复用   |
-| 模型加密    | [Qwen/share_cache_demo](./models/Qwen/share_cache_demo)                     | 模型加密              |
-|             | [Qwen1_5/share_cache_demo](./models/Qwen1_5/share_cache_demo)               | 模型加密              |
+## 1. 动态编译
+
+默认情况下模型是静态编译，输入按照指定的`seq_length`长度推理，不足部分会补0和mask掉，当输入长度变化幅度不大的时候，建议用默认方式。
+
+动态编译可以根据输入长度动态推理，在输入长短变化幅度较大的情况下，可以减少短输入的延时。
+
+方法：在`llm_converter.py`命令加入`--dynamic`
+样例：
+
+1) [Qwen3](./models/Qwen3)，python与cpp demo都支持
+2) [Qwen2.5VL](./models/Qwen2_5_VL)，python与cpp demo都支持
+3) [MiniCPM4](./models/MiniCPM4)
+4) [InternVL3](./models/InternVL3)
+
+## 2. Prefill with kv cache
+
+默认情况下历史上下文是靠历史token与当前输入token拼凑来实现，延时较长。
+采样prefill with kv cache可以减少延时。
+方法：在`llm_converter.py`命令加入`--use_block_with_kv`参数；
+`--max_input_length`指定单次输入最大长度，不指定时默认是seq_length的1/4；
+`--max_prefill_kv_length`指定输入最大kv长度, 不指定时默认是seq_length。
+样例：
+
+1) [Qwen2.5VL](./models/Qwen2_5_VL)，python与cpp demo都支持
+2) [Qwen3](./models/Qwen3)，python与cpp demo都支持
+3) [InternVL3](./models/InternVL3)
+
+## 3. 多芯推理
+
+默认情况下推理在单芯上进行。可以采用多芯设备支持更大模型，和加速推理。
+方法：在`llm_converter.py`命令加入`--num_device`参数指定芯片数量
+样例：
+
+1) [Qwen2_5/python_demo_parallel](./models/Qwen2_5/python_demo_parallel)，支持Qwen系列2/4/6/8芯推理
+
+## 4. 随机采样
+
+默认情况下采用greedy方式，即topk1取token。可以支持根据`generation.json`的配置进行随机采样。
+方法：在`llm_converter.py`命令加入`--do_sample`
+样例：
+
+1) [Qwen3](./models/Qwen3)，python与cpp demo都支持
+2) [InternVL3](./models/InternVL3) 
+3) [MiniCPM4](./models/MiniCPM4)
+
+## 5. prefill复用(过时，待更新)
+
+1) [Qwen/prompt_cache_demo](./models/Qwen/prompt_cache_demo)
+2) [Qwen/share_cache_demo](./models/Qwen/share_cache_demo)
+3) [Qwen1_5/share_cache_demo](./models/Qwen1_5/share_cache_demo)
+
+## 6. 模型加密
+
+可以支持模型被第三方库加密，推理时用解密库解密
+
+1) [Qwen/share_cache_demo](./models/Qwen/share_cache_demo)
+2) [Qwen1_5/share_cache_demo](./models/Qwen1_5/share_cache_demo)
 
 
 # 精度优化

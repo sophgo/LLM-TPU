@@ -161,6 +161,7 @@ class InternVL3():
         self.model = chat.InternVL3()
         self.model.init(self.devices, args.model_path)
         self.SEQLEN = self.model.SEQLEN
+        self.support_history = self.model.support_history
         self.init_params(args)
 
     def init_params(self, args):
@@ -204,9 +205,10 @@ class InternVL3():
         else:
             raise FileNotFoundError(f"Media file not found: {media_path}")
 
-        prompt = (f'<|im_start|>system\n{self.system_prompt}<|im_end|>\n'
-                  f'<|im_start|>user\n{question}<|im_end|>\n'
-                  f'<|im_start|>assistant\n')
+        prompt = ""
+        if (not self.support_history) or self.model.history_length == 0:
+            prompt = f'<|im_start|>system\n{self.system_prompt}<|im_end|>\n'
+        prompt += f'<|im_start|>user\n{question}<|im_end|>\n<|im_start|>assistant\n'
 
         input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids
         return input_ids.flatten().numpy().astype(np.int32), pixel_values.flatten().numpy().astype(
@@ -227,6 +229,10 @@ class InternVL3():
             # Quit
             if self.input_str in ["exit", "q", "quit"]:
                 break
+            if self.input_str in ["clear", "new", "c"]:
+                print("New chat session created.")
+                self.model.clear_history()
+                continue
 
             media_path = input("\nImage or Video Path: ")
             media_path = media_path.strip()
@@ -242,6 +248,11 @@ class InternVL3():
                     "The maximum question length should be shorter than {} but we get {} instead.".
                     format(self.model.MAX_INPUT_LENGTH, token_len))
                 continue
+            if self.support_history:
+                if (token_len + self.model.history_length > self.model.SEQLEN - 128) or \
+                (self.model.history_length > self.model.PREFILL_KV_LENGTH):
+                    print("Warning: History is full and clear it to continue.")
+                    self.model.clear_history()
 
             print("\nAnswer: ", end="")
             self.stream_answer(inputs)
@@ -264,7 +275,7 @@ class InternVL3():
 
         # Following tokens
         full_word_tokens = []
-        while token not in self.EOS and self.model.token_length < self.model.SEQLEN:
+        while token not in self.EOS and self.model.history_length < self.model.SEQLEN:
             full_word_tokens.append(token)
             word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
             if "�" in word:
