@@ -74,18 +74,6 @@ void Qwen2_5VL::net_launch_block_dyn(const bm_net_info_t *net, int real_len) {
                             net->output_dtypes[i],
                             net->stages[0].output_shapes[i]);
   }
-  int h_bytes =
-      bm_mem_get_device_size(in_tensors[0].device_mem) / MAX_INPUT_LENGTH;
-  bm_set_device_mem(&in_tensors[0].device_mem, h_bytes * real_len,
-                    bm_mem_get_device_addr(in_tensors[0].device_mem));
-  int pid_bytes =
-      bm_mem_get_device_size(in_tensors[1].device_mem) / MAX_INPUT_LENGTH;
-  bm_set_device_mem(&in_tensors[1].device_mem, pid_bytes * real_len,
-                    bm_mem_get_device_addr(in_tensors[1].device_mem));
-  int mask_bytes = bm_mem_get_device_size(in_tensors[2].device_mem) /
-                   MAX_INPUT_LENGTH / MAX_INPUT_LENGTH;
-  bm_set_device_mem(&in_tensors[2].device_mem, mask_bytes * real_len * real_len,
-                    bm_mem_get_device_addr(in_tensors[2].device_mem));
   in_tensors[0].shape.dims[1] = real_len;
   in_tensors[1].shape.dims[1] = real_len;
   in_tensors[2].shape.dims[2] = real_len;
@@ -376,6 +364,7 @@ int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
   }
 
   auto out_mem = dev_buffer;
+  empty_net(bm_handle, net_blocks[0]);
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
@@ -453,6 +442,7 @@ int Qwen2_5VL::forward_first_with_kv(ArrayInt const &position_ids) {
   }
 
   auto out_mem = dev_buffer;
+  empty_net(bm_handle, net_blocks[0]);
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];

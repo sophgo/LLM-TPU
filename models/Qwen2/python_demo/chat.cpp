@@ -268,18 +268,6 @@ void Qwen::net_launch_dyn(const bm_net_info_t *net, int stage_idx) {
         net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
   }
 
-  int h_bytes = bm_mem_get_device_size(in_tensors[0].device_mem) / SEQLEN;
-  bm_set_device_mem(&in_tensors[0].device_mem, h_bytes * TOKEN_LEN,
-                    bm_mem_get_device_addr(in_tensors[0].device_mem));
-  int pid_bytes = bm_mem_get_device_size(in_tensors[1].device_mem) / SEQLEN;
-  bm_set_device_mem(&in_tensors[1].device_mem, pid_bytes * TOKEN_LEN,
-                    bm_mem_get_device_addr(in_tensors[1].device_mem));
-  int mask_bytes =
-      bm_mem_get_device_size(in_tensors[2].device_mem) / SEQLEN / SEQLEN;
-  bm_set_device_mem(&in_tensors[2].device_mem,
-                    mask_bytes * TOKEN_LEN * TOKEN_LEN,
-                    bm_mem_get_device_addr(in_tensors[2].device_mem));
-
   in_tensors[0].shape.dims[1] = TOKEN_LEN;
   in_tensors[1].shape.dims[1] = TOKEN_LEN;
   in_tensors[2].shape.dims[2] = TOKEN_LEN;

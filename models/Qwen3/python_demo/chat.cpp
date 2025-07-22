@@ -280,17 +280,6 @@ void Qwen::net_launch_dyn(const bm_net_info_t *net, int real_len,
         net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
   }
 
-  int h_bytes = bm_mem_get_device_size(in_tensors[0].device_mem) / SEQLEN;
-  bm_set_device_mem(&in_tensors[0].device_mem, h_bytes * real_len,
-                    bm_mem_get_device_addr(in_tensors[0].device_mem));
-  int pid_bytes = bm_mem_get_device_size(in_tensors[1].device_mem) / SEQLEN;
-  bm_set_device_mem(&in_tensors[1].device_mem, pid_bytes * real_len,
-                    bm_mem_get_device_addr(in_tensors[1].device_mem));
-  int mask_bytes =
-      bm_mem_get_device_size(in_tensors[2].device_mem) / SEQLEN / SEQLEN;
-  bm_set_device_mem(&in_tensors[2].device_mem, mask_bytes * real_len * real_len,
-                    bm_mem_get_device_addr(in_tensors[2].device_mem));
-
   in_tensors[0].shape.dims[1] = real_len;
   in_tensors[1].shape.dims[1] = real_len;
   in_tensors[2].shape.dims[2] = real_len;
@@ -376,11 +365,6 @@ int Qwen::forward_first(std::vector<int> &tokens) {
       }
     }
   }
-  // empty
-  for (int i = 0; i < NUM_LAYERS; i++) {
-    empty_net(bm_handle, net_blocks[i]);
-    empty_net(bm_handle, net_blocks_cache[i]);
-  }
 
   // forward embeding
   auto &in_mem = net_embed->stages[0].input_mems[0];
@@ -389,11 +373,11 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   net_launch(net_embed); // prefil embedding
 
   // forward blocks
+  empty_net(bm_handle, net_blocks[0]);
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
     auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
-    empty(bm_handle, net_blocks[idx]->stages[0].input_mems[0]);
     d2d(in0_mem, out_mem, 0, token_length * hidden_bytes);
     if (idx == 0) {
       // only first time need copy
@@ -463,6 +447,7 @@ int Qwen::forward_first_with_kv(std::vector<int> &inputs) {
   net_launch(net_embed);
 
   // forward blocks
+  empty_net(bm_handle, net_blocks[0]);
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
