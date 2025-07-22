@@ -25,14 +25,47 @@
 
 #include <pybind11/numpy.h>
 
-static const int MEDIA_TOKEN_ID = 151667;
+namespace py = pybind11;
+using ArrayFloat =
+    py::array_t<float, py::array::c_style | py::array::forcecast>;
+using ArrayInt = py::array_t<int, py::array::c_style | py::array::forcecast>;
+
+//===------------------------------------------------------------===//
+// Empty Func
+//===------------------------------------------------------------===//
+void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
+  int value = 0;
+  auto ret = bm_memset_device_ext(bm_handle, &value, 1, mem);
+  assert(BM_SUCCESS == ret);
+}
+
+void empty_in_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+                  int stage_idx = 0) {
+  for (int i = 0; i < net->input_num; i++) {
+    empty(bm_handle, net->stages[stage_idx].input_mems[i]);
+  }
+}
+
+void empty_out_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+                   int stage_idx = 0) {
+  for (int i = 0; i < net->output_num; i++) {
+    empty(bm_handle, net->stages[stage_idx].output_mems[i]);
+  }
+}
+
+void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+               int stage_idx = 0) {
+  empty_in_net(bm_handle, net, stage_idx);
+  empty_out_net(bm_handle, net, stage_idx);
+}
 
 class InternVL3 {
 public:
   void init(const std::vector<int> &devid, std::string model_path);
   void deinit();
-  int forward_first(pybind11::array_t<int> tokens,
-                    pybind11::array_t<float> pixel_values);
+  void forward_embed(ArrayInt const &tokens);
+  void forward_vit(ArrayFloat const &pixel_values, int vit_offset);
+  int forward_first();
   int forward_next();
 
   std::mt19937 sgen;
@@ -40,6 +73,7 @@ public:
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
+  void net_launch_block_dyn(const bm_net_info_t *net, int real_len);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
   void init_by_names();
   int greedy_search(bm_device_mem_t &logits_mem);
@@ -55,6 +89,7 @@ public:
   uint16_t mask_value;
   bool lmhead_with_topk;
   std::vector<int> visited_tokens;
+  bool is_dynamic;
 
   // generation
   std::string generation_mode;
@@ -91,6 +126,32 @@ void InternVL3::net_launch(const bm_net_info_t *net, int stage_idx) {
         &out_tensors[i], net->stages[stage_idx].output_mems[i],
         net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
   }
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
+                                   net->input_num, out_tensors.data(),
+                                   net->output_num, true, false);
+  assert(ret);
+  bm_thread_sync(bm_handle);
+}
+
+void InternVL3::net_launch_block_dyn(const bm_net_info_t *net, int real_len) {
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  for (int i = 0; i < net->input_num; i++) {
+    bmrt_tensor_with_device(&in_tensors[i], net->stages[0].input_mems[i],
+                            net->input_dtypes[i],
+                            net->stages[0].input_shapes[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(&out_tensors[i], net->stages[0].output_mems[i],
+                            net->output_dtypes[i],
+                            net->stages[0].output_shapes[i]);
+  }
+  in_tensors[0].shape.dims[1] = real_len;
+  in_tensors[1].shape.dims[1] = real_len;
+  in_tensors[2].shape.dims[2] = real_len;
+  in_tensors[2].shape.dims[3] = real_len;
+
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
@@ -150,13 +211,12 @@ void InternVL3::init(const std::vector<int> &devices, std::string model_path) {
   // kv cache
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
-  auto addr_mode = net_blocks_cache[0]->addr_mode;
   for (int i = 0; i < NUM_LAYERS; i++) {
-    assert(addr_mode == net_blocks_cache[i]->addr_mode);
     past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
     past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
+    empty(bm_handle, past_key[i]);
+    empty(bm_handle, past_value[i]);
   }
-
   auto buffer_size =
       bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
   bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
@@ -211,6 +271,7 @@ void InternVL3::init_by_names() {
   lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
   MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
   SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[3].dims[1];
+  is_dynamic = net_blocks[0]->is_dynamic;
 }
 
 void InternVL3::deinit() {
@@ -264,75 +325,90 @@ int InternVL3::penalty_sample(bm_device_mem_t &logits_mem) {
   return tokens[dist(sgen)];
 }
 
-int InternVL3::forward_first(pybind11::array_t<int> tokens,
-                             pybind11::array_t<float> pixel_values) {
-  auto tokens_buf = tokens.request();
-  int *tokens_ptr = static_cast<int *>(tokens_buf.ptr);
-  size_t tokens_len = tokens_buf.size;
-
-  std::vector<int> position_id(MAX_INPUT_LENGTH, 0);
-  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH,
-                                       mask_value);
-
+void InternVL3::forward_embed(ArrayInt const &tokens) {
+  std::vector<int> input_ids(MAX_INPUT_LENGTH, 0);
+  token_length = tokens.size();
+  auto p_buffer = tokens.request();
+  auto p_tokens = static_cast<int *>(p_buffer.ptr);
+  std::copy(p_tokens, p_tokens + token_length, input_ids.data());
+  auto &in_mem = net_embed->stages[0].input_mems[0];
+  auto &out_mem = net_embed->stages[0].output_mems[0];
+  bm_memcpy_s2d(bm_handle, in_mem, (void *)input_ids.data());
+  net_launch(net_embed);
+  d2d(dev_buffer, out_mem);
   std::fill(visited_tokens.begin(), visited_tokens.end(), 0);
-  std::copy(tokens_ptr, tokens_ptr + tokens_len, visited_tokens.data());
-  token_length = tokens_len;
+  std::copy(p_tokens, p_tokens + token_length, visited_tokens.data());
+}
+
+void InternVL3::forward_vit(ArrayFloat const &pixel_values, int vit_offset) {
+  auto pixel_buf = pixel_values.request();
+  float *pixel_ptr = static_cast<float *>(pixel_buf.ptr);
+  size_t pixel_len = pixel_buf.size;
+  int bytes = HIDDEN_SIZE * sizeof(uint16_t);
+
+  auto &vit_in_mem = net_vit->stages[0].input_mems[0];
+  auto &vit_out_mem = net_vit->stages[0].output_mems[0];
+  int pixels_num = vit_in_mem.size / sizeof(float);
+  assert(pixel_len % pixels_num == 0);
+  int num_patches = pixel_len / pixels_num;
+  for (int i = 0; i < num_patches; i++) {
+    bm_memcpy_s2d(bm_handle, vit_in_mem, (void *)(pixel_ptr + i * pixels_num));
+    net_launch(net_vit);
+    bm_memcpy_d2d_byte(bm_handle, dev_buffer,
+                       (vit_offset + i * NUM_IMAGE_TOKEN) * bytes, vit_out_mem,
+                       0, NUM_IMAGE_TOKEN * bytes);
+  }
+}
+
+int InternVL3::forward_first() {
+  std::vector<int> position_id(MAX_INPUT_LENGTH, 0);
 
   for (int i = 0; i < token_length; i++) {
     position_id[i] = i;
   }
-  for (int i = 0; i < token_length; i++) {
-    for (int j = 0; j <= i; j++) {
-      attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
-    }
-  }
-
-  // forward embeding
-  auto &in_mem = net_embed->stages[0].input_mems[0];
-  auto &out_mem = net_embed->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)visited_tokens.data());
-  net_launch(net_embed);
-  d2d(dev_buffer, out_mem);
-
-  int bytes = HIDDEN_SIZE * sizeof(uint16_t);
-  if (pixel_values.size() > 0) {
-    auto pixel_buf = pixel_values.request();
-    float *pixel_ptr = static_cast<float *>(pixel_buf.ptr);
-    size_t pixel_len = pixel_buf.size;
-
-    int vit_offset = 0;
+  std::vector<uint16_t> attention_mask;
+  if (is_dynamic) {
+    attention_mask.assign(token_length * token_length, mask_value);
     for (int i = 0; i < token_length; i++) {
-      if (visited_tokens[i] == MEDIA_TOKEN_ID) {
-        vit_offset = i;
-        break;
+      for (int j = 0; j <= i; j++) {
+        attention_mask[i * token_length + j] = 0;
       }
     }
-    auto &vit_in_mem = net_vit->stages[0].input_mems[0];
-    auto &vit_out_mem = net_vit->stages[0].output_mems[0];
-    int pixel_bytes = vit_in_mem.size / sizeof(float);
-    int num_patches = pixel_len / pixel_bytes;
-    for (int i = 0; i < num_patches; i++) {
-      bm_memcpy_s2d(bm_handle, vit_in_mem,
-                    (void *)(pixel_ptr + i * pixel_bytes));
-      net_launch(net_vit);
-      bm_memcpy_d2d_byte(bm_handle, dev_buffer,
-                         (vit_offset + i * NUM_IMAGE_TOKEN) * bytes,
-                         vit_out_mem, 0, NUM_IMAGE_TOKEN * bytes);
+  } else {
+    attention_mask.assign(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH, mask_value);
+    for (int i = 0; i < token_length; i++) {
+      for (int j = 0; j <= i; j++) {
+        attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
+      }
     }
   }
 
+  int bytes = HIDDEN_SIZE * sizeof(uint16_t);
   // forward blocks
-  out_mem = dev_buffer;
+  auto out_mem = dev_buffer;
+  empty_net(bm_handle, net_blocks[0]);
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
     auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
     d2d(in0_mem, out_mem);
-    if (idx == 0) {
-      bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
-      bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+    if (is_dynamic) {
+      if (idx == 0) {
+        // only first time need copy
+        bm_memcpy_s2d_partial(bm_handle, in1_mem, (void *)position_id.data(),
+                              token_length * 3 * sizeof(int));
+        bm_memcpy_s2d_partial(bm_handle, in2_mem, (void *)attention_mask.data(),
+                              token_length * token_length * sizeof(uint16_t));
+      }
+      net_launch_block_dyn(net_blocks[idx], token_length);
+    } else {
+      if (idx == 0) {
+        // only first time need copy
+        bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
+        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+      }
+      net_launch(net_blocks[idx]);
     }
-    net_launch(net_blocks[idx]);
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1]);
     d2d(past_value[idx], net_blocks[idx]->stages[0].output_mems[2]);
@@ -425,12 +501,15 @@ PYBIND11_MODULE(chat, m) {
   pybind11::class_<InternVL3>(m, "InternVL3")
       .def(pybind11::init<>())
       .def("init", &InternVL3::init)
+      .def("forward_embed", &InternVL3::forward_embed)
+      .def("forward_vit", &InternVL3::forward_vit)
       .def("forward_first", &InternVL3::forward_first)
       .def("forward_next", &InternVL3::forward_next)
       .def("deinit", &InternVL3::deinit)
-      .def_readwrite("SEQLEN", &InternVL3::SEQLEN)
-      .def_readwrite("NUM_IMAGE_TOKEN", &InternVL3::NUM_IMAGE_TOKEN)
-      .def_readwrite("token_length", &InternVL3::token_length)
+      .def_readonly("SEQLEN", &InternVL3::SEQLEN)
+      .def_readonly("NUM_IMAGE_TOKEN", &InternVL3::NUM_IMAGE_TOKEN)
+      .def_readonly("MAX_INPUT_LENGTH", &InternVL3::MAX_INPUT_LENGTH)
+      .def_readonly("token_length", &InternVL3::token_length)
       .def_readwrite("generation_mode", &InternVL3::generation_mode)
       .def_readwrite("penalty", &InternVL3::penalty)
       .def_readwrite("temperature", &InternVL3::temperature)

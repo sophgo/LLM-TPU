@@ -150,6 +150,7 @@ class InternVL3():
         self.tokenizer.decode([0])
 
         # load image
+        self.ID_IMG_CONTEXT = self.tokenizer.convert_tokens_to_ids('<IMG_CONTEXT>')
         self.EOS = [self.tokenizer.convert_tokens_to_ids('<|im_end|>')]
 
         # load model
@@ -182,8 +183,8 @@ class InternVL3():
 
     def process_input(self, media_path):
         if media_path == "":
-            media_tokens = ""
             pixel_values = torch.tensor([])
+            question = self.input_str
         elif os.path.exists(media_path):
             VIDEO_EXTS = [".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".mpeg", ".mpg"]
             ext = os.path.splitext(media_path)[1].lower()
@@ -194,15 +195,14 @@ class InternVL3():
                 num_patches_list = [pixel_values.shape[0]] if pixel_values is not None else []
             image_tags = ''.join([f'Frame{i+1}: <image>\n' for i in range(len(num_patches_list))])
             question = image_tags + self.input_str
+            IMG_START_TOKEN = '<img>'
+            IMG_END_TOKEN = '</img>'
+            IMG_CONTEXT_TOKEN = '<IMG_CONTEXT>'
+            for num_patches in num_patches_list:
+                image_tokens = IMG_START_TOKEN + IMG_CONTEXT_TOKEN * self.model.NUM_IMAGE_TOKEN * num_patches + IMG_END_TOKEN
+                question = question.replace('<image>', image_tokens, 1)
         else:
             raise FileNotFoundError(f"Media file not found: {media_path}")
-
-        IMG_START_TOKEN = '<img>'
-        IMG_END_TOKEN = '</img>'
-        IMG_CONTEXT_TOKEN = '<IMG_CONTEXT>'
-        for num_patches in num_patches_list:
-            image_tokens = IMG_START_TOKEN + IMG_CONTEXT_TOKEN * self.model.NUM_IMAGE_TOKEN * num_patches + IMG_END_TOKEN
-            question = question.replace('<image>', image_tokens, 1)
 
         prompt = (f'<|im_start|>system\n{self.system_prompt}<|im_end|>\n'
                   f'<|im_start|>user\n{question}<|im_end|>\n'
@@ -237,10 +237,10 @@ class InternVL3():
             if not self.input_str:
                 print("Sorry: your question is empty!!")
                 return
-            if token_len > self.SEQLEN - 128:
+            if token_len > self.model.MAX_INPUT_LENGTH:
                 print(
                     "The maximum question length should be shorter than {} but we get {} instead.".
-                    format(self.SEQLEN, token_len))
+                    format(self.model.MAX_INPUT_LENGTH, token_len))
                 continue
 
             print("\nAnswer: ", end="")
@@ -252,10 +252,14 @@ class InternVL3():
         """
         tok_num = 0
         self.answer_cur = ""
-
         # First token
         first_start = time.time()
-        token = self.model.forward_first(inputs[0], inputs[1])
+        self.model.forward_embed(inputs[0])
+        if inputs[1].size > 0:
+            vit_offset = np.where(inputs[0] == self.ID_IMG_CONTEXT)[0][0]
+            self.model.forward_vit(inputs[1], vit_offset)
+
+        token = self.model.forward_first()
         first_end = time.time()
 
         # Following tokens
