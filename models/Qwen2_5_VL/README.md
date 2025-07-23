@@ -129,6 +129,11 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 8192 --quantize w4bf1
 ```
 使用cpp_demo或者python_demo都支持。
 
+### 3. 支持多任务
+
+可以对相同模型，加载多次支持多任务；如果是对同一颗芯片，权重只会加载一次；不过不太建议单颗芯片做多任务。
+参考`cpp_demo_multiuser`即可。
+
 ## 常见问题
 
 #### SoC如何配置python3.10环境 ?

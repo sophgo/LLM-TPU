@@ -26,7 +26,7 @@
   - [介绍](#介绍)
   - [快速开始](#快速开始)
   - [LLM编译方法](#LLM编译方法)
-  - [进阶功能](#进阶功能)
+  - [进阶应用](#进阶应用)
   - [精度优化](#精度优化)
   - [常见问题](#常见问题)
   - [资料链接](#资料链接)
@@ -102,7 +102,9 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 | do_sample     |  -       | 否    | 指定输出是否包含采样模型，默认关闭 |
 | out_dir       |  o       | 是    | 指定输出目录 |
 
-执行完成后在指定目录会生成对应的bmodel和配置目录config
+还有更多参数可以参考[进阶应用](#进阶应用)。
+
+`llm_convert.py`执行完成后在指定目录会生成对应的bmodel和配置目录config。
 
 支持一键编译的**VLM模型**包括：
 * [Qwen2.5VL](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct-AWQ)
@@ -131,7 +133,7 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 `Gemma`/`Gemma2`  
 `Llama2`/`Llama3`/`LWM-Text-Chat`  
 `MiniCPM`/`MiniCPM3`/`MiniCPM4`/`Mistral`  
-`Phi-3`  
+`Phi-3`/`Phi-4`
 `Qwen`/`Qwen1.5`/`Qwen2`/`Qwen2.5`/`QwQ-32B`/`Qwen3`  
 `WizardCoder`  
 `Yi`  
@@ -152,7 +154,7 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 
 如果您对我们的芯片感兴趣，也可以通过官网[SOPHGO](https://www.sophgo.com/)联系我们。
 
-# 进阶功能
+# 进阶应用
 
 ## 1. 动态编译
 
@@ -199,13 +201,20 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 2) [InternVL3](./models/InternVL3) 
 3) [MiniCPM4](./models/MiniCPM4)
 
-## 5. prefill复用(过时，待更新)
+## 5. 多任务
+
+可以对相同模型，加载多次支持多任务；如果是对同一颗芯片，权重只会加载一次；不过不太建议单颗芯片做多任务。
+样例：
+
+1) [Qwen2.5VL/cpp_demo_multiuser](./models/Qwen2_5_VL/cpp_demo_multiuser/)
+
+## 6. prefill复用(过时，待更新)
 
 1) [Qwen/prompt_cache_demo](./models/Qwen/prompt_cache_demo)
 2) [Qwen/share_cache_demo](./models/Qwen/share_cache_demo)
 3) [Qwen1_5/share_cache_demo](./models/Qwen1_5/share_cache_demo)
 
-## 6. 模型加密
+## 7. 模型加密
 
 可以支持模型被第三方库加密，推理时用解密库解密
 
