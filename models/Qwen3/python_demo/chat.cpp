@@ -232,6 +232,8 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   for (int i = 0; i < NUM_LAYERS; i++) {
     past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
     past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
+    empty(bm_handle, past_key[i]);
+    empty(bm_handle, past_value[i]);
   }
 }
 
