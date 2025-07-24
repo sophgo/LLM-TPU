@@ -21,6 +21,8 @@
 #include <random>
 #include <vector>
 
+static const uint16_t ATTENTION_MASK = 0xC61C;
+
 using tokenizers::Tokenizer;
 
 static inline std::string LoadBytesFromFile(const std::string &path) {
@@ -91,7 +93,7 @@ struct GenerationConfig {
   }
 };
 
-class Qwen3 {
+class Qwen {
 public:
   void init(std::string model_path, std::string config_path,
             std::string system_prompt, bool enable_history, bool do_sample,
@@ -104,32 +106,32 @@ public:
   void clear_kv();
   std::string build_prompt(std::string input_str);
   std::mt19937 sgen;
-  Qwen3() : sgen(std::random_device()()) {};
+  Qwen() : sgen(std::random_device()()) {};
 
 private:
   int forward_first_with_kv(std::vector<int> &tokens);
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
   void net_launch_dyn(const bm_net_info_t *net, int real_len,
                       int stage_idx = 0);
-  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, size_t offset = 0,
-                  size_t size = 0);
+  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset = 0,
+                  int size = 0);
+  void init_by_names();
   int greedy_search(bm_device_mem_t &logits_mem);
   int penalty_sample(bm_device_mem_t &logits_mem);
-  void init_by_names();
 
 public:
+  int hidden_bytes;
+  int kv_bytes;
   int token_length;
   int SEQLEN;
   int MAX_INPUT_LENGTH;
   int PREFILL_KV_LENGTH;
   int NUM_LAYERS;
-  int hidden_bytes;
-  int kv_bytes;
+  bool lmhead_with_topk;
   bool is_dynamic;
   bool enable_history;
   bool support_prefill_kv;
   int history_length;
-  uint16_t mask_value;
   std::vector<int> visited_tokens;
   std::vector<std::pair<std::string, std::string>> history_vector;
   std::string sys_config;
@@ -142,17 +144,14 @@ public:
   float top_p;
 
 private:
-  bm_handle_t bm_handle;
   std::vector<bm_handle_t> handles;
+  bm_handle_t bm_handle;
   void *p_bmrt;
   std::vector<const bm_net_info_t *> net_blocks;
   std::vector<const bm_net_info_t *> net_blocks_cache;
-  const bm_net_info_t *net_vit;
   const bm_net_info_t *net_embed;
   const bm_net_info_t *net_embed_cache;
-  const bm_net_info_t *net_lm_head;
-  const bm_net_info_t *net_greedy_head;
-  const bm_net_info_t *net_sample_head;
+  const bm_net_info_t *net_lm, *net_greedy_head, *net_sample_head;
   bm_device_mem_t dev_buffer;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
@@ -161,63 +160,14 @@ private:
   std::vector<int> EOS;
 };
 
-void Qwen3::net_launch(const bm_net_info_t *net, int stage_idx) {
-  std::vector<bm_tensor_t> in_tensors(net->input_num);
-  std::vector<bm_tensor_t> out_tensors(net->output_num);
-
-  for (int i = 0; i < net->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net->stages[stage_idx].input_mems[i],
-        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
-  }
-  for (int i = 0; i < net->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net->stages[stage_idx].output_mems[i],
-        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
-  }
-  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
-                                   net->input_num, out_tensors.data(),
-                                   net->output_num, true, false);
-  assert(ret);
-  bm_thread_sync(bm_handle);
-}
-
-void Qwen3::net_launch_dyn(const bm_net_info_t *net, int real_len,
-                           int stage_idx) {
-  std::vector<bm_tensor_t> in_tensors(net->input_num);
-  std::vector<bm_tensor_t> out_tensors(net->output_num);
-
-  for (int i = 0; i < net->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net->stages[stage_idx].input_mems[i],
-        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
-  }
-  for (int i = 0; i < net->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net->stages[stage_idx].output_mems[i],
-        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
-  }
-
-  in_tensors[0].shape.dims[1] = real_len;
-  in_tensors[1].shape.dims[1] = real_len;
-  in_tensors[2].shape.dims[2] = real_len;
-  in_tensors[2].shape.dims[3] = real_len;
-
-  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
-                                   net->input_num, out_tensors.data(),
-                                   net->output_num, true, false);
-  assert(ret);
-  bm_thread_sync(bm_handle);
-}
-
-void Qwen3::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, size_t offset,
-                size_t size) {
+void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset,
+               int size) {
   if (!size)
     size = bm_mem_get_device_size(src);
   bm_memcpy_d2d_byte(bm_handle, dst, offset, src, 0, size);
 }
 
-void Qwen3::init_by_names() {
+void Qwen::init_by_names() {
   auto is_exist = [](const char *name, const char **names, int num) {
     for (int i = 0; i < num; i++) {
       if (strcmp(name, names[i]) == 0) {
@@ -228,7 +178,7 @@ void Qwen3::init_by_names() {
   };
   net_embed = bmrt_get_network_info(p_bmrt, "embedding");
   net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
-  net_lm_head = bmrt_get_network_info(p_bmrt, "lm_head");
+  net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
   const char **net_names = nullptr;
   auto num_nets = bmrt_get_network_number(p_bmrt);
   bmrt_get_network_names(p_bmrt, &net_names);
@@ -243,6 +193,8 @@ void Qwen3::init_by_names() {
     net_sample_head = bmrt_get_network_info(p_bmrt, "sample_head");
     num_blocks--; // sample_head is not a block
   }
+
+  lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
 
   NUM_LAYERS = num_blocks / 2; // 2 nets for each block, one for cache
   // net blocks
@@ -273,9 +225,9 @@ void Qwen3::init_by_names() {
   }
 }
 
-void Qwen3::init(std::string model_path, std::string config_path,
-                 std::string system_prompt, bool save_history, bool do_sample,
-                 const std::vector<int> &devices) {
+void Qwen::init(std::string model_path, std::string config_path,
+                std::string system_prompt, bool save_history, bool do_sample,
+                const std::vector<int> &devices) {
   sys_config = "<|im_start|>system\n" + system_prompt + "<|im_end|>\n";
   enable_history = save_history;
 
@@ -328,13 +280,15 @@ void Qwen3::init(std::string model_path, std::string config_path,
   assert(NULL != p_bmrt);
   bmrt_set_flags(p_bmrt, BM_RUNTIME_SHARE_MEM);
   // load bmodel
-  std::cout << "Qwen3 [" << model_path.c_str() << "] loading .... ";
+  std::cout << "Model [" << model_path.c_str() << "] loading .... ";
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   std::cout << "Done!" << std::endl;
 
-  // init networks
   init_by_names();
+
+  // resize
+  visited_tokens.resize(SEQLEN);
 
   hidden_bytes =
       bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[0]);
@@ -348,17 +302,6 @@ void Qwen3::init(std::string model_path, std::string config_path,
   bm_set_device_mem(&net_embed->stages[0].output_mems[0], dev_buffer.size,
                     dev_buffer.u.device.device_addr);
 
-  visited_tokens.resize(SEQLEN);
-  if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
-    mask_value = 0xF0E2; // ATTENTION_MASK in fp16
-  } else if (net_embed_cache->output_dtypes[0] == BM_BFLOAT16) {
-    mask_value = 0xC61C; // ATTENTION_MASK in bfloat16
-  } else {
-    std::cerr << "\nError: Unsupported Dtype: "
-              << net_embed_cache->output_dtypes[0];
-    throw std::runtime_error("Invalid attention dtype");
-  }
-
   // kv cache
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
@@ -371,7 +314,7 @@ void Qwen3::init(std::string model_path, std::string config_path,
   }
 }
 
-void Qwen3::deinit() {
+void Qwen::deinit() {
   bm_free_device(bm_handle, dev_buffer);
   bmrt_destroy(p_bmrt);
   for (auto h : handles) {
@@ -379,7 +322,56 @@ void Qwen3::deinit() {
   }
 }
 
-int Qwen3::greedy_search(bm_device_mem_t &logits_mem) {
+void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  for (int i = 0; i < net->input_num; i++) {
+    bmrt_tensor_with_device(
+        &in_tensors[i], net->stages[stage_idx].input_mems[i],
+        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(
+        &out_tensors[i], net->stages[stage_idx].output_mems[i],
+        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
+  }
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
+                                   net->input_num, out_tensors.data(),
+                                   net->output_num, true, false);
+  assert(ret);
+  bm_thread_sync(bm_handle);
+}
+
+void Qwen::net_launch_dyn(const bm_net_info_t *net, int real_len,
+                          int stage_idx) {
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  for (int i = 0; i < net->input_num; i++) {
+    bmrt_tensor_with_device(
+        &in_tensors[i], net->stages[stage_idx].input_mems[i],
+        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(
+        &out_tensors[i], net->stages[stage_idx].output_mems[i],
+        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
+  }
+
+  in_tensors[0].shape.dims[1] = real_len;
+  in_tensors[1].shape.dims[1] = real_len;
+  in_tensors[2].shape.dims[2] = real_len;
+  in_tensors[2].shape.dims[3] = real_len;
+
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
+                                   net->input_num, out_tensors.data(),
+                                   net->output_num, true, false);
+  assert(ret);
+  bm_thread_sync(bm_handle);
+}
+
+int Qwen::greedy_search(bm_device_mem_t &logits_mem) {
   auto &out_mem = net_greedy_head->stages[0].output_mems[0];
   bm_set_device_mem(&net_greedy_head->stages[0].input_mems[0], logits_mem.size,
                     logits_mem.u.device.device_addr);
@@ -389,7 +381,7 @@ int Qwen3::greedy_search(bm_device_mem_t &logits_mem) {
   return token;
 }
 
-int Qwen3::penalty_sample(bm_device_mem_t &logits_mem) {
+int Qwen::penalty_sample(bm_device_mem_t &logits_mem) {
   auto &in1_mem = net_sample_head->stages[0].input_mems[1];
   auto &in2_mem = net_sample_head->stages[0].input_mems[2];
   auto &in3_mem = net_sample_head->stages[0].input_mems[3];
@@ -397,16 +389,19 @@ int Qwen3::penalty_sample(bm_device_mem_t &logits_mem) {
   auto &in5_mem = net_sample_head->stages[0].input_mems[5];
   auto &out0_mem = net_sample_head->stages[0].output_mems[0];
   auto &out1_mem = net_sample_head->stages[0].output_mems[1];
+
   // repeat_penalty + top_p + top_k + temperature
   bm_memcpy_s2d(bm_handle, in1_mem, (void *)visited_tokens.data());
   bm_memcpy_s2d(bm_handle, in2_mem, (void *)&penalty);
   bm_memcpy_s2d(bm_handle, in3_mem, (void *)&temperature);
   bm_memcpy_s2d(bm_handle, in4_mem, (void *)&top_k);
   bm_memcpy_s2d(bm_handle, in5_mem, (void *)&top_p);
+
   // inference
   bm_set_device_mem(&net_sample_head->stages[0].input_mems[0], logits_mem.size,
                     logits_mem.u.device.device_addr);
   net_launch(net_sample_head);
+
   // get logit & token
   int candidate_num = top_k;
   std::vector<float> probs(candidate_num);
@@ -415,20 +410,27 @@ int Qwen3::penalty_sample(bm_device_mem_t &logits_mem) {
   std::vector<int> tokens(candidate_num);
   bm_memcpy_d2s_partial_offset(bm_handle, tokens.data(), out1_mem,
                                top_k * sizeof(float), 0);
+
   // sample
   std::discrete_distribution<> dist(probs.begin(), probs.end());
   return tokens[dist(sgen)];
 }
 
-int Qwen3::forward_first(std::vector<int> &inputs) {
+int Qwen::forward_first(std::vector<int> &tokens) {
   if (support_prefill_kv) {
-    return forward_first_with_kv(inputs);
+    return forward_first_with_kv(tokens);
   }
   std::vector<int> position_id(MAX_INPUT_LENGTH, 0);
-  std::copy(inputs.begin(), inputs.end(), visited_tokens.data());
-  token_length = inputs.size();
   std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH,
-                                       mask_value);
+                                       ATTENTION_MASK);
+  std::fill(visited_tokens.begin(), visited_tokens.end(), 0);
+  std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
+
+  token_length = tokens.size();
+
+  for (int i = 0; i < token_length; i++) {
+    position_id[i] = i;
+  }
   if (is_dynamic) {
     for (int i = 0; i < token_length; i++) {
       for (int j = 0; j <= i; j++) {
@@ -442,13 +444,12 @@ int Qwen3::forward_first(std::vector<int> &inputs) {
       }
     }
   }
-  for (int i = 0; i < token_length; i++) {
-    position_id[i] = i;
-  }
+
   // forward embeding
   auto &in_mem = net_embed->stages[0].input_mems[0];
   auto &out_mem = net_embed->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)visited_tokens.data());
+  bm_memcpy_s2d_partial(bm_handle, in_mem, (void *)tokens.data(),
+                        token_length * sizeof(int));
   net_launch(net_embed);
 
   // forward blocks
@@ -459,6 +460,7 @@ int Qwen3::forward_first(std::vector<int> &inputs) {
     auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
     d2d(in0_mem, out_mem, 0, token_length * hidden_bytes);
     if (idx == 0) {
+      // only first time need copy
       bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
       bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     }
@@ -475,26 +477,28 @@ int Qwen3::forward_first(std::vector<int> &inputs) {
   }
 
   // forward lmhead
-  auto &lm_in_mem = net_lm_head->stages[0].input_mems[0];
-  auto &lm_out_mem = net_lm_head->stages[0].output_mems[0];
+  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
+  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
   bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
                      (token_length - 1) * hidden_bytes, hidden_bytes);
-  net_launch(net_lm_head);
+  net_launch(net_lm);
+
   int token = 0;
-  if (!net_greedy_head && !net_sample_head) {
+  if (lmhead_with_topk) {
     bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
   } else if (generation_mode == "greedy") {
     token = greedy_search(lm_out_mem);
   } else if (generation_mode == "sample") {
     token = penalty_sample(lm_out_mem);
   }
+
   visited_tokens[token_length] = token;
   token_length += 1;
   history_length = token_length;
   return token;
 }
 
-int Qwen3::forward_first_with_kv(std::vector<int> &inputs) {
+int Qwen::forward_first_with_kv(std::vector<int> &inputs) {
   int max_kv_length = MAX_INPUT_LENGTH + PREFILL_KV_LENGTH;
   std::vector<int> position_id(MAX_INPUT_LENGTH, 0);
   std::copy(inputs.begin(), inputs.end(), visited_tokens.data());
@@ -502,7 +506,7 @@ int Qwen3::forward_first_with_kv(std::vector<int> &inputs) {
   token_length = inputs.size();
   history_length += token_length;
   std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * max_kv_length,
-                                       mask_value);
+                                       ATTENTION_MASK);
   assert(history_length < SEQLEN);
   assert(old_length <= PREFILL_KV_LENGTH);
   for (int i = 0; i < token_length; i++) {
@@ -554,11 +558,11 @@ int Qwen3::forward_first_with_kv(std::vector<int> &inputs) {
   }
 
   // forward lmhead
-  auto &lm_in_mem = net_lm_head->stages[0].input_mems[0];
-  auto &lm_out_mem = net_lm_head->stages[0].output_mems[0];
+  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
+  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
   bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
                      (token_length - 1) * hidden_bytes, hidden_bytes);
-  net_launch(net_lm_head);
+  net_launch(net_lm);
   int token = 0;
   if (!net_greedy_head && !net_sample_head) {
     bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
@@ -573,12 +577,12 @@ int Qwen3::forward_first_with_kv(std::vector<int> &inputs) {
   return token;
 }
 
-int Qwen3::forward_next() {
+int Qwen::forward_next() {
   int cur_token = visited_tokens[token_length - 1];
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = history_length - 1; i < SEQLEN; i++) {
-    attention_mask[i] = mask_value;
+    attention_mask[i] = ATTENTION_MASK;
   }
   int32_t position_id = history_length - 1;
   // embedding
@@ -588,9 +592,7 @@ int Qwen3::forward_next() {
   net_launch(net_embed_cache);
 
   // blocks
-  int bytes =
-      bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
-  int token_offset = (token_length - 1) * bytes;
+  int token_offset = (token_length - 1) * kv_bytes;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
@@ -609,31 +611,33 @@ int Qwen3::forward_next() {
     net_launch(net_blocks_cache[idx]);
     out_mem = out0_mem;
     bm_memcpy_d2d_byte(bm_handle, past_key[idx], token_offset, out1_mem, 0,
-                       bytes);
+                       kv_bytes);
     bm_memcpy_d2d_byte(bm_handle, past_value[idx], token_offset, out2_mem, 0,
-                       bytes);
+                       kv_bytes);
   }
 
   // forward lmhead
-  auto &lm_in_mem = net_lm_head->stages[0].input_mems[0];
-  auto &lm_out_mem = net_lm_head->stages[0].output_mems[0];
+  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
+  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
   d2d(lm_in_mem, out_mem);
-  net_launch(net_lm_head);
+  net_launch(net_lm);
+
   int token = 0;
-  if (!net_greedy_head && !net_sample_head) {
+  if (lmhead_with_topk) {
     bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
   } else if (generation_mode == "greedy") {
     token = greedy_search(lm_out_mem);
   } else if (generation_mode == "sample") {
     token = penalty_sample(lm_out_mem);
   }
+
   visited_tokens[token_length] = token;
   token_length++;
   history_length++;
   return token;
 }
 
-void Qwen3::clear_kv() {
+void Qwen::clear_kv() {
   if (!support_prefill_kv) {
     return;
   }
@@ -644,7 +648,7 @@ void Qwen3::clear_kv() {
   history_length = 0;
 }
 
-std::string Qwen3::build_prompt(std::string input_str) {
+std::string Qwen::build_prompt(std::string input_str) {
   std::string prompt;
   if (history_length == 0) {
     prompt = sys_config;
@@ -660,7 +664,7 @@ std::string Qwen3::build_prompt(std::string input_str) {
   return prompt;
 }
 
-void Qwen3::answer(const std::string input_str) {
+void Qwen::answer(const std::string input_str) {
   std::string sentence_input = build_prompt(input_str);
   std::vector<int> tokens = tok->Encode(sentence_input);
   int pre_token = 0;
@@ -675,24 +679,30 @@ void Qwen3::answer(const std::string input_str) {
   auto t1 = std::chrono::system_clock::now();
 
   std::string result;
+  std::vector<int> pre_ids = {pre_token};
+  std::string pre_word = tok->Decode(pre_ids);
+  std::vector<int> full_word_token = {pre_token};
   while (std::find(EOS.begin(), EOS.end(), token) == EOS.end() &&
-         token_length < SEQLEN) {
-    std::vector<int> pre_ids = {pre_token};
-    std::vector<int> ids = {pre_token, token};
-    std::string pre_word = tok->Decode(pre_ids);
-    std::string word = tok->Decode(ids);
+         history_length < SEQLEN) {
+    full_word_token.push_back(token);
+    std::string word = tok->Decode(full_word_token);
     std::string diff = word.substr(pre_word.size());
-    result += diff;
-    bool stop_by_string = false;
-    for (const auto &stop : stop_strings) {
-      if (ends_with(result, stop)) {
-        stop_by_string = true;
+    if (diff.find("�") == std::string::npos) {
+      full_word_token.clear();
+      full_word_token.push_back(pre_token);
+      result += diff;
+      bool stop_by_string = false;
+      for (const auto &stop : stop_strings) {
+        if (ends_with(result, stop)) {
+          stop_by_string = true;
+          break;
+        }
+      }
+      if (stop_by_string) {
         break;
       }
+      std::cout << diff << std::flush;
     }
-    if (stop_by_string)
-      break;
-    std::cout << diff << std::flush;
     tok_num++;
     token = forward_next();
   }
@@ -718,11 +728,13 @@ void Qwen3::answer(const std::string input_str) {
     } else {
       history_vector.push_back({input_str, result});
     }
+  } else {
+    history_length = 0;
   }
   result.clear();
 }
 
-void Qwen3::chat() {
+void Qwen::chat() {
   std::cout
       << "================================================================="
       << std::endl
@@ -741,6 +753,7 @@ void Qwen3::chat() {
     }
     if (input_str == "clear" || input_str == "new") {
       history_vector = {};
+      history_length = 0;
       clear_kv();
       std::cout << "New chat session created." << std::endl;
       continue;
@@ -819,7 +832,7 @@ int main(int argc, char **argv) {
 
   std::string system_prompt = "You are a helpful assistant.";
 
-  Qwen3 model;
+  Qwen model;
   std::cout << "Init Environment ..." << std::endl;
   model.init(model_path, config_path, system_prompt, enable_history, do_sample,
              devices);

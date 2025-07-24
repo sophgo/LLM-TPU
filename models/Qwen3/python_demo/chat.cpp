@@ -34,24 +34,17 @@ void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
   assert(BM_SUCCESS == ret);
 }
 
-void empty_in_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                  int stage_idx = 0) {
-  for (int i = 0; i < net->input_num; i++) {
-    empty(bm_handle, net->stages[stage_idx].input_mems[i]);
-  }
-}
-
-void empty_out_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                   int stage_idx = 0) {
-  for (int i = 0; i < net->output_num; i++) {
-    empty(bm_handle, net->stages[stage_idx].output_mems[i]);
-  }
-}
-
 void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
                int stage_idx = 0) {
-  empty_in_net(bm_handle, net, stage_idx);
-  empty_out_net(bm_handle, net, stage_idx);
+  int value = 0;
+  for (int i = 0; i < net->input_num; i++) {
+    bm_memset_device_ext(bm_handle, &value, 1,
+                         net->stages[stage_idx].input_mems[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    bm_memset_device_ext(bm_handle, &value, 1,
+                         net->stages[stage_idx].output_mems[i]);
+  }
 }
 
 class Qwen {
@@ -165,8 +158,7 @@ void Qwen::init_by_names() {
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
   }
   free(net_names);
-  MAX_INPUT_LENGTH =
-      net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
+  MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
   SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[3].dims[1];
   support_prefill_kv = net_blocks[0]->input_num == 5; // with kv cache
   history_length = 0;
@@ -371,8 +363,9 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   // forward embeding
   auto &in_mem = net_embed->stages[0].input_mems[0];
   auto &out_mem = net_embed->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)visited_tokens.data());
-  net_launch(net_embed); // prefil embedding
+  bm_memcpy_s2d_partial(bm_handle, in_mem, (void *)tokens.data(),
+                        token_length * sizeof(int));
+  net_launch(net_embed);
 
   // forward blocks
   empty_net(bm_handle, net_blocks[0]);
@@ -554,7 +547,7 @@ int Qwen::forward_next() {
   }
 
   visited_tokens[token_length] = token;
-  token_length += 1;
+  token_length++;
   history_length++;
   return token;
 }
