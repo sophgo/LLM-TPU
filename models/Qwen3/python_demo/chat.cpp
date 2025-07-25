@@ -283,9 +283,9 @@ void Qwen::net_launch_dyn(const bm_net_info_t *net, int real_len,
 }
 
 int Qwen::greedy_search(bm_device_mem_t &logits_mem) {
+  auto &in_mem = net_greedy_head->stages[0].input_mems[0];
   auto &out_mem = net_greedy_head->stages[0].output_mems[0];
-  bm_set_device_mem(&net_greedy_head->stages[0].input_mems[0], logits_mem.size,
-                    logits_mem.u.device.device_addr);
+  d2d(in_mem, logits_mem, 0, bm_mem_get_device_size(logits_mem));
   net_launch(net_greedy_head);
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, out_mem);
@@ -293,6 +293,7 @@ int Qwen::greedy_search(bm_device_mem_t &logits_mem) {
 }
 
 int Qwen::penalty_sample(bm_device_mem_t &logits_mem) {
+  auto &in0_mem = net_sample_head->stages[0].input_mems[0];
   auto &in1_mem = net_sample_head->stages[0].input_mems[1];
   auto &in2_mem = net_sample_head->stages[0].input_mems[2];
   auto &in3_mem = net_sample_head->stages[0].input_mems[3];
@@ -309,8 +310,7 @@ int Qwen::penalty_sample(bm_device_mem_t &logits_mem) {
   bm_memcpy_s2d(bm_handle, in5_mem, (void *)&top_p);
 
   // inference
-  bm_set_device_mem(&net_sample_head->stages[0].input_mems[0], logits_mem.size,
-                    logits_mem.u.device.device_addr);
+  d2d(in0_mem, logits_mem, 0, bm_mem_get_device_size(logits_mem));
   net_launch(net_sample_head);
 
   // get logit & token
@@ -384,8 +384,6 @@ int Qwen::forward_first(std::vector<int> &tokens) {
       net_launch(net_blocks[idx]);
     }
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
-    empty(bm_handle, past_key[idx]);
-    empty(bm_handle, past_value[idx]);
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1], 0,
         token_length * kv_bytes);
     d2d(past_value[idx], net_blocks[idx]->stages[0].output_mems[2], 0,
@@ -439,7 +437,9 @@ int Qwen::forward_first_with_kv(std::vector<int> &inputs) {
   // forward embeding
   auto &in_mem = net_embed->stages[0].input_mems[0];
   auto &out_mem = net_embed->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)inputs.data());
+  empty(bm_handle, in_mem);
+  bm_memcpy_s2d_partial(bm_handle, in_mem, (void *)inputs.data(),
+                        token_length * sizeof(int));
   net_launch(net_embed);
   d2d(dev_buffer, out_mem, 0, bm_mem_get_device_size(out_mem));
   out_mem = dev_buffer;

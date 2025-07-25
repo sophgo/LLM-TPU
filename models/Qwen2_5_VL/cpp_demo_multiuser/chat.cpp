@@ -212,9 +212,9 @@ void Qwen2_5VL::deinit() {
 }
 
 int Qwen2_5VL::greedy_search(bm_device_mem_t &logits_mem) {
+  auto &in_mem = net_greedy_head->stages[0].input_mems[0];
   auto &out_mem = net_greedy_head->stages[0].output_mems[0];
-  bm_set_device_mem(&net_greedy_head->stages[0].input_mems[0], logits_mem.size,
-                    logits_mem.u.device.device_addr);
+  d2d(in_mem, logits_mem);
   net_launch(net_greedy_head);
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, out_mem);
