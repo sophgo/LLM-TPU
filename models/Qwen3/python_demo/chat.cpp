@@ -193,12 +193,11 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
 #endif
   assert(NULL != p_bmrt);
   bmrt_set_flags(p_bmrt, BM_RUNTIME_SHARE_MEM);
-  // load bmodel by file
-  printf("Model[%s] loading ....\n", model_path.c_str());
-  bool ret = false;
-  ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
+  // load bmodel
+  std::cout << "Model [" << model_path.c_str() << "] loading .... ";
+  bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
-  printf("Done!\n");
+  std::cout << "Done!" << std::endl;
 
   init_by_names();
 
@@ -213,9 +212,6 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   auto buffer_size =
       bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
   bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
-
-  bm_set_device_mem(&net_embed->stages[0].output_mems[0], dev_buffer.size,
-                    dev_buffer.u.device.device_addr);
 
   // kv cache
   past_key.resize(NUM_LAYERS);
@@ -363,9 +359,12 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   // forward embeding
   auto &in_mem = net_embed->stages[0].input_mems[0];
   auto &out_mem = net_embed->stages[0].output_mems[0];
+  empty(bm_handle, in_mem);
   bm_memcpy_s2d_partial(bm_handle, in_mem, (void *)tokens.data(),
                         token_length * sizeof(int));
   net_launch(net_embed);
+  d2d(dev_buffer, out_mem, 0, bm_mem_get_device_size(out_mem));
+  out_mem = dev_buffer;
 
   // forward blocks
   empty_net(bm_handle, net_blocks[0]);
@@ -385,6 +384,8 @@ int Qwen::forward_first(std::vector<int> &tokens) {
       net_launch(net_blocks[idx]);
     }
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
+    empty(bm_handle, past_key[idx]);
+    empty(bm_handle, past_value[idx]);
     d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1], 0,
         token_length * kv_bytes);
     d2d(past_value[idx], net_blocks[idx]->stages[0].output_mems[2], 0,
@@ -440,6 +441,8 @@ int Qwen::forward_first_with_kv(std::vector<int> &inputs) {
   auto &out_mem = net_embed->stages[0].output_mems[0];
   bm_memcpy_s2d(bm_handle, in_mem, (void *)inputs.data());
   net_launch(net_embed);
+  d2d(dev_buffer, out_mem, 0, bm_mem_get_device_size(out_mem));
+  out_mem = dev_buffer;
 
   // forward blocks
   empty_net(bm_handle, net_blocks[0]);

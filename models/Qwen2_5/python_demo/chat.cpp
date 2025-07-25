@@ -207,8 +207,6 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
       bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
   bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
 
-  bm_set_device_mem(&net_embed->stages[0].output_mems[0], dev_buffer.size,
-                    dev_buffer.u.device.device_addr);
   // kv cache
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
@@ -347,17 +345,16 @@ int Qwen::forward_first(std::vector<int> &tokens) {
       }
     }
   }
-  // empty
-  for (int i = 0; i < NUM_LAYERS; i++) {
-    empty_net(bm_handle, net_blocks[i]);
-    empty_net(bm_handle, net_blocks_cache[i]);
-  }
 
   // forward embeding
   auto &in_mem = net_embed->stages[0].input_mems[0];
   auto &out_mem = net_embed->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)visited_tokens.data());
+  empty(bm_handle, in_mem);
+  bm_memcpy_s2d_partial(bm_handle, in_mem, (void *)tokens.data(),
+                        token_length * sizeof(int));
   net_launch(net_embed); // prefil embedding
+  d2d(dev_buffer, out_mem, 0, bm_mem_get_device_size(out_mem));
+  out_mem = dev_buffer;
 
   // forward blocks
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
