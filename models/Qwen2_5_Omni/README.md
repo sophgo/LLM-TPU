@@ -4,6 +4,13 @@
 
 该模型可以用于图片或者视频，视频中可以带有音频。
 
+如何编译bmodel环节可以省去，直接用以下链接下载：
+
+``` shell
+# 不包括talker
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-omni-7b-awq_w4bf16_seq4096_bm1684x_1dev_no_talker.bmodel 
+```
+
 ## 编译LLM模型
 
 此处介绍如何将LLM编译成bmodel。
