@@ -370,6 +370,7 @@ void InternVL3::forward_embed(ArrayInt const &tokens) {
 }
 
 void InternVL3::forward_vit(ArrayFloat const &pixel_values, int vit_offset) {
+  static const int MEDIA_TOKEN_ID = 151667;
   auto pixel_buf = pixel_values.request();
   float *pixel_ptr = static_cast<float *>(pixel_buf.ptr);
   size_t pixel_len = pixel_buf.size;
@@ -383,9 +384,17 @@ void InternVL3::forward_vit(ArrayFloat const &pixel_values, int vit_offset) {
   for (int i = 0; i < num_patches; i++) {
     bm_memcpy_s2d(bm_handle, vit_in_mem, (void *)(pixel_ptr + i * pixels_num));
     net_launch(net_vit);
-    bm_memcpy_d2d_byte(bm_handle, dev_buffer,
-                       (vit_offset + i * NUM_IMAGE_TOKEN) * bytes, vit_out_mem,
+    bm_memcpy_d2d_byte(bm_handle, dev_buffer, vit_offset * bytes, vit_out_mem,
                        0, NUM_IMAGE_TOKEN * bytes);
+    vit_offset += NUM_IMAGE_TOKEN;
+    while (vit_offset < SEQLEN &&
+           visited_tokens[vit_offset] != MEDIA_TOKEN_ID) {
+      vit_offset++;
+    }
+    if (vit_offset > SEQLEN - NUM_IMAGE_TOKEN) {
+      printf("Warning: Vit offset exceeds SEQLEN\n");
+      break;
+    }
   }
 }
 
