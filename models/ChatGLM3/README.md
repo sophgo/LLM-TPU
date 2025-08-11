@@ -60,6 +60,11 @@ llm_convert.py -m /workspace/Chatglm3-6 -s 384 -q int8 -g 128 --num_device 1  -c
 llm_convert.py -m /workspace/Chatglm3-6 -s 384 -q w4f16 -g 128 --num_device 2  -c bm1688  -o chatglm3
 ```
 
+如果编译不方便，也可以直接下载编译好的模型：
+```shell
+python3 -m dfss --url=open@sophgo.com:/share/hengyang/chatglm3-6b_w4f16_seq512_bm1684x_1dev_20250630_190644.bmodel
+```
+
 ## 编译程序(python_demo版本)
 
 执行如下编译，(PCIE版本与SoC版本相同)：
