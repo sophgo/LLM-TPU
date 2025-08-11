@@ -9,7 +9,11 @@ pip3 install gradio==3.39.0 mdtex2html==1.2.0 dfss
 
 如果不打算自己编译phi3模型，可以直接用下载好的phi3模型
 ```
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/phi3-4b_int4_1dev.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/phi3-4b_int4_1dev.bmodel（原始版本）
+```
+或
+```
+python3 -m dfss --url=open@sophgo.com:/share/hengyang/phi-3-mini-4k-instruct_w4f16_seq512_bm1684x_1dev_20250811_151631.bmodel（新方法编译版本）
 ```
 
 编译库文件
