@@ -34,24 +34,17 @@ void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
   assert(BM_SUCCESS == ret);
 }
 
-void empty_in_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                  int stage_idx = 0) {
-  for (int i = 0; i < net->input_num; i++) {
-    empty(bm_handle, net->stages[stage_idx].input_mems[i]);
-  }
-}
-
-void empty_out_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                   int stage_idx = 0) {
-  for (int i = 0; i < net->output_num; i++) {
-    empty(bm_handle, net->stages[stage_idx].output_mems[i]);
-  }
-}
-
 void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
                int stage_idx = 0) {
-  empty_in_net(bm_handle, net, stage_idx);
-  empty_out_net(bm_handle, net, stage_idx);
+  int value = 0;
+  for (int i = 0; i < net->input_num; i++) {
+    bm_memset_device_ext(bm_handle, &value, 1,
+                         net->stages[stage_idx].input_mems[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    bm_memset_device_ext(bm_handle, &value, 1,
+                         net->stages[stage_idx].output_mems[i]);
+  }
 }
 
 class Qwen {
@@ -211,11 +204,11 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
   is_dynamic = net_blocks[0]->is_dynamic;
-  auto addr_mode = net_blocks_cache[0]->addr_mode;
   for (int i = 0; i < NUM_LAYERS; i++) {
-    assert(addr_mode == net_blocks_cache[i]->addr_mode);
     past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
     past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
+    empty(bm_handle, past_key[i]);
+    empty(bm_handle, past_value[i]);
   }
 }
 
@@ -357,11 +350,11 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   out_mem = dev_buffer;
 
   // forward blocks
+  empty_net(bm_handle, net_blocks[0]);
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
     auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
-    empty(bm_handle, net_blocks[idx]->stages[0].input_mems[0]);
     d2d(in0_mem, out_mem, 0, token_length * hidden_bytes);
     if (idx == 0) {
       // only first time need copy
