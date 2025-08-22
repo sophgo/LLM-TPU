@@ -27,8 +27,6 @@
 
 namespace py = pybind11;
 
-static const uint16_t ATTENTION_MASK = 0xC61C;
-
 //===------------------------------------------------------------===//
 // Empty Func
 //===------------------------------------------------------------===//
@@ -38,24 +36,14 @@ void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
   assert(BM_SUCCESS == ret);
 }
 
-void empty_in_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                  int stage_idx = 0) {
+void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+               int stage_idx = 0) {
   for (int i = 0; i < net->input_num; i++) {
     empty(bm_handle, net->stages[stage_idx].input_mems[i]);
   }
-}
-
-void empty_out_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                   int stage_idx = 0) {
   for (int i = 0; i < net->output_num; i++) {
     empty(bm_handle, net->stages[stage_idx].output_mems[i]);
   }
-}
-
-void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-               int stage_idx = 0) {
-  empty_in_net(bm_handle, net, stage_idx);
-  empty_out_net(bm_handle, net, stage_idx);
 }
 
 class Gemma3 {
@@ -94,6 +82,7 @@ public:
   bool lmhead_with_topk;
   bool is_dynamic;
   std::vector<int> visited_tokens;
+  uint16_t mask_value;
 
   // generation
   std::string generation_mode;
@@ -173,6 +162,15 @@ void Gemma3::init_by_names() {
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
   }
   free(net_names);
+  if (net_blocks[0]->input_dtypes[0] == BM_FLOAT16) {
+    mask_value = 0xF0E2;
+  } else if (net_blocks[0]->input_dtypes[0] == BM_BFLOAT16) {
+    mask_value = 0xC61C;
+  } else {
+    std::cerr << "\nError: Invalid attention dtype\n";
+    std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
+    throw std::runtime_error("Invalid attention dtype");
+  }
 }
 
 void Gemma3::forward_embed(std::vector<int> &tokens) {
@@ -370,7 +368,7 @@ int Gemma3::penalty_sample(bm_device_mem_t &logits_mem) {
 
 int Gemma3::forward_first() {
   std::vector<int> position_id(SEQLEN, 0);
-  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
+  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, mask_value);
 
   for (int i = 0; i < token_length; i++) {
     position_id[i] = i;
@@ -446,7 +444,7 @@ int Gemma3::forward_next() {
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = token_length - 1; i < SEQLEN; i++) {
-    attention_mask[i] = ATTENTION_MASK;
+    attention_mask[i] = mask_value;
   }
   int32_t position_id = token_length - 1;
   // embedding

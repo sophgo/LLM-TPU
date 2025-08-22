@@ -148,6 +148,15 @@ void Qwen2_5VL::init_by_names() {
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
   }
   free(net_names);
+  if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
+    mask_value = 0xF0E2; // float16
+  } else if (net_embed_cache->output_dtypes[0] == BM_BFLOAT16) {
+    mask_value = 0xC61C; // -9984 by bfloat16
+  } else {
+    std::cerr << "\nError: Invalid attention dtype\n";
+    std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
+    throw std::runtime_error("Invalid attention dtype");
+  }
   support_history = net_blocks[0]->input_num == 5; // with kv cache
   is_dynamic = net_blocks[0]->is_dynamic;
   history_length = 0;
@@ -330,14 +339,14 @@ int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
   }
   std::vector<uint16_t> attention_mask;
   if (is_dynamic) {
-    attention_mask.assign(token_length * token_length, ATTENTION_MASK);
+    attention_mask.assign(token_length * token_length, mask_value);
     for (int i = 0; i < token_length; i++) {
       for (int j = 0; j <= i; j++) {
         attention_mask[i * token_length + j] = 0;
       }
     }
   } else {
-    attention_mask.assign(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH, ATTENTION_MASK);
+    attention_mask.assign(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH, mask_value);
     for (int i = 0; i < token_length; i++) {
       for (int j = 0; j <= i; j++) {
         attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
@@ -414,7 +423,7 @@ int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
 int Qwen2_5VL::forward_first_with_kv(ArrayInt const &position_ids) {
   int max_kv_length = MAX_INPUT_LENGTH + PREFILL_KV_LENGTH;
   std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * max_kv_length,
-                                       ATTENTION_MASK);
+                                       mask_value);
   auto old_length = history_length;
   history_length += token_length;
   assert(history_length < SEQLEN);
@@ -493,7 +502,7 @@ int Qwen2_5VL::forward_first_with_kv(ArrayInt const &position_ids) {
 int Qwen2_5VL::forward_next(ArrayInt const &position_ids) {
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = history_length - 1; i < SEQLEN; i++) {
-    attention_mask[i] = ATTENTION_MASK;
+    attention_mask[i] = mask_value;
   }
   assert(position_ids.size() == 3);
   const int *p_ids = position_ids.data();

@@ -24,8 +24,6 @@
 #include <stdio.h>
 #include <vector>
 
-static const uint16_t ATTENTION_MASK = 0xC61C;
-
 //===------------------------------------------------------------===//
 // Empty Func
 //===------------------------------------------------------------===//
@@ -35,24 +33,14 @@ void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
   assert(BM_SUCCESS == ret);
 }
 
-void empty_in_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                  int stage_idx = 0) {
+void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+               int stage_idx = 0) {
   for (int i = 0; i < net->input_num; i++) {
     empty(bm_handle, net->stages[stage_idx].input_mems[i]);
   }
-}
-
-void empty_out_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                   int stage_idx = 0) {
   for (int i = 0; i < net->output_num; i++) {
     empty(bm_handle, net->stages[stage_idx].output_mems[i]);
   }
-}
-
-void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-               int stage_idx = 0) {
-  empty_in_net(bm_handle, net, stage_idx);
-  empty_out_net(bm_handle, net, stage_idx);
 }
 
 class Qwen {
@@ -173,6 +161,15 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
     past_key[i] = net_decode_block->stages[0].input_mems[i + 3];
     past_value[i] = net_decode_block->stages[0].input_mems[i + NUM_LAYERS + 3];
   }
+  if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
+    mask_value = 0xF0E2; // float16
+  } else if (net_embed_cache->output_dtypes[0] == BM_BFLOAT16) {
+    mask_value = 0xC61C; // -9984 by bfloat16
+  } else {
+    std::cerr << "\nError: Invalid attention dtype\n";
+    std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
+    throw std::runtime_error("Invalid attention dtype");
+  }
 }
 
 void Qwen::deinit() {
@@ -271,7 +268,7 @@ int Qwen::penalty_sample(const bm_net_info_t *net,
 
 int Qwen::forward_first(std::vector<int> &tokens) {
   std::vector<int> position_id(SEQLEN, 0);
-  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
+  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, mask_value);
   std::fill(visited_tokens.begin(), visited_tokens.end(), 0);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
 
@@ -338,7 +335,7 @@ int Qwen::forward_next() {
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = token_length - 1; i < SEQLEN; i++) {
-    attention_mask[i] = ATTENTION_MASK;
+    attention_mask[i] = mask_value;
   }
   int32_t position_id = token_length - 1;
 

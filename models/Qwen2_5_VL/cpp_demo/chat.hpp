@@ -25,7 +25,6 @@ typedef std::vector<int> ArrayInt;
 typedef std::vector<float> ArrayFloat;
 typedef std::vector<std::vector<int>> ArrayInt2D;
 typedef std::vector<std::vector<float>> ArrayFloat2D;
-static const uint16_t ATTENTION_MASK = 0xC61C; // -9984 by bfloat16
 
 class Qwen2_5VL {
 public:
@@ -68,6 +67,7 @@ public:
   bool lmhead_with_topk;
   bool support_history;
   bool is_dynamic;
+  uint16_t mask_value;
 
 private:
   bm_handle_t bm_handle;

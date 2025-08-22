@@ -28,8 +28,6 @@
 #include "memory.h"
 #include "utils.h"
 
-static const float ATTENTION_MASK = -10000.;
-
 class Model {
 public:
   // Initialization
@@ -378,9 +376,9 @@ void Model::init_network() {
 
   // Mask Value Setup
   if (net_blocks[0]->input_dtypes[0] == BM_FLOAT16) {
-    mask_value = fp32_to_fp16_bits(ATTENTION_MASK);
+    mask_value = 0xF0E2;
   } else if (net_blocks[0]->input_dtypes[0] == BM_BFLOAT16) {
-    mask_value = fp32_to_bf16_bits(ATTENTION_MASK);
+    mask_value = 0xC61C;
   } else {
     std::cerr << "\nError: Invalid attention dtype\n";
     std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";

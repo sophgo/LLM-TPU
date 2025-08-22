@@ -23,8 +23,6 @@
 #include <stdio.h>
 #include <vector>
 
-static const uint16_t ATTENTION_MASK = 0xC61C;
-
 //===------------------------------------------------------------===//
 // Empty Func
 //===------------------------------------------------------------===//
@@ -77,6 +75,7 @@ public:
   bool lmhead_with_topk;
   bool is_dynamic;
   std::vector<int> visited_tokens;
+  uint16_t mask_value;
 
   // generation
   std::string generation_mode;
@@ -153,6 +152,15 @@ void Qwen::init_by_names() {
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
   }
   free(net_names);
+  if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
+    mask_value = 0xF0E2; // float16
+  } else if (net_embed_cache->output_dtypes[0] == BM_BFLOAT16) {
+    mask_value = 0xC61C; // -9984 by bfloat16
+  } else {
+    std::cerr << "\nError: Invalid attention dtype\n";
+    std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
+    throw std::runtime_error("Invalid attention dtype");
+  }
 }
 
 void Qwen::init(const std::vector<int> &devices, std::string model_path) {
@@ -316,7 +324,7 @@ int Qwen::penalty_sample(bm_device_mem_t &logits_mem) {
 
 int Qwen::forward_first(std::vector<int> &tokens) {
   std::vector<int> position_id(SEQLEN, 0);
-  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
+  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, mask_value);
   std::fill(visited_tokens.begin(), visited_tokens.end(), 0);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
 
@@ -399,7 +407,7 @@ int Qwen::forward_next() {
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = token_length - 1; i < SEQLEN; i++) {
-    attention_mask[i] = ATTENTION_MASK;
+    attention_mask[i] = mask_value;
   }
   int32_t position_id = token_length - 1;
   // embedding

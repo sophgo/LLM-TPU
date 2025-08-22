@@ -26,8 +26,6 @@ using tokenizers::Tokenizer;
 static const int VISION_PAD_TOKEN = 151654;
 static const int IMAGE_PAD_TOKEN = 151655;
 
-static const uint16_t ATTENTION_MASK = 0xC61C; // -9984 by bfloat16
-
 static inline std::string LoadBytesFromFile(const std::string &path) {
   std::ifstream fs(path, std::ios::in | std::ios::binary);
   if (fs.fail()) {
@@ -206,7 +204,15 @@ void Qwen2VL::init(std::string model_path, std::string config_path,
       bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
   visited_tokens.resize(SEQLEN);
 
-  mask_value = ATTENTION_MASK;
+  if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
+    mask_value = 0xF0E2; // float16
+  } else if (net_embed_cache->output_dtypes[0] == BM_BFLOAT16) {
+    mask_value = 0xC61C; // -9984 by bfloat16
+  } else {
+    std::cerr << "\nError: Invalid attention dtype\n";
+    std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
+    throw std::runtime_error("Invalid attention dtype");
+  }
 
   // empty networks
   empty_net(bm_handle, net_vit);

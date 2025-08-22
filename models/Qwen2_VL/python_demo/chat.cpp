@@ -29,7 +29,6 @@ namespace py = pybind11;
 using ArrayFloat =
     py::array_t<float, py::array::c_style | py::array::forcecast>;
 using ArrayInt = py::array_t<int, py::array::c_style | py::array::forcecast>;
-static const uint16_t ATTENTION_MASK = 0xC61C; // -9984 by bfloat16
 
 //===------------------------------------------------------------===//
 // Empty Func
@@ -40,24 +39,14 @@ void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
   assert(BM_SUCCESS == ret);
 }
 
-void empty_in_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                  int stage_idx = 0) {
+void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+               int stage_idx = 0) {
   for (int i = 0; i < net->input_num; i++) {
     empty(bm_handle, net->stages[stage_idx].input_mems[i]);
   }
-}
-
-void empty_out_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                   int stage_idx = 0) {
   for (int i = 0; i < net->output_num; i++) {
     empty(bm_handle, net->stages[stage_idx].output_mems[i]);
   }
-}
-
-void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-               int stage_idx = 0) {
-  empty_in_net(bm_handle, net, stage_idx);
-  empty_out_net(bm_handle, net, stage_idx);
 }
 
 class Qwen2VL {
@@ -92,6 +81,7 @@ public:
   int max_pos;
   const int spatial_merge_size = 2;
   bool lmhead_with_topk;
+  uint16_t mask_value;
 
 private:
   bm_handle_t bm_handle;
@@ -182,6 +172,15 @@ void Qwen2VL::init_by_names() {
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
   }
   free(net_names);
+  if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
+    mask_value = 0xF0E2; // float16
+  } else if (net_embed_cache->output_dtypes[0] == BM_BFLOAT16) {
+    mask_value = 0xC61C; // -9984 by bfloat16
+  } else {
+    std::cerr << "\nError: Invalid attention dtype\n";
+    std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
+    throw std::runtime_error("Invalid attention dtype");
+  }
 }
 
 void Qwen2VL::init(int dev_id, std::string model_path) {
@@ -328,7 +327,7 @@ int Qwen2VL::greedy_search(const bm_net_info_t *net,
 }
 
 int Qwen2VL::forward_first(ArrayInt const &position_ids) {
-  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
+  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, mask_value);
   for (int i = 0; i < token_length; i++) {
     for (int j = 0; j < token_length; j++) {
       if (j <= i) {
@@ -384,7 +383,7 @@ int Qwen2VL::forward_first(ArrayInt const &position_ids) {
 int Qwen2VL::forward_next(ArrayInt const &position_ids) {
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = token_length - 1; i < SEQLEN; i++) {
-    attention_mask[i] = ATTENTION_MASK;
+    attention_mask[i] = mask_value;
   }
   assert(position_ids.size() == 3);
   auto p_position_ids = position_ids.request();

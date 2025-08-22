@@ -34,29 +34,31 @@ void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
 
 void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
                int stage_idx = 0) {
+  int value = 0;
   for (int i = 0; i < net->input_num; i++) {
-    empty(bm_handle, net->stages[stage_idx].input_mems[i]);
+    bm_memset_device_ext(bm_handle, &value, 1,
+                         net->stages[stage_idx].input_mems[i]);
   }
   for (int i = 0; i < net->output_num; i++) {
-    empty(bm_handle, net->stages[stage_idx].output_mems[i]);
+    bm_memset_device_ext(bm_handle, &value, 1,
+                         net->stages[stage_idx].output_mems[i]);
   }
 }
 
-class MiniCPM4 {
+class Qwen {
 public:
   void init(const std::vector<int> &devid, std::string model_path);
   void deinit();
+  void forward_prompt(std::vector<int> &tokens);
   int forward_first(std::vector<int> &tokens);
   int forward_next();
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
   std::mt19937 sgen;
-  MiniCPM4() : sgen(std::random_device()()) {};
+  Qwen() : sgen(std::random_device()()) {};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
-  void net_launch_dyn(const bm_net_info_t *net, int real_len,
-                      int stage_idx = 0);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset = 0,
                   int size = 0);
   void init_by_names();
@@ -67,11 +69,12 @@ public:
   int hidden_bytes;
   int kv_bytes;
   int token_length;
-  int SEQLEN; // read from bmodel
+  int prompt_length;
+  int SEQLEN;
   int MAX_INPUT_LENGTH;
-  int NUM_LAYERS; // read from bmodel
+  int PREFILL_KV_LENGTH;
+  int NUM_LAYERS;
   bool lmhead_with_topk;
-  bool is_dynamic;
   std::vector<int> visited_tokens;
   uint16_t mask_value;
 
@@ -88,6 +91,7 @@ private:
   void *p_bmrt;
   std::vector<const bm_net_info_t *> net_blocks;
   std::vector<const bm_net_info_t *> net_blocks_cache;
+  std::vector<const bm_net_info_t *> net_blocks_prompt;
   const bm_net_info_t *net_embed;
   const bm_net_info_t *net_embed_cache;
   const bm_net_info_t *net_lm, *net_greedy_head, *net_sample_head;
@@ -96,14 +100,14 @@ private:
   std::vector<bm_device_mem_t> past_value;
 };
 
-void MiniCPM4::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset,
-                   int size) {
+void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset,
+               int size) {
   if (!size)
     size = bm_mem_get_device_size(src);
   bm_memcpy_d2d_byte(bm_handle, dst, offset, src, 0, size);
 }
 
-void MiniCPM4::init_by_names() {
+void Qwen::init_by_names() {
   auto is_exist = [](const char *name, const char **names, int num) {
     for (int i = 0; i < num; i++) {
       if (strcmp(name, names[i]) == 0) {
@@ -132,21 +136,24 @@ void MiniCPM4::init_by_names() {
 
   lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
 
-  NUM_LAYERS = num_blocks / 2; // 2 nets for each block, one for cache
+  NUM_LAYERS = num_blocks / 3; // block, cache, prompt
   // net blocks
-  for (int i = 0; i < num_blocks / 2; i++) {
+  for (int i = 0; i < num_blocks / 3; i++) {
     auto block_name = "block_" + std::to_string(i);
     auto cache_name = "block_cache_" + std::to_string(i);
+    auto prompt_name = "block_prompt_" + std::to_string(i);
     if ((!is_exist(block_name.c_str(), net_names, num_nets)) ||
         (!is_exist(cache_name.c_str(), net_names, num_nets))) {
       NUM_LAYERS = i;
       printf("Warning: Only %d blocks found, expected %d blocks.\n", NUM_LAYERS,
-             num_blocks / 2);
+             num_blocks / 3);
       break;
     }
     net_blocks.emplace_back(bmrt_get_network_info(p_bmrt, block_name.c_str()));
     net_blocks_cache.emplace_back(
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
+    net_blocks_prompt.emplace_back(
+        bmrt_get_network_info(p_bmrt, prompt_name.c_str()));
   }
   free(net_names);
   if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
@@ -158,12 +165,14 @@ void MiniCPM4::init_by_names() {
     std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
     throw std::runtime_error("Invalid attention dtype");
   }
-  MAX_INPUT_LENGTH =
-      net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
+  MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
   SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[3].dims[1];
+  assert(net_blocks[0]->input_num == 5); // with kv cache
+  printf("Num Layers:%d\n", NUM_LAYERS);
+  PREFILL_KV_LENGTH = net_blocks[0]->stages[0].input_shapes[3].dims[1];
 }
 
-void MiniCPM4::init(const std::vector<int> &devices, std::string model_path) {
+void Qwen::init(const std::vector<int> &devices, std::string model_path) {
 
   // request bm_handle
   std::cout << "Device [ ";
@@ -187,12 +196,11 @@ void MiniCPM4::init(const std::vector<int> &devices, std::string model_path) {
 #endif
   assert(NULL != p_bmrt);
   bmrt_set_flags(p_bmrt, BM_RUNTIME_SHARE_MEM);
-  // load bmodel by file
-  printf("Model[%s] loading ....\n", model_path.c_str());
-  bool ret = false;
-  ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
+  // load bmodel
+  std::cout << "Model [" << model_path.c_str() << "] loading .... ";
+  bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
-  printf("Done!\n");
+  std::cout << "Done!" << std::endl;
 
   init_by_names();
 
@@ -211,16 +219,25 @@ void MiniCPM4::init(const std::vector<int> &devices, std::string model_path) {
   // kv cache
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
-  is_dynamic = net_blocks[0]->is_dynamic;
   for (int i = 0; i < NUM_LAYERS; i++) {
     past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
     past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
     empty(bm_handle, past_key[i]);
     empty(bm_handle, past_value[i]);
   }
+  // prompt kv
+  auto prompt_kv_bytes =
+      bm_mem_get_device_size(net_blocks_prompt[0]->stages[0].output_mems[1]);
+  for (int i = 0; i < NUM_LAYERS; i++) {
+    bm_device_mem_t key_mem, value_mem;
+    bm_malloc_device_byte(bm_handle, &key_mem, prompt_kv_bytes);
+    bm_malloc_device_byte(bm_handle, &value_mem, prompt_kv_bytes);
+    empty(bm_handle, key_mem);
+    empty(bm_handle, value_mem);
+  }
 }
 
-void MiniCPM4::deinit() {
+void Qwen::deinit() {
   bm_free_device(bm_handle, dev_buffer);
   bmrt_destroy(p_bmrt);
   for (auto h : handles) {
@@ -228,7 +245,7 @@ void MiniCPM4::deinit() {
   }
 }
 
-void MiniCPM4::net_launch(const bm_net_info_t *net, int stage_idx) {
+void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
   std::vector<bm_tensor_t> out_tensors(net->output_num);
 
@@ -249,35 +266,7 @@ void MiniCPM4::net_launch(const bm_net_info_t *net, int stage_idx) {
   bm_thread_sync(bm_handle);
 }
 
-void MiniCPM4::net_launch_dyn(const bm_net_info_t *net, int real_len,
-                              int stage_idx) {
-  std::vector<bm_tensor_t> in_tensors(net->input_num);
-  std::vector<bm_tensor_t> out_tensors(net->output_num);
-
-  for (int i = 0; i < net->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net->stages[stage_idx].input_mems[i],
-        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
-  }
-  for (int i = 0; i < net->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net->stages[stage_idx].output_mems[i],
-        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
-  }
-
-  in_tensors[0].shape.dims[1] = real_len;
-  in_tensors[1].shape.dims[1] = real_len;
-  in_tensors[2].shape.dims[2] = real_len;
-  in_tensors[2].shape.dims[3] = real_len;
-
-  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
-                                   net->input_num, out_tensors.data(),
-                                   net->output_num, true, false);
-  assert(ret);
-  bm_thread_sync(bm_handle);
-}
-
-int MiniCPM4::greedy_search(bm_device_mem_t &logits_mem) {
+int Qwen::greedy_search(bm_device_mem_t &logits_mem) {
   auto &in_mem = net_greedy_head->stages[0].input_mems[0];
   auto &out_mem = net_greedy_head->stages[0].output_mems[0];
   d2d(in_mem, logits_mem, 0, bm_mem_get_device_size(logits_mem));
@@ -287,7 +276,7 @@ int MiniCPM4::greedy_search(bm_device_mem_t &logits_mem) {
   return token;
 }
 
-int MiniCPM4::penalty_sample(bm_device_mem_t &logits_mem) {
+int Qwen::penalty_sample(bm_device_mem_t &logits_mem) {
   auto &in0_mem = net_sample_head->stages[0].input_mems[0];
   auto &in1_mem = net_sample_head->stages[0].input_mems[1];
   auto &in2_mem = net_sample_head->stages[0].input_mems[2];
@@ -322,29 +311,22 @@ int MiniCPM4::penalty_sample(bm_device_mem_t &logits_mem) {
   return tokens[dist(sgen)];
 }
 
-int MiniCPM4::forward_first(std::vector<int> &tokens) {
-  std::vector<int> position_id(MAX_INPUT_LENGTH, 0);
-  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH,
+void Qwen::forward_prompt(std::vector<int> &tokens) {
+  std::vector<int> position_id(PREFILL_KV_LENGTH, 0);
+  std::vector<uint16_t> attention_mask(PREFILL_KV_LENGTH * PREFILL_KV_LENGTH,
                                        mask_value);
   std::fill(visited_tokens.begin(), visited_tokens.end(), 0);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
 
-  token_length = tokens.size();
+  prompt_length = tokens.size();
 
-  for (int i = 0; i < token_length; i++) {
+  for (int i = 0; i < prompt_length; i++) {
     position_id[i] = i;
   }
-  if (is_dynamic) {
-    for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j <= i; j++) {
-        attention_mask[i * token_length + j] = 0;
-      }
-    }
-  } else {
-    for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j <= i; j++) {
-        attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
-      }
+
+  for (int i = 0; i < prompt_length; i++) {
+    for (int j = 0; j <= i; j++) {
+      attention_mask[i * PREFILL_KV_LENGTH + j] = 0;
     }
   }
 
@@ -353,9 +335,62 @@ int MiniCPM4::forward_first(std::vector<int> &tokens) {
   auto &out_mem = net_embed->stages[0].output_mems[0];
   empty(bm_handle, in_mem);
   bm_memcpy_s2d_partial(bm_handle, in_mem, (void *)tokens.data(),
-                        token_length * sizeof(int));
-  net_launch(net_embed); // prefil embedding
+                        prompt_length * sizeof(int));
+  net_launch(net_embed);
   d2d(dev_buffer, out_mem, 0, bm_mem_get_device_size(out_mem));
+  out_mem = dev_buffer;
+
+  // forward blocks
+  empty_net(bm_handle, net_blocks_prompt[0]);
+  for (int idx = 0; idx < NUM_LAYERS; idx++) {
+    auto &in0_mem = net_blocks_prompt[idx]->stages[0].input_mems[0];
+    auto &in1_mem = net_blocks_prompt[idx]->stages[0].input_mems[1];
+    auto &in2_mem = net_blocks_prompt[idx]->stages[0].input_mems[2];
+    d2d(in0_mem, out_mem, 0, prompt_length * hidden_bytes);
+    if (idx == 0) {
+      // only first time need copy
+      bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
+      bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+    }
+    net_launch(net_blocks_prompt[idx]);
+    out_mem = net_blocks_prompt[idx]->stages[0].output_mems[0];
+    d2d(past_key[idx], net_blocks_prompt[idx]->stages[0].output_mems[1], 0,
+        prompt_length * kv_bytes);
+    d2d(past_value[idx], net_blocks_prompt[idx]->stages[0].output_mems[2], 0,
+        prompt_length * kv_bytes);
+  }
+}
+
+int Qwen::forward_first(std::vector<int> &inputs) {
+  int max_kv_length = MAX_INPUT_LENGTH + PREFILL_KV_LENGTH;
+  std::vector<int> position_id(MAX_INPUT_LENGTH, 0);
+  std::copy(inputs.begin(), inputs.end(),
+            visited_tokens.begin() + prompt_length);
+  int input_length = inputs.size();
+  token_length = prompt_length + input_length;
+  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * max_kv_length,
+                                       mask_value);
+  assert(token_length < SEQLEN);
+  assert(prompt_length <= PREFILL_KV_LENGTH);
+  for (int i = 0; i < input_length; i++) {
+    for (int j = 0; j < prompt_length; j++) {
+      attention_mask[i * max_kv_length + j] = 0;
+    }
+    for (int j = 0; j <= i; j++) {
+      attention_mask[i * max_kv_length + j + PREFILL_KV_LENGTH] = 0;
+    }
+  }
+  for (int i = 0; i < input_length; i++) {
+    position_id[i] = i + prompt_length;
+  }
+  // forward embeding
+  auto &in_mem = net_embed->stages[0].input_mems[0];
+  auto &out_mem = net_embed->stages[0].output_mems[0];
+  empty(bm_handle, in_mem);
+  bm_memcpy_s2d_partial(bm_handle, in_mem, (void *)inputs.data(),
+                        input_length * sizeof(int));
+  net_launch(net_embed);
+  d2d(dev_buffer, out_mem, 0, input_length * hidden_bytes);
   out_mem = dev_buffer;
 
   // forward blocks
@@ -364,46 +399,46 @@ int MiniCPM4::forward_first(std::vector<int> &tokens) {
     auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
     auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
-    d2d(in0_mem, out_mem, 0, token_length * hidden_bytes);
-    if (idx == 0) {
-      // only first time need copy
-      bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
-      bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-    }
-    if (is_dynamic) {
-      net_launch_dyn(net_blocks[idx], token_length);
-    } else {
-      net_launch(net_blocks[idx]);
-    }
+    auto &in3_mem = net_blocks[idx]->stages[0].input_mems[3];
+    auto &in4_mem = net_blocks[idx]->stages[0].input_mems[4];
+
+    d2d(in0_mem, out_mem, 0, input_length * hidden_bytes);
+    bm_memcpy_d2d_byte(bm_handle, in3_mem, 0, past_key[idx], 0,
+                       kv_bytes * prompt_length);
+    bm_memcpy_d2d_byte(bm_handle, in4_mem, 0, past_value[idx], 0,
+                       kv_bytes * prompt_length);
+    bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
+    bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+    net_launch(net_blocks[idx]);
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
-    d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1], 0,
-        token_length * kv_bytes);
-    d2d(past_value[idx], net_blocks[idx]->stages[0].output_mems[2], 0,
-        token_length * kv_bytes);
+    auto &out1_mem = net_blocks[idx]->stages[0].output_mems[1];
+    auto &out2_mem = net_blocks[idx]->stages[0].output_mems[2];
+    bm_memcpy_d2d_byte(bm_handle, past_key[idx], prompt_length * kv_bytes,
+                       out1_mem, 0, kv_bytes * input_length);
+    bm_memcpy_d2d_byte(bm_handle, past_value[idx], prompt_length * kv_bytes,
+                       out2_mem, 0, kv_bytes * input_length);
   }
 
   // forward lmhead
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
   auto &lm_out_mem = net_lm->stages[0].output_mems[0];
   bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
-                     (token_length - 1) * hidden_bytes, hidden_bytes);
+                     (input_length - 1) * hidden_bytes, hidden_bytes);
   net_launch(net_lm);
-
   int token = 0;
-  if (lmhead_with_topk) {
+  if (!net_greedy_head && !net_sample_head) {
     bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
   } else if (generation_mode == "greedy") {
     token = greedy_search(lm_out_mem);
   } else if (generation_mode == "sample") {
     token = penalty_sample(lm_out_mem);
   }
-
   visited_tokens[token_length] = token;
-  token_length += 1;
+  token_length++;
   return token;
 }
 
-int MiniCPM4::forward_next() {
+int Qwen::forward_next() {
   int cur_token = visited_tokens[token_length - 1];
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
@@ -458,22 +493,24 @@ int MiniCPM4::forward_next() {
   }
 
   visited_tokens[token_length] = token;
-  token_length += 1;
+  token_length++;
   return token;
 }
 
 PYBIND11_MODULE(chat, m) {
-  pybind11::class_<MiniCPM4>(m, "MiniCPM4")
+  pybind11::class_<Qwen>(m, "Qwen")
       .def(pybind11::init<>())
-      .def("init", &MiniCPM4::init)
-      .def("forward_first", &MiniCPM4::forward_first)
-      .def("forward_next", &MiniCPM4::forward_next)
-      .def("deinit", &MiniCPM4::deinit)
-      .def_readwrite("SEQLEN", &MiniCPM4::SEQLEN) // read SEQLEN in pipeline.py
-      .def_readwrite("token_length", &MiniCPM4::token_length)
-      .def_readwrite("generation_mode", &MiniCPM4::generation_mode)
-      .def_readwrite("penalty", &MiniCPM4::penalty)
-      .def_readwrite("temperature", &MiniCPM4::temperature)
-      .def_readwrite("top_k", &MiniCPM4::top_k)
-      .def_readwrite("top_p", &MiniCPM4::top_p);
+      .def("init", &Qwen::init)
+      .def("forward_prompt", &Qwen::forward_prompt)
+      .def("forward_first", &Qwen::forward_first)
+      .def("forward_next", &Qwen::forward_next)
+      .def("deinit", &Qwen::deinit)
+      .def_readonly("SEQLEN", &Qwen::SEQLEN) // read SEQLEN in pipeline.py
+      .def_readonly("MAX_INPUT_LENGTH", &Qwen::MAX_INPUT_LENGTH)
+      .def_readonly("token_length", &Qwen::token_length)
+      .def_readwrite("generation_mode", &Qwen::generation_mode)
+      .def_readwrite("penalty", &Qwen::penalty)
+      .def_readwrite("temperature", &Qwen::temperature)
+      .def_readwrite("top_k", &Qwen::top_k)
+      .def_readwrite("top_p", &Qwen::top_p);
 }
