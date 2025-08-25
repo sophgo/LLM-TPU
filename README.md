@@ -102,7 +102,7 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 | do_sample     |  -       | 否    | 指定输出是否包含采样模型，默认关闭 |
 | out_dir       |  o       | 是    | 指定输出目录 |
 
-还有更多参数可以参考[进阶应用](#进阶应用)。
+还有更多参数可以参考[进阶应用](#进阶应用)。其中量化类型用w4bf16还是w4f16，要看LLM中`config.json`配置`torch_dtype`是`bfloat16`还是`float16`。
 
 `llm_convert.py`执行完成后在指定目录会生成对应的bmodel和配置目录config。
 
@@ -208,11 +208,15 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 
 1) [Qwen2.5VL/cpp_demo_multiuser](./models/Qwen2_5_VL/cpp_demo_multiuser/)
 
-## 6. prefill复用(过时，待更新)
+## 6. prefill共享复用
 
-1) [Qwen/prompt_cache_demo](./models/Qwen/prompt_cache_demo)
-2) [Qwen/share_cache_demo](./models/Qwen/share_cache_demo)
-3) [Qwen1_5/share_cache_demo](./models/Qwen1_5/share_cache_demo)
+可以将较长的prompt生成kv cache，后续对话内容始终共用该kv cache。它会将模型分为三个阶段：prompt推理、prefill推理、decode推理。
+如果prompt不变，则prompt推理只用进行一次。
+方法：在`llm_converter.py`命令加入`--share_prompt`，并指定`--max_prefill_kv_length`
+样例：
+
+1) [Qwen2_5/python_demo_share_prompt](./models/Qwen2_5/python_demo_share_prompt)
+2) [Qwen3/python_demo_share_prompt](./models/Qwen3/python_demo_share_prompt)
 
 ## 7. 模型加密
 
