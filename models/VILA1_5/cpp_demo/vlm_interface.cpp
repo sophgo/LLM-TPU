@@ -280,8 +280,8 @@ void Vila::forward_first(const std::vector<int> &tokens,
   }
 
   // forward embeding
-  auto &in_mem = net_embed->stages[0].input_mems[0];
-  auto &out_mem = net_embed->stages[0].output_mems[0];
+  auto in_mem = net_embed->stages[0].input_mems[0];
+  auto out_mem = net_embed->stages[0].output_mems[0];
   bm_memcpy_s2d(bm_handle, in_mem, (void *)input_ids.data());
   net_launch(net_embed); // prefil embedding
 
@@ -344,8 +344,8 @@ void Vila::forward_next(int &token, float &score) {
   // embedding
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
   auto &lm_out_mem = net_lm->stages[0].output_mems[0];
-  auto &in_mem = net_embed_cache->stages[0].input_mems[0];
-  auto &out_mem = net_embed_cache->stages[0].output_mems[0];
+  auto in_mem = net_embed_cache->stages[0].input_mems[0];
+  auto out_mem = net_embed_cache->stages[0].output_mems[0];
   d2d(in_mem, lm_out_mem);
   net_launch(net_embed_cache);
 

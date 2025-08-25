@@ -269,7 +269,7 @@ int Molmo::forward_first(std::vector<int> &tokens, std::vector<float> &images,
   }
 
   // forward embeding
-  auto &in_mem = net_embed->stages[0].input_mems[0];
+  auto in_mem = net_embed->stages[0].input_mems[0];
   auto &emb_out_mem = net_embed->stages[0].output_mems[0];
   bm_memcpy_s2d(bm_handle, in_mem, (void *)visited_tokens.data());
   net_launch(net_embed);
@@ -278,7 +278,7 @@ int Molmo::forward_first(std::vector<int> &tokens, std::vector<float> &images,
   auto &vit_in0_mem = net_vit->stages[0].input_mems[0];
   auto &vit_in1_mem = net_vit->stages[0].input_mems[1];
   auto &vit_in2_mem = net_vit->stages[0].input_mems[2];
-  auto &out_mem = net_vit->stages[0].output_mems[0];
+  auto out_mem = net_vit->stages[0].output_mems[0];
   d2d(vit_in0_mem, emb_out_mem);
   bm_memcpy_s2d(bm_handle, vit_in1_mem, (void *)images.data());
   bm_memcpy_s2d(bm_handle, vit_in2_mem, (void *)image_masks.data());
@@ -330,8 +330,8 @@ int Molmo::forward_next() {
   int32_t position_id = token_length - 1;
 
   // embedding
-  auto &in_mem = net_embed_cache->stages[0].input_mems[0];
-  auto &out_mem = net_embed_cache->stages[0].output_mems[0];
+  auto in_mem = net_embed_cache->stages[0].input_mems[0];
+  auto out_mem = net_embed_cache->stages[0].output_mems[0];
   bm_memcpy_s2d(bm_handle, in_mem, (void *)&cur_token);
   net_launch(net_embed_cache);
 

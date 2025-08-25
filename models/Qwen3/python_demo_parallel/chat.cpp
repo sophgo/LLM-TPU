@@ -19,8 +19,6 @@
 #include <pybind11/stl.h>
 #include <vector>
 
-static const uint16_t BF16_NEG_10000 = 0xC61C; // -9984 by bfloat16
-
 class Qwen {
 public:
   void init(const std::vector<int> &devices, const std::string &model_path);
@@ -42,6 +40,7 @@ public:
   int NUM_LAYERS; // read from bmodel
   bool is_dynamic;
   std::vector<std::string> history;
+  uint16_t mask_value;
 
 private:
   std::vector<bm_handle_t> handles;
@@ -128,6 +127,15 @@ void Qwen::init(const std::vector<int> &devices,
     net_blocks[i] = bmrt_get_network_info(p_bmrt, name_blocks[i].c_str());
     net_blocks_cache[i] =
         bmrt_get_network_info(p_bmrt, name_blocks_cache[i].c_str());
+  }
+  if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
+    mask_value = 0xF0E2; // float16
+  } else if (net_embed_cache->output_dtypes[0] == BM_BFLOAT16) {
+    mask_value = 0xC61C; // -9984 by bfloat16
+  } else {
+    std::cerr << "\nError: Invalid attention dtype\n";
+    std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
+    throw std::runtime_error("Invalid attention dtype");
   }
 
   // net device mem
@@ -269,7 +277,7 @@ void Qwen::deinit() {
 int Qwen::forward_first(std::vector<int> &tokens) {
   std::vector<int> input_ids(SEQLEN, 0);
   std::vector<int> position_id(SEQLEN, 0);
-  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, BF16_NEG_10000);
+  std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, mask_value);
   std::copy(tokens.begin(), tokens.end(), input_ids.data());
 
   token_length = tokens.size();
@@ -377,7 +385,7 @@ int Qwen::forward_next(int cur_token) {
   token_length += 1;
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = token_length - 1; i < SEQLEN; i++) {
-    attention_mask[i] = BF16_NEG_10000;
+    attention_mask[i] = mask_value;
   }
   int32_t position_id = token_length - 1;
 

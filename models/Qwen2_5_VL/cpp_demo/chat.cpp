@@ -510,8 +510,8 @@ int Qwen2_5VL::forward_next(ArrayInt const &position_ids) {
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
   auto &lm_out_mem = net_lm->stages[0].output_mems[0];
 
-  auto &in_mem = net_embed_cache->stages[0].input_mems[0];
-  auto &out_mem = net_embed_cache->stages[0].output_mems[0];
+  auto in_mem = net_embed_cache->stages[0].input_mems[0];
+  auto out_mem = net_embed_cache->stages[0].output_mems[0];
   d2d(in_mem, lm_out_mem);
   net_launch(net_embed_cache);
 

@@ -349,8 +349,8 @@ int MiniCPM4::forward_first(std::vector<int> &tokens) {
   }
 
   // forward embeding
-  auto &in_mem = net_embed->stages[0].input_mems[0];
-  auto &out_mem = net_embed->stages[0].output_mems[0];
+  auto in_mem = net_embed->stages[0].input_mems[0];
+  auto out_mem = net_embed->stages[0].output_mems[0];
   empty(bm_handle, in_mem);
   bm_memcpy_s2d_partial(bm_handle, in_mem, (void *)tokens.data(),
                         token_length * sizeof(int));
@@ -412,8 +412,8 @@ int MiniCPM4::forward_next() {
   }
   int32_t position_id = token_length - 1;
   // embedding
-  auto &in_mem = net_embed_cache->stages[0].input_mems[0];
-  auto &out_mem = net_embed_cache->stages[0].output_mems[0];
+  auto in_mem = net_embed_cache->stages[0].input_mems[0];
+  auto out_mem = net_embed_cache->stages[0].output_mems[0];
   bm_memcpy_s2d(bm_handle, in_mem, (void *)&cur_token);
   net_launch(net_embed_cache);
 

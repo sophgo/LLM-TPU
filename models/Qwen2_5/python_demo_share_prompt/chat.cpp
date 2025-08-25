@@ -165,7 +165,7 @@ void Qwen::init_by_names() {
     std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
     throw std::runtime_error("Invalid attention dtype");
   }
-  MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
+  MAX_INPUT_LENGTH = net_blocks[0]->stages[0].input_shapes[1].dims[1];
   SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[3].dims[1];
   assert(net_blocks[0]->input_num == 5); // with kv cache
   printf("Num Layers:%d\n", NUM_LAYERS);
@@ -331,8 +331,8 @@ void Qwen::forward_prompt(std::vector<int> &tokens) {
   }
 
   // forward embeding
-  auto &in_mem = net_embed->stages[0].input_mems[0];
-  auto &out_mem = net_embed->stages[0].output_mems[0];
+  auto in_mem = net_embed->stages[0].input_mems[0];
+  auto out_mem = net_embed->stages[0].output_mems[0];
   empty(bm_handle, in_mem);
   bm_memcpy_s2d_partial(bm_handle, in_mem, (void *)tokens.data(),
                         prompt_length * sizeof(int));
@@ -384,8 +384,8 @@ int Qwen::forward_first(std::vector<int> &inputs) {
     position_id[i] = i + prompt_length;
   }
   // forward embeding
-  auto &in_mem = net_embed->stages[0].input_mems[0];
-  auto &out_mem = net_embed->stages[0].output_mems[0];
+  auto in_mem = net_embed->stages[0].input_mems[0];
+  auto out_mem = net_embed->stages[0].output_mems[0];
   empty(bm_handle, in_mem);
   bm_memcpy_s2d_partial(bm_handle, in_mem, (void *)inputs.data(),
                         input_length * sizeof(int));
@@ -447,8 +447,8 @@ int Qwen::forward_next() {
   }
   int32_t position_id = token_length - 1;
   // embedding
-  auto &in_mem = net_embed_cache->stages[0].input_mems[0];
-  auto &out_mem = net_embed_cache->stages[0].output_mems[0];
+  auto in_mem = net_embed_cache->stages[0].input_mems[0];
+  auto out_mem = net_embed_cache->stages[0].output_mems[0];
   bm_memcpy_s2d(bm_handle, in_mem, (void *)&cur_token);
   net_launch(net_embed_cache);
 

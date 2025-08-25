@@ -223,8 +223,8 @@ int Qwen::forward_first_with_topk(std::vector<int> &tokens,
   }
 
   // forward embeding
-  auto &in_mem = net_embed->stages[0].input_mems[0];
-  auto &out_mem = net_embed->stages[0].output_mems[0];
+  auto in_mem = net_embed->stages[0].input_mems[0];
+  auto out_mem = net_embed->stages[0].output_mems[0];
   bm_memcpy_s2d(bm_handle, in_mem, (void *)input_ids.data());
   net_launch(net_embed); // prefil embedding
 
@@ -319,8 +319,8 @@ int Qwen::forward_next_with_topk(int cur_token, std::string generation_mode) {
     auto position_id = make_next_pid();
 
     // embedding
-    auto &in_mem = net_embed_cache->stages[0].input_mems[0];
-    auto &out_mem = net_embed_cache->stages[0].output_mems[0];
+    auto in_mem = net_embed_cache->stages[0].input_mems[0];
+    auto out_mem = net_embed_cache->stages[0].output_mems[0];
     bm_memcpy_s2d(bm_handle, in_mem, (void *)&cur_token);
     net_launch(net_embed_cache);
 
