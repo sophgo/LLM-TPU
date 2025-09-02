@@ -134,6 +134,10 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 8192 --quantize w4bf1
 可以对相同模型，加载多次支持多任务；如果是对同一颗芯片，权重只会加载一次；不过不太建议单颗芯片做多任务。
 参考`cpp_demo_multiuser`即可。
 
+### 4. 支持多图
+
+可以支持多张图片，不论是分散的图片，还是把多图看做video。参考`python_demo_multiimage`。
+
 ## 常见问题
 
 #### SoC如何配置python3.10环境 ?

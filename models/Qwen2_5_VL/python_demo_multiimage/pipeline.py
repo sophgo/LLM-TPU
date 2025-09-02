@@ -1,0 +1,386 @@
+# ==============================================================================
+# Copyright (C) 2025 Sophgo Technologies Inc.  All rights reserved.
+#
+# TPU-MLIR is licensed under the 2-Clause BSD License except for the
+# third-party components.
+#
+# ==============================================================================
+
+import time
+import argparse
+from transformers import AutoProcessor
+from qwen_vl_utils import process_vision_info
+import chat
+import os
+import torch
+import numpy as np
+import torch.nn.functional as F
+
+
+class Qwen2_5VL():
+
+    def __init__(self, args):
+        # devid
+        self.device = args.devid
+
+        # load model
+        self.model = chat.Qwen2_5VL()
+        self.model.init(self.device, args.model_path)
+        self.processor = AutoProcessor.from_pretrained(args.config_path, trust_remote_code=True)
+        self.tokenizer = self.processor.tokenizer
+        self.ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
+        self.ID_IM_END = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
+        self.ID_IMAGE_PAD = self.tokenizer.convert_tokens_to_ids("<|image_pad|>")
+        self.ID_VIDEO_PAD = self.tokenizer.convert_tokens_to_ids("<|video_pad|>")
+        self.ID_VISION_START = self.tokenizer.convert_tokens_to_ids('<|vision_start|>')
+        self.spatial_merge_size = 2
+        self.spatial_merge_unit = self.spatial_merge_size**2
+        self.tokens_per_second = 2
+        self.support_history = self.model.support_history
+        self.max_posid = 0
+        self.history_max_posid = 0
+
+    def process(self, messages):
+        text = self.processor.apply_chat_template(messages,
+                                                  tokenize=False,
+                                                  add_generation_prompt=True)
+        image_inputs, video_inputs = process_vision_info(messages)
+        inputs = self.processor(
+            text=[text],
+            images=image_inputs,
+            videos=video_inputs,
+            padding=True,
+            return_tensors="pt",
+        )
+
+        return inputs
+
+    def get_window_index(self, grid_thw):
+        window_index: list = []
+        cu_window_seqlens: list = [0]
+        window_index_id = 0
+        vit_merger_window_size = 4
+
+        for grid_t, grid_h, grid_w in grid_thw:
+            llm_grid_h, llm_grid_w = (
+                grid_h // 2,
+                grid_w // 2,
+            )
+            index = torch.arange(grid_t * llm_grid_h * llm_grid_w).reshape(
+                grid_t, llm_grid_h, llm_grid_w)
+            pad_h = vit_merger_window_size - llm_grid_h % vit_merger_window_size
+            pad_w = vit_merger_window_size - llm_grid_w % vit_merger_window_size
+            num_windows_h = (llm_grid_h + pad_h) // vit_merger_window_size
+            num_windows_w = (llm_grid_w + pad_w) // vit_merger_window_size
+            index_padded = F.pad(index, (0, pad_w, 0, pad_h), "constant", -100)
+            index_padded = index_padded.reshape(
+                grid_t,
+                num_windows_h,
+                vit_merger_window_size,
+                num_windows_w,
+                vit_merger_window_size,
+            )
+            index_padded = index_padded.permute(0, 1, 3, 2, 4).reshape(
+                grid_t,
+                num_windows_h * num_windows_w,
+                vit_merger_window_size,
+                vit_merger_window_size,
+            )
+            seqlens = (index_padded != -100).sum([2, 3]).reshape(-1)
+            index_padded = index_padded.reshape(-1)
+            index_new = index_padded[index_padded != -100]
+            window_index.append(index_new + window_index_id)
+            cu_seqlens_tmp = seqlens.cumsum(0) * self.spatial_merge_unit + cu_window_seqlens[-1]
+            cu_window_seqlens.extend(cu_seqlens_tmp.tolist())
+            window_index_id += (grid_t * llm_grid_h * llm_grid_w).item()
+        window_index = torch.cat(window_index, dim=0)
+        return window_index, cu_window_seqlens
+
+    def get_attn_mask(self, seq_length, cu_seqlens):
+        attention_mask = torch.full([1, seq_length, seq_length], -10000.0, dtype=torch.float32)
+        for i in range(1, len(cu_seqlens)):
+            attention_mask[..., cu_seqlens[i - 1]:cu_seqlens[i],
+                           cu_seqlens[i - 1]:cu_seqlens[i]] = 0
+        return attention_mask
+
+    def rot_pos(self, grid_thw):
+        pos_ids = []
+        for t, h, w in grid_thw:
+            hpos_ids = torch.arange(h).unsqueeze(1).expand(-1, w)
+            hpos_ids = hpos_ids.reshape(
+                h // self.spatial_merge_size,
+                self.spatial_merge_size,
+                w // self.spatial_merge_size,
+                self.spatial_merge_size,
+            )
+            hpos_ids = hpos_ids.permute(0, 2, 1, 3)
+            hpos_ids = hpos_ids.flatten()
+
+            wpos_ids = torch.arange(w).unsqueeze(0).expand(h, -1)
+            wpos_ids = wpos_ids.reshape(
+                h // self.spatial_merge_size,
+                self.spatial_merge_size,
+                w // self.spatial_merge_size,
+                self.spatial_merge_size,
+            )
+            wpos_ids = wpos_ids.permute(0, 2, 1, 3)
+            wpos_ids = wpos_ids.flatten()
+            pos_ids.append(torch.stack([hpos_ids, wpos_ids], dim=-1).repeat(t, 1))
+        pos_ids = torch.cat(pos_ids, dim=0)
+        return pos_ids
+
+    def vit_process_image(self, inputs, vit_offset, idx):
+        grid_thw = inputs.image_grid_thw[idx].unsqueeze(0)
+        num_patches = int(torch.prod(grid_thw))
+        # here assume each thw is same
+        pre_patches = idx * num_patches
+        hidden_states = inputs.pixel_values[pre_patches:pre_patches + num_patches, :]
+        window_index, cu_window_seqlens = self.get_window_index(grid_thw)
+        cu_window_seqlens = torch.tensor(cu_window_seqlens, dtype=torch.int32)
+        cu_window_seqlens = torch.unique_consecutive(cu_window_seqlens)
+        seq_len, _ = hidden_states.shape
+        # reorder hidden_states
+        hidden_states = hidden_states.reshape(seq_len // self.spatial_merge_unit,
+                                              self.spatial_merge_unit, -1)
+        hidden_states = hidden_states[window_index, :, :]
+        hidden_states = hidden_states.reshape(seq_len, -1)
+        # reorder position_ids
+        position_ids = self.rot_pos(grid_thw)
+        position_ids = position_ids.reshape(seq_len // self.spatial_merge_unit,
+                                            self.spatial_merge_unit, -1)
+        position_ids = position_ids[window_index, :, :]
+        position_ids = position_ids.reshape(seq_len, -1)
+        # cu_seqlens
+        cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2],
+                                             grid_thw[:, 0]).cumsum(
+                                                 dim=0,
+                                                 dtype=torch.int32,
+                                             )
+        cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
+        full_mask = self.get_attn_mask(seq_len, cu_seqlens)
+        window_mask = self.get_attn_mask(seq_len, cu_window_seqlens)
+        reverse_indices = torch.argsort(window_index)
+        self.model.forward_vit(hidden_states.numpy(), position_ids.numpy(), full_mask.numpy(),
+                               window_mask.numpy(), grid_thw.numpy(), reverse_indices.numpy(),
+                               vit_offset)
+
+    def vit_process_video(self, inputs, vit_offset):
+        t, h, w = inputs.video_grid_thw.flatten().tolist()
+        per_t = self.model.MAX_PATCHES // (h * w)
+        t_list = []
+        if per_t >= t:
+            t_list = [t]
+        else:
+            t_list = [per_t] * (t // per_t) + ([t % per_t] if t % per_t else [])
+        t_offset = 0
+        for t_i in t_list:
+            grid_thw = torch.tensor([[t_i, h, w]], dtype=torch.int32)
+            hidden_states = inputs.pixel_values_videos[(t_offset * h * w):((t_offset + t_i) * h *
+                                                                           w), :]
+            window_index, cu_window_seqlens = self.get_window_index(grid_thw)
+            cu_window_seqlens = torch.tensor(cu_window_seqlens, dtype=torch.int32)
+            cu_window_seqlens = torch.unique_consecutive(cu_window_seqlens)
+            seq_len, _ = hidden_states.shape
+            # reorder hidden_states
+            hidden_states = hidden_states.reshape(seq_len // self.spatial_merge_unit,
+                                                  self.spatial_merge_unit, -1)
+            hidden_states = hidden_states[window_index, :, :]
+            hidden_states = hidden_states.reshape(seq_len, -1)
+            # reorder position_ids
+            position_ids = self.rot_pos(grid_thw)
+            position_ids = position_ids.reshape(seq_len // self.spatial_merge_unit,
+                                                self.spatial_merge_unit, -1)
+            position_ids = position_ids[window_index, :, :]
+            position_ids = position_ids.reshape(seq_len, -1)
+            # cu_seqlens
+            cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2],
+                                                 grid_thw[:, 0]).cumsum(
+                                                     dim=0,
+                                                     dtype=torch.int32,
+                                                 )
+            cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
+            full_mask = self.get_attn_mask(seq_len, cu_seqlens)
+            window_mask = self.get_attn_mask(seq_len, cu_window_seqlens)
+            reverse_indices = torch.argsort(window_index)
+            self.model.forward_vit(hidden_states.numpy(), position_ids.numpy(), full_mask.numpy(),
+                                   window_mask.numpy(), grid_thw.numpy(), reverse_indices.numpy(),
+                                   vit_offset)
+            vit_offset += seq_len // 4
+            t_offset += t_i
+
+    def get_rope_index(self, input_ids: torch.LongTensor, grid_thw: torch.LongTensor,
+                       pad_id: int) -> torch.Tensor:
+        total_input_ids = input_ids
+        attention_mask = torch.ones_like(total_input_ids)
+        position_ids = torch.ones(3, input_ids.shape[0], input_ids.shape[1], dtype=input_ids.dtype)
+        image_index = 0
+        for i, input_ids in enumerate(total_input_ids):
+            input_ids = input_ids[attention_mask[i] == 1]
+            image_nums = 0
+            vision_start_indices = torch.argwhere(input_ids == self.ID_VISION_START).squeeze(1)
+            vision_tokens = input_ids[vision_start_indices + 1]
+            image_nums = (vision_tokens == pad_id).sum()
+            input_tokens = input_ids.tolist()
+            llm_pos_ids_list: list = []
+            st = 0
+            remain_images = image_nums
+            for _ in range(image_nums):
+                if pad_id in input_tokens and remain_images > 0:
+                    ed_image = input_tokens.index(pad_id, st)
+                else:
+                    ed_image = len(input_tokens) + 1
+
+                t, h, w = (
+                    grid_thw[image_index][0],
+                    grid_thw[image_index][1],
+                    grid_thw[image_index][2],
+                )
+                second_per_grid_t = 0 if pad_id == self.ID_IMAGE_PAD else 1
+                image_index += 1
+                remain_images -= 1
+                ed = ed_image
+
+                llm_grid_t, llm_grid_h, llm_grid_w = (
+                    t.item(),
+                    h.item() // self.spatial_merge_size,
+                    w.item() // self.spatial_merge_size,
+                )
+                text_len = ed - st
+
+                st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
+                llm_pos_ids_list.append(torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
+
+                range_tensor = torch.arange(llm_grid_t).view(-1, 1)
+                expanded_range = range_tensor.expand(-1, llm_grid_h * llm_grid_w)
+
+                time_tensor = expanded_range * second_per_grid_t * self.tokens_per_second
+
+                time_tensor_long = time_tensor.long()
+                t_index = time_tensor_long.flatten()
+
+                h_index = torch.arange(llm_grid_h).view(1, -1,
+                                                        1).expand(llm_grid_t, -1,
+                                                                  llm_grid_w).flatten()
+                w_index = torch.arange(llm_grid_w).view(1, 1,
+                                                        -1).expand(llm_grid_t, llm_grid_h,
+                                                                   -1).flatten()
+                llm_pos_ids_list.append(
+                    torch.stack([t_index, h_index, w_index]) + text_len + st_idx)
+                st = ed + llm_grid_t * llm_grid_h * llm_grid_w
+
+            if st < len(input_tokens):
+                st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
+                text_len = len(input_tokens) - st
+                llm_pos_ids_list.append(torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
+
+            llm_positions = torch.cat(llm_pos_ids_list, dim=1).reshape(3, -1)
+            position_ids[..., i, attention_mask[i] == 1] = llm_positions
+        return position_ids
+
+    def forward_prefill(self, position_ids):
+        if self.model.history_length == 0 or not self.support_history:
+            self.history_max_posid = 0
+            return self.model.forward_first(position_ids)
+        self.max_posid += self.history_max_posid
+        position_ids = position_ids + self.history_max_posid
+        return self.model.forward_first(position_ids)
+
+    def get_test_video_prompt(self):
+        # yapf: disable
+        group = [
+            "image/0.jpg", "image/1.jpg", "image/2.jpg", "image/3.jpg", "image/4.jpg",
+            "image/5.jpg", "image/6.jpg", "image/7.jpg", "image/8.jpg", "image/9.jpg"
+        ]
+        messages = [{
+            "role": 'system',
+            'content': 'You are a helpful assistant. The user asks a question, and the Assistant solves it.'
+        }, {
+            "role": "user",
+            "content": [{
+                "type": "video",
+                "video": group,
+                "max_pixels": 672 * 364,
+                "fps": 1.0,
+            }, {
+                "type": "text",
+                "text": "<video>根据视频，判断人物是否存在以下行为，仅回答选项：\n A.玩手机;\n B.看电视\n C.叠床\n D.都没有"
+            }]
+        }]
+        # yapf: enable
+        return messages
+
+    def get_test_image_prompt(self):
+        # yapf: disable
+        group = [
+            "image/0.jpg", "image/1.jpg", "image/2.jpg", "image/3.jpg", "image/4.jpg"
+        ]
+        messages = [{
+            "role": 'system',
+            'content': 'You are a helpful assistant. The user asks a question, and the Assistant solves it.'
+        }, {
+            "role": "user",
+            "content": [{
+                "type": "image",
+                "image": img,
+                "max_pixels": 672 * 364
+            } for img in group] + [{
+                "type": "text",
+                "text": "根据以上系列图片，判断人物是否存在以下行为，仅回答选项：\n A.玩手机;\n B.看电视\n C.叠床\n D.都没有"
+            }]
+        }]
+        return messages
+        # yapf: enable
+
+    def test(self):
+        print("==================== test video =================")
+        prompt = self.get_test_video_prompt()
+        inputs = self.process(prompt)
+        first_start = time.time()
+        self.model.forward_embed(inputs.input_ids.squeeze(0).tolist())
+        vit_token_list = torch.where(inputs.input_ids == self.ID_VISION_START)[1].tolist()
+        self.vit_process_video(inputs, vit_token_list[0] + 1)
+        position_ids = self.get_rope_index(inputs.input_ids, inputs.video_grid_thw,
+                                           self.ID_VIDEO_PAD)
+        token = self.forward_prefill(position_ids.numpy())
+
+        first_end = time.time()
+        word = self.tokenizer.decode(token, skip_special_tokens=True)
+        print(f"Video Result: {word}")
+        first_duration = first_end - first_start
+        print(f"\nFTL: {first_duration:.3f} s\n")
+
+        print("==================== test images =================")
+        prompt = self.get_test_image_prompt()
+        inputs = self.process(prompt)
+        first_start = time.time()
+        self.model.forward_embed(inputs.input_ids.squeeze(0).tolist())
+        vit_token_list = torch.where(inputs.input_ids == self.ID_VISION_START)[1].tolist()
+        for idx, vit_offset in enumerate(vit_token_list):
+            self.vit_process_image(inputs, vit_offset + 1, idx)
+        position_ids = self.get_rope_index(inputs.input_ids, inputs.image_grid_thw,
+                                           self.ID_IMAGE_PAD)
+        token = self.forward_prefill(position_ids.numpy())
+
+        first_end = time.time()
+        word = self.tokenizer.decode(token, skip_special_tokens=True)
+        print(f"Image Result: {word}")
+        first_duration = first_end - first_start
+        print(f"\nFTL: {first_duration:.3f} s")
+
+
+def main(args):
+    model = Qwen2_5VL(args)
+    model.test()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    # yapf: disable
+    parser.add_argument('-m', '--model_path', type=str, required=True,
+                        help='path to the bmodel file')
+    parser.add_argument('-c', '--config_path', type=str, default="../config",
+                        help='path to the processor file')
+    parser.add_argument('-d', '--devid', type=int, default=0, help='device ID to use')
+    # yapf: enable
+    args = parser.parse_args()
+    main(args)
