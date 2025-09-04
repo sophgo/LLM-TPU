@@ -300,7 +300,7 @@ int ChatGLM::forward_first(std::vector<int> &tokens) {
                             outputs_embed_512.data(), outputs_embed_512.size(),
                             true, false);
   assert(ret);
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
 
   // forward blocks
   std::vector<void*> pos_id_datas(device_num, position_id.data());
@@ -332,7 +332,7 @@ int ChatGLM::forward_first(std::vector<int> &tokens) {
                                 outputs_block.data(), outputs_block.size(),
                                 true, false);
     assert(ret);
-    bm_thread_sync(bm_handle);
+   // bm_thread_sync(bm_handle);
     for (int j = 0; j < device_num; ++j) {
       move2end(past_key[i][j]);
       move2end(past_value[i][j]);
@@ -346,7 +346,7 @@ int ChatGLM::forward_first(std::vector<int> &tokens) {
                      bytes);
   ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &inputs_lm[0], 1,
                               &outputs_lm[0], 1, true, false);
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
 
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);
@@ -375,7 +375,7 @@ int ChatGLM::forward_next(int cur_token) {
                                   inputs_embed.data(), inputs_embed.size(),
                                   inputs_lm.data(), inputs_lm.size(), true, false);
   assert(ret);
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
 
   // forward blocks
   std::vector<void*> attn_datas(device_num, attention_mask.data());
@@ -415,14 +415,14 @@ int ChatGLM::forward_next(int cur_token) {
                                 outputs_block.data(), outputs_block.size(),
                                 true, false);
     assert(ret);
-    bm_thread_sync(bm_handle);
+   // bm_thread_sync(bm_handle);
   }
 
   // forward lmhead
   ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &inputs_lm[0], 1,
                               &outputs_lm[0], 1, true, false);
   assert(ret);
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
 
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);

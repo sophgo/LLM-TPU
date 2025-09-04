@@ -230,7 +230,7 @@ int Baichuan2::forward_first(std::vector<int> &tokens) {
       bmrt_launch_tensor_ex(p_bmrt, name_embed.c_str(), &inputs_embed_512, 1,
                             &outputs_embed_512, 1, true, false);
   assert(ret);
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
 
   // forward blocks
   bm_memcpy_s2d(bm_handle, inputs_pid.device_mem, (void *)position_id);
@@ -243,7 +243,7 @@ int Baichuan2::forward_first(std::vector<int> &tokens) {
     ret = bmrt_launch_tensor_ex(p_bmrt, name_blocks[i].c_str(), inputs_block, 3,
                                 outputs_block, 3, true, false);
     assert(ret);
-    bm_thread_sync(bm_handle);
+   // bm_thread_sync(bm_handle);
   }
   int bytes = inputs_embed.device_mem.size / MAX_LEN;
   bm_memcpy_d2d_byte(bm_handle, inputs_lm.device_mem, 0,
@@ -251,7 +251,7 @@ int Baichuan2::forward_first(std::vector<int> &tokens) {
                      bytes);
   ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &inputs_lm, 1,
                               &outputs_lm, 1, true, false);
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
   
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm.device_mem);
@@ -269,7 +269,7 @@ int Baichuan2::forward_next() {
   auto ret = bmrt_launch_tensor_ex(p_bmrt, name_embed.c_str(), &outputs_lm, 1,
                                    &inputs_lm, 1, true, false);
   assert(ret);
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
 
   // blocks
   bm_memcpy_s2d(bm_handle, next_attention.device_mem, (void *)attention_mask);
@@ -285,7 +285,7 @@ int Baichuan2::forward_next() {
     ret = bmrt_launch_tensor_ex(p_bmrt, name_blocks_cache[i].c_str(),
                                 inputs_block, 5, outputs_block, 3, true, false);
     assert(ret);
-    bm_thread_sync(bm_handle);
+   // bm_thread_sync(bm_handle);
     bm_memcpy_d2d_byte(bm_handle, past_key[i].device_mem, token_offset,
                        present_key_cache.device_mem, 0,
                        bytes);
@@ -296,7 +296,7 @@ int Baichuan2::forward_next() {
   outputs_lm.shape = net_lm->stages[0].output_shapes[0];
   ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &inputs_lm, 1,
                               &outputs_lm, 1, true, false);
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
 
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm.device_mem);

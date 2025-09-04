@@ -277,7 +277,7 @@ int LWM::forward_first(std::vector<int> &tokens) {
                             outputs_embed_512.data(), outputs_embed_512.size(),
                             true, false);
   assert(ret);
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
 
   // forward blocks
   std::vector<void*> pos_id_datas(device_num, position_id.data());
@@ -310,7 +310,7 @@ int LWM::forward_first(std::vector<int> &tokens) {
                                 outputs_block.data(), outputs_block.size(),
                                 true, false);
     assert(ret);
-    bm_thread_sync(bm_handle);
+   // bm_thread_sync(bm_handle);
   }
 
   int bytes = embed_512[0].device_mem.size / SEQLEN;
@@ -321,7 +321,7 @@ int LWM::forward_first(std::vector<int> &tokens) {
                               &outputs_lm[0], 1,
                               true, false);
   assert(ret);
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
   
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);
@@ -350,7 +350,7 @@ int LWM::forward_next(int cur_token) {
                                   inputs_embed.data(), inputs_embed.size(),
                                   inputs_lm.data(), inputs_lm.size(), true, false);
   assert(ret);
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
 
   // blocks
   std::vector<void*> pid_datas(device_num, &position_id);
@@ -391,13 +391,13 @@ int LWM::forward_next(int cur_token) {
                                 outputs_block.data(), outputs_block.size(),
                                 true, false);
     assert(ret);
-    bm_thread_sync(bm_handle);
+   // bm_thread_sync(bm_handle);
   }
 
   ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &inputs_lm[0], 1,
                               &outputs_lm[0], 1, true, false);
   assert(ret);
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
 
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);

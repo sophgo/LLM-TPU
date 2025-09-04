@@ -330,7 +330,7 @@ void Qwen::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
   if (!ret) {
     launch_error();
   } else {
-    bm_thread_sync(bm_handle);
+   // bm_thread_sync(bm_handle);
   }
 }
 
@@ -354,7 +354,7 @@ void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
   if (!ret) {
     launch_error();
   } else {
-    bm_thread_sync(bm_handle);
+   // bm_thread_sync(bm_handle);
   }
 }
 
@@ -386,7 +386,7 @@ void Qwen::dynamic_net_launch(const bm_net_info_t *net, int token_length,
   if (!ret) {
     launch_error();
   } else {
-    bm_thread_sync(bm_handle);
+   // bm_thread_sync(bm_handle);
   }
 }
 

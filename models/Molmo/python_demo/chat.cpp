@@ -92,7 +92,7 @@ void Molmo::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
 }
 
 void Molmo::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
@@ -204,7 +204,7 @@ void Molmo::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
 }
 
 int Molmo::greedy_search(const bm_net_info_t *net,

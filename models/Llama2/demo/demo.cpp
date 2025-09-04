@@ -192,7 +192,7 @@ void LLama2::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
 }
 
 void LLama2::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
@@ -221,7 +221,7 @@ void LLama2::head_launch(const bm_net_info_t *net,
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
 }
 
 int LLama2::greedy_search(const bm_net_info_t *net,

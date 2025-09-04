@@ -255,7 +255,7 @@ void Model::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
                                    net->output_num, true, false);
 
   ASSERT(ret == true, "can not inference bmodel");
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
 }
 
 void Model::net_launch(const bm_net_info_t *net, int stage_idx) {
@@ -277,7 +277,7 @@ void Model::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->output_num, true, false);
 
   ASSERT(ret == true, "can not inference bmodel");
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
 }
 
 void Model::dynamic_net_launch(const bm_net_info_t *net, int token_length,
@@ -307,7 +307,7 @@ void Model::dynamic_net_launch(const bm_net_info_t *net, int token_length,
                                    net->output_num, true, false);
 
   ASSERT(ret == true, "can not inference bmodel");
-  bm_thread_sync(bm_handle);
+ // bm_thread_sync(bm_handle);
 }
 
 void Model::load_bmodel(const std::vector<int> &devices,

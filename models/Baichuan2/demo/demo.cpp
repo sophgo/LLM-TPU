@@ -7,17 +7,17 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <iostream>
-#include <cstdlib>
-#include <vector>
-#include <assert.h>
-#include <chrono>
-#include <algorithm>
+#include "bmruntime_interface.h"
 #include "memory.h"
 #include "sentencepiece/sentencepiece_processor.h"
-#include "bmruntime_interface.h"
+#include <algorithm>
+#include <assert.h>
+#include <chrono>
+#include <cstdlib>
 #include <getopt.h>
+#include <iostream>
 #include <numeric>
+#include <vector>
 
 static const int NUM_LAYERS = 32;
 static const int MAX_LEN = 512;
@@ -173,14 +173,17 @@ void Baichuan2::init(const std::vector<int> &devices, std::string model) {
     ret = bmrt_tensor(&present_key[i], p_bmrt, net_blocks[0]->output_dtypes[1],
                       net_blocks[0]->stages[0].output_shapes[1]);
     assert(true == ret);
-    ret = bmrt_tensor(&present_value[i], p_bmrt, net_blocks[0]->output_dtypes[2],
-                      net_blocks[0]->stages[0].output_shapes[2]);
+    ret =
+        bmrt_tensor(&present_value[i], p_bmrt, net_blocks[0]->output_dtypes[2],
+                    net_blocks[0]->stages[0].output_shapes[2]);
     assert(true == ret);
   }
-  ret = bmrt_tensor(&present_key_cache, p_bmrt, net_blocks_cache[0]->output_dtypes[1],
+  ret = bmrt_tensor(&present_key_cache, p_bmrt,
+                    net_blocks_cache[0]->output_dtypes[1],
                     net_blocks_cache[0]->stages[0].output_shapes[1]);
   assert(true == ret);
-  ret = bmrt_tensor(&present_value_cache, p_bmrt, net_blocks_cache[0]->output_dtypes[2],
+  ret = bmrt_tensor(&present_value_cache, p_bmrt,
+                    net_blocks_cache[0]->output_dtypes[2],
                     net_blocks_cache[0]->stages[0].output_shapes[2]);
   assert(true == ret);
 
@@ -220,7 +223,7 @@ int Baichuan2::forward_first(std::vector<int> &tokens) {
   int position_id[MAX_LEN] = {0};
   float attention_mask[MAX_LEN * MAX_LEN] = {0};
   token_length = tokens.size();
-  
+
   std::copy(tokens.begin(), tokens.end(), input_ids);
   for (int i = 0; i < token_length; i++) {
     position_id[i] = i;
@@ -242,8 +245,9 @@ int Baichuan2::forward_first(std::vector<int> &tokens) {
                             &outputs_embed_512, 1, true, false);
   assert(ret);
   // float test_embed[MAX_LEN] = {0};
-  // bm_memcpy_d2s(bm_handle, (void *)&test_embed, outputs_embed_512.device_mem);
-  bm_thread_sync(bm_handle);
+  // bm_memcpy_d2s(bm_handle, (void *)&test_embed,
+  // outputs_embed_512.device_mem);
+  // bm_thread_sync(bm_handle);
 
   // forward blocks
   bm_memcpy_s2d(bm_handle, inputs_pid.device_mem, (void *)position_id);
@@ -256,7 +260,7 @@ int Baichuan2::forward_first(std::vector<int> &tokens) {
     ret = bmrt_launch_tensor_ex(p_bmrt, name_blocks[i].c_str(), inputs_block, 3,
                                 outputs_block, 3, true, false);
     assert(ret);
-    bm_thread_sync(bm_handle);
+    // bm_thread_sync(bm_handle);
   }
   int bytes = inputs_embed.device_mem.size / MAX_LEN;
   bm_memcpy_d2d_byte(bm_handle, inputs_lm.device_mem, 0,
@@ -264,8 +268,8 @@ int Baichuan2::forward_first(std::vector<int> &tokens) {
                      bytes);
   ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &inputs_lm, 1,
                               &outputs_lm, 1, true, false);
-  bm_thread_sync(bm_handle);
-  
+  // bm_thread_sync(bm_handle);
+
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm.device_mem);
   return token;
@@ -279,37 +283,36 @@ int Baichuan2::forward_next() {
   int32_t position_id = token_length - 1;
   // embedding
   outputs_lm.shape = net_embed_cache->stages[0].input_shapes[0];
-  auto ret = bmrt_launch_tensor_ex(p_bmrt, name_embed_cache.c_str(), &outputs_lm, 1,
-                                   &inputs_lm, 1, true, false);
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, name_embed_cache.c_str(),
+                                   &outputs_lm, 1, &inputs_lm, 1, true, false);
   assert(ret);
-  bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 
   // blocks
   bm_memcpy_s2d(bm_handle, next_attention.device_mem, (void *)attention_mask);
   bm_memcpy_s2d(bm_handle, next_pid.device_mem, (void *)&position_id);
   auto inputs_embed = inputs_lm;
   inputs_embed.shape = net_blocks_cache[0]->stages[0].input_shapes[0];
-  int bytes = bm_mem_get_device_size(present_key_cache.device_mem); 
+  int bytes = bm_mem_get_device_size(present_key_cache.device_mem);
   int token_offset = (token_length - 1) * bytes;
   for (int i = 0; i < NUM_LAYERS; i++) {
     bm_tensor_t inputs_block[5] = {inputs_embed, next_pid, next_attention,
                                    past_key[i], past_value[i]};
-    bm_tensor_t outputs_block[3] = {inputs_embed, present_key_cache, present_value_cache};
+    bm_tensor_t outputs_block[3] = {inputs_embed, present_key_cache,
+                                    present_value_cache};
     ret = bmrt_launch_tensor_ex(p_bmrt, name_blocks_cache[i].c_str(),
                                 inputs_block, 5, outputs_block, 3, true, false);
     assert(ret);
-    bm_thread_sync(bm_handle);
+    // bm_thread_sync(bm_handle);
     bm_memcpy_d2d_byte(bm_handle, past_key[i].device_mem, token_offset,
-                       present_key_cache.device_mem, 0,
-                       bytes);
+                       present_key_cache.device_mem, 0, bytes);
     bm_memcpy_d2d_byte(bm_handle, past_value[i].device_mem, token_offset,
-                       present_value_cache.device_mem, 0,
-                       bytes);
+                       present_value_cache.device_mem, 0, bytes);
   }
   outputs_lm.shape = net_lm->stages[0].output_shapes[0];
   ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &inputs_lm, 1,
                               &outputs_lm, 1, true, false);
-  bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm.device_mem);
@@ -321,14 +324,14 @@ void Baichuan2::chat() {
     std::cout << "\nQuestion: ";
     std::string input_str;
     std::getline(std::cin, input_str);
-    std::string user_token = "<reserved_106>"; //user token id 195
-    std::string assitant_token = "<reserved_107>"; //assistant token id 196
+    std::string user_token = "<reserved_106>";     // user token id 195
+    std::string assitant_token = "<reserved_107>"; // assistant token id 196
     if (input_str == "exit") {
-        break;
+      break;
     }
     if (input_str == "clear") {
-        history.clear();
-        continue;
+      history.clear();
+      continue;
     }
 
     input_str = user_token + input_str + assitant_token;
@@ -345,7 +348,8 @@ void Baichuan2::answer(const std::string &input_str) {
 
   std::vector<int> tokens;
 
-  std::string history_input = std::accumulate(history.begin(), history.end(), std::string());
+  std::string history_input =
+      std::accumulate(history.begin(), history.end(), std::string());
   sentencepiece.Encode(history_input, &tokens);
 
   if (tokens.empty()) {
