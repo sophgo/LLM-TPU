@@ -9,7 +9,6 @@
 
 #include "bmruntime_interface.h"
 #include "memory.h"
-#include "utils.h"
 #include <algorithm>
 #include <assert.h>
 #include <chrono>
@@ -23,8 +22,6 @@
 #include <random>
 #include <stdio.h>
 #include <vector>
-
-static const float ATTENTION_MASK = -9984.;
 
 class Llama3_2 {
 public:
@@ -99,7 +96,7 @@ void Llama3_2::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 void Llama3_2::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
@@ -152,9 +149,9 @@ void Llama3_2::init(const std::vector<int> &devices, std::string model_path) {
   auto num_nets = bmrt_get_network_number(p_bmrt);
   NUM_LAYERS = (num_nets - 6) / 2;
   if (net_embed->output_dtypes[0] == BM_FLOAT16) {
-    mask_value = fp32_to_fp16_bits(ATTENTION_MASK);
+    mask_value = 0xF0E2;
   } else if (net_embed->output_dtypes[0] == BM_BFLOAT16) {
-    mask_value = fp32_to_bf16_bits(ATTENTION_MASK);
+    mask_value = 0xC61C;
   } else {
     std::cerr << "\nError: Invalid attention dtype\n";
     std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
@@ -219,7 +216,7 @@ void Llama3_2::head_launch(const bm_net_info_t *net,
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 int Llama3_2::greedy_search(const bm_net_info_t *net,
@@ -280,9 +277,8 @@ int Llama3_2::forward_first(std::vector<int> &tokens,
 
   // valid text token start from 6
   for (int i = 6; i < token_length; i++) {
-    text_row_mask[i] = net_embed->output_dtypes[0] == BM_FLOAT16
-                           ? fp32_to_bf16_bits(1.)
-                           : fp32_to_fp16_bits(1.);
+    text_row_mask[i] =
+        net_embed->output_dtypes[0] == BM_FLOAT16 ? 0x3F80 : 0x3C00;
   }
   for (int i = 0; i < SEQLEN; i++) {
     for (int j = 0; j < NUM_TILES; j++) {

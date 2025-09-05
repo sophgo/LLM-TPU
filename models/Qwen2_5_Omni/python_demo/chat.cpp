@@ -162,7 +162,7 @@ void Qwen2_5O::net_launch_block_dyn(const bm_net_info_t *net, int real_len) {
 }
 
 void Qwen2_5O::net_launch_decode(int idx, int kv_offset,
-                                 bm_device_mem_t &input_mem, int *pos_id,
+                                 bm_device_mem_t &input_mem, const int *pos_id,
                                  std::vector<uint16_t> &attention_mask) {
   auto &net = net_blocks_cache[idx];
   std::vector<bm_tensor_t> in_tensors(5);

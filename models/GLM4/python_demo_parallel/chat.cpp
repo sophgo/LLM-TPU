@@ -9,7 +9,7 @@
 
 #include "bmruntime_interface.h"
 #include "memory.h"
-#include "utils.h"
+
 #include <algorithm>
 #include <assert.h>
 #include <chrono>
@@ -69,7 +69,6 @@ private:
   std::vector<bm_tensor_t> inputs_lm, outputs_lm;
 
   uint16_t mask_value;
-  uint16_t mask_cache_value;
 };
 
 void ChatGLM::net_launch(const bm_net_info_t *net,
@@ -248,9 +247,11 @@ void ChatGLM::init(const std::vector<int> &devices, std::string model_path) {
     assert(true == ret);
   }
 
-  mask_value = fp32_to_uint16(ATTENTION_MASK, net_blocks[0]->input_dtypes[0]);
-  mask_cache_value =
-      fp32_to_uint16(ATTENTION_MASK_CACHE, net_blocks[0]->input_dtypes[0]);
+  if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
+    mask_value = 0xF0E2; // float16
+  } else if (net_embed_cache->output_dtypes[0] == BM_BFLOAT16) {
+    mask_value = 0xC61C; // -9984 by bfloat16
+  }
 }
 
 void ChatGLM::deinit() {
@@ -346,7 +347,7 @@ int ChatGLM::forward_next() {
 
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = 0; i <= SEQLEN - token_length; i++) {
-    attention_mask[i] = mask_cache_value;
+    attention_mask[i] = mask_value;
   }
   int32_t position_id = token_length - 1;
 

@@ -25,10 +25,27 @@
 
 #include "bmruntime_interface.h"
 #include "memory.h"
-#include "utils.h"
 
-static const float ATTENTION_MASK = -10000.;
 typedef uint8_t *(*decrypt_func)(const uint8_t *, uint64_t, uint64_t *);
+
+//===------------------------------------------------------------===//
+// Empty Func
+//===------------------------------------------------------------===//
+void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
+  int value = 0;
+  auto ret = bm_memset_device_ext(bm_handle, &value, 1, mem);
+  assert(BM_SUCCESS == ret);
+}
+
+void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+               int stage_idx = 0) {
+  for (int i = 0; i < net->input_num; i++) {
+    empty(bm_handle, net->stages[stage_idx].input_mems[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    empty(bm_handle, net->stages[stage_idx].output_mems[i]);
+  }
+}
 
 class Qwen {
 public:
@@ -303,7 +320,7 @@ void Qwen::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
   if (!ret) {
     launch_error();
   } else {
-   // bm_thread_sync(bm_handle);
+    // bm_thread_sync(bm_handle);
   }
 }
 
@@ -327,7 +344,7 @@ void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
   if (!ret) {
     launch_error();
   } else {
-   // bm_thread_sync(bm_handle);
+    // bm_thread_sync(bm_handle);
   }
 }
 
@@ -359,7 +376,7 @@ void Qwen::dynamic_net_launch(const bm_net_info_t *net, int token_length,
   if (!ret) {
     launch_error();
   } else {
-   // bm_thread_sync(bm_handle);
+    // bm_thread_sync(bm_handle);
   }
 }
 
@@ -450,9 +467,9 @@ void Qwen::init_nets() {
 
   // convert attention to uint16_t
   if (net_blocks[0]->input_dtypes[0] == BM_FLOAT16) {
-    mask_value = fp32_to_fp16_bits(ATTENTION_MASK);
+    mask_value = 0xF0E2;
   } else if (net_blocks[0]->input_dtypes[0] == BM_BFLOAT16) {
-    mask_value = fp32_to_bf16_bits(ATTENTION_MASK);
+    mask_value = 0xC61C;
   } else {
     std::cerr << "\nError: Invalid attention dtype\n";
     std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";

@@ -9,7 +9,7 @@
 
 #include "bmruntime_interface.h"
 #include "memory.h"
-#include "utils.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -26,6 +26,25 @@
 
 static const uint16_t ATTENTION_MASK = 0xC61C;
 typedef uint8_t *(*decrypt_func)(const uint8_t *, uint64_t, uint64_t *);
+
+//===------------------------------------------------------------===//
+// Empty Func
+//===------------------------------------------------------------===//
+void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
+  int value = 0;
+  auto ret = bm_memset_device_ext(bm_handle, &value, 1, mem);
+  assert(BM_SUCCESS == ret);
+}
+
+void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+               int stage_idx = 0) {
+  for (int i = 0; i < net->input_num; i++) {
+    empty(bm_handle, net->stages[stage_idx].input_mems[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    empty(bm_handle, net->stages[stage_idx].output_mems[i]);
+  }
+}
 
 class Qwen {
 public:

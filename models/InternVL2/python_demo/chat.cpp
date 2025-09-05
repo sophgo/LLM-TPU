@@ -7,21 +7,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <iostream>
-#include <cstdlib>
-#include <vector>
+#include "bmruntime_interface.h"
+#include "memory.h"
+#include <algorithm>
 #include <assert.h>
 #include <chrono>
-#include <algorithm>
+#include <cstdlib>
+#include <getopt.h>
+#include <inttypes.h>
+#include <iostream>
+#include <numeric>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include "memory.h"
-#include "bmruntime_interface.h"
-#include <getopt.h>
-#include <stdio.h>
-#include <inttypes.h>
 #include <random>
-#include <numeric>
+#include <stdio.h>
+#include <vector>
 
 static const uint16_t ATTENTION_MASK = 0xC61C; // -9984 by bfloat16
 
@@ -34,32 +34,12 @@ void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
   assert(BM_SUCCESS == ret);
 }
 
-void empty_in_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                  int stage_idx = 0) {
-  for (int i = 0; i < net->input_num; i++) {
-    empty(bm_handle, net->stages[stage_idx].input_mems[i]);
-  }
-}
-
-void empty_out_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                   int stage_idx = 0) {
-  for (int i = 0; i < net->output_num; i++) {
-    empty(bm_handle, net->stages[stage_idx].output_mems[i]);
-  }
-}
-
-void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-               int stage_idx = 0) {
-  empty_in_net(bm_handle, net, stage_idx);
-  empty_out_net(bm_handle, net, stage_idx);
-}
-
-
 class InternVL2 {
 public:
   void init(int devid, std::string model_path);
   void deinit();
-  void vit_launch(std::vector<float> &pixel_values, std::vector<int> &img_offset);
+  void vit_launch(std::vector<float> &pixel_values,
+                  std::vector<int> &img_offset);
   int forward_first(std::vector<int> &tokens, std::vector<float> &pixel_values,
                     std::vector<int> &img_offset);
   int forward_next();
@@ -110,7 +90,7 @@ void InternVL2::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 void InternVL2::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
@@ -162,7 +142,8 @@ void InternVL2::init(int dev_id, std::string model_path) {
     empty(bm_handle, past_key[i]);
     empty(bm_handle, past_value[i]);
   }
-  auto buffer_size = bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
+  auto buffer_size =
+      bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
   status = bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
   assert(BM_SUCCESS == status);
 }
@@ -173,27 +154,32 @@ void InternVL2::deinit() {
   bm_dev_free(bm_handle);
 }
 
-void InternVL2::vit_launch(std::vector<float> &pixel_values, std::vector<int> &img_offset) {
+void InternVL2::vit_launch(std::vector<float> &pixel_values,
+                           std::vector<int> &img_offset) {
   auto out_mem = net_embed->stages[0].output_mems[0];
   auto &vit_in_mem = net_vit->stages[0].input_mems[0];
   auto &vit_out_mem = net_vit->stages[0].output_mems[0];
   for (size_t i = 0; i < img_offset.size(); i++) {
     int vit_in_size = bm_mem_get_device_size(vit_in_mem);
     assert(vit_in_size);
-    
-    int offset = i * pixel_values.size() / img_offset.size(); // 假设 IMAGE_BYTES 是每张图片展平后的大小
-    bm_memcpy_s2d(bm_handle, vit_in_mem, (void *)(pixel_values.data() + offset));
-    
+
+    int offset = i * pixel_values.size() /
+                 img_offset.size(); // 假设 IMAGE_BYTES 是每张图片展平后的大小
+    bm_memcpy_s2d(bm_handle, vit_in_mem,
+                  (void *)(pixel_values.data() + offset));
+
     net_launch(net_vit);
 
     int vit_out_size = bm_mem_get_device_size(vit_out_mem);
     int dst_offset = img_offset[i] * HIDDEN_SIZE * 2;
-    bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, vit_out_mem, 0, vit_out_size);
+    bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, vit_out_mem, 0,
+                       vit_out_size);
   }
 }
 
 int InternVL2::forward_first(std::vector<int> &tokens,
-                             std::vector<float> &pixel_values, std::vector<int> &img_offset) {
+                             std::vector<float> &pixel_values,
+                             std::vector<int> &img_offset) {
   std::vector<int> input_ids(SEQLEN, 0);
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
@@ -219,7 +205,8 @@ int InternVL2::forward_first(std::vector<int> &tokens,
   net_launch(net_embed); // prefil embedding
 
   int img_num = img_offset.size();
-  if (pixel_values.size() * sizeof(float) == IMAGE_BYTES * img_num  && img_num > 0) {
+  if (pixel_values.size() * sizeof(float) == IMAGE_BYTES * img_num &&
+      img_num > 0) {
     d2d(dev_buffer, out_mem);
     out_mem = dev_buffer;
     auto start = std::chrono::high_resolution_clock::now();
@@ -227,7 +214,8 @@ int InternVL2::forward_first(std::vector<int> &tokens,
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end - start;
 
-    std::cout << "vit_launch execution time: " << duration.count() << " seconds" << std::endl;
+    std::cout << "vit_launch execution time: " << duration.count() << " seconds"
+              << std::endl;
   }
 
   // forward blocks

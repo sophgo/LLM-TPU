@@ -191,19 +191,6 @@ float fp16_ieee_to_fp32_value(uint16_t d) {
   return t.fval;
 }
 
-uint16_t fp32_to_uint16(float value, bm_data_type_t tensor_type) {
-  uint16_t uint16_value = 0;
-  if (tensor_type == BM_FLOAT16) {
-    uint16_value = fp32_to_fp16_bits(value);
-  } else if (tensor_type == BM_BFLOAT16) {
-    uint16_value = fp32_to_bf16_bits(value);
-  } else {
-    std::cerr << "\nError: Invalid attention dtype\n";
-    std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
-    throw std::runtime_error("Invalid attention dtype");
-  }
-  return uint16_value;
-}
 
 //===------------------------------------------------------------===//
 // Dump Func
@@ -597,7 +584,7 @@ void dump_net_input_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
 
     dump_tensor_to_file(bm_handle, in_tensors[i],
                         net->stages[0].input_shapes[i], npz_map,
-                        net->input_dtypes[i], "input_" + std::to_string(i));
+                        net->input_dtypes[i], net->input_names[i]);
   }
   cnpy::npz_save_all(filename, npz_map);
 }
@@ -613,44 +600,35 @@ void dump_net_output_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
 
     dump_tensor_to_file(bm_handle, out_tensors[i],
                         net->stages[0].output_shapes[i], npz_map,
-                        net->output_dtypes[i], "output_" + std::to_string(i));
+                        net->output_dtypes[i], net->output_names[i]);
   }
   cnpy::npz_save_all(filename, npz_map);
 }
 
 void dump_net_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
                       const std::string &filename) {
-  dump_net_input_to_file(bm_handle, net, filename);
-  dump_net_output_to_file(bm_handle, net, filename);
-}
-
-//===------------------------------------------------------------===//
-// Empty Func
-//===------------------------------------------------------------===//
-void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
-  int value = 0;
-  auto ret = bm_memset_device_ext(bm_handle, &value, 1, mem);
-  assert(BM_SUCCESS == ret);
-}
-
-void empty_in_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                  int stage_idx = 0) {
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  cnpy::npz_t npz_map;
   for (int i = 0; i < net->input_num; i++) {
-    empty(bm_handle, net->stages[stage_idx].input_mems[i]);
-  }
-}
+    bmrt_tensor_with_device(&in_tensors[i], net->stages[0].input_mems[i],
+                            net->input_dtypes[i],
+                            net->stages[0].input_shapes[i]);
 
-void empty_out_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                   int stage_idx = 0) {
+    dump_tensor_to_file(bm_handle, in_tensors[i],
+                        net->stages[0].input_shapes[i], npz_map,
+                        net->input_dtypes[i], net->input_names[i]);
+  }
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
   for (int i = 0; i < net->output_num; i++) {
-    empty(bm_handle, net->stages[stage_idx].output_mems[i]);
-  }
-}
+    bmrt_tensor_with_device(&out_tensors[i], net->stages[0].output_mems[i],
+                            net->output_dtypes[i],
+                            net->stages[0].output_shapes[i]);
 
-void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-               int stage_idx = 0) {
-  empty_in_net(bm_handle, net, stage_idx);
-  empty_out_net(bm_handle, net, stage_idx);
+    dump_tensor_to_file(bm_handle, out_tensors[i],
+                        net->stages[0].output_shapes[i], npz_map,
+                        net->output_dtypes[i], net->output_names[i]);
+  }
+  cnpy::npz_save_all(filename, npz_map);
 }
 
 //===------------------------------------------------------------===//
@@ -889,6 +867,8 @@ private:
     }
     return position_id;
   }
+
+  // LLM position utilities (Decode)
 
   std::vector<int> make_qwen2vl_next_position_id() {
     config_.max_pos += 1;

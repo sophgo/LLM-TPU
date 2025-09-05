@@ -87,6 +87,7 @@ private:
   const bm_net_info_t *net_lm, *net_greedy_head, *net_penalty_sample_head;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
+  uint16_t mask_value;
 };
 
 void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {

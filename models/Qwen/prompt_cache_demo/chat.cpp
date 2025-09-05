@@ -23,9 +23,6 @@
 
 #include "bmruntime_interface.h"
 #include "memory.h"
-#include "utils.h"
-
-static const float ATTENTION_MASK = -10000.;
 
 class Qwen {
 public:
@@ -100,7 +97,7 @@ void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
@@ -179,9 +176,9 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
 
   // convert attention to uint16_t
   if (net_blocks_cache[0]->input_dtypes[2] == BM_FLOAT16) {
-    mask_value = fp32_to_fp16_bits(ATTENTION_MASK);
+    mask_value = 0xF0E2;
   } else if (net_blocks_cache[0]->input_dtypes[2] == BM_BFLOAT16) {
-    mask_value = fp32_to_bf16_bits(ATTENTION_MASK);
+    mask_value = 0xC61C;
   } else {
     std::cerr << "\nError: Invalid attention dtype\n";
     std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
@@ -227,7 +224,7 @@ void Qwen::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 int Qwen::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
@@ -435,6 +432,7 @@ int Qwen::forward_prompt_first(std::vector<int> &tokens) {
     auto &in1_mem = net_blocks_prompt_cache[idx]->stages[0].input_mems[1];
     auto &in2_mem = net_blocks_prompt_cache[idx]->stages[0].input_mems[2];
     auto &in3_mem = net_blocks_prompt_cache[idx]->stages[0].input_mems[3];
+    auto &in4_mem = net_blocks_prompt_cache[idx]->stages[0].input_mems[4];
     if (idx == 0) {
       d2d(in0_mem, embed_out_mem);
       bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());

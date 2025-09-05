@@ -236,6 +236,9 @@ class InternVL3():
 
             media_path = input("\nImage or Video Path: ")
             media_path = media_path.strip()
+            if media_path != "" and not os.path.exists(media_path):
+                print(f"Media file not found: {media_path}")
+                continue
             inputs = self.process_input(media_path)
             token_len = len(inputs[0])
 

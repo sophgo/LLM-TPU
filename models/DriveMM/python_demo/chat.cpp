@@ -7,23 +7,22 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <iostream>
-#include <cstdlib>
-#include <vector>
+#include <algorithm>
 #include <assert.h>
 #include <chrono>
-#include <algorithm>
+#include <cstdlib>
+#include <getopt.h>
+#include <inttypes.h>
+#include <iostream>
+#include <numeric>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include <getopt.h>
-#include <stdio.h>
-#include <inttypes.h>
 #include <random>
-#include <numeric>
+#include <stdio.h>
+#include <vector>
 
 #include "bmruntime_interface.h"
 #include "memory.h"
-
 
 //===------------------------------------------------------------===//
 // Empty Func
@@ -34,41 +33,31 @@ void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
   assert(BM_SUCCESS == ret);
 }
 
-void empty_in_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                  int stage_idx = 0) {
+void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+               int stage_idx = 0) {
   for (int i = 0; i < net->input_num; i++) {
     empty(bm_handle, net->stages[stage_idx].input_mems[i]);
   }
-}
 
-void empty_out_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                   int stage_idx = 0) {
   for (int i = 0; i < net->output_num; i++) {
     empty(bm_handle, net->stages[stage_idx].output_mems[i]);
   }
-}
-
-void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-               int stage_idx = 0) {
-  empty_in_net(bm_handle, net, stage_idx);
-  empty_out_net(bm_handle, net, stage_idx);
 }
 
 class Model {
 public:
   void init(int devid, std::string model_path);
   void deinit();
-  int forward_first(std::vector<int> &tokens,
-                    std::vector<float> &pixel_values,
-                    int vit_offset,
-                    int valid_vit_length);
+  int forward_first(std::vector<int> &tokens, std::vector<float> &pixel_values,
+                    int vit_offset, int valid_vit_length);
   int forward_next();
 
   std::mt19937 sgen;
   Model() : sgen(std::random_device()()) {};
 
 private:
-  void vit_launch(std::vector<float> &pixel_values, int vit_offset, int valid_vit_length, bm_device_mem_t &out_mem);
+  void vit_launch(std::vector<float> &pixel_values, int vit_offset,
+                  int valid_vit_length, bm_device_mem_t &out_mem);
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
   void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
@@ -108,7 +97,7 @@ void Model::net_launch(const bm_net_info_t *net, int stage_idx) {
         &in_tensors[i], net->stages[stage_idx].input_mems[i],
         net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
   }
-  
+
   for (int i = 0; i < net->output_num; i++) {
     bmrt_tensor_with_device(
         &out_tensors[i], net->stages[stage_idx].output_mems[i],
@@ -118,7 +107,7 @@ void Model::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 void Model::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
@@ -148,7 +137,8 @@ void Model::init(int dev_id, std::string model_path) {
   net_vit = bmrt_get_network_info(p_bmrt, "vit");
   net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
   net_greedy_head = bmrt_get_network_info(p_bmrt, "greedy_head");
-  net_penalty_sample_head = bmrt_get_network_info(p_bmrt, "penalty_sample_head");
+  net_penalty_sample_head =
+      bmrt_get_network_info(p_bmrt, "penalty_sample_head");
   SEQLEN = net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
   HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[1];
   MAX_PIXELS = net_vit->stages[0].input_shapes[0].dims[0];
@@ -172,7 +162,8 @@ void Model::init(int dev_id, std::string model_path) {
     empty(bm_handle, past_key[i]);
     empty(bm_handle, past_value[i]);
   }
-  auto buffer_size = bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
+  auto buffer_size =
+      bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
   status = bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
   assert(BM_SUCCESS == status);
 
@@ -197,36 +188,36 @@ void Model::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
   std::vector<bm_tensor_t> out_tensors(net->output_num);
 
-  bmrt_tensor_with_device(
-      &in_tensors[0], logits_mem,
-      net->input_dtypes[0], net->stages[0].input_shapes[0]);
+  bmrt_tensor_with_device(&in_tensors[0], logits_mem, net->input_dtypes[0],
+                          net->stages[0].input_shapes[0]);
 
   for (int i = 1; i < net->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net->stages[0].input_mems[i],
-        net->input_dtypes[i], net->stages[0].input_shapes[i]);
+    bmrt_tensor_with_device(&in_tensors[i], net->stages[0].input_mems[i],
+                            net->input_dtypes[i],
+                            net->stages[0].input_shapes[i]);
   }
   for (int i = 0; i < net->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net->stages[0].output_mems[i],
-        net->output_dtypes[i], net->stages[0].output_shapes[i]);
+    bmrt_tensor_with_device(&out_tensors[i], net->stages[0].output_mems[i],
+                            net->output_dtypes[i],
+                            net->stages[0].output_shapes[i]);
   }
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
-int Model::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
+int Model::greedy_search(const bm_net_info_t *net,
+                         bm_device_mem_t &logits_mem) {
   auto &out_mem = net->stages[0].output_mems[0];
   head_launch(net, logits_mem);
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, out_mem);
   return token;
 }
-void Model::vit_launch(std::vector<float> &pixel_values, int vit_offset, int valid_vit_length,
-                       bm_device_mem_t &out_mem) {
+void Model::vit_launch(std::vector<float> &pixel_values, int vit_offset,
+                       int valid_vit_length, bm_device_mem_t &out_mem) {
   d2d(dev_buffer, out_mem);
   out_mem = dev_buffer;
   // forward vision transformer
@@ -243,8 +234,9 @@ void Model::vit_launch(std::vector<float> &pixel_values, int vit_offset, int val
   int vit_size = valid_vit_length * HIDDEN_SIZE * sizeof(uint16_t);
   bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, vit_out_mem, 0, vit_size);
 }
-int Model::forward_first(std::vector<int> &tokens, std::vector<float> &pixel_values,
-                          int vit_offset, int valid_vit_length) {
+int Model::forward_first(std::vector<int> &tokens,
+                         std::vector<float> &pixel_values, int vit_offset,
+                         int valid_vit_length) {
   std::vector<int> input_ids(SEQLEN, 0);
   std::vector<int> position_ids(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, 0);
@@ -283,7 +275,8 @@ int Model::forward_first(std::vector<int> &tokens, std::vector<float> &pixel_val
   }
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> duration = end - start;
-  std::cout << "vit_launch execution time: " << duration.count() << " seconds" << std::endl;
+  std::cout << "vit_launch execution time: " << duration.count() << " seconds"
+            << std::endl;
 
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];

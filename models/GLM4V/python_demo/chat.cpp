@@ -38,7 +38,7 @@ union bfloat16 {
   uint16_t bits;
   struct {
     uint16_t frac : 7; // mantissa
-    uint16_t exp  : 8; // exponent
+    uint16_t exp : 8;  // exponent
     uint16_t sign : 1; // sign
   } format;
 };
@@ -51,7 +51,6 @@ bfloat16 fp32_to_bf16(float value) {
   return bf16_var;
 }
 
-
 //===------------------------------------------------------------===//
 // Empty Func
 //===------------------------------------------------------------===//
@@ -61,24 +60,14 @@ void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
   assert(BM_SUCCESS == ret);
 }
 
-void empty_in_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                  int stage_idx = 0) {
+void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+               int stage_idx = 0) {
   for (int i = 0; i < net->input_num; i++) {
     empty(bm_handle, net->stages[stage_idx].input_mems[i]);
   }
-}
-
-void empty_out_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-                   int stage_idx = 0) {
   for (int i = 0; i < net->output_num; i++) {
     empty(bm_handle, net->stages[stage_idx].output_mems[i]);
   }
-}
-
-void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-               int stage_idx = 0) {
-  empty_in_net(bm_handle, net, stage_idx);
-  empty_out_net(bm_handle, net, stage_idx);
 }
 
 class GLM4V {
@@ -148,7 +137,7 @@ void GLM4V::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 void GLM4V::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
@@ -269,11 +258,10 @@ void GLM4V::forward_embed(ArrayInt const &tokens) {
 }
 
 void GLM4V::forward_vit(ArrayFloat const &pixel_values,
-                          ArrayInt const &position_ids,
-                          ArrayFloat const &full_attn_mask,
-                          ArrayInt const &grid_thw,
-                          ArrayFloat const &pos_embed,
-                          int vit_offset) {
+                        ArrayInt const &position_ids,
+                        ArrayFloat const &full_attn_mask,
+                        ArrayInt const &grid_thw, ArrayFloat const &pos_embed,
+                        int vit_offset) {
   auto p_grid_thw = grid_thw.request();
   auto p_thw = static_cast<int *>(p_grid_thw.ptr);
   int t = p_thw[0];
@@ -323,8 +311,7 @@ void GLM4V::forward_vit(ArrayFloat const &pixel_values,
                      vit_size);
 }
 
-void GLM4V::head_launch(const bm_net_info_t *net,
-                          bm_device_mem_t &logits_mem) {
+void GLM4V::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
   std::vector<bm_tensor_t> out_tensors(net->output_num);
 
@@ -345,11 +332,11 @@ void GLM4V::head_launch(const bm_net_info_t *net,
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 int GLM4V::greedy_search(const bm_net_info_t *net,
-                           bm_device_mem_t &logits_mem) {
+                         bm_device_mem_t &logits_mem) {
   auto &out_mem = net->stages[0].output_mems[0];
   head_launch(net, logits_mem);
   int token = 0;

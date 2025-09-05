@@ -14,3 +14,5 @@ target_link_libraries(chat PUBLIC bmrt bmlib z)
 dump_net_input_to_file 可以把网络的输入导出到npz文件
 
 dump_net_output_to_file 可以把网络的输出导出到npz文件
+
+dump_net_to_file 可以把网络的输入输出导出到npz文件
