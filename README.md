@@ -102,7 +102,8 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 | do_sample     |  -       | 否    | 指定输出是否包含采样模型，默认关闭 |
 | out_dir       |  o       | 是    | 指定输出目录 |
 
-还有更多参数可以参考[进阶应用](#进阶应用)。其中量化类型用w4bf16还是w4f16，要看LLM中`config.json`配置`torch_dtype`是`bfloat16`还是`float16`。
+还有更多参数可以参考[进阶应用](#进阶应用)。
+其中**量化类型用w4bf16还是w4f16**，要看LLM中`config.json`配置llm的`torch_dtype`是`bfloat16`还是`float16`。
 
 `llm_convert.py`执行完成后在指定目录会生成对应的bmodel和配置目录config。
 

@@ -70,14 +70,14 @@ source ./envsetup.sh  #激活环境变量
 
 ``` shell
 # 如果有提示transformers版本问题，pip3 install transformers -U
-llm_convert.py -m /workspace/Qwen3-4B-AWQ -s 512 --quantize w4bf16 -c bm1684x --out_dir qwen3_4b
+llm_convert.py -m /workspace/Qwen3-4B-AWQ -s 512 --quantize w4f16 -c bm1684x --out_dir qwen3_4b
 ```
 编译完成后，在指定目录`qwen3_4b`生成`qwen3-xxx.bmodel`和`config`
 
 另外如果指定的seqlen比较长的话，比如8K，可以指定`--dynamic`编译，首token延时会根据实际长度变化，如下：
 ``` shell
 # 如果有提示transformers版本问题，pip3 install transformers -U
-llm_convert.py -m /workspace/Qwen3-4B-AWQ -s 8192 --quantize w4bf16 -c bm1684x --dynamic --out_dir qwen3_4b
+llm_convert.py -m /workspace/Qwen3-4B-AWQ -s 8192 --quantize w4f16 -c bm1684x --dynamic --out_dir qwen3_4b
 ```
 
 支持用kv cache保存历史记录，（原始方式是用token做历史记录），指定`--use_block_with_kv`; 并指定`--max_input_length`，比如512；
@@ -85,7 +85,7 @@ max_input_length不长的情况下，每轮对话首token延时都会很低，�
 如下：
 ``` shell
 # 如果有提示transformers版本问题，pip3 install transformers -U
-llm_convert.py -m /workspace/Qwen3-4B-AWQ -s 8192 --quantize w4bf16 -c bm1684x --use_block_with_kv --max_input_length 512 --out_dir qwen3_4b_kv
+llm_convert.py -m /workspace/Qwen3-4B-AWQ -s 8192 --quantize w4f16 -c bm1684x --use_block_with_kv --max_input_length 512 --out_dir qwen3_4b_kv
 ```
 
 ## 编译与运行程序

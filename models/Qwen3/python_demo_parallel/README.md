@@ -4,7 +4,7 @@
 
 ```shell
 # --num_device 2 指定2芯
-llm_convert.py -m /workspace/Qwen3-14B-AWQ  -s 2048 --quantize w4bf16  -c bm1684x --out_dir qwen3_2dev --num_device 2
+llm_convert.py -m /workspace/Qwen3-14B-AWQ  -s 2048 --quantize w4f16  -c bm1684x --out_dir qwen3_2dev --num_device 2
 ```
 
 已编译模型：
