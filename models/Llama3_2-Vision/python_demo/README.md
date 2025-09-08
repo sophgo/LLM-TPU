@@ -20,7 +20,7 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 # python demo
 ```
-python3 pipeline.py --model_path llama3.2-11b-vision_int4_512seq.bmodel --image_path ./test.jpg --tokenizer_path ../token_config/ --devid 0 --generation_mode greedy
+python3 pipeline.py --model_path llama3.2-***.bmodel --image_path ./test.jpg --tokenizer_path ../token_config/ --devid 0 --generation_mode greedy
 ```
 
 

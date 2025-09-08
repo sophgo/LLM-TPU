@@ -138,16 +138,12 @@ void Llama3_2::init(const std::vector<int> &devices, std::string model_path) {
   net_embed = bmrt_get_network_info(p_bmrt, "embedding");
   net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
   net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
-  net_greedy_head = bmrt_get_network_info(p_bmrt, "greedy_head");
-  net_penalty_sample_head =
-      bmrt_get_network_info(p_bmrt, "penalty_sample_head");
 
   SEQLEN = net_embed->stages[0].input_shapes[0].dims[1];   // real seqlen
   HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[1]; // read hidden size
   NUM_TILES = net_vit->stages[0].output_shapes[0].dims[0];
   NUM_PATCHES = net_vit->stages[0].output_shapes[0].dims[1];
-  auto num_nets = bmrt_get_network_number(p_bmrt);
-  NUM_LAYERS = (num_nets - 6) / 2;
+  NUM_LAYERS = 40;
   if (net_embed->output_dtypes[0] == BM_FLOAT16) {
     mask_value = 0xF0E2;
   } else if (net_embed->output_dtypes[0] == BM_BFLOAT16) {
@@ -357,16 +353,27 @@ int Llama3_2::forward_first(std::vector<int> &tokens,
   // forward lmhead
   int bytes = out_mem.size / SEQLEN;
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
-  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
   bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
                      (token_length - 1) * bytes, bytes);
-  net_launch(net_lm);
   int token = 0;
-  if (generation_mode == "greedy") {
-    token = greedy_search(net_greedy_head, lm_out_mem);
-  } else if (generation_mode == "penalty_sample") {
-    token = penalty_sample(net_penalty_sample_head, lm_out_mem);
+
+  std::vector<bm_tensor_t> in_tensors(net_lm->input_num);
+  std::vector<bm_tensor_t> out_tensors(net_lm->output_num);
+  for (int i = 0; i < net_lm->input_num; i++) {
+    bmrt_tensor_with_device(
+        &in_tensors[i], net_lm->stages[0].input_mems[i],
+        net_lm->input_dtypes[i], net_lm->stages[0].input_shapes[i]);
   }
+  for (int i = 0; i < net_lm->output_num; i++) {
+    bmrt_tensor_with_device(
+        &out_tensors[i], net_lm->stages[0].output_mems[i],
+        net_lm->output_dtypes[i], net_lm->stages[0].output_shapes[i]);
+  }
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net_lm->name, in_tensors.data(),
+                                   net_lm->input_num, out_tensors.data(),
+                                   net_lm->output_num, true, false);
+  assert(ret);
+  bm_memcpy_d2s(bm_handle, (void *)&token, out_tensors[0].device_mem);
 
   visited_tokens[token_length] = token;
   token_length += 1;
@@ -440,16 +447,27 @@ int Llama3_2::forward_next() {
 
   // forward lmhead
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
-  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
   d2d(lm_in_mem, out_mem);
-  net_launch(net_lm);
 
   int token = 0;
-  if (generation_mode == "greedy") {
-    token = greedy_search(net_greedy_head, lm_out_mem);
-  } else if (generation_mode == "penalty_sample") {
-    token = penalty_sample(net_penalty_sample_head, lm_out_mem);
+
+  std::vector<bm_tensor_t> in_tensors(net_lm->input_num);
+  std::vector<bm_tensor_t> out_tensors(net_lm->output_num);
+  for (int i = 0; i < net_lm->input_num; i++) {
+    bmrt_tensor_with_device(
+        &in_tensors[i], net_lm->stages[0].input_mems[i],
+        net_lm->input_dtypes[i], net_lm->stages[0].input_shapes[i]);
   }
+  for (int i = 0; i < net_lm->output_num; i++) {
+    bmrt_tensor_with_device(
+        &out_tensors[i], net_lm->stages[0].output_mems[i],
+        net_lm->output_dtypes[i], net_lm->stages[0].output_shapes[i]);
+  }
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net_lm->name, in_tensors.data(),
+                                   net_lm->input_num, out_tensors.data(),
+                                   net_lm->output_num, true, false);
+  assert(ret);
+  bm_memcpy_d2s(bm_handle, (void *)&token, out_tensors[0].device_mem);
 
   visited_tokens[token_length] = token;
   token_length += 1;
