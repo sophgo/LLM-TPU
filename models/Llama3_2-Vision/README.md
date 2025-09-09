@@ -4,30 +4,6 @@
 
 下文中默认是PCIE环境；如果是SoC环境，按提示操作即可。
 
-# 目录说明
-```
-.
-├── README.md
-├── compile
-│   ├── compile.sh                          #用来编译TPU模型的脚本
-│   ├── export_onnx.py                      #用来导出onnx的脚本
-│   └── files                               #用于替换原模型的文件
-├── python_demo
-│   ├── chat.cpp                            #主程序文件
-│   └── pipeline.py                         #Llama3.2 vision python_demo的执行脚本
-├── requirements.txt                        #环境配置所需安装的wheel包
-├── run_demo.sh                             #自动测试脚本
-└── token_config                            #分词器
-    ├── special_tokens_map.json
-    ├── tokenizer.json
-    └── tokenizer_config.json
-```
-----------------------------
-
-#  自动化推理脚本
-
-
-
 # 【阶段一】模型编译
 
 ## 注意点
@@ -60,11 +36,12 @@ source ./envsetup.sh
 
 ### 步骤四：对齐模型环境
 
+使用 llm_convert.py 脚本编译bmodel，编译结果保存于 mllama3_2 文件夹
+
 ``` shell
 pip install -r requirements.txt
 llm_convert.py -m /workspace/Llama-3.2-11B-Vision-Instruct/ -s 512 -q w4bf16 -g 64 --num_device 1  -c bm1684x  -o mllama3_2/
 ```
-使用 llm_convert.py 脚本编译bmodel，编译结果保存于 mllama3_2 文件夹
 ----------------------------
 
 # 【阶段二】可执行文件生成

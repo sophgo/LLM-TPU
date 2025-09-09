@@ -10,6 +10,8 @@ pip3 install sentencepiece transformers==4.45.2
 ```
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/llama3.2-11b-vision_int4_512seq.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/llama3.2-11b-vision_int4_2048seq.bmodel
+<!-- 下载新方法编译的模型 -->
+python3 -m dfss --url=open@sophgo.com:/share/hengyang/llama-3.2-11b-vision-instruct_w4bf16_seq512_bm1684x_1dev_20250909_173910.bmodel
 ```
 
 编译库文件
@@ -20,7 +22,7 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 # python demo
 ```
-python3 pipeline.py --model_path llama3.2-***.bmodel --image_path ./test.jpg --tokenizer_path ../token_config/ --devid 0 --generation_mode greedy
+python3 pipeline.py --model_path llama3.2-***.bmodel --image_path ./test.jpg --tokenizer_path ../token_config/ --devid 0
 ```
 
 
