@@ -1,0 +1,24 @@
+{
+    "image_processor_type": "MiniCPMVImageProcessor",
+    "auto_map": {
+        "AutoProcessor": "processing_minicpmv.MiniCPMVProcessor",
+        "AutoImageProcessor": "image_processing_minicpmv.MiniCPMVImageProcessor"
+      },
+    "processor_class": "MiniCPMVProcessor",
+    "max_slice_nums": 9,
+    "scale_resolution": 448,
+    "patch_size": 14,
+    "use_image_id": true,
+    "image_feature_size": 64,
+    "im_start": "<image>",
+    "im_end": "</image>",
+    "slice_start": "<slice>",
+    "slice_end": "</slice>",
+    "unk": "<unk>",
+    "im_id_start": "<image_id>",
+    "im_id_end": "</image_id>",
+    "slice_mode": true,
+    "norm_mean": [0.5, 0.5, 0.5],
+    "norm_std": [0.5, 0.5, 0.5],
+    "version": 3.0
+}
