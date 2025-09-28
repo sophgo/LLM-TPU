@@ -48,6 +48,7 @@ private:
   void net_launch_decode(int block_idx, int kv_offset,
                          bm_device_mem_t &input_mem, const int *pos_id,
                          std::vector<uint16_t> &attention_mask);
+  void vit_launch_dyn(int real_patches);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
   void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   void init_by_names();
@@ -70,6 +71,7 @@ public:
   bool lmhead_with_topk;
   bool support_history;
   bool is_dynamic;
+  bool vit_dynamic;
   uint16_t mask_value;
 
 private:

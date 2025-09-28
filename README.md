@@ -226,6 +226,13 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 1) [Qwen/share_cache_demo](./models/Qwen/share_cache_demo)
 2) [Qwen1_5/share_cache_demo](./models/Qwen1_5/share_cache_demo)
 
+## 8. VIT动态
+
+当实际应用图片有大有小时，为了兼顾到不同尺寸下的vit性能，可以把vit做成动态。命令加入`--dynamic_vit`即可。
+样例：
+
+1) [Qwen2.5VL](./models/Qwen2_5_VL)，python与cpp demo都支持
+
 
 # 精度优化
 

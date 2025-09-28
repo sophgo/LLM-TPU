@@ -390,7 +390,9 @@ class Qwen2_5VL():
             if media_type == "image":
                 vit_token_list = torch.where(inputs.input_ids == self.ID_IMAGE_PAD)[1].tolist()
                 vit_offset = vit_token_list[0]
+                vit_start = time.time()
                 self.vit_process_image(inputs, vit_offset)
+                vit_end = time.time()
                 position_ids = self.get_rope_index(inputs.input_ids, inputs.image_grid_thw,
                                                    self.ID_IMAGE_PAD)
                 self.max_posid = int(position_ids.max())
@@ -436,6 +438,8 @@ class Qwen2_5VL():
             tps = tok_num / next_duration
             print(f"\nFTL: {first_duration:.3f} s")
             print(f"TPS: {tps:.3f} token/s")
+            if media_type == "image":
+                print(f"VIT({inputs.image_grid_thw.tolist()}): {vit_end - vit_start:.3f} s")
 
 
 def main(args):

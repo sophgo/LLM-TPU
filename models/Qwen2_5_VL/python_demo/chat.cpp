@@ -71,6 +71,7 @@ private:
   void net_launch_decode(int block_idx, int kv_offset,
                          bm_device_mem_t &input_mem, const int *position_id,
                          std::vector<uint16_t> &attention_mask);
+  void vit_launch_dyn(int real_patches);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
   void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   void init_by_names();
@@ -93,6 +94,7 @@ public:
   bool lmhead_with_topk;
   bool support_history;
   bool is_dynamic;
+  bool vit_dynamic;
   uint16_t mask_value;
 
 private:
@@ -156,6 +158,32 @@ void Qwen2_5VL::net_launch_block_dyn(const bm_net_info_t *net, int real_len) {
                                    net->output_num, true, false);
   assert(ret);
   // bm_thread_sync(bm_handle);
+}
+
+void Qwen2_5VL::vit_launch_dyn(int real_patches) {
+  std::vector<bm_tensor_t> in_tensors(net_vit->input_num);
+  std::vector<bm_tensor_t> out_tensors(net_vit->output_num);
+
+  for (int i = 0; i < net_vit->input_num; i++) {
+    bmrt_tensor_with_device(&in_tensors[i], net_vit->stages[0].input_mems[i],
+                            net_vit->input_dtypes[i],
+                            net_vit->stages[0].input_shapes[i]);
+  }
+  for (int i = 0; i < net_vit->output_num; i++) {
+    bmrt_tensor_with_device(&out_tensors[i], net_vit->stages[0].output_mems[i],
+                            net_vit->output_dtypes[i],
+                            net_vit->stages[0].output_shapes[i]);
+  }
+  in_tensors[0].shape.dims[0] = real_patches;
+  in_tensors[1].shape.dims[0] = real_patches;
+  in_tensors[2].shape.dims[2] = real_patches;
+  in_tensors[2].shape.dims[3] = real_patches;
+  in_tensors[3].shape.dims[2] = real_patches;
+  in_tensors[3].shape.dims[3] = real_patches;
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net_vit->name, in_tensors.data(),
+                                   net_vit->input_num, out_tensors.data(),
+                                   net_vit->output_num, true, false);
+  assert(ret);
 }
 
 void Qwen2_5VL::net_launch_decode(int idx, int kv_offset,
@@ -283,6 +311,7 @@ void Qwen2_5VL::init_by_names() {
   }
   support_history = net_blocks[0]->input_num == 5; // with kv cache
   is_dynamic = net_blocks[0]->is_dynamic;
+  vit_dynamic = net_vit->is_dynamic;
   history_length = 0;
   lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
   MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
@@ -406,26 +435,32 @@ void Qwen2_5VL::forward_vit(ArrayFloat const &pixel_values,
                         position_ids.size() * sizeof(int));
   bm_memcpy_s2d_partial(bm_handle, vit_in4_mem, (void *)p_reverse_indices.ptr,
                         reverse_indices.size() * sizeof(int));
-  if (full_attn_mask.size() == MAX_PATCHES * MAX_PATCHES) {
+  if (vit_dynamic) {
     bm_memcpy_s2d(bm_handle, vit_in2_mem, (void *)p_full);
     bm_memcpy_s2d(bm_handle, vit_in3_mem, (void *)p_window);
+    vit_launch_dyn(hw);
   } else {
-    std::vector<float> mask_full(MAX_PATCHES * MAX_PATCHES, -10000.0f);
-    std::vector<float> mask_window(MAX_PATCHES * MAX_PATCHES, -10000.0f);
+    if (full_attn_mask.size() == MAX_PATCHES * MAX_PATCHES) {
+      bm_memcpy_s2d(bm_handle, vit_in2_mem, (void *)p_full);
+      bm_memcpy_s2d(bm_handle, vit_in3_mem, (void *)p_window);
+    } else {
+      std::vector<float> mask_full(MAX_PATCHES * MAX_PATCHES, -10000.0f);
+      std::vector<float> mask_window(MAX_PATCHES * MAX_PATCHES, -10000.0f);
 
-    for (int i = 0; i < hw; i++) {
-      int mask_offset = i * MAX_PATCHES;
-      int ori_offset = i * hw;
-      std::copy(p_full + ori_offset, p_full + ori_offset + hw,
-                mask_full.begin() + mask_offset);
-      std::copy(p_window + ori_offset, p_window + ori_offset + hw,
-                mask_window.begin() + mask_offset);
+      for (int i = 0; i < hw; i++) {
+        int mask_offset = i * MAX_PATCHES;
+        int ori_offset = i * hw;
+        std::copy(p_full + ori_offset, p_full + ori_offset + hw,
+                  mask_full.begin() + mask_offset);
+        std::copy(p_window + ori_offset, p_window + ori_offset + hw,
+                  mask_window.begin() + mask_offset);
+      }
+      bm_memcpy_s2d(bm_handle, vit_in2_mem, (void *)mask_full.data());
+      bm_memcpy_s2d(bm_handle, vit_in3_mem, (void *)mask_window.data());
     }
-    bm_memcpy_s2d(bm_handle, vit_in2_mem, (void *)mask_full.data());
-    bm_memcpy_s2d(bm_handle, vit_in3_mem, (void *)mask_window.data());
+    // launch vit
+    net_launch(net_vit);
   }
-  // launch vit
-  net_launch(net_vit);
 
   // concatenante texting embedding and image embedding
   int dst_offset = vit_offset * HIDDEN_SIZE * sizeof(uint16_t);

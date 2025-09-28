@@ -127,7 +127,7 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 4096 --quantize w4bf1
 ```shell
 llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 8192 --quantize w4bf16  -c bm1684x --out_dir qwen2.5vl_3b_dyn  --max_pixels 672,896 --dynamic
 ```
-使用cpp_demo或者python_demo都支持。
+使用`cpp_demo`或者`python_demo`都支持。
 
 ### 3. 支持多任务
 
@@ -137,6 +137,14 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 8192 --quantize w4bf1
 ### 4. 支持多图
 
 可以支持多张图片，不论是分散的图片，还是把多图看做video。参考`python_demo_multiimage`。
+
+### 5. 支持图片动态
+
+当实际应用图片有大有小时，为了保证不同情况下的vit性能，可以把vit做成动态。命令加入`--dynamic_vit`即可。
+```shell
+llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 --quantize w4bf16  -c bm1684x --out_dir qwen2.5vl_3b_dyn_vit  --max_pixels 672,896 --dynamic_vit
+```
+使用`cpp_demo`或者`python_demo`都支持。
 
 ## 常见问题
 
