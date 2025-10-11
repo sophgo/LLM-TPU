@@ -142,15 +142,6 @@ void JanusPro::init(const std::vector<int> &devices, std::string model_path) {
   auto num_nets = bmrt_get_network_number(p_bmrt);
   NUM_LAYERS = (num_nets - 6) / 2;
   
-  if (net_blocks_cache[0]->output_dtypes[0] == BM_FLOAT16) {
-    mask_value = 0xF0E2; // float16
-  } else if (net_blocks_cache[0]->output_dtypes[0] == BM_BFLOAT16) {
-    mask_value = 0xC61C; // -9984 by bfloat16
-  } else {
-    std::cerr << "\nError: Invalid attention dtype\n";
-    std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
-    throw std::runtime_error("Invalid attention dtype");
-  }
   // resize
   visited_tokens.resize(SEQLEN);
 
@@ -161,6 +152,16 @@ void JanusPro::init(const std::vector<int> &devices, std::string model_path) {
     net_blocks.emplace_back(bmrt_get_network_info(p_bmrt, block_name.c_str()));
     net_blocks_cache.emplace_back(
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
+  }
+
+  if (net_blocks_cache[0]->output_dtypes[0] == BM_FLOAT16) {
+    mask_value = 0xF0E2; // float16
+  } else if (net_blocks_cache[0]->output_dtypes[0] == BM_BFLOAT16) {
+    mask_value = 0xC61C; // -9984 by bfloat16
+  } else {
+    std::cerr << "\nError: Invalid attention dtype\n";
+    std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
+    throw std::runtime_error("Invalid attention dtype");
   }
 
   // kv cache
