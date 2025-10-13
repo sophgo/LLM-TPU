@@ -51,7 +51,7 @@ source ./envsetup.sh  #激活环境变量
 
 ``` shell
 # 如果有提示transformers版本问题，pip3 install transformers -U
-llm_convert.py -m /workspace/Qwen2.5-Omni-7B-AWQ  -s 2048 --quantize w4bf16  -c bm1684x --out_dir qwen2.5o --max_pixels 672,896
+llm_convert.py -m /workspace/Qwen2.5-Omni-7B-AWQ  -s 2048 --quantize w4f16  -c bm1684x --out_dir qwen2.5o --max_pixels 672,896
 ```
 
 ## 编译与运行程序(python)

@@ -537,7 +537,8 @@ int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
     auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
     auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
-    d2d(in0_mem, out_mem);
+    bm_memcpy_d2d_byte(bm_handle, in0_mem, 0, out_mem, 0,
+                       token_length * HIDDEN_SIZE * sizeof(uint16_t));
     if (is_dynamic) {
       if (idx == 0) {
         // only first time need copy
@@ -618,7 +619,8 @@ int Qwen2_5VL::forward_first_with_kv(ArrayInt const &position_ids) {
     auto &in3_mem = net_blocks[idx]->stages[0].input_mems[3];
     auto &in4_mem = net_blocks[idx]->stages[0].input_mems[4];
 
-    d2d(in0_mem, out_mem);
+    bm_memcpy_d2d_byte(bm_handle, in0_mem, 0, out_mem, 0,
+                       token_length * HIDDEN_SIZE * sizeof(uint16_t));
     if (old_length > 0) {
       bm_memcpy_d2d_byte(bm_handle, in3_mem, 0, past_key[idx], 0,
                          KV_BYTES * old_length);
@@ -672,7 +674,11 @@ int Qwen2_5VL::forward_next(ArrayInt const &position_ids) {
 
   auto in_mem = net_embed_cache->stages[0].input_mems[0];
   auto out_mem = net_embed_cache->stages[0].output_mems[0];
-  d2d(in_mem, lm_out_mem);
+  if (lmhead_with_topk) {
+    d2d(in_mem, lm_out_mem);
+  } else {
+    d2d(in_mem, net_greedy_head->stages[0].output_mems[0]);
+  }
   net_launch(net_embed_cache);
 
   // blocks

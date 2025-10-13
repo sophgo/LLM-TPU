@@ -7,7 +7,28 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "chat.hpp"
+#include "bmruntime_interface.h"
+#include "memory.h"
+#include <algorithm>
+#include <assert.h>
+#include <chrono>
+#include <cstdlib>
+#include <getopt.h>
+#include <inttypes.h>
+#include <iostream>
+#include <numeric>
+#include <pybind11/iostream.h>
+#include <pybind11/numpy.h>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+#include <random>
+#include <stdio.h>
+#include <vector>
+
+namespace py = pybind11;
+using ArrayFloat =
+    py::array_t<float, py::array::c_style | py::array::forcecast>;
+using ArrayInt = py::array_t<int, py::array::c_style | py::array::forcecast>;
 
 //===------------------------------------------------------------===//
 // Empty Func
@@ -28,7 +49,75 @@ void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
   }
 }
 
-void Qwen2_5VL::net_launch(const bm_net_info_t *net, int stage_idx) {
+class Qwen3_VL {
+public:
+  void init(int devid, std::string model_path);
+  void deinit();
+  void forward_embed(ArrayInt const &tokens);
+  void forward_vit(ArrayFloat const &pixel_values, ArrayInt const &position_ids,
+                   ArrayFloat const &pos_idx, ArrayFloat const &pos_weight,
+                   ArrayInt const &grid_thw, int vit_offset);
+  int forward_first(ArrayInt const &position_ids);
+  int forward_next(ArrayInt const &position_ids);
+  void clear_history();
+
+  std::mt19937 sgen;
+  Qwen3_VL() : sgen(std::random_device()()) {};
+
+private:
+  void net_launch(const bm_net_info_t *net, int stage_idx = 0);
+  void net_launch_block_dyn(const bm_net_info_t *net, int real_len);
+  void net_launch_decode(int block_idx, int kv_offset,
+                         bm_device_mem_t &input_mem, const int *position_id,
+                         std::vector<uint16_t> &attention_mask);
+  void vit_launch_dyn(int real_patches);
+  void add_launch_dyn(bm_device_mem_t &in0_mem, bm_device_mem_t &in1_mem,
+                      bm_device_mem_t &out_mem, int real_len);
+  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
+  void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
+  void init_by_names();
+  int forward_first_with_kv(ArrayInt const &position_ids);
+  int greedy_search(bm_device_mem_t &logits_mem);
+
+public:
+  int token_length;
+  int history_length;
+  int SEQLEN;
+  int MAX_INPUT_LENGTH;
+  int PREFILL_KV_LENGTH;
+  int HIDDEN_SIZE;
+  int KV_BYTES; // kv bytes for one token
+  int NUM_LAYERS;
+  int VIT_DIMS;
+  int MAX_PATCHES;
+  int MAX_PIXELS;
+  int max_pos;
+  bool lmhead_with_topk;
+  bool support_history;
+  bool is_dynamic;
+  bool vit_dynamic;
+  uint16_t mask_value;
+  bool vit_run = false;
+  int num_deepstack;
+
+private:
+  bm_handle_t bm_handle;
+  void *p_bmrt;
+  std::vector<const bm_net_info_t *> net_blocks;
+  std::vector<const bm_net_info_t *> net_blocks_cache;
+  const bm_net_info_t *net_embed;
+  const bm_net_info_t *net_embed_cache;
+  const bm_net_info_t *net_lm;
+  const bm_net_info_t *net_vit;
+  const bm_net_info_t *net_add;
+  const bm_net_info_t *net_greedy_head, *net_sample_head;
+  bm_device_mem_t dev_buffer;
+  std::vector<bm_device_mem_t> deepstack_buffers;
+  std::vector<bm_device_mem_t> past_key;
+  std::vector<bm_device_mem_t> past_value;
+};
+
+void Qwen3_VL::net_launch(const bm_net_info_t *net, int stage_idx) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
   std::vector<bm_tensor_t> out_tensors(net->output_num);
 
@@ -47,10 +136,9 @@ void Qwen2_5VL::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
-  // bm_thread_sync(bm_handle);
 }
 
-void Qwen2_5VL::net_launch_block_dyn(const bm_net_info_t *net, int real_len) {
+void Qwen3_VL::net_launch_block_dyn(const bm_net_info_t *net, int real_len) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
   std::vector<bm_tensor_t> out_tensors(net->output_num);
 
@@ -73,10 +161,9 @@ void Qwen2_5VL::net_launch_block_dyn(const bm_net_info_t *net, int real_len) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
-  // bm_thread_sync(bm_handle);
 }
 
-void Qwen2_5VL::vit_launch_dyn(int real_patches) {
+void Qwen3_VL::vit_launch_dyn(int real_patches) {
   std::vector<bm_tensor_t> in_tensors(net_vit->input_num);
   std::vector<bm_tensor_t> out_tensors(net_vit->output_num);
 
@@ -92,19 +179,39 @@ void Qwen2_5VL::vit_launch_dyn(int real_patches) {
   }
   in_tensors[0].shape.dims[0] = real_patches;
   in_tensors[1].shape.dims[0] = real_patches;
-  in_tensors[2].shape.dims[2] = real_patches;
-  in_tensors[2].shape.dims[3] = real_patches;
-  in_tensors[3].shape.dims[2] = real_patches;
-  in_tensors[3].shape.dims[3] = real_patches;
+  in_tensors[2].shape.dims[1] = real_patches;
+  in_tensors[3].shape.dims[1] = real_patches;
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net_vit->name, in_tensors.data(),
                                    net_vit->input_num, out_tensors.data(),
                                    net_vit->output_num, true, false);
   assert(ret);
 }
 
-void Qwen2_5VL::net_launch_decode(int idx, int kv_offset,
-                                  bm_device_mem_t &input_mem, const int *pos_id,
-                                  std::vector<uint16_t> &attention_mask) {
+void Qwen3_VL::add_launch_dyn(bm_device_mem_t &in0_mem,
+                              bm_device_mem_t &in1_mem,
+                              bm_device_mem_t &out_mem, int real_len) {
+  std::vector<bm_tensor_t> in_tensors(net_add->input_num);
+  std::vector<bm_tensor_t> out_tensors(net_add->output_num);
+
+  bmrt_tensor_with_device(&in_tensors[0], in0_mem, net_add->input_dtypes[0],
+                          net_add->stages[0].input_shapes[0]);
+  bmrt_tensor_with_device(&in_tensors[1], in1_mem, net_add->input_dtypes[1],
+                          net_add->stages[0].input_shapes[1]);
+
+  bmrt_tensor_with_device(&out_tensors[0], out_mem, net_add->output_dtypes[0],
+                          net_add->stages[0].output_shapes[0]);
+
+  in_tensors[0].shape.dims[0] = real_len;
+  in_tensors[1].shape.dims[0] = real_len;
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net_add->name, in_tensors.data(),
+                                   net_add->input_num, out_tensors.data(),
+                                   net_add->output_num, true, false);
+  assert(ret);
+}
+
+void Qwen3_VL::net_launch_decode(int idx, int kv_offset,
+                                 bm_device_mem_t &input_mem, const int *pos_id,
+                                 std::vector<uint16_t> &attention_mask) {
   auto &net = net_blocks_cache[idx];
   std::vector<bm_tensor_t> in_tensors(5);
   std::vector<bm_tensor_t> out_tensors(3);
@@ -154,11 +261,11 @@ void Qwen2_5VL::net_launch_decode(int idx, int kv_offset,
   assert(ret);
 }
 
-void Qwen2_5VL::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
+void Qwen3_VL::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
 }
 
-void Qwen2_5VL::clear_history() {
+void Qwen3_VL::clear_history() {
   if (!support_history) {
     return;
   }
@@ -169,7 +276,7 @@ void Qwen2_5VL::clear_history() {
   history_length = 0;
 }
 
-void Qwen2_5VL::init_by_names() {
+void Qwen3_VL::init_by_names() {
   auto is_exist = [](const char *name, const char **names, int num) {
     for (int i = 0; i < num; i++) {
       if (strcmp(name, names[i]) == 0) {
@@ -182,6 +289,7 @@ void Qwen2_5VL::init_by_names() {
   net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
   net_vit = bmrt_get_network_info(p_bmrt, "vit");
   net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
+  net_add = bmrt_get_network_info(p_bmrt, "add");
   const char **net_names = nullptr;
   auto num_nets = bmrt_get_network_number(p_bmrt);
   bmrt_get_network_names(p_bmrt, &net_names);
@@ -239,7 +347,7 @@ void Qwen2_5VL::init_by_names() {
   KV_BYTES =
       bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
   printf("Num Layers:%d\n", NUM_LAYERS);
-  printf("Max Pixels: %d*%d*%d\n", MAX_PATCHES / 4, 28, 28);
+  printf("Max Pixels: %d*%d*%d\n", MAX_PATCHES / 4, 32, 32);
   PREFILL_KV_LENGTH = 0;
   if (support_history) {
     PREFILL_KV_LENGTH = net_blocks[0]->stages[0].input_shapes[3].dims[1];
@@ -249,7 +357,7 @@ void Qwen2_5VL::init_by_names() {
   }
 }
 
-void Qwen2_5VL::init(int dev_id, std::string model_path) {
+void Qwen3_VL::init(int dev_id, std::string model_path) {
 
   // request bm_handle
   std::cout << "Device [ " << dev_id << " ] loading .....\n";
@@ -281,15 +389,27 @@ void Qwen2_5VL::init(int dev_id, std::string model_path) {
       bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
   status = bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
   assert(BM_SUCCESS == status);
+  num_deepstack = net_vit->output_num - 1;
+  assert(num_deepstack > 0);
+  for (int i = 0; i < num_deepstack; i++) {
+    bm_device_mem_t mem;
+    status = bm_malloc_device_byte(bm_handle, &mem, buffer_size);
+    assert(BM_SUCCESS == status);
+    deepstack_buffers.push_back(mem);
+  }
+  vit_run = false;
 }
 
-void Qwen2_5VL::deinit() {
+void Qwen3_VL::deinit() {
+  for (int i = 0; i < num_deepstack; i++) {
+    bm_free_device(bm_handle, deepstack_buffers[i]);
+  }
   bm_free_device(bm_handle, dev_buffer);
   bmrt_destroy(p_bmrt);
   bm_dev_free(bm_handle);
 }
 
-int Qwen2_5VL::greedy_search(bm_device_mem_t &logits_mem) {
+int Qwen3_VL::greedy_search(bm_device_mem_t &logits_mem) {
   auto &in_mem = net_greedy_head->stages[0].input_mems[0];
   auto &out_mem = net_greedy_head->stages[0].output_mems[0];
   d2d(in_mem, logits_mem);
@@ -299,10 +419,11 @@ int Qwen2_5VL::greedy_search(bm_device_mem_t &logits_mem) {
   return token;
 }
 
-void Qwen2_5VL::forward_embed(ArrayInt const &tokens) {
+void Qwen3_VL::forward_embed(ArrayInt const &tokens) {
   std::vector<int> input_ids(MAX_INPUT_LENGTH, 0);
   auto num = tokens.size();
-  const int *p_tokens = tokens.data();
+  auto p_buffer = tokens.request();
+  auto p_tokens = static_cast<int *>(p_buffer.ptr);
   std::copy(p_tokens, p_tokens + num, input_ids.data());
 
   auto &in_mem = net_embed->stages[0].input_mems[0];
@@ -311,80 +432,60 @@ void Qwen2_5VL::forward_embed(ArrayInt const &tokens) {
   net_launch(net_embed);
   d2d(dev_buffer, out_mem);
   token_length = tokens.size();
+  for (auto &mem : deepstack_buffers) {
+    empty(bm_handle, mem);
+  }
 }
 
-void Qwen2_5VL::forward_vit(ArrayFloat const &pixel_values,
-                            ArrayInt const &position_ids,
-                            ArrayFloat const &full_attn_mask,
-                            ArrayFloat const &window_attn_mask,
-                            ArrayInt const &grid_thw,
-                            ArrayInt const &reverse_indices, int vit_offset) {
-  const int *p_thw = grid_thw.data();
+void Qwen3_VL::forward_vit(ArrayFloat const &pixel_values,
+                           ArrayInt const &position_ids,
+                           ArrayFloat const &pos_idx,
+                           ArrayFloat const &pos_weight,
+                           ArrayInt const &grid_thw, int vit_offset) {
+  auto p_grid_thw = grid_thw.request();
+  auto p_thw = static_cast<int *>(p_grid_thw.ptr);
   int t = p_thw[0];
   int h = p_thw[1];
   int w = p_thw[2];
   int hw = t * h * w;
-
-  assert(full_attn_mask.size() == static_cast<size_t>(hw * hw));
-  assert(window_attn_mask.size() == static_cast<size_t>(hw * hw));
-  assert(pixel_values.size() == static_cast<size_t>(hw * VIT_DIMS));
-  assert(position_ids.size() == static_cast<size_t>(hw * 2));
-  assert(reverse_indices.size() == static_cast<size_t>(hw / 4));
-  const float *p_pixel_values = pixel_values.data();
-  const int *p_position_ids = position_ids.data();
-  const float *p_full = full_attn_mask.data();
-  const float *p_window = window_attn_mask.data();
-  const int *p_reverse_indices = reverse_indices.data();
+  assert(pixel_values.size() == (hw * VIT_DIMS));
+  assert(position_ids.size() == (hw * 2));
+  auto p_pixel_values = pixel_values.request();
+  auto p_position_ids = position_ids.request();
+  auto p_pos_idx = pos_idx.request();
+  auto p_pos_weight = pos_weight.request();
 
   empty_net(bm_handle, net_vit);
-  auto &vit_in0_mem = net_vit->stages[0].input_mems[0];
-  auto &vit_in1_mem = net_vit->stages[0].input_mems[1];
-  auto &vit_in2_mem = net_vit->stages[0].input_mems[2];
-  auto &vit_in3_mem = net_vit->stages[0].input_mems[3];
-  auto &vit_in4_mem = net_vit->stages[0].input_mems[4];
+  auto &vit_in0_mem = net_vit->stages[0].input_mems[0]; // pixel_values
+  auto &vit_in1_mem = net_vit->stages[0].input_mems[1]; // position_ids
+  auto &vit_in2_mem = net_vit->stages[0].input_mems[2]; // pos_idx
+  auto &vit_in3_mem = net_vit->stages[0].input_mems[3]; // pos_weight
   auto &vit_out_mem = net_vit->stages[0].output_mems[0];
-  bm_memcpy_s2d_partial(bm_handle, vit_in0_mem, (void *)p_pixel_values,
+  bm_memcpy_s2d_partial(bm_handle, vit_in0_mem, (void *)p_pixel_values.ptr,
                         pixel_values.size() * sizeof(float));
-  bm_memcpy_s2d_partial(bm_handle, vit_in1_mem, (void *)p_position_ids,
+  bm_memcpy_s2d_partial(bm_handle, vit_in1_mem, (void *)p_position_ids.ptr,
                         position_ids.size() * sizeof(int));
-  bm_memcpy_s2d_partial(bm_handle, vit_in4_mem, (void *)p_reverse_indices,
-                        reverse_indices.size() * sizeof(int));
-  if (vit_dynamic) {
-    bm_memcpy_s2d(bm_handle, vit_in2_mem, (void *)p_full);
-    bm_memcpy_s2d(bm_handle, vit_in3_mem, (void *)p_window);
-    vit_launch_dyn(hw);
-  } else {
-    if (full_attn_mask.size() == MAX_PATCHES * MAX_PATCHES) {
-      bm_memcpy_s2d(bm_handle, vit_in2_mem, (void *)p_full);
-      bm_memcpy_s2d(bm_handle, vit_in3_mem, (void *)p_window);
-    } else {
-      std::vector<float> mask_full(MAX_PATCHES * MAX_PATCHES, -10000.0f);
-      std::vector<float> mask_window(MAX_PATCHES * MAX_PATCHES, -10000.0f);
-
-      for (int i = 0; i < hw; i++) {
-        int mask_offset = i * MAX_PATCHES;
-        int ori_offset = i * hw;
-        std::copy(p_full + ori_offset, p_full + ori_offset + hw,
-                  mask_full.begin() + mask_offset);
-        std::copy(p_window + ori_offset, p_window + ori_offset + hw,
-                  mask_window.begin() + mask_offset);
-      }
-      bm_memcpy_s2d(bm_handle, vit_in2_mem, (void *)mask_full.data());
-      bm_memcpy_s2d(bm_handle, vit_in3_mem, (void *)mask_window.data());
-    }
-    // launch vit
-    net_launch(net_vit);
-  }
+  bm_memcpy_s2d_partial(bm_handle, vit_in2_mem, (void *)p_pos_idx.ptr,
+                        pos_idx.size() * sizeof(int));
+  bm_memcpy_s2d_partial(bm_handle, vit_in3_mem, (void *)p_pos_weight.ptr,
+                        pos_weight.size() * sizeof(float));
+  vit_launch_dyn(hw);
 
   // concatenante texting embedding and image embedding
   int dst_offset = vit_offset * HIDDEN_SIZE * sizeof(uint16_t);
   int vit_size = hw / 4 * HIDDEN_SIZE * sizeof(uint16_t);
   bm_memcpy_d2d_byte(bm_handle, dev_buffer, dst_offset, vit_out_mem, 0,
                      vit_size);
+  for (int i = 0; i < num_deepstack; i++) {
+    auto mem = net_vit->stages[0].output_mems[i + 1];
+    bm_memcpy_d2d_byte(bm_handle, deepstack_buffers[i], dst_offset, mem, 0,
+                       vit_size);
+  }
+  vit_run = true;
 }
 
-void Qwen2_5VL::head_launch(const bm_net_info_t *net,
-                            bm_device_mem_t &logits_mem) {
+void Qwen3_VL::head_launch(const bm_net_info_t *net,
+                           bm_device_mem_t &logits_mem) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
   std::vector<bm_tensor_t> out_tensors(net->output_num);
 
@@ -405,10 +506,9 @@ void Qwen2_5VL::head_launch(const bm_net_info_t *net,
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
-  // bm_thread_sync(bm_handle);
 }
 
-int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
+int Qwen3_VL::forward_first(ArrayInt const &position_ids) {
   if (support_history) {
     return forward_first_with_kv(position_ids);
   }
@@ -428,9 +528,8 @@ int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
       }
     }
   }
-
-  const int *p_ids = position_ids.data();
-
+  auto p_position_ids = position_ids.request();
+  auto p_ids = static_cast<int *>(p_position_ids.ptr);
   std::vector<int> position_ids_pad;
   if (is_dynamic) {
     position_ids_pad.assign(3 * token_length, 0);
@@ -446,7 +545,6 @@ int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
                 position_ids_pad.begin() + dst_offset);
     }
   }
-
   auto out_mem = dev_buffer;
   empty_net(bm_handle, net_blocks[0]);
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
@@ -474,9 +572,20 @@ int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
       net_launch(net_blocks[idx]);
     }
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
-    d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1]);
-    d2d(past_value[idx], net_blocks[idx]->stages[0].output_mems[2]);
+    if (vit_run && (idx < num_deepstack)) {
+      add_launch_dyn(out_mem, deepstack_buffers[idx],
+                     net_add->stages[0].output_mems[0],
+                     token_length * HIDDEN_SIZE * sizeof(uint16_t));
+      out_mem = net_add->stages[0].output_mems[0];
+    }
+    bm_memcpy_d2d_byte(bm_handle, past_key[idx], 0,
+                       net_blocks[idx]->stages[0].output_mems[1], 0,
+                       KV_BYTES * token_length);
+    bm_memcpy_d2d_byte(bm_handle, past_value[idx], 0,
+                       net_blocks[idx]->stages[0].output_mems[2], 0,
+                       KV_BYTES * token_length);
   }
+  vit_run = false;
 
   // forward lmhead
   int bytes = HIDDEN_SIZE * sizeof(uint16_t);
@@ -496,7 +605,7 @@ int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
   return token;
 }
 
-int Qwen2_5VL::forward_first_with_kv(ArrayInt const &position_ids) {
+int Qwen3_VL::forward_first_with_kv(ArrayInt const &position_ids) {
   int max_kv_length = MAX_INPUT_LENGTH + PREFILL_KV_LENGTH;
   std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * max_kv_length,
                                        mask_value);
@@ -512,8 +621,8 @@ int Qwen2_5VL::forward_first_with_kv(ArrayInt const &position_ids) {
       attention_mask[i * max_kv_length + j + PREFILL_KV_LENGTH] = 0;
     }
   }
-
-  const int *p_ids = position_ids.data();
+  auto p_position_ids = position_ids.request();
+  auto p_ids = static_cast<int *>(p_position_ids.ptr);
 
   std::vector<int> position_ids_pad(3 * MAX_INPUT_LENGTH, 0);
   int ori_length = position_ids.size() / 3;
@@ -534,7 +643,6 @@ int Qwen2_5VL::forward_first_with_kv(ArrayInt const &position_ids) {
     auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
     auto &in3_mem = net_blocks[idx]->stages[0].input_mems[3];
     auto &in4_mem = net_blocks[idx]->stages[0].input_mems[4];
-
     bm_memcpy_d2d_byte(bm_handle, in0_mem, 0, out_mem, 0,
                        token_length * HIDDEN_SIZE * sizeof(uint16_t));
     if (old_length > 0) {
@@ -550,6 +658,12 @@ int Qwen2_5VL::forward_first_with_kv(ArrayInt const &position_ids) {
     bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     net_launch(net_blocks[idx]);
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
+    if (vit_run && (idx < num_deepstack)) {
+      add_launch_dyn(out_mem, deepstack_buffers[idx],
+                     net_add->stages[0].output_mems[0],
+                     token_length * HIDDEN_SIZE * sizeof(uint16_t));
+      out_mem = net_add->stages[0].output_mems[0];
+    }
     auto &out1_mem = net_blocks[idx]->stages[0].output_mems[1];
     auto &out2_mem = net_blocks[idx]->stages[0].output_mems[2];
     bm_memcpy_d2d_byte(bm_handle, past_key[idx], old_length * KV_BYTES,
@@ -576,24 +690,21 @@ int Qwen2_5VL::forward_first_with_kv(ArrayInt const &position_ids) {
   return token;
 }
 
-int Qwen2_5VL::forward_next(ArrayInt const &position_ids) {
+int Qwen3_VL::forward_next(ArrayInt const &position_ids) {
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
   for (int i = history_length - 1; i < SEQLEN; i++) {
     attention_mask[i] = mask_value;
   }
   assert(position_ids.size() == 3);
-  const int *p_ids = position_ids.data();
+  auto p_position_ids = position_ids.request();
+  auto p_ids = static_cast<int *>(p_position_ids.ptr);
   // embedding
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
   auto &lm_out_mem = net_lm->stages[0].output_mems[0];
 
   auto in_mem = net_embed_cache->stages[0].input_mems[0];
   auto out_mem = net_embed_cache->stages[0].output_mems[0];
-  if (lmhead_with_topk) {
-    d2d(in_mem, lm_out_mem);
-  } else {
-    d2d(in_mem, net_greedy_head->stages[0].output_mems[0]);
-  }
+  d2d(in_mem, lm_out_mem);
   net_launch(net_embed_cache);
 
   // blocks
@@ -618,4 +729,23 @@ int Qwen2_5VL::forward_next(ArrayInt const &position_ids) {
   token_length++;
   history_length++;
   return token;
+}
+
+PYBIND11_MODULE(chat, m) {
+  pybind11::class_<Qwen3_VL>(m, "Qwen3_VL")
+      .def(pybind11::init<>())
+      .def("init", &Qwen3_VL::init)
+      .def("forward_embed", &Qwen3_VL::forward_embed)
+      .def("forward_vit", &Qwen3_VL::forward_vit)
+      .def("forward_first", &Qwen3_VL::forward_first)
+      .def("forward_next", &Qwen3_VL::forward_next)
+      .def("clear_history", &Qwen3_VL::clear_history)
+      .def("deinit", &Qwen3_VL::deinit)
+      .def_readonly("SEQLEN", &Qwen3_VL::SEQLEN) // read SEQLEN in pipeline.py
+      .def_readonly("MAX_PIXELS", &Qwen3_VL::MAX_PIXELS)
+      .def_readonly("MAX_PATCHES", &Qwen3_VL::MAX_PATCHES)
+      .def_readonly("MAX_INPUT_LENGTH", &Qwen3_VL::MAX_INPUT_LENGTH)
+      .def_readonly("PREFILL_KV_LENGTH", &Qwen3_VL::PREFILL_KV_LENGTH)
+      .def_readonly("support_history", &Qwen3_VL::support_history)
+      .def_readonly("history_length", &Qwen3_VL::history_length);
 }

@@ -54,7 +54,7 @@ source ./envsetup.sh  #激活环境变量
 ``` shell
 # 如果有提示transformers版本问题，pip3 install transformers -U
 # bm1688 需要指定-c bm1688; -g 指定group size; AWQ和GPTQ实际上是不需要指定group_size的；非AWQ/GPTQ模型是需要指定
-llm_convert.py -m /workspace/Qwen2-VL-2B-Instruct-AWQ -s 2048 --quantize w4bf16 -c bm1684x --out_dir qwen2vl_2b --max_pixels 672,896
+llm_convert.py -m /workspace/Qwen2-VL-2B-Instruct-AWQ -s 2048 --quantize w4f16 -c bm1684x --out_dir qwen2vl_2b --max_pixels 672,896
 ```
 编译完成后，在指定目录`qwen2vl_2b`生成`qwen2vl_2b-xxx.bmodel`和`config`
 

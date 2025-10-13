@@ -69,7 +69,7 @@ source ./envsetup.sh  #激活环境变量
 
 ``` shell
 # 如果有提示transformers版本问题，pip3 install transformers -U
-llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 --quantize w4bf16  -c bm1684x --out_dir qwen2.5vl_3b --max_pixels 672,896
+llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 --quantize w4f16  -c bm1684x --out_dir qwen2.5vl_3b --max_pixels 672,896
 ```
 
 ## 编译与运行程序(python)
@@ -115,7 +115,7 @@ cd build && cmake .. && make && cp pipeline .. && cd ..
 如下：
 ``` shell
 # 如果有提示transformers版本问题，pip3 install transformers -U
-llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 4096 --quantize w4bf16  -c bm1684x --out_dir qwen2.5vl_3b --max_pixels 672,896 --use_block_with_kv --max_input_length 1024
+llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 4096 --quantize w4f16  -c bm1684x --out_dir qwen2.5vl_3b --max_pixels 672,896 --use_block_with_kv --max_input_length 1024
 ```
 使用cpp_demo或者python_demo都支持。历史记录输入clear清理。效果如下：
 
@@ -125,7 +125,7 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 4096 --quantize w4bf1
 
 默认情况下模型是静态编译，输入按照指定的`seq_length`长度推理，不足部分会补0和mask掉。动态编译可以根据输入长度动态推理，在输入长短变化幅度较大的情况下，可以减少短输入的延时。命令加入`--dynamic`即可。
 ```shell
-llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 8192 --quantize w4bf16  -c bm1684x --out_dir qwen2.5vl_3b_dyn  --max_pixels 672,896 --dynamic
+llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 8192 --quantize w4f16  -c bm1684x --out_dir qwen2.5vl_3b_dyn  --max_pixels 672,896 --dynamic
 ```
 使用`cpp_demo`或者`python_demo`都支持。
 
@@ -142,7 +142,7 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 8192 --quantize w4bf1
 
 当实际应用图片有大有小时，为了保证不同情况下的vit性能，可以把vit做成动态。命令加入`--dynamic_vit`即可。
 ```shell
-llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 --quantize w4bf16  -c bm1684x --out_dir qwen2.5vl_3b_dyn_vit  --max_pixels 672,896 --dynamic_vit
+llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 --quantize w4f16  -c bm1684x --out_dir qwen2.5vl_3b_dyn_vit  --max_pixels 672,896 --dynamic_vit
 ```
 使用`cpp_demo`或者`python_demo`都支持。
 
