@@ -9,7 +9,6 @@
 import time
 import argparse
 from transformers import AutoProcessor
-from qwen_vl_utils import process_vision_info
 import chat
 import os
 import torch
@@ -40,6 +39,7 @@ class Qwen3_VL():
         self.spatial_merge_unit = self.spatial_merge_size**2
         self.tokens_per_second = 2
         self.support_history = self.model.support_history
+        self.num_grid_per_side = 48
         self.max_posid = 0
         self.history_max_posid = 0
 
@@ -89,17 +89,19 @@ class Qwen3_VL():
         raise RuntimeError(f"Unsupported media type: {ext}")
 
     def process(self, messages):
-        text = self.processor.apply_chat_template(messages,
-                                                  tokenize=False,
-                                                  add_generation_prompt=True)
-        image_inputs, video_inputs = process_vision_info(messages)
-        inputs = self.processor(
-            text=[text],
-            images=image_inputs,
-            videos=video_inputs,
-            padding=True,
-            return_tensors="pt",
-        )
+        inputs = self.processor.apply_chat_template(messages,
+                                                    tokenize=True,
+                                                    add_generation_prompt=True,
+                                                    return_dict=True,
+                                                    return_tensors="pt")
+        # image_inputs, video_inputs = process_vision_info(messages)
+        # inputs = self.processor(
+        #     text=[text],
+        #     images=image_inputs,
+        #     videos=video_inputs,
+        #     padding=True,
+        #     return_tensors="pt",
+        # )
 
         return inputs
 
@@ -137,7 +139,7 @@ class Qwen3_VL():
         return pos_ids
 
     def fast_pos_embed_interpolate(self, grid_thw):
-        t, h, w = grid_thw
+        t, h, w = grid_thw[0]
         idx_list = [[] for _ in range(4)]
         weight_list = [[] for _ in range(4)]
         h_idxs = torch.linspace(0, self.num_grid_per_side - 1, h)
@@ -338,7 +340,9 @@ class Qwen3_VL():
             if media_type == "image":
                 vit_token_list = torch.where(inputs.input_ids == self.ID_VISION_START)[1].tolist()
                 vit_offset = vit_token_list[0] + 1
+                vit_start = time.time()
                 self.vit_process_image(inputs, vit_offset)
+                vit_end = time.time()
                 position_ids = self.get_rope_index(inputs.input_ids, inputs.image_grid_thw,
                                                    self.ID_IMAGE_PAD)
                 self.max_posid = int(position_ids.max())
@@ -384,6 +388,8 @@ class Qwen3_VL():
             tps = tok_num / next_duration
             print(f"\nFTL: {first_duration:.3f} s")
             print(f"TPS: {tps:.3f} token/s")
+            if media_type == "image":
+                print(f"VIT({inputs.image_grid_thw.tolist()[0]}): {vit_end - vit_start:.3f} s")
 
 
 def main(args):

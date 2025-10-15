@@ -439,7 +439,7 @@ class Qwen2_5VL():
             print(f"\nFTL: {first_duration:.3f} s")
             print(f"TPS: {tps:.3f} token/s")
             if media_type == "image":
-                print(f"VIT({inputs.image_grid_thw.tolist()}): {vit_end - vit_start:.3f} s")
+                print(f"VIT({inputs.image_grid_thw.tolist()[0]}): {vit_end - vit_start:.3f} s")
 
 
 def main(args):
