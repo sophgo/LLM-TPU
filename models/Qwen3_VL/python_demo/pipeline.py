@@ -70,7 +70,7 @@ class Qwen3_VL():
             "role": "user",
             "content": [
                 {"type": "video", "video": path, "fps": 1.0,
-                 "min_pixels": 64 * 32 * 32, "max_pixels": self.model.MAX_PIXELS // 4},
+                 "min_pixels": 64 * 32 * 32, "max_pixels": self.model.MAX_PIXELS},
                 {"type": "text", "text": self.input_str},
             ],
         }]
@@ -184,37 +184,39 @@ class Qwen3_VL():
 
         return idx_tensor, weight_tensor
 
-    def vit_process_image(self, inputs, vit_offset):
-        grid_thw = inputs.image_grid_thw
-        hidden_states = inputs.pixel_values
-        position_ids = self.rot_pos(grid_thw)
-        pos_ids, pos_weights = self.fast_pos_embed_interpolate(grid_thw.tolist())
-        self.model.forward_vit(hidden_states.numpy(), position_ids.numpy(), pos_ids.numpy(),
-                               pos_weights.numpy(), grid_thw.numpy(), vit_offset)
+    def vit_process_image(self, inputs):
+        vit_token_list = torch.where(inputs.input_ids == self.ID_VISION_START)[1].tolist()
+        pre_patches = 0
+        for idx, vit_offset in enumerate(vit_token_list):
+            grid_thw = inputs.image_grid_thw[idx].unsqueeze(0)
+            num_patches = int(torch.prod(grid_thw))
+            hidden_states = inputs.pixel_values[pre_patches:pre_patches + num_patches, :]
+            position_ids = self.rot_pos(grid_thw)
+            pos_ids, pos_weights = self.fast_pos_embed_interpolate(grid_thw.tolist())
+            self.model.forward_vit(hidden_states.numpy(), position_ids.numpy(), pos_ids.numpy(),
+                                   pos_weights.numpy(), grid_thw.numpy(), vit_offset + 1)
+            pre_patches += num_patches
 
-    def vit_process_video(self, inputs, vit_offset):
+    def vit_process_video(self, inputs):
+        vit_token_list = torch.where(inputs.input_ids == self.ID_VISION_START)[1].tolist()
         t, h, w = inputs.video_grid_thw.flatten().tolist()
+        assert (t == len(vit_token_list))
         grid_thw = torch.tensor([[1, h, w]], dtype=torch.int32)
         position_ids = self.rot_pos(grid_thw)
         pos_ids, pos_weights = self.fast_pos_embed_interpolate(grid_thw.tolist())
-        for i in range(t):
-            hidden_states = inputs.pixel_values_videos[(i * h * w):((i + 1) * h * w), :]
+        for idx, vit_offset in enumerate(vit_token_list):
+            hidden_states = inputs.pixel_values_videos[(idx * h * w):((idx + 1) * h * w), :]
             self.model.forward_vit(hidden_states.numpy(), position_ids.numpy(), pos_ids.numpy(),
-                                   pos_weights.numpy(), grid_thw.numpy(), vit_offset)
-            vit_offset += h * w // 4
+                                   pos_weights.numpy(), grid_thw.numpy(), vit_offset + 1)
 
     def get_rope_index(self, input_ids: torch.LongTensor, grid_thw: torch.LongTensor,
                        pad_id: int) -> torch.Tensor:
         total_input_ids = input_ids
-        attention_mask = torch.ones_like(total_input_ids)
-        position_ids = torch.ones(3, input_ids.shape[0], input_ids.shape[1], dtype=input_ids.dtype)
+        position_ids = torch.ones(3, input_ids.shape[0], input_ids.shape[1])
         image_index = 0
         for i, input_ids in enumerate(total_input_ids):
-            input_ids = input_ids[attention_mask[i] == 1]
-            image_nums = 0
             vision_start_indices = torch.argwhere(input_ids == self.ID_VISION_START).squeeze(1)
-            vision_tokens = input_ids[vision_start_indices + 1]
-            image_nums = (vision_tokens == pad_id).sum()
+            image_nums = len(vision_start_indices)
             input_tokens = input_ids.tolist()
             llm_pos_ids_list: list = []
             st = 0
@@ -224,34 +226,31 @@ class Qwen3_VL():
                     ed_image = input_tokens.index(pad_id, st)
                 else:
                     ed_image = len(input_tokens) + 1
-
-                t, h, w = (
-                    grid_thw[image_index][0],
-                    grid_thw[image_index][1],
-                    grid_thw[image_index][2],
-                )
-                second_per_grid_t = 0 if pad_id == self.ID_IMAGE_PAD else 1
+                if pad_id == self.ID_IMAGE_PAD:
+                    t, h, w = (
+                        grid_thw[image_index][0].item(),
+                        grid_thw[image_index][1].item(),
+                        grid_thw[image_index][2].item(),
+                    )
+                else:
+                    t, h, w = 1, grid_thw[0][1].item(), grid_thw[0][2].item()
                 image_index += 1
                 remain_images -= 1
                 ed = ed_image
 
                 llm_grid_t, llm_grid_h, llm_grid_w = (
-                    t.item(),
-                    h.item() // self.spatial_merge_size,
-                    w.item() // self.spatial_merge_size,
+                    t,
+                    h // self.spatial_merge_size,
+                    w // self.spatial_merge_size,
                 )
                 text_len = ed - st
 
                 st_idx = llm_pos_ids_list[-1].max() + 1 if len(llm_pos_ids_list) > 0 else 0
                 llm_pos_ids_list.append(torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
 
-                range_tensor = torch.arange(llm_grid_t).view(-1, 1)
-                expanded_range = range_tensor.expand(-1, llm_grid_h * llm_grid_w)
-
-                time_tensor = expanded_range * second_per_grid_t * self.tokens_per_second
-
-                time_tensor_long = time_tensor.long()
-                t_index = time_tensor_long.flatten()
+                # t_index is always 0 because llm_grid_t is always 1 (we use timestamps to encode the temporal information for videos)
+                t_index = torch.arange(llm_grid_t).view(-1, 1).expand(-1, llm_grid_h *
+                                                                      llm_grid_w).flatten()
 
                 h_index = torch.arange(llm_grid_h).view(1, -1,
                                                         1).expand(llm_grid_t, -1,
@@ -269,8 +268,8 @@ class Qwen3_VL():
                 llm_pos_ids_list.append(torch.arange(text_len).view(1, -1).expand(3, -1) + st_idx)
 
             llm_positions = torch.cat(llm_pos_ids_list, dim=1).reshape(3, -1)
-            position_ids[..., i, attention_mask[i] == 1] = llm_positions
-        return position_ids
+            position_ids[..., i, :] = llm_positions
+        return position_ids.to(torch.int32)
 
     def forward_prefill(self, position_ids):
         if self.model.history_length == 0 or not self.support_history:
@@ -338,19 +337,17 @@ class Qwen3_VL():
             first_start = time.time()
             self.model.forward_embed(inputs.input_ids.squeeze(0).tolist())
             if media_type == "image":
-                vit_token_list = torch.where(inputs.input_ids == self.ID_VISION_START)[1].tolist()
-                vit_offset = vit_token_list[0] + 1
                 vit_start = time.time()
-                self.vit_process_image(inputs, vit_offset)
+                self.vit_process_image(inputs)
                 vit_end = time.time()
                 position_ids = self.get_rope_index(inputs.input_ids, inputs.image_grid_thw,
                                                    self.ID_IMAGE_PAD)
                 self.max_posid = int(position_ids.max())
                 token = self.forward_prefill(position_ids.numpy())
             elif media_type == "video":
-                vit_token_list = torch.where(inputs.input_ids == self.ID_VISION_START)[1].tolist()
-                vit_offset = vit_token_list[0] + 1
-                self.vit_process_video(inputs, vit_offset)
+                vit_start = time.time()
+                self.vit_process_video(inputs)
+                vit_end = time.time()
                 position_ids = self.get_rope_index(inputs.input_ids, inputs.video_grid_thw,
                                                    self.ID_VIDEO_PAD)
                 self.max_posid = int(position_ids.max())
@@ -389,7 +386,9 @@ class Qwen3_VL():
             print(f"\nFTL: {first_duration:.3f} s")
             print(f"TPS: {tps:.3f} token/s")
             if media_type == "image":
-                print(f"VIT({inputs.image_grid_thw.tolist()[0]}): {vit_end - vit_start:.3f} s")
+                print(f"Vision({inputs.image_grid_thw.tolist()}): {vit_end - vit_start:.3f} s")
+            elif media_type == "video":
+                print(f"Vision({inputs.video_grid_thw.tolist()}): {vit_end - vit_start:.3f} s")
 
 
 def main(args):

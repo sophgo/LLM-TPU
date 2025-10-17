@@ -55,7 +55,7 @@ public:
   void deinit();
   void forward_embed(ArrayInt const &tokens);
   void forward_vit(ArrayFloat const &pixel_values, ArrayInt const &position_ids,
-                   ArrayFloat const &pos_idx, ArrayFloat const &pos_weight,
+                   ArrayInt const &pos_idx, ArrayFloat const &pos_weight,
                    ArrayInt const &grid_thw, int vit_offset);
   int forward_first(ArrayInt const &position_ids);
   int forward_next(ArrayInt const &position_ids);
@@ -439,7 +439,7 @@ void Qwen3_VL::forward_embed(ArrayInt const &tokens) {
 
 void Qwen3_VL::forward_vit(ArrayFloat const &pixel_values,
                            ArrayInt const &position_ids,
-                           ArrayFloat const &pos_idx,
+                           ArrayInt const &pos_idx,
                            ArrayFloat const &pos_weight,
                            ArrayInt const &grid_thw, int vit_offset) {
   auto p_grid_thw = grid_thw.request();
@@ -575,7 +575,7 @@ int Qwen3_VL::forward_first(ArrayInt const &position_ids) {
     if (vit_run && (idx < num_deepstack)) {
       add_launch_dyn(out_mem, deepstack_buffers[idx],
                      net_add->stages[0].output_mems[0],
-                     token_length * HIDDEN_SIZE * sizeof(uint16_t));
+                     token_length * HIDDEN_SIZE);
       out_mem = net_add->stages[0].output_mems[0];
     }
     bm_memcpy_d2d_byte(bm_handle, past_key[idx], 0,
