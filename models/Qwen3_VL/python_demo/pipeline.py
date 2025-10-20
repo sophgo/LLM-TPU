@@ -21,6 +21,7 @@ class Qwen3_VL():
     def __init__(self, args):
         # devid
         self.device = args.devid
+        self.video_ratio = args.video_ratio
 
         # load model
         self.model = chat.Qwen3_VL()
@@ -28,7 +29,8 @@ class Qwen3_VL():
         self.processor = AutoProcessor.from_pretrained(args.config_path,
                                                        trust_remote_code=True,
                                                        max_pixels=self.model.MAX_PIXELS,
-                                                       min_pixels=64 * 32 * 32)
+                                                       min_pixels=64 * 32 * 32,
+                                                       fps=1.0)
         self.tokenizer = self.processor.tokenizer
         self.ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
         self.ID_IM_END = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
@@ -69,8 +71,8 @@ class Qwen3_VL():
         messages = [{
             "role": "user",
             "content": [
-                {"type": "video", "video": path, "fps": 1.0,
-                 "min_pixels": 64 * 32 * 32, "max_pixels": self.model.MAX_PIXELS},
+                {"type": "video", "video": path,
+                 "min_pixels": 64 * 32 * 32, "max_pixels": int(self.model.MAX_PIXELS * self.video_ratio)},
                 {"type": "text", "text": self.input_str},
             ],
         }]
@@ -87,23 +89,6 @@ class Qwen3_VL():
         if ext in video_exts:
             return "video"
         raise RuntimeError(f"Unsupported media type: {ext}")
-
-    def process(self, messages):
-        inputs = self.processor.apply_chat_template(messages,
-                                                    tokenize=True,
-                                                    add_generation_prompt=True,
-                                                    return_dict=True,
-                                                    return_tensors="pt")
-        # image_inputs, video_inputs = process_vision_info(messages)
-        # inputs = self.processor(
-        #     text=[text],
-        #     images=image_inputs,
-        #     videos=video_inputs,
-        #     padding=True,
-        #     return_tensors="pt",
-        # )
-
-        return inputs
 
     def rot_pos(self, grid_thw):
         merge_size = self.spatial_merge_size
@@ -318,9 +303,16 @@ class Qwen3_VL():
                     print("Unsupported media type: {}".format(media_path))
                     continue
 
-            inputs = self.process(messages)
+            inputs = self.processor.apply_chat_template(messages,
+                                                        tokenize=True,
+                                                        add_generation_prompt=True,
+                                                        return_dict=True,
+                                                        return_tensors="pt")
             token_len = inputs.input_ids.numel()
             if token_len > self.model.MAX_INPUT_LENGTH:
+                if media_type in ["image", "video"]:
+                    print("grid_thw:{}".format(inputs.image_grid_thw if media_type ==
+                                               "image" else inputs.video_grid_thw))
                 print(
                     "Error: The maximum question length should be shorter than {} but we get {} instead."
                     .format(self.model.MAX_INPUT_LENGTH, token_len))
@@ -335,7 +327,7 @@ class Qwen3_VL():
 
             # Chat
             first_start = time.time()
-            self.model.forward_embed(inputs.input_ids.squeeze(0).tolist())
+            self.model.forward_embed(inputs.input_ids.numpy())
             if media_type == "image":
                 vit_start = time.time()
                 self.vit_process_image(inputs)
@@ -403,6 +395,7 @@ if __name__ == "__main__":
                         help='path to the bmodel file')
     parser.add_argument('-c', '--config_path', type=str, default="../config",
                         help='path to the processor file')
+    parser.add_argument('--video_ratio', type=float, default=0.25, help='Set video ratio, default is 0.25')
     parser.add_argument('-d', '--devid', type=int, default=0, help='device ID to use')
     # yapf: enable
     args = parser.parse_args()

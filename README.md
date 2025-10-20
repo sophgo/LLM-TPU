@@ -109,6 +109,7 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 `llm_convert.py`执行完成后在指定目录会生成对应的bmodel和配置目录config。
 
 支持一键编译的**VLM模型**包括：
+* [Qwen3VL](https://www.modelscope.cn/models/Qwen/Qwen3-VL-4B-Instruct)
 * [Qwen2.5VL](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct-AWQ)
 * [Qwen2VL](https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct-AWQ)
 * [InternVL3](https://huggingface.co/OpenGVLab/InternVL3-2B-AWQ)
@@ -142,7 +143,7 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 
 
 多模态模型包括:  
-`Qwen2.5-VL`/`Qwen2-VL`/`Qwen-VL`  
+`Qwen3-VL`/`Qwen2.5-VL`/`Qwen2-VL`/`Qwen-VL`  
 `InternVL3`/`InternVL2`  
 `MiniCPM-V-2_6`  
 `Llama3.2-Vision`  

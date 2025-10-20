@@ -119,3 +119,10 @@ pip3 install torchvision pillow qwen_vl_utils transformers --upgrade
 计算公式 $ token数 = 长 × 宽 ÷ 32 ÷ 32 $
 比如768x768尺寸图片占token数为576 token
 
+#### 视频占多少Token ?
+
+本例中视频尺寸默认为图片的1/4，比如768x768情况下取尺寸384x384，也就是每两帧(`temporal_patch_size`)占144个token。
+
+默认每秒1帧。
+
+20秒视频取20帧，总token数为 $ 144 × 20 ÷ 2 = 1440 $
