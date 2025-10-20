@@ -1,13 +1,15 @@
 # Qwen3-VL
 
-本工程实现BM1684X/BM1688部署多模态大模型[Qwen3-VL](https://www.modelscope.cn/models/Qwen/Qwen3-VL-4B-Instruct)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并将其部署到PCIE环境，或者SoC环境。
+本工程实现BM1684X/BM1688部署多模态大模型[Qwen3-VL](https://www.modelscope.cn/models/Qwen/Qwen3-VL-4B-Instruct)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并将其部署到PCIE环境，或者SoC环境。支持图片和视频。
 
 本文包括如何编译bmodel，和如何在BM1684X/BM1688环境运行bmodel。如何编译bmodel环节可以省去，直接用以下链接下载：
 
 ``` shell
 # =============== 1684x =====================
-# 1684x 4B 最大1K输入, max_pixel 768x768
+# 1684x 4B 最大1K输入, max_pixel 768x768, 视频最长可以支持12s (每秒1帧)
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-4b-instruct_w4bf16_seq2048_bm1684x_1dev_20251015_145353.bmodel 
+# 1684x 8B 最大1K输入, max_pixel 768x768, 视频最长可以支持12s (每秒1帧)
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-8b-instruct_w4bf16_seq2048_bm1684x_1dev_20251020_104427.bmodel
 
 ```
 
@@ -21,8 +23,11 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-v
 (比较大，会花费较长时间)
 
 ``` shell
-# 下载模型
+# 下载4B模型
 modelscope download --model Qwen/Qwen3-VL-4B-Instruct --local_dir Qwen3-VL-4B-Instruct
+
+# 如果想用8B模型，如下：
+modelscope download --model Qwen/Qwen3-VL-8B-Instruct --local_dir Qwen3-VL-8B-Instruct
 ```
 
 #### 2. 下载docker，启动容器
@@ -110,7 +115,7 @@ python get-pip.py
 rm get-pip.py
 
 # 安装依赖库
-pip3 install torchvision pillow qwen_vl_utils transformers --upgrade
+pip3 install torchvision pillow  transformers -U
 
 ```
 
