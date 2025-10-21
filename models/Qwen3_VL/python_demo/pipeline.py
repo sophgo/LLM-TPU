@@ -376,7 +376,7 @@ class Qwen3_VL():
             next_duration = next_end - first_end
             tps = tok_num / next_duration
             print(f"\nFTL: {first_duration:.3f} s")
-            print(f"TPS: {tps:.3f} token/s")
+            print(f"TPS: {tps:.3f} tokens/s")
             if media_type == "image":
                 print(f"Vision({inputs.image_grid_thw.tolist()}): {vit_end - vit_start:.3f} s")
             elif media_type == "video":

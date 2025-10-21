@@ -1,6 +1,8 @@
 # Qwen3-VL
 
-本工程实现BM1684X/BM1688部署多模态大模型[Qwen3-VL](https://www.modelscope.cn/models/Qwen/Qwen3-VL-4B-Instruct)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并将其部署到PCIE环境，或者SoC环境。支持图片和视频。
+本工程实现BM1684X/BM1688部署多模态大模型[Qwen3-VL](https://www.modelscope.cn/models/Qwen/Qwen3-VL-4B-Instruct)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并将其部署到PCIE环境，或者SoC环境。
+
+该模型可以用于图片或者视频的识别，有python和cpp两个版本的demo。
 
 本文包括如何编译bmodel，和如何在BM1684X/BM1688环境运行bmodel。如何编译bmodel环节可以省去，直接用以下链接下载：
 
@@ -86,6 +88,16 @@ model为实际的model储存路径；config_path为配置文件路径。
 
 ![](../../assets/qwen3vl.png)
 
+## 编译和运行程序(cpp)
+
+``` shell
+cd cpp_demo
+mkdir build 
+cd build && cmake .. && make && cp pipeline .. && cd ..
+
+# run demo
+./pipeline -m xxx.bmodel -c config
+```
 
 ## 常见问题
 

@@ -704,7 +704,11 @@ int Qwen3_VL::forward_next(ArrayInt const &position_ids) {
 
   auto in_mem = net_embed_cache->stages[0].input_mems[0];
   auto out_mem = net_embed_cache->stages[0].output_mems[0];
-  d2d(in_mem, lm_out_mem);
+  if (lmhead_with_topk) {
+    d2d(in_mem, lm_out_mem);
+  } else {
+    d2d(in_mem, net_greedy_head->stages[0].output_mems[0]);
+  }
   net_launch(net_embed_cache);
 
   // blocks

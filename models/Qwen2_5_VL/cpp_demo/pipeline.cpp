@@ -617,7 +617,6 @@ void ChatPipe::chat() {
   while (true) {
     std::string input_str;
     int token = 0;
-    int tok_num = 0;
     int max_posid = 0;
     std::cout << "\nQuestion: ";
     std::getline(std::cin, input_str);
@@ -764,7 +763,6 @@ void ChatPipe::chat() {
       std::vector<int> following_position_ids = {max_posid, max_posid,
                                                  max_posid};
       token = model.forward_next(following_position_ids);
-      tok_num++;
     }
     history_max_posid = max_posid + 2;
     std::cout << std::endl;

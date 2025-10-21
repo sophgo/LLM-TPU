@@ -15,7 +15,7 @@
 
 # 最近更新！ 🔥🔥🔥
 
-- **2025.10.15**：🚀 **Qwen3VL** BM1684X/1688已支持，详情见[Qwen3VL](./models/Qwen3_VL/)。支持图片和视频。
+- **2025.10.15**：🚀 **Qwen3VL** BM1684X/1688已支持，详情见[Qwen3VL](./models/Qwen3_VL/)。其中demo有python和c++两个版本，且都支持图片和视频。
 - **2025.05.22**：🚀 **InternVL3** BM1684X/1688已支持，详情见[InternVL3](./models/InternVL3/)。支持图片和视频。
 - **2025.04.30**：🚀 **Qwen2.5VL** BM1684X/1688已支持，详情见[Qwen2.5VL](./models/Qwen2_5_VL/)。其中demo有python和c++两个版本，且都支持图片和视频。
 - **2025.04.29**：🚀 Qwen最新推理模型**Qwen3**，BM1684X/1688已支持，详情见[Qwen3 Demo](./models/Qwen3/)。
