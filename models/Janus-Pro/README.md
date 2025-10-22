@@ -1,6 +1,6 @@
-# Janus-Pro-7b
+# Janus-Pro
 
-本项目实现BM1684X部署语言大模型[Deepseek-Janus-Pro-7b](https://huggingface.co/deepseek-ai/Janus-Pro-7B)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X的PCIE环境，或者SoC环境。
+本项目实现BM1684X部署语言大模型[Deepseek-Janus-Pro-7b](https://huggingface.co/deepseek-ai/Janus-Pro-7B)或[Deepseek-Janus-Pro-7b](https://www.modelscope.cn/models/deepseek-ai/Janus-Pro-1B)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X的PCIE环境，或者SoC环境。
 
 下文中默认是PCIE环境；如果是SoC环境，按提示操作即可。
 
