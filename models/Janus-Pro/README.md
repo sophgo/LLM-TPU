@@ -61,28 +61,16 @@ source ./envsetup.sh
 
 ``` shell
 pip install -r requirements.txt
-cp ./compile/files/modeling_llama.py /usr/local/lib/python3.10/dist-packages/transformers/models/llama/modeling_llama.py
 ```
 
-### 步骤五：生成onnx文件
-
-``` shell
-cd compile
-python export_onnx.py -m $your_model_path -s 1024
-```
-
-* PS1：-s为模型sequence长度, 不建议导出1024长度以下的模型，因为image token会占用seq len通常都在512长度以上
-* PS2：Janus的图像大小固定为384，输入图像会自动resize到384x384
-----------------------------
-### 步骤六：生成bmodel文件
+### 步骤五：生成bmodel文件
 
 生成单芯模型
 
 ``` shell
-./compile.sh --mode int4 --name janus-pro-7b --seq_length 1024 # same as int8
+llm_convert.py -m /path/to/Janus-Pro-1B/ -s 710 -q bf16 -g 128 --num_device 1  -c bm1684x  -o janus/ # same as int8
 ```
-* PS1：生成bmodel耗时大概3小时以上，建议64G内存以及200G以上硬盘空间，不然很可能OOM或者no space left
-* PS2：--name必须指定为janus-pro-7b
+
 ----------------------------
 
 # 【阶段二】可执行文件生成
@@ -92,7 +80,9 @@ python export_onnx.py -m $your_model_path -s 1024
 ```
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/janus-pro-7b_int4_seq2048.bmodel
 ```
-
+```
+python3 -m dfss --url=open@sophgo.com:/share/hengyang/janus-pro-1b_bf16_seq710_bm1684x_1dev_20251021_154608.bmodel(1b模型)
+```
 
 执行如下编译，(PCIE版本与SoC版本相同)：
 

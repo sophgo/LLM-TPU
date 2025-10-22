@@ -97,6 +97,7 @@ class JanusPro():
             # Chat
             else:
                 inputs = self.process_input()
+                print(inputs['sft_format'][0])
                 tokens = inputs['input_ids']
 
                 # check tokens
