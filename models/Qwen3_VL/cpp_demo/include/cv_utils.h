@@ -600,24 +600,25 @@ bool process_video(std::vector<float> &data, std::vector<int> &frame_indices,
   int resized_width = 0;
   cv::Mat frame;
   std::vector<float> buffers;
-  int t = 0;
+  int t = frame_indices.size();
+  std::pair<int, int> resized = {0, 0};
   for (auto &indice : frame_indices) {
     cap.set(cv::CAP_PROP_POS_FRAMES, indice);
     if (!cap.read(frame)) {
       break;
     }
-    int width = frame.cols;
-    int height = frame.rows;
-    auto resized =
-        smart_resize(height, width, config.MIN_PIXELS * config.video_ratio,
-                     config.MAX_PIXELS * config.video_ratio);
-    resized_height = resized.first;
-    resized_width = resized.second;
+    if (resized.first == 0 && resized.second == 0) {
+      int width = frame.cols;
+      int height = frame.rows;
+      resized = smart_resize(height, width, config.MIN_PIXELS,
+                             config.MAX_PIXELS * config.video_ratio);
+      resized_height = resized.first;
+      resized_width = resized.second;
+    }
     std::vector<float> image_new;
     bicubic_resize(frame, image_new, resized_height, resized_width, image_mean,
                    image_std);
     buffers.insert(buffers.end(), image_new.begin(), image_new.end());
-    t++;
   }
   assert(t % config.temporal_patch_size == 0);
   int grid_t = t / config.temporal_patch_size;

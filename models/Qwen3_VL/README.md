@@ -57,7 +57,7 @@ source ./envsetup.sh  #激活环境变量
 #### 3. 编译模型生成bmodel
 
 ``` shell
-# 如果有提示transformers/torch版本问题，pip3 install transformers torchvision -U
+# 如果有提示transformers/torch版本问题，pip3 install transformers torchvision qwen_vl_utils -U
 # 这里max_input_length指定最大输入长度，如果不指定则为-s指定的长度
 llm_convert.py -m /workspace/Qwen3-VL-4B-Instruct  -s 2048 --max_input_length 1024  --quantize w4bf16  -c bm1684x --out_dir qwen3vl_4b  --max_pixels 768,768
 ```

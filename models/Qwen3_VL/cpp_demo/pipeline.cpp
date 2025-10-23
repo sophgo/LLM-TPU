@@ -512,7 +512,7 @@ ChatPipe::get_rope_index(const std::vector<std::vector<int>> &input_ids,
         }
       }
       int t, h, w;
-      if (pad_id == VIDEO_PAD_TOKEN) {
+      if (pad_id == IMAGE_PAD_TOKEN) {
         t = grid_thw[image_index][0];
         h = grid_thw[image_index][1];
         w = grid_thw[image_index][2];
@@ -680,7 +680,6 @@ static std::vector<double> calculate_timestamps(const std::vector<int> &indices,
 
   // 每个合并块取首尾平均值
   std::vector<double> merged;
-  merged.reserve(indices.size() / merge_size);
   for (size_t i = 0; i < timestamps.size(); i += merge_size) {
     size_t j = i + merge_size - 1;
     double avg = (timestamps[i] + timestamps[j]) / 2.0;
@@ -930,8 +929,8 @@ ChatPipe::build_video_prompt(const std::string &input_str,
   int w = thw[2];
   int pad_len = h * w / 4;
   for (int i = 0; i < t; i++) {
-    prompt += "<|vision_start|>";
     prompt += format_seconds(timestamps[i]);
+    prompt += "<|vision_start|>";
     for (int j = 0; j < pad_len; j++) {
       prompt += "<|video_pad|>";
     }

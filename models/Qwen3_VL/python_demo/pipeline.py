@@ -9,6 +9,7 @@
 import time
 import argparse
 from transformers import AutoProcessor
+from qwen_vl_utils import process_vision_info
 import chat
 import os
 import torch
@@ -26,11 +27,7 @@ class Qwen3_VL():
         # load model
         self.model = chat.Qwen3_VL()
         self.model.init(self.device, args.model_path)
-        self.processor = AutoProcessor.from_pretrained(args.config_path,
-                                                       trust_remote_code=True,
-                                                       max_pixels=self.model.MAX_PIXELS,
-                                                       min_pixels=64 * 32 * 32,
-                                                       fps=1.0)
+        self.processor = AutoProcessor.from_pretrained(args.config_path, trust_remote_code=True)
         self.tokenizer = self.processor.tokenizer
         self.ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
         self.ID_IM_END = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
@@ -44,6 +41,7 @@ class Qwen3_VL():
         self.num_grid_per_side = 48
         self.max_posid = 0
         self.history_max_posid = 0
+        self.total_pixels = (self.model.MAX_INPUT_LENGTH - 128) * 32 * 32
 
     def text_message(self):
         # yapf: disable
@@ -59,7 +57,9 @@ class Qwen3_VL():
         messages = [{
             "role": "user",
             "content": [
-                {"type": "image", "image": path},
+                {"type": "image", "image": path,
+                 "min_pixels": 4 * 32 * 32,
+                 "max_pixels": self.model.MAX_PIXELS},
                 {"type": "text", "text": self.input_str},
             ],
         }]
@@ -71,8 +71,10 @@ class Qwen3_VL():
         messages = [{
             "role": "user",
             "content": [
-                {"type": "video", "video": path,
-                 "min_pixels": 64 * 32 * 32, "max_pixels": int(self.model.MAX_PIXELS * self.video_ratio)},
+                {"type": "video", "video": path, "fps": 1.0,
+                 "min_pixels": 4 * 32 * 32,
+                 "max_pixels": int(self.model.MAX_PIXELS * self.video_ratio),
+                 "total_pixels": self.total_pixels},
                 {"type": "text", "text": self.input_str},
             ],
         }]
@@ -264,6 +266,33 @@ class Qwen3_VL():
         position_ids = position_ids + self.history_max_posid
         return self.model.forward_first(position_ids)
 
+    def process(self, messages, media_type):
+        if media_type == "text":
+            return self.processor.apply_chat_template(messages,
+                                                      tokenize=True,
+                                                      add_generation_prompt=True,
+                                                      return_dict=True,
+                                                      return_tensors="pt")
+        text = self.processor.apply_chat_template(messages,
+                                                  tokenize=False,
+                                                  add_generation_prompt=True)
+        images, videos, video_kwargs = process_vision_info(messages,
+                                                           image_patch_size=16,
+                                                           return_video_kwargs=True,
+                                                           return_video_metadata=True)
+        if videos is not None:
+            videos, video_metadatas = zip(*videos)
+            videos, video_metadatas = list(videos), list(video_metadatas)
+        else:
+            video_metadatas = None
+        return self.processor(text=[text],
+                              images=images,
+                              videos=videos,
+                              video_metadata=video_metadatas,
+                              do_resize=False,
+                              return_tensors="pt",
+                              **video_kwargs)
+
     def chat(self):
         """
         Start a chat session.
@@ -303,11 +332,7 @@ class Qwen3_VL():
                     print("Unsupported media type: {}".format(media_path))
                     continue
 
-            inputs = self.processor.apply_chat_template(messages,
-                                                        tokenize=True,
-                                                        add_generation_prompt=True,
-                                                        return_dict=True,
-                                                        return_tensors="pt")
+            inputs = self.process(messages, media_type)
             token_len = inputs.input_ids.numel()
             if token_len > self.model.MAX_INPUT_LENGTH:
                 if media_type in ["image", "video"]:
