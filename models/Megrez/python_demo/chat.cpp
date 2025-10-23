@@ -80,6 +80,7 @@ void Megrez::net_launch(const bm_net_info_t *net, int stage_idx) {
 
 void Megrez::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
+  bm_thread_sync(bm_handle);
 }
 
 void Megrez::init(int dev_id, std::string model_path) {
