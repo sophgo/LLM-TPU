@@ -85,7 +85,7 @@ MLIR环境支持多种安装方式，请参考：[MLIR环境安装指南](https:
 
 编译命令如下：
 ```shell
-llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1684x --max_pixels 672,896 -o qwen2.5vl_3b
+llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 --max_input_length 1024 -q w4f16 -c bm1684x --max_pixels 672,896 -o qwen2.5vl_3b
 ```
 
 `llm_convert.py` 是一个通用的llm模型导出工具，能够直接将llm原始权重直接导出为bmodel。
@@ -96,6 +96,7 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 -q w4bf16 -c bm1
 | ------------- | -------- | ----- | ------------------- |
 | model_path    |  m       | 是    | 指定权重路径        |
 | seq_length    |  s       | 是    | 指定序列最大长度    |
+| max_input_length | -     | 否    | 指定单次最大输入长度；默认采用seq_length |
 | quantize      |  q       | 是    | 指定量化类型, w4bf16/w4f16/bf16/f16等等 |
 | chip          |  c       | 是    | 指定平台, 如bm1684x/bm1688/cv186x |
 | q_group_size  |  g       | 否    | 指定每组量化的组大小, 默认64 |

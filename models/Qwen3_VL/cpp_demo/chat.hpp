@@ -48,8 +48,8 @@ private:
                          bm_device_mem_t &input_mem, const int *position_id,
                          std::vector<uint16_t> &attention_mask);
   void vit_launch_dyn(int real_patches);
-  void add_launch_dyn(bm_device_mem_t &in0_mem, bm_device_mem_t &in1_mem,
-                      bm_device_mem_t &out_mem, int real_len);
+  void add_launch(bm_device_mem_t &in0_mem, bm_device_mem_t &in1_mem,
+                  bm_device_mem_t &out_mem);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
   void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   void init_by_names();

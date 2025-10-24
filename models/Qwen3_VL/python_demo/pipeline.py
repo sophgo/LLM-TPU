@@ -164,10 +164,10 @@ class Qwen3_VL():
         idx_tensor = torch.tensor(idx_list, dtype=torch.int32)
         weight_tensor = torch.tensor(weight_list, dtype=torch.float32)
         msize = self.spatial_merge_size
-        idx_tensor = idx_tensor.view(4 * t, h // msize, msize, w // msize,
-                                     msize).permute(0, 1, 3, 2, 4).reshape(4, t * h * w)
-        weight_tensor = weight_tensor.view(4 * t, h // msize, msize, w // msize,
-                                           msize).permute(0, 1, 3, 2, 4).reshape(4, t * h * w)
+        idx_tensor = idx_tensor.view(4, t, h // msize, msize, w // msize,
+                                     msize).permute(1, 2, 4, 3, 5, 0).reshape(t * h * w, 4)
+        weight_tensor = weight_tensor.view(4, t, h // msize, msize, w // msize,
+                                           msize).permute(1, 2, 4, 3, 5, 0).reshape(t * h * w, 4)
 
         return idx_tensor, weight_tensor
 

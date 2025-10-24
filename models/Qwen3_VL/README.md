@@ -9,9 +9,11 @@
 ``` shell
 # =============== 1684x =====================
 # 1684x 4B 最大1K输入, max_pixel 768x768, 视频最长可以支持12s (每秒1帧)
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-4b-instruct_w4bf16_seq2048_bm1684x_1dev_20251015_145353.bmodel 
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-4b-instruct_w4bf16_seq2048_bm1684x_1dev_20251026_141347.bmodel 
 # 1684x 8B 最大1K输入, max_pixel 768x768, 视频最长可以支持12s (每秒1帧)
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-8b-instruct_w4bf16_seq2048_bm1684x_1dev_20251020_104427.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-8b-instruct_w4bf16_seq2048_bm1684x_1dev_20251026_145323.bmodel
+# 1688 4B 最大1K输入, max_pixel 768x768, 视频最长可以支持12s (每秒1帧)
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-4b-instruct_w4bf16_seq2048_bm1688_2core_20251026_141708.bmodel
 
 ```
 
@@ -57,7 +59,7 @@ source ./envsetup.sh  #激活环境变量
 #### 3. 编译模型生成bmodel
 
 ``` shell
-# 如果有提示transformers/torch版本问题，pip3 install transformers torchvision qwen_vl_utils -U
+# 如果有提示transformers/torch版本问题，pip3 install transformers torchvision -U
 # 这里max_input_length指定最大输入长度，如果不指定则为-s指定的长度
 llm_convert.py -m /workspace/Qwen3-VL-4B-Instruct  -s 2048 --max_input_length 1024  --quantize w4bf16  -c bm1684x --out_dir qwen3vl_4b  --max_pixels 768,768
 ```
@@ -69,7 +71,7 @@ llm_convert.py -m /workspace/Qwen3-VL-4B-Instruct  -s 2048 --max_input_length 10
 > （python_demo运行之前都需要执行这个）
 ``` shell
 # 如果不是python3.10，参考"常见问题"配置环境
-pip3 install torchvision transformers
+pip3 install torchvision transformers qwen_vl_utils
 ```
 
 编译库文件，生成`chat.cpython*.so`文件，将该文件拷贝到`pipeline.py`文件目录
@@ -127,7 +129,7 @@ python get-pip.py
 rm get-pip.py
 
 # 安装依赖库
-pip3 install torchvision pillow  transformers -U
+pip3 install torchvision pillow  transformers qwen_vl_utils -U
 
 ```
 

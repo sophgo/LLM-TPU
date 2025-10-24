@@ -222,11 +222,9 @@ void ChatPipe::fast_pos_embed_interpolate(const std::vector<int> &grid_thw,
     throw std::invalid_argument("t, h, w must be positive");
   }
 
-  // 生成 h 与 w 方向的索引（浮点）
   auto h_idxs = linspace_inclusive(0.0f, float(num_grid_per_side - 1), h);
   auto w_idxs = linspace_inclusive(0.0f, float(num_grid_per_side - 1), w);
 
-  // floor / ceil 和小数部分
   std::vector<int> h_floor(h), h_ceil(h);
   std::vector<int> w_floor(w), w_ceil(w);
   std::vector<float> dh(h), dw(w);
@@ -246,14 +244,12 @@ void ChatPipe::fast_pos_embed_interpolate(const std::vector<int> &grid_thw,
     dw[j] = w_idxs[j] - float(f);
   }
 
-  // base_h 与 base_h_ceil
   std::vector<int> base_h(h), base_h_ceil(h);
   for (int i = 0; i < h; ++i) {
     base_h[i] = h_floor[i] * num_grid_per_side;
     base_h_ceil[i] = h_ceil[i] * num_grid_per_side;
   }
 
-  // 构造四组 (h*w) 索引与权重（平铺）
   std::vector<int> idx00;
   idx00.reserve(h * w);
   std::vector<int> idx01;
@@ -293,51 +289,46 @@ void ChatPipe::fast_pos_embed_interpolate(const std::vector<int> &grid_thw,
     }
   }
 
-  // Python 中随后进行了 view(4*t, H_blk, msize, W_blk, msize) ->
-  // permute(0,1,3,2,4) -> reshape(4, t*h*w) 该过程等价于：将每一个 (h*w)
-  // 的扁平数组重复 t 次，按块重排，然后再回到扁平。 我们在纯 C++
-  // 中直接产生最终展平结果（4, t*h*w）按行存储。
-
   int msize = spatial_merge_size;
   int H_blk = h / msize;
   int W_blk = w / msize;
 
-  // 准备输出缓冲
-  idx_out.resize(4 * t * h * w);
-  weight_out.resize(4 * t * h * w);
+  // 调整输出大小为 [t*h*w, 4]
+  idx_out.resize(t * h * w * 4);
+  weight_out.resize(t * h * w * 4);
 
-  // 一个帮助函数：将单组 idx 与 weight 重排为最终目标布局，并写入到对应通道位置
-  auto write_channel = [&](int channel, const std::vector<int> &idx_flat,
-                           const std::vector<float> &w_flat) {
-    int channel_offset = channel * t * h * w;
-    // 我们先构造一次 (h,w) 到重排后的 (h,w) 的索引映射序列 out_order，长度 h*w
-    std::vector<int> out_order;
-    out_order.reserve(h * w);
-    for (int i_blk = 0; i_blk < H_blk; ++i_blk) {
-      for (int j_blk = 0; j_blk < W_blk; ++j_blk) {
-        for (int i2 = 0; i2 < msize; ++i2) {
-          for (int j2 = 0; j2 < msize; ++j2) {
-            int i = i_blk * msize + i2;
-            int j = j_blk * msize + j2;
-            int flat = i * w + j;
-            out_order.push_back(flat);
-          }
+  // 构造重排顺序 (块重排)
+  std::vector<int> out_order;
+  out_order.reserve(h * w);
+  for (int i_blk = 0; i_blk < H_blk; ++i_blk) {
+    for (int j_blk = 0; j_blk < W_blk; ++j_blk) {
+      for (int i2 = 0; i2 < msize; ++i2) {
+        for (int j2 = 0; j2 < msize; ++j2) {
+          int i = i_blk * msize + i2;
+          int j = j_blk * msize + j2;
+          int flat = i * w + j;
+          out_order.push_back(flat);
         }
       }
     }
-    int base = channel_offset;
-    for (int k = 0; k < (int)out_order.size(); ++k) {
-      int src = out_order[k];
-      idx_out[base + k] = idx_flat[src];
-      weight_out[base + k] = w_flat[src];
-    }
-  };
+  }
 
-  // 写四个通道
-  write_channel(0, idx00, w00);
-  write_channel(1, idx01, w01);
-  write_channel(2, idx10, w10);
-  write_channel(3, idx11, w11);
+  // 写入为列优先（最后一维为4通道）
+  // 位置k的四通道分别是列0..3，对应 idx00/01/10/11
+  for (int k = 0; k < (int)out_order.size(); ++k) {
+    int src = out_order[k];
+    int base = k * 4;
+
+    idx_out[base + 0] = idx00[src];
+    idx_out[base + 1] = idx01[src];
+    idx_out[base + 2] = idx10[src];
+    idx_out[base + 3] = idx11[src];
+
+    weight_out[base + 0] = w00[src];
+    weight_out[base + 1] = w01[src];
+    weight_out[base + 2] = w10[src];
+    weight_out[base + 3] = w11[src];
+  }
 }
 
 // 计算旋转位置编码
@@ -731,8 +722,8 @@ void ChatPipe::chat() {
     }
 
     std::cout << "\nAnswer:\n";
-    auto clock_start = clock::now();
     int64_t duration_prefill = 0, duration_vit = 0, duration_decode = 0;
+    auto clock_start = clock::now();
     switch (media_type) {
     case ChatPipe::IMAGE: {
       std::vector<float> pixel_values;

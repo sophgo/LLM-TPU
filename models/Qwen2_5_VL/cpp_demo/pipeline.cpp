@@ -11,6 +11,7 @@
 #include "cv_utils.h"
 #include "tokenizers-cpp/tokenizers_cpp.h"
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -612,6 +613,7 @@ int ChatPipe::forward_prefill(std::vector<int> &position_ids_1d, int &max_posid,
 
 // 聊天主循环
 void ChatPipe::chat() {
+  using clock = std::chrono::steady_clock;
   print_chat_instructions();
   int history_max_posid = 0;
   while (true) {
@@ -644,6 +646,8 @@ void ChatPipe::chat() {
     }
 
     std::cout << "\nAnswer:\n";
+    int64_t duration_prefill = 0, duration_vit = 0, duration_decode = 0;
+    auto clock_start = clock::now();
     std::string sentence_input = build_prompt(input_str, media_type);
     // std::cout << "Prompt: " << sentence_input << std::endl;
 
@@ -667,7 +671,12 @@ void ChatPipe::chat() {
       int vit_offset = 0;
       vit_offset = find_token_offset(tokens, IMAGE_PAD_TOKEN);
       model.forward_embed(tokens);
+      auto clock_vit_start = clock::now();
       vit_process_image(pixel_values, vit_offset);
+      auto clock_vit_end = clock::now();
+      duration_vit = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         clock_vit_end - clock_vit_start)
+                         .count();
       std::vector<std::vector<std::vector<int>>> position_ids =
           get_rope_index({tokens}, {config.grid_thw}, IMAGE_PAD_TOKEN);
 
@@ -705,7 +714,12 @@ void ChatPipe::chat() {
       }
       auto vit_offset = find_token_offset(tokens, VIDEO_PAD_TOKEN);
       model.forward_embed(tokens);
+      auto clock_vit_start = clock::now();
       vit_process_video(pixel_values, vit_offset);
+      auto clock_vit_end = clock::now();
+      duration_vit = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         clock_vit_end - clock_vit_start)
+                         .count();
       std::vector<std::vector<std::vector<int>>> position_ids =
           get_rope_index({tokens}, {config.grid_thw}, VIDEO_PAD_TOKEN);
 
@@ -742,9 +756,14 @@ void ChatPipe::chat() {
       std::cerr << "Unsupported media type." << std::endl;
       continue;
     }
+    auto clock_prefill = clock::now();
+    duration_prefill = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           clock_prefill - clock_start)
+                           .count();
     // 后续分词
     std::vector<int> full_word_tokens;
     std::string text;
+    int tok_num = 0;
     while (token != ID_IM_END && model.history_length < model.SEQLEN) {
       // std::cout << "\nfull_word_tokens: " << token << "  " << std::endl;
       full_word_tokens.push_back(token);
@@ -763,9 +782,24 @@ void ChatPipe::chat() {
       std::vector<int> following_position_ids = {max_posid, max_posid,
                                                  max_posid};
       token = model.forward_next(following_position_ids);
+      tok_num++;
     }
     history_max_posid = max_posid + 2;
     std::cout << std::endl;
+    auto clock_end = clock::now();
+    duration_decode = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          clock_end - clock_prefill)
+                          .count();
+    std::cout << "FTL: " << duration_prefill / 1000.0f << " s" << std::endl;
+    if (tok_num > 0) {
+      std::cout << "TPS: " << tok_num * 1000.0f / duration_decode << " tokens/s"
+                << std::endl;
+    }
+    if (duration_vit > 0) {
+      std::cout << "Vision [" << config.grid_thw[0] << ", "
+                << config.grid_thw[1] << ", " << config.grid_thw[2]
+                << "]: " << duration_vit / 1000.0f << " s" << std::endl;
+    }
   }
 }
 
