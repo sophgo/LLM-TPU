@@ -647,7 +647,7 @@ void ChatPipe::chat() {
 
     std::cout << "\nAnswer:\n";
     int64_t duration_prefill = 0, duration_vit = 0, duration_decode = 0;
-    auto clock_start = clock::now();
+    clock::time_point clock_start;
     std::string sentence_input = build_prompt(input_str, media_type);
     // std::cout << "Prompt: " << sentence_input << std::endl;
 
@@ -670,6 +670,7 @@ void ChatPipe::chat() {
 
       int vit_offset = 0;
       vit_offset = find_token_offset(tokens, IMAGE_PAD_TOKEN);
+      clock_start = clock::now();
       model.forward_embed(tokens);
       auto clock_vit_start = clock::now();
       vit_process_image(pixel_values, vit_offset);
@@ -713,6 +714,7 @@ void ChatPipe::chat() {
         continue;
       }
       auto vit_offset = find_token_offset(tokens, VIDEO_PAD_TOKEN);
+      clock_start = clock::now();
       model.forward_embed(tokens);
       auto clock_vit_start = clock::now();
       vit_process_video(pixel_values, vit_offset);
@@ -747,6 +749,7 @@ void ChatPipe::chat() {
                   << model.MAX_INPUT_LENGTH << std::endl;
         continue;
       }
+      clock_start = clock::now();
       model.forward_embed(raw_tokens);
       auto position_ids_1d = get_position_ids(raw_tokens.size());
       max_posid = raw_tokens.size() - 1;

@@ -173,6 +173,7 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 --max_input_leng
 2) [Qwen2.5VL](./models/Qwen2_5_VL)，python与cpp demo都支持
 3) [MiniCPM4](./models/MiniCPM4)
 4) [InternVL3](./models/InternVL3)
+5) [Qwen3VL](./models/Qwen3_VL)
 
 ## 2. Prefill with kv cache
 
@@ -183,9 +184,10 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 --max_input_leng
 `--max_prefill_kv_length`指定输入最大kv长度, 不指定时默认是seq_length。
 样例：
 
-1) [Qwen2.5VL](./models/Qwen2_5_VL)，python与cpp demo都支持
-2) [Qwen3](./models/Qwen3)，python与cpp demo都支持
-3) [InternVL3](./models/InternVL3)
+1) [Qwen3VL](./models/Qwen3_VL)
+2) [Qwen2.5VL](./models/Qwen2_5_VL)，python与cpp demo都支持
+3) [Qwen3](./models/Qwen3)，python与cpp demo都支持
+4) [InternVL3](./models/InternVL3)
 
 ## 3. 多芯推理
 

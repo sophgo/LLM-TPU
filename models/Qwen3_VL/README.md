@@ -9,7 +9,7 @@
 ``` shell
 # =============== 1684x =====================
 # 1684x 4B 最大1K输入, max_pixel 768x768, 视频最长可以支持12s (每秒1帧)
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-4b-instruct_w4bf16_seq2048_bm1684x_1dev_20251026_141347.bmodel 
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-4b-instruct_w4bf16_seq2048_bm1684x_1dev_20251026_141347.bmodel
 # 1684x 8B 最大1K输入, max_pixel 768x768, 视频最长可以支持12s (每秒1帧)
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-8b-instruct_w4bf16_seq2048_bm1684x_1dev_20251026_145323.bmodel
 # 1688 4B 最大1K输入, max_pixel 768x768, 视频最长可以支持12s (每秒1帧)
@@ -100,6 +100,21 @@ cd build && cmake .. && make && cp pipeline .. && cd ..
 # run demo
 ./pipeline -m xxx.bmodel -c config
 ```
+
+## 进阶应用
+
+### 1. 支持历史上下文
+
+默认情况下模型是不支持历史上下文，需要加上`--use_block_with_kv`参数；
+需要指定输入最大长度`--max_input_length`，不指定时默认是seq_length的1/4；
+需要指定输入最大kv长度`--max_prefill_kv_length`, 不指定时默认是seq_length.
+
+如下：
+``` shell
+# 如果有提示transformers/torch版本问题，pip3 install transformers torchvision -U
+llm_convert.py -m /workspace/Qwen3-VL-4B-Instruct -s 4096 --quantize w4bf16  -c bm1684x --out_dir qwen3vl_kv --max_pixels 768,768 --use_block_with_kv --max_input_length 1024
+```
+使用cpp_demo或者python_demo都支持。历史记录输入clear清理。
 
 ## 常见问题
 
