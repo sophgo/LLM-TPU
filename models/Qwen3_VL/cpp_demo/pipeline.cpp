@@ -833,6 +833,7 @@ void ChatPipe::chat() {
       model.forward_embed(tokens);
       auto position_ids_1d = get_position_ids(tokens.size());
       max_posid = tokens.size() - 1;
+      token = forward_prefill(position_ids_1d, max_posid, history_max_posid);
     } break;
     default:
       std::cerr << "Unsupported media type." << std::endl;
