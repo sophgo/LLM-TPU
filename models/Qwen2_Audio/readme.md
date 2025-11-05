@@ -12,10 +12,6 @@ Qwen2-Audio（算能 AirBox 边缘端）实施说明
   - `chat.cpp`：PyBind 导出的 C++ 推理实现（BMRuntime 图执行、KV 缓存）
   - `utils.py`：音频处理、掩码与合并工具函数
   - `CMakeLists.txt`：构建 `chat` Python 模块
-- `cpp_demo/`（如已存在）：纯 C++ 推理示例
-  - `chat.cpp`：C++ 模型前向、KV 缓存与头部（LM Head）推理
-  - `pipeline.cpp`：C++ 管线整合（文本/音频输入、模板、prefill 与生成）
-  - `CMakeLists.txt`：构建可执行文件（如 `qwen2_vl`、`pipeline`）
 
 环境准备
 - 算能软件栈：确保安装 `libsophon-current` 与 BMRuntime，常见头文件与库位于：`/opt/sophon/libsophon-current`
@@ -49,19 +45,6 @@ Qwen2-Audio（算能 AirBox 边缘端）实施说明
   - 合并：将音频嵌入写入 `<AUDIO>` 占位的序列位置，并同步更新 `attention_mask` 与 `position_ids`
   - Prefill：将三者扩展/对齐到 599 的最大长度，按层运行 Block 前向，收集 `k_caches`/`v_caches` 与 `inputs_embeds`
   - 生成：逐 Token 使用 `forward_embed_cache(...)` 与缓存，配合贪心头进行生成
-
-构建与运行（C++ Demo）
-- 构建：
-  - `cd cpp_demo`
-  - `mkdir build && cd build`
-  - `cmake ..`
-  - `make -j$(nproc)`
-  - 如果 OpenCV 未安装或未找到：
-    - 可设置 `OpenCV_DIR` 或将安装前缀加入 `CMAKE_PREFIX_PATH`
-    - 当前 `CMakeLists.txt` 已做“OpenCV 可选”，未找到时仅输出警告并继续构建
-- 运行：
-  - `./pipeline -m <bmodel_path> -d <devid>`（或 `./qwen2_vl`，视 CMake 目标而定）
-  - 程序会加载模型、初始化 BMRuntime，并进行文本/音频处理与生成
 
 设备与库说明
 - 目标平台：根据 CMake 的 `SOC_TARGET`/`PCIE_TARGET` 条件，选择链接的库与包含目录
@@ -97,10 +80,6 @@ Qwen2-Audio（算能 AirBox 边缘端）实施说明
   - `mkdir build && cd build && cmake .. && make -j$(nproc)`
   - `export PYTHONPATH=$(pwd):$PYTHONPATH`
   - `cd .. && python3 pipeline.py -m /path/to/qwen2_audio.bmodel -d 0 -c ../config`
-- 构建并运行 C++：
-  - `cd /data/LLM-TPU/models/Qwen2_Audio/cpp_demo`
-  - `mkdir build && cd build && cmake .. && make -j$(nproc)`
-  - `./pipeline -m /path/to/qwen2_audio.bmodel -d 0`
 
 版权与许可证
 - 本说明文件不包含许可证内容。请根据上游模型与依赖库的授权条款合规使用与分发。
