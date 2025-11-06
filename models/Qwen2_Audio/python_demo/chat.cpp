@@ -59,8 +59,8 @@ public:
                    ArrayFloat const &full_attn_mask);
   ArrayFloat forward_head(ArrayFloat const &input_features);
   ArrayFloat forward_project(ArrayFloat const &audio_features);
-  ArrayFloat forward_first( ArrayFloat const &input_embeds, ArrayInt const &position_ids, ArrayFloat const &input_attention_mask) ;
-  std::tuple<std::vector<float>, std::vector<float>, std::vector<float> > forward( ArrayFloat const &input_embeds, ArrayInt const &position_ids, ArrayFloat const &input_attention_mask, const int idx);
+  std::tuple<std::vector<float>, std::vector<float>, std::vector<float> > 
+        forward( ArrayFloat const &input_embeds, ArrayInt const &position_ids, ArrayFloat const &input_attention_mask, const int idx);
   int forward_next(ArrayInt const &position_ids, ArrayInt const &token, ArrayFloat const & attention_mask);
    std::tuple<std::vector<float>, std::vector<float>, std::vector<float> > forward_cache_next(ArrayFloat const &inputs_embeds, 
                             ArrayFloat const &position_ids, 
@@ -85,8 +85,6 @@ public:
   int HIDDEN_SIZE;
   int NUM_LAYERS; // read from bmodel
   int AUDIO_DIMS;
-  int MAX_PATCHES;
-  int MAX_PIXELS;
   int max_pos;
   const int spatial_merge_size = 2;
   bool lmhead_with_topk;
@@ -146,14 +144,6 @@ void Qwen2Audio::init_by_names() {
     }
     return false;
   };
-  // get all network name
-  const char **net_names1 = NULL;
-  int net_num = bmrt_get_network_number(p_bmrt);
-  bmrt_get_network_names(p_bmrt, &net_names1);
-  for (int i=0; i<net_num; i++) {
-	  std::cout << net_names1[i] << std::endl;
-  }
-  free(net_names1);
 
   net_embed = bmrt_get_network_info(p_bmrt, "embedding");
   net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
@@ -182,7 +172,7 @@ void Qwen2Audio::init_by_names() {
       break;
     }
 
-    std::cout << "block name: " << block_name << " " << cache_name << std::endl;
+    //std::cout << "block name: " << block_name << " " << cache_name << std::endl;
     net_blocks.emplace_back(bmrt_get_network_info(p_bmrt, block_name.c_str()));
     net_blocks_cache.emplace_back(
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
@@ -212,12 +202,10 @@ void Qwen2Audio::init(int dev_id, std::string model_path) {
 
   init_by_names();
   HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[2];
-  MAX_PATCHES = net_audio->stages[0].input_shapes[0].dims[0];
   AUDIO_DIMS = net_audio->stages[0].input_shapes[0].dims[1]; // [1, 128, 3000],[1,1,1500, 1500]
 
   printf("Num Layers:%d\n", NUM_LAYERS);
   printf("HIDDEN_SIZE:%d\n", HIDDEN_SIZE);
-  printf("MAX_PATHCES:%d\n", MAX_PATCHES);
   printf("AUDIO_DIMS:%d\n", AUDIO_DIMS);
 
   past_key.resize(NUM_LAYERS);
@@ -249,19 +237,15 @@ ArrayFloat Qwen2Audio::forward_embed(ArrayInt const &input_ids) {
   net_launch(net_embed);
   d2d(dev_buffer, out_mem);
   //std::cout << "embed done\n";
-  const size_t D1 = 1;
-  const size_t D2 = 599;
-  const size_t D3 = 4096;
 
-    // 2. 计算总共需要多少个 float 元素
-  const size_t total_elements = D1 * D2 * D3;
+
+  const size_t total_elements = net_embed->stages[0].output_shapes[0].dims[0] *
+                                net_embed->stages[0].output_shapes[0].dims[1] *
+                                net_embed->stages[0].output_shapes[0].dims[2] ;
 
     // 3. 创建一个单层的、连续的 vector 来作为接收缓冲区
   std::vector<float> host_output_buffer(total_elements);
-
   bm_memcpy_d2s(bm_handle, (void *)host_output_buffer.data(), out_mem);
-  //std::cout << "embed out: " << outs << std::endl;
-  //token_length = input_ids.size();
   return  py::array_t<float>(host_output_buffer.size(), host_output_buffer.data());
   
 }
@@ -272,20 +256,16 @@ ArrayFloat Qwen2Audio::forward_embed_cache(ArrayInt const &input_ids) {
   auto &out_mem = net_embed_cache->stages[0].output_mems[0];
   bm_memcpy_s2d(bm_handle, in_mem, (void *)input_ids.data());
   net_launch(net_embed_cache);
-  //std::cout << "embed done\n";
-  const size_t D1 = 1;
-  const size_t D2 = 1;
-  const size_t D3 = 4096;
 
     // 2. 计算总共需要多少个 float 元素
-  const size_t total_elements = D1 * D2 * D3;
+  const size_t total_elements = net_embed_cache->stages[0].output_shapes[0].dims[0] *
+                                net_embed_cache->stages[0].output_shapes[0].dims[1] *
+                                net_embed_cache->stages[0].output_shapes[0].dims[2] ;
 
     // 3. 创建一个单层的、连续的 vector 来作为接收缓冲区
   std::vector<float> host_output_buffer(total_elements);
 
   bm_memcpy_d2s(bm_handle, (void *)host_output_buffer.data(), out_mem);
-  //std::cout << "embed out: " << outs << std::endl;
-  //token_length = input_ids.size();
   return  py::array_t<float>(host_output_buffer.size(), host_output_buffer.data());
   
 }
@@ -299,22 +279,18 @@ ArrayFloat Qwen2Audio::forward_audio(ArrayFloat const &input_features, ArrayFloa
   bm_memcpy_s2d(bm_handle, audio_in1_mem, (void *)attention_maks.data());
   net_launch(net_audio);
   d2d(dev_buffer, audio_out_mem);
-  const size_t D1 = 1;
-  const size_t D2 = 750;
-  const size_t D3 = 1280;
 
     // 2. 计算总共需要多少个 float 元素
-  const size_t total_elements = D1 * D2 * D3;
+  const size_t total_elements = net_audio->stages[0].output_shapes[0].dims[0] *
+                                net_audio->stages[0].output_shapes[0].dims[1] *
+                                net_audio->stages[0].output_shapes[0].dims[2] ;
 
   std::vector<float> host_output_buffer(total_elements);
 
   bm_memcpy_d2s(bm_handle, (void *)host_output_buffer.data(), audio_out_mem);
-  //std::cout << "embed out: " << outs << std::endl;
-  //token_length = input_ids.size();
-  //std::cout << "audio done\n";
   return  py::array_t<float>(host_output_buffer.size(), host_output_buffer.data());
-
 }
+
 ArrayFloat Qwen2Audio::forward_project(ArrayFloat const &audio_features) {
   empty_net(bm_handle, net_project);
   auto &project_in_mem = net_project->stages[0].input_mems[0];
@@ -322,18 +298,15 @@ ArrayFloat Qwen2Audio::forward_project(ArrayFloat const &audio_features) {
   bm_memcpy_s2d(bm_handle, project_in_mem, (void *)audio_features.data());
   net_launch(net_project);
   d2d(dev_buffer, project_out_mem);
-  const size_t D1 = 1;
-  const size_t D2 = 750;
-  const size_t D3 = 4096;
 
     // 2. 计算总共需要多少个 float 元素
-  const size_t total_elements = D1 * D2 * D3;
+  const size_t total_elements = net_project->stages[0].output_shapes[0].dims[0] *
+                                net_project->stages[0].output_shapes[0].dims[1] *
+                                net_project->stages[0].output_shapes[0].dims[2] ;
 
   std::vector<float> host_output_buffer(total_elements);
 
   bm_memcpy_d2s(bm_handle, (void *)host_output_buffer.data(), project_out_mem);
-  //std::cout << "embed out: " << outs << std::endl;
-  //token_length = input_ids.size();
   return  py::array_t<float>(host_output_buffer.size(), host_output_buffer.data());
 }
 void Qwen2Audio::head_launch(const bm_net_info_t *net,
@@ -373,25 +346,15 @@ int Qwen2Audio::greedy_search(const bm_net_info_t *net,
 ArrayFloat Qwen2Audio::forward_head(ArrayFloat const &input_features) {
   empty_net(bm_handle, net_lm);
 
-  //std::cout << net_lm->stages[0].output_shapes[0].dims[0]  << std::endl;
-  //std::cout << net_lm->stages[0].output_shapes[0].dims[1]  << std::endl;
-  //std::cout << net_lm->stages[0].output_shapes[0].dims[2]  << std::endl;
-
-  //std::cout << net_lm->stages[0].input_shapes[0].dims[0]  << std::endl;
-  //std::cout << net_lm->stages[0].input_shapes[0].dims[1]  << std::endl;
-  //std::cout << net_lm->stages[0].input_shapes[0].dims[2]  << std::endl;
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
   auto &lm_out_mem = net_lm->stages[0].output_mems[0];
   //std::cout << "forward lmhead\n";
   bm_memcpy_s2d(bm_handle, lm_in_mem, (void *)input_features.data());
-  //d2d(lm_in_mem, out_mem);
-  //std::cout << "launch lmhead\n";
   net_launch(net_lm);
   //std::cout << "launch end\n";
-  const size_t uD1 = 1;
-  const size_t uD2 = 1;
-  const size_t uD3 = 156032;
-  const size_t lm_total_elements = uD1 * uD2 * uD3;
+  const size_t lm_total_elements = net_lm->stages[0].output_shapes[0].dims[0] *
+                                net_lm->stages[0].output_shapes[0].dims[1] *
+                                net_lm->stages[0].output_shapes[0].dims[2] ;
   std::vector<float> lm_output_buffer(lm_total_elements);
   bm_memcpy_d2s(bm_handle, (void *)lm_output_buffer.data(), lm_out_mem);
   return  py::array_t<float>(lm_output_buffer.size(), lm_output_buffer.data());
@@ -399,8 +362,6 @@ ArrayFloat Qwen2Audio::forward_head(ArrayFloat const &input_features) {
  std::tuple<std::vector<float>, std::vector<float>, std::vector<float> > 
     Qwen2Audio::forward( ArrayFloat const &input_embeds, ArrayInt const &position_ids, ArrayFloat const &input_attention_mask,const int idx) {
   empty_net(bm_handle, net_blocks[idx]);
-  //assert(BM_SUCCESS == status);  
-  //std::cout << "block: " << idx << " forward\n";
   
   auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
   auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
@@ -416,14 +377,14 @@ ArrayFloat Qwen2Audio::forward_head(ArrayFloat const &input_features) {
 
   net_launch(net_blocks[idx]);
 
-  const size_t v_total_elements = net_blocks[idx]->stages[0].output_shapes[2].dims[0] *
+  const size_t kv_total_elements = net_blocks[idx]->stages[0].output_shapes[2].dims[0] *
                                     net_blocks[idx]->stages[0].output_shapes[2].dims[1] *
                                     net_blocks[idx]->stages[0].output_shapes[2].dims[2] *
                                     net_blocks[idx]->stages[0].output_shapes[2].dims[3];
-  std::vector<float> v_host_output_buffer(v_total_elements);
+  std::vector<float> v_host_output_buffer(kv_total_elements);
   bm_memcpy_d2s(bm_handle, (void *)v_host_output_buffer.data(), out2_mem);
 
-  std::vector<float> k_host_output_buffer(v_total_elements);
+  std::vector<float> k_host_output_buffer(kv_total_elements);
   bm_memcpy_d2s(bm_handle, (void *)k_host_output_buffer.data(), out1_mem);
 
   const size_t inputs_embeds_total_elements = net_blocks[idx]->stages[0].output_shapes[0].dims[0] *
@@ -435,61 +396,6 @@ ArrayFloat Qwen2Audio::forward_head(ArrayFloat const &input_features) {
 
   return std::make_tuple(input_embeds_host_input_buffer, k_host_output_buffer, v_host_output_buffer);
  }
-
- ArrayFloat Qwen2Audio::forward_first( ArrayFloat const &input_embeds, ArrayInt const &position_ids, ArrayFloat const &input_attention_mask) {
-  bm_device_mem_t out_mem;
-  auto buffer_size =
-      bm_mem_get_device_size(net_blocks[0]->stages[0].output_mems[0]);
-  auto status = bm_malloc_device_byte(bm_handle, &out_mem, buffer_size);
-  assert(BM_SUCCESS == status);
-
-  for (int idx = 0; idx < NUM_LAYERS; idx++) {
-
-    auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
-    auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
-    auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
-    // d2d(in0_mem, block_out_mem);
-    //std::cout << "block " << net_blocks[idx]->stages[0].output_shapes << " forward\n";
-    d2d(in0_mem, out_mem);
-    if (idx == 0) {
-      // only first time need copy
-      bm_memcpy_s2d(bm_handle, in0_mem, (void *)input_embeds.data());
-    }
-    bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_ids.data());
-    bm_memcpy_s2d(bm_handle, in2_mem, (void *)input_attention_mask.data());
-    net_launch(net_blocks[idx]);
-    out_mem = net_blocks[idx]->stages[0].output_mems[0];
-
-    d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1]);
-    //d2d(past_value[idx], net_blocks[idx]->stages[0].output_mems[2]);
-    
-    const size_t v_total_elements = net_blocks[idx]->stages[0].output_shapes[2].dims[0] *
-                                    net_blocks[idx]->stages[0].output_shapes[2].dims[1] *
-                                    net_blocks[idx]->stages[0].output_shapes[2].dims[2] *
-                                    net_blocks[idx]->stages[0].output_shapes[2].dims[3];
-    std::vector<float> v_host_input_buffer(v_total_elements);
-    bm_memcpy_d2s(bm_handle, (void *)v_host_input_buffer.data(), net_blocks[idx]->stages[0].output_mems[2]);
-
-    std::vector<float> v_host_output_buffer(v_total_elements);
-    //v_host_output_buffer = transpose_BHCW_to_BCHW(v_host_input_buffer, 1, 599, 32, 128);
-    std::vector<float> input_embeds_host_input_buffer(1*599*4096);
-    bm_memcpy_d2s(bm_handle, (void *)input_embeds_host_input_buffer.data(), net_blocks[idx]->stages[0].output_mems[0]);
-    bm_memcpy_s2d(bm_handle, past_value[idx], (void *)v_host_output_buffer.data());
-
-  }
-
-  const size_t D1 = 1;
-  const size_t D2 = 599;
-  const size_t D3 = 4096;
-  const size_t total_elements = D1 * D2 * D3;
-
-  std::vector<float> host_output_buffer(total_elements);
-
-  bm_memcpy_d2s(bm_handle, (void *)host_output_buffer.data(), out_mem);
-  //std::cout << "block done\n";
-  return  py::array_t<float>(host_output_buffer.size(), host_output_buffer.data());
-}
-
 
  std::tuple<std::vector<float>, std::vector<float>, std::vector<float> > Qwen2Audio::forward_cache_next(ArrayFloat const &inputs_embeds, 
                             ArrayFloat const &position_ids, 
@@ -526,86 +432,17 @@ ArrayFloat Qwen2Audio::forward_head(ArrayFloat const &input_features) {
   std::vector<float> v_host_output_buffer(v_total_elements);
   bm_memcpy_d2s(bm_handle, (void *)v_host_output_buffer.data(), out2_mem);
 
-  //for (int i = 0; i < 1000;i++){
-  //  std::cout << v_host_output_buffer[i] << " ";
-  //}
   std::vector<float> k_host_output_buffer(v_total_elements);
   bm_memcpy_d2s(bm_handle, (void *)k_host_output_buffer.data(), out1_mem);
-  std::vector<float> input_embeds_host_input_buffer(1*1*4096);
+
+  const size_t embedding_total_elements = net_blocks_cache[idx]->stages[0].output_shapes[0].dims[0] *
+                                    net_blocks_cache[idx]->stages[0].output_shapes[0].dims[1] *
+                                    net_blocks_cache[idx]->stages[0].output_shapes[0].dims[2];
+  std::vector<float> input_embeds_host_input_buffer(embedding_total_elements);
   bm_memcpy_d2s(bm_handle, (void *)input_embeds_host_input_buffer.data(), out0_mem);
   //return py::array_t<float>(input_embeds_host_input_buffer.size(), input_embeds_host_input_buffer.data(), py::cast(new std::vector<float>(std::move(input_embeds_host_input_buffer))));
   return std::make_tuple(input_embeds_host_input_buffer, k_host_output_buffer, v_host_output_buffer);
 
-}
-
-int Qwen2Audio::forward_next(ArrayInt const &position_ids, ArrayInt const &input_id, ArrayFloat const & attention_mask) {
-
-  // embedding
-
-  auto in_mem = net_embed_cache->stages[0].input_mems[0];
-  auto out_mem = net_embed_cache->stages[0].output_mems[0];
-  //std::cout << "forward embed cache\n";
-
-  //std::cout << net_embed_cache->stages[0].output_shapes[0].dims[0]  << std::endl;
-  //std::cout << net_embed_cache->stages[0].output_shapes[0].dims[1]  << std::endl;
-  //std::cout << net_embed_cache->stages[0].output_shapes[0].dims[2]  << std::endl;
-
-  //std::cout << "forward embed cache in shape\n";
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)input_id.data());
-  net_launch(net_embed_cache);
-  int bytes =
-      bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
-  int token_offset = (token_length - 1) * bytes;
-  // blocks
-  for (int idx = 0; idx < NUM_LAYERS; idx++) {
-    auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
-    auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
-    auto &in2_mem = net_blocks_cache[idx]->stages[0].input_mems[2];
-    auto &in3_mem = net_blocks_cache[idx]->stages[0].input_mems[3];
-    auto &in4_mem = net_blocks_cache[idx]->stages[0].input_mems[4];
-
-    auto &out0_mem = net_blocks_cache[idx]->stages[0].output_mems[0];
-    auto &out1_mem = net_blocks_cache[idx]->stages[0].output_mems[1];
-    auto &out2_mem = net_blocks_cache[idx]->stages[0].output_mems[2];
-    d2d(in0_mem, out_mem);
-    d2d(in3_mem, past_key[idx]);
-    d2d(in4_mem, past_value[idx]);
-    bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_ids.data());
-    bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-
-    net_launch(net_blocks_cache[idx]);
-    out_mem = out0_mem;
-
-    const size_t v_total_elements = net_blocks[idx]->stages[0].output_shapes[2].dims[0] *
-                                    net_blocks[idx]->stages[0].output_shapes[2].dims[1] *
-                                    net_blocks[idx]->stages[0].output_shapes[2].dims[2] *
-                                    net_blocks[idx]->stages[0].output_shapes[2].dims[3];
-
-    std::vector<float> v_host_input_buffer(v_total_elements);
-    bm_memcpy_d2s(bm_handle, (void *)v_host_input_buffer.data(), out2_mem);
-
-    std::vector<float> v_host_output_buffer(v_total_elements);
-    //v_host_output_buffer = transpose_BHCW_to_BCHW(v_host_input_buffer, 1, 1, 32, 128);
-    bm_memcpy_s2d(bm_handle, out2_mem, (void *)v_host_output_buffer.data());
-
-
-    bm_memcpy_d2d_byte(bm_handle, past_key[idx], token_offset, out1_mem, 0,
-                       bytes);
-    bm_memcpy_d2d_byte(bm_handle, past_value[idx], token_offset, out2_mem, 0,
-                       bytes);
-  }
-
-  // forward lmhead
-  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
-  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
-  //std::cout << "forward lmhead\n";
-  d2d(lm_in_mem, out_mem);
-  //std::cout << "launch lmhead\n";
-  net_launch(net_lm);
-  int token = 0;
-  token = greedy_search(net_greedy_head, lm_out_mem);
-  token_length++;
-  return token;
 }
 
 PYBIND11_MODULE(chat, m) {
@@ -617,14 +454,10 @@ PYBIND11_MODULE(chat, m) {
       .def("forward_audio", &Qwen2Audio::forward_audio)
       .def("forward_project", &Qwen2Audio::forward_project)
       .def("forward_head", &Qwen2Audio::forward_head)
-      .def("forward_first", &Qwen2Audio::forward_first)
-      .def("forward_next", &Qwen2Audio::forward_next)
       .def("forward_cache_next", &Qwen2Audio::forward_cache_next)
       .def("forward", &Qwen2Audio::forward)
       .def("deinit", &Qwen2Audio::deinit)
       .def_readonly("SEQLEN", &Qwen2Audio::SEQLEN) // read SEQLEN in pipeline.py
       .def_readonly("NUM_LAYERS", &Qwen2Audio::NUM_LAYERS)
-      .def_readonly("MAX_PIXELS", &Qwen2Audio::MAX_PIXELS)
-      .def_readonly("MAX_PATCHES", &Qwen2Audio::MAX_PATCHES)
       .def_readwrite("token_length", &Qwen2Audio::token_length);
 }

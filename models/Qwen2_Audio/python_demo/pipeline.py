@@ -53,27 +53,9 @@ class Qwen2Audio():
         self.ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
         self.ID_AU_END = self.tokenizer.convert_tokens_to_ids("<|endoftext|>")
 
-
         self.NUM_LAYERS = self.model.NUM_LAYERS;
- 
-
-    def text_message(self):
-        # yapf: disable
-        messages = [{
-            "role": "user",
-            "content": [{"type": "text", "text": self.input_str}],
-        }]
-        # yapf: enable
-        return messages
-
 
     def audio_message(self, text_path, audio_path):
-        #conversation = [
-        #    {"role": "assistant", "content": "Yes, the speaker is female and in her twenties."},
-        #    {"role": "user", "content": [
-        #        {"type": "audio", "audio_url": "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen2-Audio/audio/translate_to_chinese.wav"},
-        #        ]},
-        #]
         conversation = [
             {"role": "assistant", "content": "Yes, the speaker is female and in her twenties."},
             {"role": "user", "content": [
@@ -82,12 +64,6 @@ class Qwen2Audio():
                 ]},
         ]
         return conversation
-
-    def get_media_type(self, file_path):
-        audio_exts = {'.wav'}
-        _, ext = os.path.splitext(file_path)
-        ext = ext.lower()
-        return 'audio'
 
     def process(self, conversation):
         text = self.processor.apply_chat_template(conversation,
@@ -129,8 +105,10 @@ class Qwen2Audio():
                 break
             
             media_path = input("\naudios path: ")
-            media_path = 'https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen2-Audio/audio/translate_to_chinese.wav'
-            self.input_str = "这句话是什么意思"
+            if media_path == '':
+                media_path = 'https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen2-Audio/audio/translate_to_chinese.wav'
+            if self.input_str == '':
+                self.input_str = "这句话是什么意思"
             media_path = media_path.strip()
             messages = self.audio_message(self.input_str, media_path)
             inputs = self.process(messages)
@@ -152,7 +130,7 @@ class Qwen2Audio():
             inputs_embeds = inputs_embeds.reshape((1,599,4096))
             inputs_embeds = torch.from_numpy(inputs_embeds)
             
-            ###### TO 
+            ##### get feature lengths 
             audio_feat_lengths, audio_output_lengths = _get_feat_extract_output_lengths(
                     feature_attention_mask.sum(-1)
                 )
@@ -257,8 +235,6 @@ if __name__ == "__main__":
     # yapf: disable
     parser.add_argument('-m', '--model_path', type=str, required=True,
                         help='path to the bmodel file')
-    parser.add_argument('-c', '--config_path', type=str, default="../config",
-                        help='path to the processor file')
     parser.add_argument('-d', '--devid', type=int, default=0, help='device ID to use')
     # yapf: enable
     args = parser.parse_args()
