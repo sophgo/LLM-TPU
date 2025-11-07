@@ -118,7 +118,7 @@ model_transform.py \
 model_deploy.py \
     --mlir embedding.mlir \
     --quant_input \
-    --quantize W8F16 \
+    $quantize_args \
     --quant_output \
     --chip bm1684x \
     $device_args \
@@ -134,6 +134,7 @@ model_transform.py \
 model_deploy.py \
     --mlir embedding_cache.mlir \
     --quant_input \
+    $quantize_args \
     --quant_output \
     --chip bm1684x \
     --quantize W8F16 \
@@ -158,7 +159,7 @@ model_transform.py \
 
 model_deploy.py \
     --mlir lm_head.mlir \
-    --quantize W8F16 \
+    $quantize_args \
     --quant_input \
     --chip bm1684x \
     $device_args \
@@ -179,12 +180,12 @@ for ((i=0; i<$num_layers; i++)); do
     model_transform.py \
         --model_name block_$i \
         --model_def ${exe_dir}/../../llm/block_$i.onnx \
-        --input_shapes [[1,599,4096],[1,599],[1,599]] \
+        --input_shapes [[1,$seq_length,4096],[1,$seq_length],[1,$seq_length]] \
         --mlir block_$i.mlir
 
     model_deploy.py \
         --mlir block_$i.mlir \
-        --quantize W8F16 \
+        $quantize_args \
         --quant_input \
         --quant_output \
         --chip bm1684x \
@@ -195,12 +196,12 @@ for ((i=0; i<$num_layers; i++)); do
     model_transform.py \
         --model_name block_cache_$i \
         --model_def ${exe_dir}/../../llm/block_cache_$i.pt \
-        --input_shapes [[1,1,4096],[1,1],[1,1,1,599],[1,32,599,128],[1,32,599,128]] \
+        --input_shapes [[1,1,4096],[1,1],[1,1,1,$seq_length],[1,32,$seq_length,$audio_seq_length],[1,32,$seq_length,$audio_seq_length]] \
         --mlir block_cache_$i.mlir
 
     model_deploy.py \
         --mlir block_cache_$i.mlir \
-        --quantize W8F16 \
+        $quantize_args \
         --quant_input \
         --quant_output \
         --chip bm1684x \
@@ -230,7 +231,7 @@ model_transform.py \
 model_deploy.py \
   --mlir audio.mlir \
   --chip bm1684x \
-    --quantize W8F16 \
+  $quantize_args \
   --model audio.bmodel
 
 popd
@@ -249,7 +250,7 @@ model_transform.py \
 model_deploy.py \
   --mlir projector.mlir \
   --chip bm1684x \
-  --quantize W8F16 \
+  $quantize_args \
   --model projector.bmodel
 
 popd
@@ -269,7 +270,7 @@ model_transform.py \
 model_deploy.py \
   --mlir greed.mlir \
   --chip bm1684x \
-  --quantize W8F16 \
+  $quantize_args \
   --model greed.bmodel
 
 popd

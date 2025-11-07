@@ -9,7 +9,7 @@
 此处介绍如何将onnx模型编译成bmodel。可以直接下载编译好的模型。
 ```
 # 1684X
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2-audio-7b_w8f16_seq599_1dev_20250929_140836_greed.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2-audio-7b_w8f16_seq599_1dev_20250929_140836.bmodel
 
 ```
 ### 下载docker，启动容器
@@ -28,11 +28,11 @@ cmake .. -DLLVM_TARGETS_TO_BUILD="BPF;X86" -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
 ```
 ### 导出onnx模型
-将model_qwen2.py替换transformers里面的有关qwen2_audio的相关文件。然后使用运行：
+将tools/文件里面的model_qwen2.py替换transformers里面的有关qwen2的相关文件。然后使用运行：
 ```
 python3 export_onnx.py
 ```
-导出模型，有些模型不适合导出onnx,仅需要导出pt文件，详情件export_onnx.py文件。
+导出模型，有些模型不适合导出onnx，仅需要导出pt文件，详情件export_onnx.py文件。
 ### 编译生成bmodel
 将模型放置在合适的目录下，然后运行compile.sh脚本。
 ```
