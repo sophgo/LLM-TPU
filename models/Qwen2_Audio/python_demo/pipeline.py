@@ -110,6 +110,8 @@ class Qwen2Audio():
                 self.input_str = "这句话是什么意思"
             media_path = media_path.strip()
             messages = self.audio_message(self.input_str, media_path)
+            import time
+            t1 = time.time()
             inputs = self.process(messages)
             ###process inputs
             for k,v in inputs.items():
@@ -221,6 +223,7 @@ class Qwen2Audio():
             output_text = self.processor.batch_decode(
                 out_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
             )
+            print("consume time:", time.time()-t1)
             print(''.join(output_text))
 
 
