@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
-project(Qwen2-VL)
+project(Qwen2-Audio)
 
 if (NOT DEFINED TARGET_ARCH)
-    set(TARGET_ARCH pcie)
+    set(TARGET_ARCH soc)
 endif()
 
 include_directories(${PROJECT_SOURCE_DIR}/include)

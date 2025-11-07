@@ -44,16 +44,15 @@ class Qwen2Audio():
         # load model
         self.model = chat.Qwen2Audio()
         self.model.init(self.device, args.model_path)
-        from modelscope import snapshot_download
-        model_id = snapshot_download("Qwen/Qwen2-Audio-7B-Instruct", cache_dir = '.', allow_patterns=["*.json", "*.py", "*.txt", ".model"], local_files_only=True)
-        self.processor = AutoProcessor.from_pretrained(model_id)
+        self.processor = AutoProcessor.from_pretrained(args.config_path, 
+                                                       trust_remote_code=True)
         
         self.tokenizer = self.processor.tokenizer
-        self.config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+        self.config = AutoConfig.from_pretrained(args.config_path, trust_remote_code=True)
         self.ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
         self.ID_AU_END = self.tokenizer.convert_tokens_to_ids("<|endoftext|>")
 
-        self.NUM_LAYERS = self.model.NUM_LAYERS;
+        self.NUM_LAYERS = self.model.NUM_LAYERS
 
     def audio_message(self, text_path, audio_path):
         conversation = [
@@ -235,6 +234,8 @@ if __name__ == "__main__":
     # yapf: disable
     parser.add_argument('-m', '--model_path', type=str, required=True,
                         help='path to the bmodel file')
+    parser.add_argument('-c', '--config_path', type=str, required=True,
+                        help='path to the config file')
     parser.add_argument('-d', '--devid', type=int, default=0, help='device ID to use')
     # yapf: enable
     args = parser.parse_args()

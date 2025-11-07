@@ -56,13 +56,12 @@ public:
   ArrayFloat forward_embed(ArrayInt const &tokens);
   ArrayFloat forward_embed_cache(ArrayInt const &input_ids);
   ArrayFloat forward_audio(ArrayFloat const &input_features,
-                   ArrayFloat const &full_attn_mask);
+                            ArrayFloat const &full_attn_mask);
   ArrayFloat forward_head(ArrayFloat const &input_features);
   ArrayFloat forward_project(ArrayFloat const &audio_features);
   std::tuple<std::vector<float>, std::vector<float>, std::vector<float> > 
         forward( ArrayFloat const &input_embeds, ArrayInt const &position_ids, ArrayFloat const &input_attention_mask, const int idx);
-  int forward_next(ArrayInt const &position_ids, ArrayInt const &token, ArrayFloat const & attention_mask);
-   std::tuple<std::vector<float>, std::vector<float>, std::vector<float> > forward_cache_next(ArrayFloat const &inputs_embeds, 
+  std::tuple<std::vector<float>, std::vector<float>, std::vector<float> > forward_cache_next(ArrayFloat const &inputs_embeds, 
                             ArrayFloat const &position_ids, 
                             ArrayFloat const & attention_mask,
                             ArrayFloat const &past_key_array,
@@ -85,10 +84,7 @@ public:
   int HIDDEN_SIZE;
   int NUM_LAYERS; // read from bmodel
   int AUDIO_DIMS;
-  int max_pos;
-  const int spatial_merge_size = 2;
   bool lmhead_with_topk;
-  uint16_t mask_value;
 
 private:
   bm_handle_t bm_handle;
@@ -100,7 +96,6 @@ private:
   const bm_net_info_t *net_lm, *net_greedy_head, *net_sample_head;
   const bm_net_info_t *net_audio;
   const bm_net_info_t *net_project;
-  const bm_net_info_t *net_block_0;
   bm_device_mem_t dev_buffer;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
@@ -199,7 +194,6 @@ void Qwen2Audio::init(int dev_id, std::string model_path) {
   assert(true == ret);
   printf("Done!\n");
 
-
   init_by_names();
   HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[2];
   AUDIO_DIMS = net_audio->stages[0].input_shapes[0].dims[1]; // [1, 128, 3000],[1,1,1500, 1500]
@@ -238,16 +232,14 @@ ArrayFloat Qwen2Audio::forward_embed(ArrayInt const &input_ids) {
   d2d(dev_buffer, out_mem);
   //std::cout << "embed done\n";
 
-
   const size_t total_elements = net_embed->stages[0].output_shapes[0].dims[0] *
                                 net_embed->stages[0].output_shapes[0].dims[1] *
                                 net_embed->stages[0].output_shapes[0].dims[2] ;
 
-    // 3. 创建一个单层的、连续的 vector 来作为接收缓冲区
+    // 3. create a vector to copy data
   std::vector<float> host_output_buffer(total_elements);
   bm_memcpy_d2s(bm_handle, (void *)host_output_buffer.data(), out_mem);
   return  py::array_t<float>(host_output_buffer.size(), host_output_buffer.data());
-  
 }
 
 ArrayFloat Qwen2Audio::forward_embed_cache(ArrayInt const &input_ids) {
@@ -257,12 +249,11 @@ ArrayFloat Qwen2Audio::forward_embed_cache(ArrayInt const &input_ids) {
   bm_memcpy_s2d(bm_handle, in_mem, (void *)input_ids.data());
   net_launch(net_embed_cache);
 
-    // 2. 计算总共需要多少个 float 元素
+    // 2. compute output number
   const size_t total_elements = net_embed_cache->stages[0].output_shapes[0].dims[0] *
                                 net_embed_cache->stages[0].output_shapes[0].dims[1] *
                                 net_embed_cache->stages[0].output_shapes[0].dims[2] ;
 
-    // 3. 创建一个单层的、连续的 vector 来作为接收缓冲区
   std::vector<float> host_output_buffer(total_elements);
 
   bm_memcpy_d2s(bm_handle, (void *)host_output_buffer.data(), out_mem);
@@ -280,7 +271,6 @@ ArrayFloat Qwen2Audio::forward_audio(ArrayFloat const &input_features, ArrayFloa
   net_launch(net_audio);
   d2d(dev_buffer, audio_out_mem);
 
-    // 2. 计算总共需要多少个 float 元素
   const size_t total_elements = net_audio->stages[0].output_shapes[0].dims[0] *
                                 net_audio->stages[0].output_shapes[0].dims[1] *
                                 net_audio->stages[0].output_shapes[0].dims[2] ;
@@ -299,7 +289,6 @@ ArrayFloat Qwen2Audio::forward_project(ArrayFloat const &audio_features) {
   net_launch(net_project);
   d2d(dev_buffer, project_out_mem);
 
-    // 2. 计算总共需要多少个 float 元素
   const size_t total_elements = net_project->stages[0].output_shapes[0].dims[0] *
                                 net_project->stages[0].output_shapes[0].dims[1] *
                                 net_project->stages[0].output_shapes[0].dims[2] ;
@@ -397,7 +386,8 @@ ArrayFloat Qwen2Audio::forward_head(ArrayFloat const &input_features) {
   return std::make_tuple(input_embeds_host_input_buffer, k_host_output_buffer, v_host_output_buffer);
  }
 
- std::tuple<std::vector<float>, std::vector<float>, std::vector<float> > Qwen2Audio::forward_cache_next(ArrayFloat const &inputs_embeds, 
+ std::tuple<std::vector<float>, std::vector<float>, std::vector<float> > 
+    Qwen2Audio::forward_cache_next(ArrayFloat const &inputs_embeds, 
                             ArrayFloat const &position_ids, 
                             ArrayFloat const & attention_mask,
                             ArrayFloat const & past_key_array,
