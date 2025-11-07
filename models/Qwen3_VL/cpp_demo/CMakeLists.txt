@@ -6,17 +6,23 @@ if (NOT DEFINED TARGET_ARCH)
     set(TARGET_ARCH pcie)
 endif()
 
+# 如果自带有/opt/sophon/sophon-opencv-latest，则打开SOPHON_OPENCV开关
+# set(SOPHON_OPENCV TRUE)
+if(SOPHON_OPENCV)
+    include_directories(/opt/sophon/sophon-opencv-latest/include/opencv4)
+    include_directories(/opt/sophon/sophon-ffmpeg-latest/include)
+    link_directories(/opt/sophon/sophon-opencv-latest/lib)
+else()
+    find_package(OpenCV REQUIRED)
+    include_directories(${OpenCV_INCLUDE_DIRS})
+    link_directories(${OpenCV_LIBRARY_DIRS})
+    message(STATUS "OpenCV version: ${OpenCV_VERSION}")
+endif()
+
 include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(/opt/sophon/libsophon-current/include)
-
-# 如果自带有/opt/sophon/sophon-opencv-latest，则添加
-# include_directories(/opt/sophon/sophon-opencv-latest/include/opencv4)
-# include_directories(/opt/sophon/sophon-ffmpeg-latest/include)
-# link_directories(/opt/sophon/sophon-opencv-latest/lib)
-
 link_directories(${PROJECT_SOURCE_DIR}/lib)
 link_directories(/opt/sophon/libsophon-current/lib)
-
 
 if (${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "aarch64")
     add_definitions(-DSOC_TARGET)
@@ -30,12 +36,8 @@ endif()
 
 add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -Werror)
 set(CMAKE_BUILD_TYPE "Debug")
-find_package(OpenCV REQUIRED)
-include_directories(${OpenCV_INCLUDE_DIRS})
-link_directories(${OpenCV_LIBRARY_DIRS})
-message(STATUS "OpenCV version: ${OpenCV_VERSION}")
 
-set(OPENCV_LIBS opencv_core opencv_imgcodecs opencv_videoio)
+set(OPENCV_LIBS opencv_core opencv_imgproc opencv_imgcodecs opencv_videoio)
 add_executable(pipeline pipeline.cpp chat.cpp)
 target_link_libraries(pipeline PUBLIC bmrt bmlib tokenizers_cpp tokenizers_c sentencepiece ${OPENCV_LIBS} pthread dl)
 target_compile_options(pipeline PRIVATE -Wno-error=attributes)

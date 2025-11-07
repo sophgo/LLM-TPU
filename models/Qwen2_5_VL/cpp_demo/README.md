@@ -13,15 +13,9 @@ cmake .. && make
 
 ## 编译方法 (自带/opt/sophon/sophon-opencv-latest)
 
-需要修改CMakeLists.txt中的这几行如下：
+需要修改CMakeLists.txt中的这一行如下：
 ```cmake
-include_directories(/opt/sophon/sophon-opencv-latest/include/opencv4)
-include_directories(/opt/sophon/sophon-ffmpeg-latest/include)
-link_directories(/opt/sophon/sophon-opencv-latest/lib)
-# find_package(OpenCV REQUIRED)
-# include_directories(${OpenCV_INCLUDE_DIRS})
-# link_directories(${OpenCV_LIBRARY_DIRS})
-# message(STATUS "OpenCV version: ${OpenCV_VERSION}")
+set(SOPHON_OPENCV TRUE)
 ```
 
 然后编译
