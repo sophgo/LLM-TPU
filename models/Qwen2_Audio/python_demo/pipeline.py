@@ -107,7 +107,7 @@ class Qwen2Audio():
             if media_path == '':
                 media_path = 'https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen2-Audio/audio/translate_to_chinese.wav'
             if self.input_str == '':
-                self.input_str = "这句话是什么意思"
+                self.input_str = "What does the person say?"
             media_path = media_path.strip()
             messages = self.audio_message(self.input_str, media_path)
             import time

@@ -257,18 +257,15 @@ def load_model():
     return origin_model, "cpu", None
 
 
-# 构造 dummy 输入：假设输入为（batch_size, seq_len, feature_dim）
 def export_audio_tower():
     onnx_dir = f'{folder}/audio'
     os.makedirs(onnx_dir, exist_ok=True)
     audio_tower = origin_model.audio_tower.cuda()
 
-        # 2. 定义 ONNX 文件路径和输入输出名称
     onnx_path = os.path.join(onnx_dir, "audio_encoder.onnx")
     input_names = ["audio_features", "attention_mask"]
     output_names = ["audio_embeds"]
 
-    # 3. 导出
     torch.onnx.export(
         audio_tower,
         (torch.randn([1, 128, 3000]).cuda(), torch.ones([1, 1, 1500, 1500]).cuda()),
@@ -276,7 +273,6 @@ def export_audio_tower():
         input_names=input_names,
         output_names=output_names,
         external_data=True,
-        #do_constant_folding=True, # 子模块通常较小，可以开启
         opset_version=14,
     )
     print("export_audio_tower success ")
@@ -289,9 +285,9 @@ def export_audio_tower():
         onnx_model,
         final_onnx_path,
         save_as_external_data=True,
-        all_tensors_to_one_file=True, # <--- 这个参数在这里！
-        location=f"{final_onnx_path}.data", # 指定合并后的外部数据文件名
-        size_threshold=1024 # (可选) 只有大于1KB的张量才会被存为外部数据
+        all_tensors_to_one_file=True, 
+        location=f"{final_onnx_path}.data", 
+        size_threshold=1024
     )
 
 def export_multi_modal_projector():
@@ -300,19 +296,17 @@ def export_multi_modal_projector():
 
     multi_modal_projector = origin_model.multi_modal_projector.cuda()
     multi_modal_projector.eval()
-            # 2. 定义 ONNX 文件路径和输入输出名称
     onnx_path = os.path.join(onnx_dir, "multi_modal_projector.onnx")
     input_names = ["audio_multi_modal_projector_features"]
     output_names = ["audio_multi_modal_projector_embeds"]
     dummy_input_data = torch.from_numpy(np.random.randn(2, 750, 1280).astype(np.float32)).cuda()
-    # 3. 导出
     torch.onnx.export(
         multi_modal_projector,
         dummy_input_data,
         onnx_path,
         input_names=input_names,
         output_names=output_names,
-        do_constant_folding=True, # 子模块通常较小，可以开启
+        do_constant_folding=True, 
         opset_version=14,
     )
     print("export_multi_modal_projector success ")
@@ -321,19 +315,19 @@ def export_multi_modal_projector():
 def convert():
     # export models
     print(f'Convert block & block_cache')
-    #for i in tqdm(range(NUM_LAYERS)):
-        #convert_block(i)
-        #print("\033[31mexport success block\033[0m")
-    #    convert_block_cache(i)
-    #    print("\033[31mexport success block cache\033[0m")
+    for i in tqdm(range(NUM_LAYERS)):
+        convert_block(i)
+        print("\033[31mexport success block\033[0m")
+        convert_block_cache(i)
+        print("\033[31mexport success block cache\033[0m")
 
     print(f'Convert embedding')
 
-    #convert_cache_embedding()
-    #convert_embedding()
+    convert_cache_embedding()
+    convert_embedding()
 
-    #print(f'Convert lm_head')
-    #convert_lm_head()
+    print(f'Convert lm_head')
+    convert_lm_head()
 
     print(f'Convert audio')
     export_audio_tower()
@@ -383,7 +377,6 @@ if __name__ == "__main__":
     config.attn_implementation="eager"
     print(config)
     print(f"Layers: {NUM_LAYERS}\nHidden size: {HIDDEN_SIZE}\n")
-    print("\033[31m修改了load model方式，将attn_implementation由sdpa改为了eager，不然无法导出onnx\033[0m")
 
     # create folders to save onnx lor pt
     execution_dir = os.path.dirname(os.path.abspath(__file__))

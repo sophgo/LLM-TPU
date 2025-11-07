@@ -9,7 +9,7 @@
 此处介绍如何将onnx模型编译成bmodel。可以直接下载编译好的模型。
 ```
 # 1684X
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2-audio-7b_w8f16_seq599_1dev_20250929_140836.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2-audio-7b_w8f16_seq599_1dev.bmodel
 
 ```
 ### 下载docker，启动容器
@@ -45,5 +45,5 @@ cd python_demo
 mkdir build 
 cd build && cmake .. && make && cp *cpython* .. && cd ..
 python demo
-python3 pipeline.py -m qwen2-audio-7b_w8f16_seq599_1dev_20250929_140836.bmodel -c config
+python3 pipeline.py -m qwen2-audio-7b_w8f16_seq599_1dev.bmodel -c config
 ```
