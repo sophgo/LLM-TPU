@@ -86,19 +86,19 @@ private:
 
   // 获取媒体类型
   typedef enum { IMAGE, VIDEO, TEXT, UNKNOWN } MediaType;
-  MediaType get_media_type(const std::string &file_path);
+  MediaType get_media_type(const std::vector<std::string> &file_path);
 
   // 构建提示
   std::string build_text_prompt(const std::string &input_str);
   std::string build_image_prompt(const std::string &input_str,
-                                 const std::vector<int> &grid_thw);
+                                 const std::vector<std::vector<int>> &grid_thw);
   std::string build_video_prompt(const std::string &input_str,
                                  const std::vector<int> &grid_thw,
                                  const std::vector<double> &timestamps);
 
   // 获取rope索引
-  std::vector<std::vector<std::vector<int>>>
-  get_rope_index(const std::vector<std::vector<int>> &input_ids,
+  std::vector<std::vector<int>>
+  get_rope_index(const std::vector<int> &input_ids,
                  const std::vector<std::vector<int>> &grid_thw, int pad_id);
 
   void fast_pos_embed_interpolate(const std::vector<int> &grid_thw,
@@ -131,21 +131,34 @@ private:
 };
 
 // 获取媒体类型
-ChatPipe::MediaType ChatPipe::get_media_type(const std::string &file_path) {
-  if (file_path.empty()) {
+ChatPipe::MediaType
+ChatPipe::get_media_type(const std::vector<std::string> &medias) {
+  if (medias.empty() || medias[0].empty()) {
     return TEXT;
   }
-  std::string ext = file_path.substr(file_path.find_last_of('.') + 1);
-  std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-  if (ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "bmp" ||
-      ext == "webp") {
-    return IMAGE;
+  auto type = UNKNOWN;
+  for (auto &m : medias) {
+    std::string ext = m.substr(m.find_last_of('.') + 1);
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    if (ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "bmp" ||
+        ext == "webp") {
+      if (type == UNKNOWN) {
+        type = IMAGE;
+      } else if (type != IMAGE) {
+        printf("Error:Mixed media types detected.\n");
+        return UNKNOWN;
+      }
+    } else if (ext == "mp4" || ext == "avi" || ext == "mov" || ext == "mkv" ||
+               ext == "flv" || ext == "wmv") {
+      if (type == UNKNOWN) {
+        type = VIDEO;
+      } else if (type != VIDEO) {
+        printf("Error:Mixed media types detected.\n");
+        return UNKNOWN;
+      }
+    }
   }
-  if (ext == "mp4" || ext == "avi" || ext == "mov" || ext == "mkv" ||
-      ext == "flv" || ext == "wmv") {
-    return VIDEO;
-  }
-  return UNKNOWN;
+  return type;
 }
 
 std::vector<int> ChatPipe::get_position_ids(int token_len) {
@@ -450,176 +463,140 @@ cat(const std::vector<std::vector<std::vector<int>>> &vecs, int dim) {
   }
   return {};
 }
-// 返回形状为 [3][batch_size][seq_len] 的position_ids
-std::vector<std::vector<std::vector<int>>>
-ChatPipe::get_rope_index(const std::vector<std::vector<int>> &input_ids,
+// 返回形状为 [3][seq_len] 的position_ids
+std::vector<std::vector<int>>
+ChatPipe::get_rope_index(const std::vector<int> &input_ids,
                          const std::vector<std::vector<int>> &grid_thw,
                          int pad_id) {
 
-  size_t batch_size = input_ids.size();
-  size_t seq_length = input_ids[0].size();
+  size_t seq_length = input_ids.size();
 
   // 初始化 attention_mask 和 position_ids
-  std::vector<std::vector<int>> attention_mask(batch_size,
-                                               std::vector<int>(seq_length, 1));
-  std::vector<std::vector<std::vector<int>>> position_ids(
-      3, std::vector<std::vector<int>>(batch_size,
-                                       std::vector<int>(seq_length, 1)));
+  std::vector<std::vector<int>> position_ids(3,
+                                             std::vector<int>(seq_length, 1));
 
-  int image_index = 0;
+  // 计算图像数量
+  std::vector<size_t> vision_start_indices =
+      argwhere(input_ids, ID_VISION_START);
+  int image_nums = vision_start_indices.size();
 
-  for (size_t i = 0; i < batch_size; ++i) {
-    // 获取有效输入
-    std::vector<int> valid_input_ids;
-    for (size_t j = 0; j < seq_length; ++j) {
-      if (attention_mask[i][j] == 1) {
-        valid_input_ids.push_back(input_ids[i][j]);
+  std::vector<std::vector<std::vector<int>>> llm_pos_ids_list;
+  size_t st = 0;
+  int remain_images = image_nums;
+  int second_per_grid_t = pad_id == VIDEO_PAD_TOKEN ? 1 : 0;
+  for (int img_idx = 0; img_idx < image_nums; ++img_idx) {
+    size_t ed_image = input_ids.size();
+    if (remain_images > 0) {
+      auto it = std::find(input_ids.begin() + st, input_ids.end(), pad_id);
+      if (it != input_ids.end()) {
+        ed_image = it - input_ids.begin();
+      }
+    }
+    int t, h, w;
+    if (pad_id == IMAGE_PAD_TOKEN) {
+      t = grid_thw[img_idx][0];
+      h = grid_thw[img_idx][1];
+      w = grid_thw[img_idx][2];
+    } else {
+      t = 1;
+      h = grid_thw[0][1];
+      w = grid_thw[0][2];
+    }
+    --remain_images;
+    size_t ed = ed_image;
+
+    int llm_grid_t = t;
+    int llm_grid_h = h / spatial_merge_size;
+    int llm_grid_w = w / spatial_merge_size;
+    size_t text_len = ed - st;
+
+    int st_idx = 0;
+    if (!llm_pos_ids_list.empty()) {
+      int max_val = 0;
+      for (const auto &row : llm_pos_ids_list.back()) {
+        int row_max = max(row);
+        if (row_max > max_val) {
+          max_val = row_max;
+        }
+      }
+      st_idx = max_val + 1;
+    }
+
+    // 处理文本部分的位置索引
+    std::vector<std::vector<int>> text_pos(3);
+    std::vector<int> text_range = arange(0, text_len);
+    for (int j = 0; j < 3; ++j) {
+      std::vector<int> temp(text_range);
+      for (int &val : temp) {
+        val += st_idx;
+      }
+      text_pos[j] = temp;
+    }
+    llm_pos_ids_list.push_back(text_pos);
+
+    // 处理图像部分的位置索引
+
+    std::vector<int> t_index;
+    for (int i = 0; i < llm_grid_t; i++) {
+      auto time_val = i * second_per_grid_t * tokens_per_second;
+      t_index.insert(t_index.end(), llm_grid_h * llm_grid_w, time_val);
+    }
+
+    std::vector<int> h_index;
+    for (int n = 0; n < llm_grid_t; ++n) {
+      for (int p = 0; p < llm_grid_h; ++p) {
+        for (int q = 0; q < llm_grid_w; ++q) {
+          h_index.push_back(p);
+        }
       }
     }
 
-    // 计算图像数量
-    int image_nums = 0;
-    std::vector<size_t> vision_start_indices =
-        argwhere(valid_input_ids, ID_VISION_START);
-    for (size_t idx : vision_start_indices) {
-      if (idx + 1 < valid_input_ids.size() &&
-          valid_input_ids[idx + 1] == pad_id) {
-        ++image_nums;
+    std::vector<int> w_index;
+    for (int n = 0; n < llm_grid_t; ++n) {
+      for (int p = 0; p < llm_grid_h; ++p) {
+        for (int q = 0; q < llm_grid_w; ++q) {
+          w_index.push_back(q);
+        }
       }
     }
 
-    std::vector<int> input_tokens = valid_input_ids;
-    std::vector<std::vector<std::vector<int>>> llm_pos_ids_list;
-    size_t st = 0;
-    int remain_images = image_nums;
-    int second_per_grid_t = pad_id == VIDEO_PAD_TOKEN ? 1 : 0;
-    for (int img_idx = 0; img_idx < image_nums; ++img_idx) {
-      size_t ed_image = input_tokens.size();
-      if (remain_images > 0) {
-        auto it =
-            std::find(input_tokens.begin() + st, input_tokens.end(), pad_id);
-        if (it != input_tokens.end()) {
-          ed_image = it - input_tokens.begin();
-        }
-      }
-      int t, h, w;
-      if (pad_id == IMAGE_PAD_TOKEN) {
-        t = grid_thw[image_index][0];
-        h = grid_thw[image_index][1];
-        w = grid_thw[image_index][2];
-      } else {
-        t = 1;
-        h = grid_thw[0][1];
-        w = grid_thw[0][2];
-      }
-
-      ++image_index;
-      --remain_images;
-      size_t ed = ed_image;
-
-      int llm_grid_t = t;
-      int llm_grid_h = h / spatial_merge_size;
-      int llm_grid_w = w / spatial_merge_size;
-      size_t text_len = ed - st;
-
-      int st_idx = 0;
-      if (!llm_pos_ids_list.empty()) {
-        int max_val = 0;
-        for (const auto &row : llm_pos_ids_list.back()) {
-          int row_max = max(row);
-          if (row_max > max_val) {
-            max_val = row_max;
-          }
-        }
-        st_idx = max_val + 1;
-      }
-
-      // 处理文本部分的位置索引
-      std::vector<std::vector<int>> text_pos(3);
-      std::vector<int> text_range = arange(0, text_len);
-      for (int j = 0; j < 3; ++j) {
-        std::vector<int> temp(text_range);
-        for (int &val : temp) {
-          val += st_idx;
-        }
-        text_pos[j] = temp;
-      }
-      llm_pos_ids_list.push_back(text_pos);
-
-      // 处理图像部分的位置索引
-
-      std::vector<int> t_index;
-      for (int i = 0; i < llm_grid_t; i++) {
-        auto time_val = i * second_per_grid_t * tokens_per_second;
-        t_index.insert(t_index.end(), llm_grid_h * llm_grid_w, time_val);
-      }
-
-      std::vector<int> h_index;
-      for (int n = 0; n < llm_grid_t; ++n) {
-        for (int p = 0; p < llm_grid_h; ++p) {
-          for (int q = 0; q < llm_grid_w; ++q) {
-            h_index.push_back(p);
-          }
-        }
-      }
-
-      std::vector<int> w_index;
-      for (int n = 0; n < llm_grid_t; ++n) {
-        for (int p = 0; p < llm_grid_h; ++p) {
-          for (int q = 0; q < llm_grid_w; ++q) {
-            w_index.push_back(q);
-          }
-        }
-      }
-
-      std::vector<std::vector<int>> grid_pos = {t_index, h_index, w_index};
-      for (auto &row : grid_pos) {
-        for (int &val : row) {
-          val += text_len + st_idx;
-        }
-      }
-      llm_pos_ids_list.push_back(grid_pos);
-
-      st = ed + llm_grid_t * llm_grid_h * llm_grid_w;
-    }
-    if (st < input_tokens.size()) {
-      int st_idx = 0;
-      if (!llm_pos_ids_list.empty()) {
-        int max_val = 0;
-        for (const auto &row : llm_pos_ids_list.back()) {
-          int row_max = max(row);
-          if (row_max > max_val) {
-            max_val = row_max;
-          }
-        }
-        st_idx = max_val + 1;
-      }
-      size_t text_len = input_tokens.size() - st;
-      std::vector<std::vector<int>> text_pos(3);
-      std::vector<int> text_range = arange(0, text_len);
-      for (int j = 0; j < 3; ++j) {
-        std::vector<int> temp(text_range);
-        for (int &val : temp) {
-          val += st_idx;
-        }
-        text_pos[j] = temp;
-      }
-      llm_pos_ids_list.push_back(text_pos);
-    }
-
-    std::vector<std::vector<int>> llm_positions = cat(llm_pos_ids_list, 1);
-
-    size_t valid_index = 0;
-    for (size_t j = 0; j < seq_length; ++j) {
-      if (attention_mask[i][j] == 1) {
-        for (int k = 0; k < 3; ++k) {
-          position_ids[k][i][j] = llm_positions[k][valid_index];
-        }
-        ++valid_index;
+    std::vector<std::vector<int>> grid_pos = {t_index, h_index, w_index};
+    for (auto &row : grid_pos) {
+      for (int &val : row) {
+        val += text_len + st_idx;
       }
     }
+    llm_pos_ids_list.push_back(grid_pos);
+
+    st = ed + llm_grid_t * llm_grid_h * llm_grid_w;
   }
-  return position_ids;
+  if (st < input_ids.size()) {
+    int st_idx = 0;
+    if (!llm_pos_ids_list.empty()) {
+      int max_val = 0;
+      for (const auto &row : llm_pos_ids_list.back()) {
+        int row_max = max(row);
+        if (row_max > max_val) {
+          max_val = row_max;
+        }
+      }
+      st_idx = max_val + 1;
+    }
+    size_t text_len = input_ids.size() - st;
+    std::vector<std::vector<int>> text_pos(3);
+    std::vector<int> text_range = arange(0, text_len);
+    for (int j = 0; j < 3; ++j) {
+      std::vector<int> temp(text_range);
+      for (int &val : temp) {
+        val += st_idx;
+      }
+      text_pos[j] = temp;
+    }
+    llm_pos_ids_list.push_back(text_pos);
+  }
+
+  std::vector<std::vector<int>> llm_positions = cat(llm_pos_ids_list, 1);
+  return llm_positions;
 }
 
 std::string strip(const std::string &s) {
@@ -680,6 +657,16 @@ static std::vector<double> calculate_timestamps(const std::vector<int> &indices,
   return merged;
 }
 
+static std::vector<std::string> splitString(const std::string &s) {
+  std::vector<std::string> result;
+  std::stringstream ss(s);
+  std::string item;
+  while (std::getline(ss, item, ',')) {
+    result.push_back(strip(item));
+  }
+  return result;
+}
+
 // 聊天主循环
 void ChatPipe::chat() {
   using clock = std::chrono::steady_clock;
@@ -705,8 +692,8 @@ void ChatPipe::chat() {
     std::string media_path;
     std::cout << "\nImage or Video Path: ";
     std::getline(std::cin, media_path);
-    media_path = strip(media_path);
-    auto media_type = get_media_type(media_path);
+    auto medias = splitString(media_path);
+    auto media_type = get_media_type(medias);
     if (media_type == ChatPipe::UNKNOWN) {
       std::cout
           << "Unsupported media type. Please provide a valid image or video."
@@ -715,9 +702,11 @@ void ChatPipe::chat() {
     }
     if (media_type != ChatPipe::TEXT) {
       // check file exists
-      if (!std::filesystem::exists(media_path)) {
-        std::cerr << "File does not exist: " << media_path << std::endl;
-        continue;
+      for (auto &m : medias) {
+        if (!std::filesystem::exists(m)) {
+          std::cerr << "File does not exist: " << m << std::endl;
+          continue;
+        }
       }
     }
 
@@ -726,14 +715,18 @@ void ChatPipe::chat() {
     clock::time_point clock_start;
     switch (media_type) {
     case ChatPipe::IMAGE: {
-      std::vector<float> pixel_values;
-      auto ret = process_image(pixel_values, media_path, config);
-      if (ret == false) {
-        std::cerr << "Error processing image: " << media_path << std::endl;
-        continue;
+      int num_medias = medias.size();
+      std::vector<float> pixel_values[num_medias];
+      std::vector<std::vector<int>> grid_thws;
+      for (int i = 0; i < num_medias; ++i) {
+        auto ret = process_image(pixel_values[i], medias[i], config);
+        if (ret == false) {
+          std::cerr << "Error processing image: " << medias[i] << std::endl;
+          continue;
+        }
+        grid_thws.push_back(config.grid_thw);
       }
-      std::string sentence_input =
-          build_image_prompt(input_str, config.grid_thw);
+      std::string sentence_input = build_image_prompt(input_str, grid_thws);
       std::vector<int> tokens = encode_input(sentence_input);
       if ((int)(tokens.size()) > model.MAX_INPUT_LENGTH) {
         std::cerr << "Input tokens exceed maximum length: "
@@ -745,40 +738,39 @@ void ChatPipe::chat() {
       clock_start = clock::now();
       model.forward_embed(tokens);
       auto clock_vit_start = clock::now();
-      vit_process_image(pixel_values, vit_offset[0] + 1);
+      for (int i = 0; i < num_medias; ++i) {
+        vit_process_image(pixel_values[i], vit_offset[i] + 1);
+      }
       auto clock_vit_end = clock::now();
       duration_vit = std::chrono::duration_cast<std::chrono::milliseconds>(
                          clock_vit_end - clock_vit_start)
                          .count();
-      std::vector<std::vector<std::vector<int>>> position_ids =
-          get_rope_index({tokens}, {config.grid_thw}, IMAGE_PAD_TOKEN);
+      auto position_ids = get_rope_index(tokens, grid_thws, IMAGE_PAD_TOKEN);
 
       // 找到三维数组position_ids中的最大值
-      for (const auto &sub_tensor : position_ids[0]) {
-        for (int val : sub_tensor) {
-          if (val > max_posid) {
-            max_posid = val;
-          }
+      for (int val : position_ids[0]) {
+        if (val > max_posid) {
+          max_posid = val;
         }
       }
+
       // 将三维数组position_ids转换维1维
       std::vector<int> position_ids_1d;
-      for (const auto &two_dim_tensor : position_ids) {
-        for (const auto &one_dim_tensor : two_dim_tensor) {
-          position_ids_1d.insert(position_ids_1d.end(), one_dim_tensor.begin(),
-                                 one_dim_tensor.end());
-        }
+      for (const auto &dim_tensor : position_ids) {
+        position_ids_1d.insert(position_ids_1d.end(), dim_tensor.begin(),
+                               dim_tensor.end());
       }
       token = forward_prefill(position_ids_1d, max_posid, history_max_posid);
     } break;
     case VIDEO: {
+      // Video only deal with first video path
       std::vector<float> pixel_values;
       std::vector<int> frame_indices;
       double fps;
       auto ret =
-          process_video(pixel_values, frame_indices, media_path, config, fps);
+          process_video(pixel_values, frame_indices, medias[0], config, fps);
       if (ret == false) {
-        std::cerr << "Error processing video: " << media_path << std::endl;
+        std::cerr << "Error processing video: " << medias[0] << std::endl;
         continue;
       }
       auto timestamps =
@@ -800,24 +792,21 @@ void ChatPipe::chat() {
       duration_vit = std::chrono::duration_cast<std::chrono::milliseconds>(
                          clock_vit_end - clock_vit_start)
                          .count();
-      std::vector<std::vector<std::vector<int>>> position_ids =
-          get_rope_index({tokens}, {config.grid_thw}, VIDEO_PAD_TOKEN);
+      auto position_ids =
+          get_rope_index(tokens, {config.grid_thw}, VIDEO_PAD_TOKEN);
 
       // 找到三维数组position_ids中的最大值
-      for (const auto &sub_tensor : position_ids[0]) {
-        for (int val : sub_tensor) {
-          if (val > max_posid) {
-            max_posid = val;
-          }
+      for (int val : position_ids[0]) {
+        if (val > max_posid) {
+          max_posid = val;
         }
       }
+
       // 将三维数组position_ids转换维1维
       std::vector<int> position_ids_1d;
-      for (const auto &two_dim_tensor : position_ids) {
-        for (const auto &one_dim_tensor : two_dim_tensor) {
-          position_ids_1d.insert(position_ids_1d.end(), one_dim_tensor.begin(),
-                                 one_dim_tensor.end());
-        }
+      for (const auto &one_dim_tensor : position_ids) {
+        position_ids_1d.insert(position_ids_1d.end(), one_dim_tensor.begin(),
+                               one_dim_tensor.end());
       }
       token = forward_prefill(position_ids_1d, max_posid, history_max_posid);
     } break;
@@ -899,17 +888,21 @@ std::string ChatPipe::build_text_prompt(const std::string &input_str) {
   return prompt;
 }
 
-std::string ChatPipe::build_image_prompt(const std::string &input_str,
-                                         const std::vector<int> &grid_thw) {
+std::string
+ChatPipe::build_image_prompt(const std::string &input_str,
+                             const std::vector<std::vector<int>> &grid_thw) {
   std::string prompt = "<|im_start|>user\n";
-  int h = grid_thw[1];
-  int w = grid_thw[2];
-  int pad_len = h * w / 4;
-  prompt += "<|vision_start|>";
-  for (int i = 0; i < pad_len; i++) {
-    prompt += "<|image_pad|>";
+  int num_images = grid_thw.size();
+  for (int i = 0; i < num_images; i++) {
+    int h = grid_thw[i][1];
+    int w = grid_thw[i][2];
+    int pad_len = h * w / 4;
+    prompt += "<|vision_start|>";
+    for (int j = 0; j < pad_len; j++) {
+      prompt += "<|image_pad|>";
+    }
+    prompt += "<|vision_end|>";
   }
-  prompt += "<|vision_end|>";
   prompt += input_str + "<|im_end|>\n<|im_start|>assistant\n";
   return prompt;
 }
