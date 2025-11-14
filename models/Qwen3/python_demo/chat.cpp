@@ -85,6 +85,7 @@ public:
   bool support_prefill_kv;
   int history_length;
   uint16_t mask_value;
+  bool is_same_addr;
 
   // generation
   std::string generation_mode;
@@ -233,6 +234,13 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
     past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
     empty(bm_handle, past_key[i]);
     empty(bm_handle, past_value[i]);
+  }
+
+  // same addr
+  is_same_addr = false;
+  if (net_blocks[0]->stages[0].input_mems[0].u.device.device_addr ==
+      net_blocks[0]->stages[0].output_mems[0].u.device.device_addr) {
+    is_same_addr = true;
   }
 }
 
@@ -435,7 +443,10 @@ int Qwen::forward_first(std::vector<int> &tokens) {
     auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
     auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
     auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
-    d2d(in0_mem, out_mem, 0, token_length * hidden_bytes);
+    if (!is_same_addr || idx == 0) {
+      // in-place compute
+      d2d(in0_mem, out_mem, 0, token_length * hidden_bytes);
+    }
     if (idx == 0) {
       // only first time need copy
       bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
@@ -516,7 +527,9 @@ int Qwen::forward_first_with_kv(std::vector<int> &inputs) {
     auto &in3_mem = net_blocks[idx]->stages[0].input_mems[3];
     auto &in4_mem = net_blocks[idx]->stages[0].input_mems[4];
 
-    d2d(in0_mem, out_mem);
+    if (!is_same_addr || idx == 0) {
+      d2d(in0_mem, out_mem);
+    }
     if (old_length > 0) {
       bm_memcpy_d2d_byte(bm_handle, in3_mem, 0, past_key[idx], 0,
                          kv_bytes * old_length);
