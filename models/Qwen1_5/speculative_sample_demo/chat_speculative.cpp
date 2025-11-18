@@ -140,6 +140,7 @@ void Qwen::net_launch(void *p_bmrt, const bm_net_info_t *net, int stage_idx) {
 
 void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
+  bm_thread_sync(bm_handle);
 }
 
 void Qwen::init(const std::vector<int> &devices, std::string draft_model_path,
