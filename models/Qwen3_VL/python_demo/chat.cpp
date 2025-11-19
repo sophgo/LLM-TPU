@@ -73,7 +73,6 @@ private:
   void add_launch(bm_device_mem_t &in0_mem, bm_device_mem_t &in1_mem,
                   bm_device_mem_t &out_mem);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
-  void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   void init_by_names();
   int forward_first_with_kv(ArrayInt const &position_ids);
   int greedy_search(bm_device_mem_t &logits_mem);
@@ -494,30 +493,6 @@ void Qwen3_VL::forward_vit(ArrayFloat const &pixel_values,
                        vit_size);
   }
   vit_run = true;
-}
-
-void Qwen3_VL::head_launch(const bm_net_info_t *net,
-                           bm_device_mem_t &logits_mem) {
-  std::vector<bm_tensor_t> in_tensors(net->input_num);
-  std::vector<bm_tensor_t> out_tensors(net->output_num);
-
-  bmrt_tensor_with_device(&in_tensors[0], logits_mem, net->input_dtypes[0],
-                          net->stages[0].input_shapes[0]);
-
-  for (int i = 1; i < net->input_num; i++) {
-    bmrt_tensor_with_device(&in_tensors[i], net->stages[0].input_mems[i],
-                            net->input_dtypes[i],
-                            net->stages[0].input_shapes[i]);
-  }
-  for (int i = 0; i < net->output_num; i++) {
-    bmrt_tensor_with_device(&out_tensors[i], net->stages[0].output_mems[i],
-                            net->output_dtypes[i],
-                            net->stages[0].output_shapes[i]);
-  }
-  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
-                                   net->input_num, out_tensors.data(),
-                                   net->output_num, true, false);
-  assert(ret);
 }
 
 int Qwen3_VL::forward_first(ArrayInt const &position_ids) {

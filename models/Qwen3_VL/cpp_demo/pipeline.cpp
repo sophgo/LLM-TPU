@@ -64,7 +64,8 @@ public:
   Config config;
 
   ChatPipe(int devid, float video_ratio, float video_fps,
-           const std::string &model_path, const std::string &vocab_path);
+           const std::string &model_path, const std::string &config_path,
+           bool do_sample = false);
   // 聊天主循环
   void chat();
 
@@ -174,16 +175,16 @@ std::vector<int> ChatPipe::get_position_ids(int token_len) {
 // ChatPipe 类构造函数
 ChatPipe::ChatPipe(int devid, float video_ratio, float video_fps,
                    const std::string &model_path,
-                   const std::string &vocab_path) {
-  model.init(devid, model_path);
+                   const std::string &config_path, bool do_sample) {
+  model.init(devid, model_path, config_path, do_sample);
   spatial_merge_size = 2;
   spatial_merge_unit = spatial_merge_size * spatial_merge_size;
   tokens_per_second = 2;
   num_grid_per_side = 48;
   support_history = model.support_history;
 
-  std::cout << "Processor [" << vocab_path.c_str() << "] loading .... ";
-  auto blob = LoadBytesFromFile((vocab_path + "/tokenizer.json").c_str());
+  std::cout << "Processor [" << config_path.c_str() << "] loading .... ";
+  auto blob = LoadBytesFromFile((config_path + "/tokenizer.json").c_str());
   tok = Tokenizer::FromBlobJSON(blob);
   ID_IM_END = tok->TokenToId("<|im_end|>");
   ID_VISION_START = tok->TokenToId("<|vision_start|>");
@@ -848,6 +849,11 @@ void ChatPipe::chat() {
         }
         text += word;
         std::cout << word << std::flush;
+        if (model.do_sample) {
+          if (model.check_stop(text)) {
+            break;
+          }
+        }
         full_word_tokens.clear();
       }
       max_posid++;
@@ -1001,30 +1007,34 @@ void ChatPipe::print_chat_instructions() {
 }
 
 void Usage() {
-  printf("Usage:\n"
-         "  -h, --help      : Show help info \n"
-         "  -m, --model     : Set model path \n"
-         "  -c, --config    : Set config path \n"
-         "  -r, --video_ratio : Set video ratio, default is 0.25\n"
-         "  -f, --video_fps   : Set video fps, default is 1.0\n"
-         "  -d, --devid     : Set devices to run for model, default is '0'\n");
+  printf(
+      "Usage:\n"
+      "  -h, --help        : Show help info \n"
+      "  -m, --model       : Set model path \n"
+      "  -c, --config      : Set config path \n"
+      "  -r, --video_ratio : Set video ratio, default is 0.25\n"
+      "  -f, --video_fps   : Set video fps, default is 1.0\n"
+      "  -s, --do_sample   : Enable sampling during generation\n"
+      "  -d, --devid       : Set devices to run for model, default is '0'\n");
 }
 
 void processArguments(int argc, char *argv[], std::string &model_path,
                       std::string &config_path, std::string &image_path,
-                      int &device, float &video_ratio, float &video_fps) {
+                      int &device, float &video_ratio, float &video_fps,
+                      bool &do_sample) {
   struct option longOptions[] = {
       {"model", required_argument, nullptr, 'm'},
       {"config", required_argument, nullptr, 'c'},
       {"devid", required_argument, nullptr, 'd'},
       {"video_ratio", required_argument, nullptr, 'r'},
       {"video_fps", required_argument, nullptr, 'f'},
+      {"do_sample", no_argument, nullptr, 's'},
       {"help", no_argument, nullptr, 'h'},
       {nullptr, 0, nullptr, 0}};
 
   int optionIndex = 0;
   int option;
-  while ((option = getopt_long(argc, argv, "m:c:d:r:f:h", longOptions,
+  while ((option = getopt_long(argc, argv, "m:c:d:r:f:sh", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -1041,6 +1051,9 @@ void processArguments(int argc, char *argv[], std::string &model_path,
       break;
     case 'f':
       video_fps = atof(optarg);
+      break;
+    case 's':
+      do_sample = true;
       break;
     case 'h':
       Usage();
@@ -1061,15 +1074,17 @@ int main(int argc, char *argv[]) {
   int dev_id = 0;
   float video_ratio = 0.25f; // 默认视频比例为0.25
   float video_fps = 1.0f;    // 默认每秒取1帧
+  bool do_sample = false;
 
   processArguments(argc, argv, model_path, config_path, image_path, dev_id,
-                   video_ratio, video_fps);
+                   video_ratio, video_fps, do_sample);
   if (model_path.empty() || config_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);
   }
   assert(video_fps > 0);
-  ChatPipe pipeline(dev_id, video_ratio, video_fps, model_path, config_path);
+  ChatPipe pipeline(dev_id, video_ratio, video_fps, model_path, config_path,
+                    do_sample);
   pipeline.chat();
   return 0;
 }
