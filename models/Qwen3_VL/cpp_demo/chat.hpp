@@ -59,7 +59,7 @@ private:
   int penalty_sample(bm_device_mem_t &logits_mem);
   void init_tensors(const bm_net_info_t *net,
                     std::vector<bm_tensor_t> &in_tensors,
-                    std::vector<bm_tensor_t> &out_tensors);
+                    std::vector<bm_tensor_t> &out_tensors, int stage = 0);
 
 public:
   int token_length;
@@ -82,6 +82,7 @@ public:
   bool vit_run = false;
   int num_deepstack;
   std::vector<int> visited_tokens;
+  std::vector<int> STATIC_PATCHES;
   bool do_sample = false;
   // generation
   std::vector<std::string> stop_strings;

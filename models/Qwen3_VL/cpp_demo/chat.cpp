@@ -20,12 +20,13 @@ void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
   assert(BM_SUCCESS == ret);
 }
 
-void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net) {
+void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
+               int stage = 0) {
   for (int i = 0; i < net->input_num; i++) {
-    empty(bm_handle, net->stages[0].input_mems[i]);
+    empty(bm_handle, net->stages[stage].input_mems[i]);
   }
   for (int i = 0; i < net->output_num; i++) {
-    empty(bm_handle, net->stages[0].output_mems[i]);
+    empty(bm_handle, net->stages[stage].output_mems[i]);
   }
 }
 
@@ -65,19 +66,19 @@ struct GenerationConfig {
 //===------------------------------------------------------------===//
 void Qwen3_VL::init_tensors(const bm_net_info_t *net,
                             std::vector<bm_tensor_t> &in_tensors,
-                            std::vector<bm_tensor_t> &out_tensors) {
+                            std::vector<bm_tensor_t> &out_tensors, int stage) {
   in_tensors.resize(net->input_num);
   out_tensors.resize(net->output_num);
   for (int i = 0; i < net->input_num; i++) {
-    bmrt_tensor_with_device(&in_tensors[i], net->stages[0].input_mems[i],
+    bmrt_tensor_with_device(&in_tensors[i], net->stages[stage].input_mems[i],
                             net->input_dtypes[i],
-                            net->stages[0].input_shapes[i]);
+                            net->stages[stage].input_shapes[i]);
   }
 
   for (int i = 0; i < net->output_num; i++) {
-    bmrt_tensor_with_device(&out_tensors[i], net->stages[0].output_mems[i],
+    bmrt_tensor_with_device(&out_tensors[i], net->stages[stage].output_mems[i],
                             net->output_dtypes[i],
-                            net->stages[0].output_shapes[i]);
+                            net->stages[stage].output_shapes[i]);
   }
 }
 
@@ -221,6 +222,9 @@ void Qwen3_VL::init_by_names() {
   VIT_DIMS = net_vit->stages[0].input_shapes[0].dims[1];
   KV_BYTES =
       bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
+  for (int i = 0; i < net_vit->stage_num; i++) {
+    STATIC_PATCHES.push_back(net_vit->stages[i].input_shapes[0].dims[0]);
+  }
   printf("Num Layers:%d\n", NUM_LAYERS);
   printf("Max Pixels: %d*%d*%d\n", MAX_PATCHES / 4, 32, 32);
   PREFILL_KV_LENGTH = 0;
@@ -363,11 +367,18 @@ void Qwen3_VL::forward_vit(const float *pixel_values,
   auto p_position_ids = position_ids.data();
   auto p_pos_idx = pos_idx.data();
   auto p_pos_weight = pos_weight.data();
-
-  empty_net(bm_handle, net_vit);
+  // select stage
+  int stage = 0;
+  for (stage = 0; stage < net_vit->stage_num; stage++) {
+    if (hw > STATIC_PATCHES[stage]) {
+      break;
+    }
+  }
+  stage = std::max(0, stage - 1);
+  empty_net(bm_handle, net_vit, stage);
   std::vector<bm_tensor_t> in_tensors;
   std::vector<bm_tensor_t> out_tensors;
-  init_tensors(net_vit, in_tensors, out_tensors);
+  init_tensors(net_vit, in_tensors, out_tensors, stage);
   bm_memcpy_s2d_partial(bm_handle, in_tensors[0].device_mem,
                         (void *)pixel_values, num_pixels * sizeof(float));
   bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
@@ -390,9 +401,10 @@ void Qwen3_VL::forward_vit(const float *pixel_values,
     in_tensors[4].shape.dims[2] = hw;
     in_tensors[4].shape.dims[3] = hw;
   } else {
-    std::vector<float> attention_mask(MAX_PATCHES * MAX_PATCHES, -10000.0f);
+    int patches = STATIC_PATCHES[stage];
+    std::vector<float> attention_mask(patches * patches, -10000.0f);
     for (int i = 0; i < hw; i++) {
-      auto row_begin = attention_mask.begin() + i * MAX_PATCHES;
+      auto row_begin = attention_mask.begin() + i * patches;
       std::fill(row_begin, row_begin + hw, 0.0f);
     }
     bm_memcpy_s2d(bm_handle, in_tensors[4].device_mem,
