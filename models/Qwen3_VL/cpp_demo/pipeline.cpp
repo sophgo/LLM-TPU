@@ -713,6 +713,7 @@ void ChatPipe::chat() {
 
     std::cout << "\nAnswer:\n";
     int64_t duration_prefill = 0, duration_vit = 0, duration_decode = 0;
+    int input_token_num = 0;
     clock::time_point clock_start;
     switch (media_type) {
     case ChatPipe::IMAGE: {
@@ -734,7 +735,7 @@ void ChatPipe::chat() {
                   << model.MAX_INPUT_LENGTH << std::endl;
         continue;
       }
-
+      input_token_num = tokens.size();
       auto vit_offset = find_token_offset(tokens, ID_VISION_START);
       clock_start = clock::now();
       model.forward_embed(tokens);
@@ -784,6 +785,7 @@ void ChatPipe::chat() {
                   << model.MAX_INPUT_LENGTH << std::endl;
         continue;
       }
+      input_token_num = tokens.size();
       auto vit_offset = find_token_offset(tokens, ID_VISION_START);
       clock_start = clock::now();
       model.forward_embed(tokens);
@@ -819,6 +821,7 @@ void ChatPipe::chat() {
                   << model.MAX_INPUT_LENGTH << std::endl;
         continue;
       }
+      input_token_num = tokens.size();
       clock_start = clock::now();
       model.forward_embed(tokens);
       auto position_ids_1d = get_position_ids(tokens.size());
@@ -836,7 +839,7 @@ void ChatPipe::chat() {
     // 后续分词
     std::vector<int> full_word_tokens;
     std::string text;
-    int tok_num = 0;
+    int output_token_num = 0;
     while (token != ID_IM_END && model.history_length < model.SEQLEN) {
       // std::cout << "\nfull_word_tokens: " << token << "  " << std::endl;
       full_word_tokens.push_back(token);
@@ -860,7 +863,7 @@ void ChatPipe::chat() {
       std::vector<int> following_position_ids = {max_posid, max_posid,
                                                  max_posid};
       token = model.forward_next(following_position_ids);
-      tok_num++;
+      output_token_num++;
     }
     history_max_posid = max_posid + 2;
     std::cout << std::endl;
@@ -869,15 +872,17 @@ void ChatPipe::chat() {
                           clock_end - clock_prefill)
                           .count();
     std::cout << "FTL: " << duration_prefill / 1000.0f << " s" << std::endl;
-    if (tok_num > 0) {
-      std::cout << "TPS: " << tok_num * 1000.0f / duration_decode << " tokens/s"
-                << std::endl;
+    if (output_token_num > 0) {
+      std::cout << "TPS: " << output_token_num * 1000.0f / duration_decode
+                << " tokens/s" << std::endl;
     }
     if (duration_vit > 0) {
       std::cout << "Vision [" << config.grid_thw[0] << ", "
                 << config.grid_thw[1] << ", " << config.grid_thw[2]
                 << "]: " << duration_vit / 1000.0f << " s" << std::endl;
     }
+    std::cout << "Input Tokens: " << input_token_num
+              << ", Output Tokens: " << output_token_num + 1 << std::endl;
   }
 }
 
