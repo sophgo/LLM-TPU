@@ -65,12 +65,14 @@ public:
 
   ChatPipe(int devid, float video_ratio, float video_fps,
            const std::string &model_path, const std::string &config_path,
-           bool do_sample = false, bool in_device = false);
+           const std::string &lora_dir = "", bool do_sample = false,
+           bool in_device = false);
   // 聊天主循环
   void chat();
 
 private:
   Qwen3_VL model;
+  std::string lora_dir;
   int ID_IM_END, ID_VISION_START;
   int tokens_per_second;
   int spatial_merge_size;
@@ -175,14 +177,19 @@ std::vector<int> ChatPipe::get_position_ids(int token_len) {
 // ChatPipe 类构造函数
 ChatPipe::ChatPipe(int devid, float video_ratio, float video_fps,
                    const std::string &model_path,
-                   const std::string &config_path, bool do_sample,
-                   bool in_device) {
+                   const std::string &config_path, const std::string &lora_dir,
+                   bool do_sample, bool in_device) {
   model.init(devid, model_path, config_path, do_sample, in_device);
   spatial_merge_size = 2;
   spatial_merge_unit = spatial_merge_size * spatial_merge_size;
   tokens_per_second = 2;
   num_grid_per_side = 48;
   support_history = model.support_history;
+  this->lora_dir = lora_dir;
+  if (!lora_dir.empty()) {
+    auto ret = model.lora_load(lora_dir);
+    assert(ret == true);
+  }
 
   std::cout << "Processor [" << config_path.c_str() << "] loading .... ";
   auto blob = LoadBytesFromFile((config_path + "/tokenizer.json").c_str());
@@ -690,6 +697,17 @@ void ChatPipe::chat() {
       std::cout << "Chat history cleared." << std::endl;
       continue;
     }
+    if (input_str == "lora_load") {
+      auto ret = model.lora_load(lora_dir);
+      assert(ret == true);
+      std::cout << "LoRA loaded from " << lora_dir << std::endl;
+      continue;
+    }
+    if (input_str == "lora_clear") {
+      model.lora_clear();
+      std::cout << "LoRA cleared." << std::endl;
+      continue;
+    }
 
     std::string media_path;
     std::cout << "\nImage or Video Path: ";
@@ -1021,20 +1039,22 @@ void Usage() {
       "  -r, --video_ratio : Set video ratio, default is 0.25\n"
       "  -f, --video_fps   : Set video fps, default is 1.0\n"
       "  -s, --do_sample   : Enable sampling during generation\n"
-      "  -i, --in_device,  : load total bmodel to dev mem\n"
+      "  -i, --in_device,  : Load total bmodel to dev mem\n"
+      "  -l, --lora        : Set Lora directory path \n"
       "  -d, --devid       : Set devices to run for model, default is '0'\n");
 }
 
 void processArguments(int argc, char *argv[], std::string &model_path,
                       std::string &config_path, std::string &image_path,
-                      int &device, float &video_ratio, float &video_fps,
-                      bool &do_sample, bool &in_device) {
+                      std::string &lora_dir, int &device, float &video_ratio,
+                      float &video_fps, bool &do_sample, bool &in_device) {
   struct option longOptions[] = {
       {"model", required_argument, nullptr, 'm'},
       {"config", required_argument, nullptr, 'c'},
       {"devid", required_argument, nullptr, 'd'},
       {"video_ratio", required_argument, nullptr, 'r'},
       {"video_fps", required_argument, nullptr, 'f'},
+      {"lora", required_argument, nullptr, 'l'},
       {"do_sample", no_argument, nullptr, 's'},
       {"in_device", no_argument, nullptr, 'i'},
       {"help", no_argument, nullptr, 'h'},
@@ -1042,7 +1062,7 @@ void processArguments(int argc, char *argv[], std::string &model_path,
 
   int optionIndex = 0;
   int option;
-  while ((option = getopt_long(argc, argv, "m:c:d:r:f:sh", longOptions,
+  while ((option = getopt_long(argc, argv, "m:c:d:r:f:l:sh", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -1059,6 +1079,9 @@ void processArguments(int argc, char *argv[], std::string &model_path,
       break;
     case 'f':
       video_fps = atof(optarg);
+      break;
+    case 'l':
+      lora_dir = optarg;
       break;
     case 's':
       do_sample = true;
@@ -1082,21 +1105,22 @@ int main(int argc, char *argv[]) {
   std::string model_path;
   std::string config_path;
   std::string image_path;
+  std::string lora_dir;
   int dev_id = 0;
   float video_ratio = 0.25f; // 默认视频比例为0.25
   float video_fps = 1.0f;    // 默认每秒取1帧
   bool do_sample = false;
   bool in_device = false;
 
-  processArguments(argc, argv, model_path, config_path, image_path, dev_id,
-                   video_ratio, video_fps, do_sample, in_device);
+  processArguments(argc, argv, model_path, config_path, image_path, lora_dir,
+                   dev_id, video_ratio, video_fps, do_sample, in_device);
   if (model_path.empty() || config_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);
   }
   assert(video_fps > 0);
   ChatPipe pipeline(dev_id, video_ratio, video_fps, model_path, config_path,
-                    do_sample, in_device);
+                    lora_dir, do_sample, in_device);
   pipeline.chat();
   return 0;
 }

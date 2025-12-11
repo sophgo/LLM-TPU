@@ -31,6 +31,8 @@ public:
   void init(int devid, std::string model_path, std::string config_path = "",
             bool do_sample = false, bool in_device = false);
   void deinit();
+  bool lora_load(const std::string &lora_dir);
+  void lora_clear();
   void forward_embed(ArrayInt const &tokens);
   void forward_vit(const float *pixel_values, ArrayInt const &position_ids,
                    ArrayInt const &pos_idx, ArrayFloat const &pos_weight,
@@ -88,6 +90,10 @@ public:
   // load bmodel to device memory
   bool in_device = false;
   bm_device_mem_u64_t bmodel_mem;
+  // lora
+  bool use_lora = false;
+  bool do_lora_embedding = false;
+  bool do_lora_lmhead = false;
   // generation
   std::vector<std::string> stop_strings;
   float penalty;
@@ -106,6 +112,7 @@ private:
   const bm_net_info_t *net_vit;
   const bm_net_info_t *net_add;
   const bm_net_info_t *net_greedy_head, *net_sample_head;
+  const bm_net_info_t *net_embed_lora, *net_embed_cache_lora, *net_lmhead_lora;
   bm_device_mem_t dev_buffer;
   std::vector<bm_device_mem_t> deepstack_buffers;
   std::vector<bm_device_mem_t> past_key;

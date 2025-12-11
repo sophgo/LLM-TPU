@@ -9,6 +9,7 @@
 
 #include "chat.hpp"
 #include "json.hpp"
+#include "lora.hpp"
 #include <fstream>
 #include <iostream>
 //===------------------------------------------------------------===//
@@ -180,6 +181,14 @@ void Qwen3_VL::init_by_names() {
   if (is_exist("sample_head", net_names, num_nets)) {
     net_sample_head = bmrt_get_network_info(p_bmrt, "sample_head");
     num_blocks--; // sample_head is not a block
+  }
+  if (is_exist("embedding_lora", net_names, num_nets)) {
+    use_lora = true;
+    net_embed_lora = bmrt_get_network_info(p_bmrt, "embedding_lora");
+    net_embed_cache_lora =
+        bmrt_get_network_info(p_bmrt, "embedding_cache_lora");
+    net_lmhead_lora = bmrt_get_network_info(p_bmrt, "lm_head_lora");
+    num_blocks -= 3; // 3 lora nets
   }
   // 2 nets for each block, one for cache
   NUM_LAYERS = num_blocks / 2;
@@ -728,4 +737,87 @@ int Qwen3_VL::forward_next(ArrayInt const &position_ids) {
   token_length++;
   history_length++;
   return token;
+}
+
+bool Qwen3_VL::lora_load(const std::string &lora_dir) {
+  safetensors::dtype lora_type;
+  if (load_dir.empty()) {
+    std::cerr << "Error: LoRA directory is empty." << std::endl;
+    return false;
+  }
+  if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
+    lora_type = safetensors::dtype::kFLOAT16;
+  } else {
+    lora_type = safetensors::dtype::kBFLOAT16;
+  }
+  int num_lora = 0;
+  try {
+    LoraContext loraCtx(lora_dir, lora_type);
+    // embeding
+    int num_coeff = net_embed->stages[0].coeff_num;
+    do_lora_embedding = false;
+    for (int i = 0; i < num_coeff; i++) {
+      auto &coeff = net_embed->stages[0].coeffs[i];
+      if (LoraContext::is_lora_path(coeff.path)) {
+        bool ret = loraCtx.load_lora_to_device(coeff.path, bm_handle,
+                                               coeff.device_mem, true);
+        if (ret) {
+          num_lora++;
+          do_lora_embedding = true;
+        }
+      }
+    }
+    // layers
+    for (int i = 0; i < NUM_LAYERS; i++) {
+      auto &stage = net_blocks[i]->stages[0];
+      num_coeff = stage.coeff_num;
+      for (int j = 0; j < num_coeff; j++) {
+        auto &coeff = stage.coeffs[j];
+        if (LoraContext::is_lora_path(coeff.path)) {
+          bool ret = loraCtx.load_lora_to_device(coeff.path, bm_handle,
+                                                 coeff.device_mem);
+          if (ret) {
+            num_lora++;
+          }
+        }
+      }
+    }
+    // lmhead
+    do_lora_lmhead = false;
+    num_coeff = net_lm->stages[0].coeff_num;
+    for (int i = 0; i < num_coeff; i++) {
+      auto &coeff = net_lm->stages[0].coeffs[i];
+      if (LoraContext::is_lora_path(coeff.path)) {
+        bool ret = loraCtx.load_lora_to_device(coeff.path, bm_handle,
+                                               coeff.device_mem);
+        if (ret) {
+          do_lora_lmhead = true;
+          num_lora++;
+        }
+      }
+    }
+    loraCtx.check_all_tensors_visited();
+  } catch (const std::exception &e) {
+    std::cerr << "Error: loading LoRA weights: " << e.what() << std::endl;
+    return false;
+  }
+  printf("Done. Load %d LoRA weights from %s.\n", num_lora, lora_dir.c_str());
+  return true;
+}
+
+void Qwen3_VL::lora_clear() {
+  do_lora_embedding = false;
+  do_lora_lmhead = false;
+  int num_lora = 0;
+  for (int i = 0; i < NUM_LAYERS; i++) {
+    auto &stage = net_blocks[i]->stages[0];
+    for (int j = 0; j < stage.coeff_num; j++) {
+      auto &coeff = stage.coeffs[j];
+      if (LoraContext::is_lora_path(coeff.path)) {
+        empty(bm_handle, coeff.device_mem);
+        num_lora++;
+      }
+    }
+  }
+  printf("Done. Clear %d LoRA weights from layers.\n", num_lora);
 }

@@ -91,7 +91,7 @@ typedef struct bm_tensor_s {
 /* network information structure */
 
 typedef struct bm_coeff_info_s {
-  char name[64];
+  char path[256];
   bm_device_mem_t device_mem;
 } bm_coeff_info_t;
 
