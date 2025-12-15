@@ -698,9 +698,20 @@ void ChatPipe::chat() {
       continue;
     }
     if (input_str == "lora_load") {
+      if (lora_dir.empty()) {
+        std::cerr << "LoRA directory not specified during initialization."
+                  << std::endl;
+        continue;
+      }
+      clock::time_point clock_start = clock::now();
       auto ret = model.lora_load(lora_dir);
       assert(ret == true);
-      std::cout << "LoRA loaded from " << lora_dir << std::endl;
+      clock::time_point clock_end = clock::now();
+      auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          clock_end - clock_start)
+                          .count();
+      std::cout << "LoRA loaded " << duration / 1000.0 << " s from " << lora_dir
+                << std::endl;
       continue;
     }
     if (input_str == "lora_clear") {

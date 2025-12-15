@@ -386,9 +386,17 @@ void Qwen3_VL::forward_embed(ArrayInt const &tokens) {
                         (void *)visited_tokens.data(),
                         MAX_INPUT_LENGTH * sizeof(int));
   net_launch(net_embed, in_tensors, out_tensors);
+  auto in_mem = in_tensors[0].device_mem;
+  auto out_mem = out_tensors[0].device_mem;
+  if (do_lora_embedding) {
+    init_tensors(net_embed_lora, in_tensors, out_tensors);
+    in_tensors[0].device_mem = in_mem;
+    in_tensors[1].device_mem = out_mem;
+    net_launch(net_embed_lora, in_tensors, out_tensors);
+    out_mem = out_tensors[0].device_mem;
+  }
   empty(bm_handle, dev_buffer);
-  d2d(dev_buffer, out_tensors[0].device_mem, 0,
-      tokens.size() * HIDDEN_SIZE * sizeof(uint16_t));
+  d2d(dev_buffer, out_mem, 0, tokens.size() * HIDDEN_SIZE * sizeof(uint16_t));
   token_length = tokens.size();
   for (auto &mem : deepstack_buffers) {
     empty(bm_handle, mem);
@@ -615,7 +623,16 @@ int Qwen3_VL::forward_first(ArrayInt const &position_ids) {
       out_mem.u.device.device_addr + (token_length - 1) * bytes, bytes);
   out_tensors[0].device_mem = dev_buffer;
   net_launch(net_lm, in_tensors, out_tensors);
-  auto token = generate(dev_buffer);
+  out_mem = out_tensors[0].device_mem;
+  if (do_lora_lmhead) {
+    auto in_mem = in_tensors[0].device_mem;
+    init_tensors(net_lmhead_lora, in_tensors, out_tensors);
+    in_tensors[0].device_mem = in_mem;
+    in_tensors[1].device_mem = out_mem;
+    net_launch(net_lmhead_lora, in_tensors, out_tensors);
+    out_mem = out_tensors[0].device_mem;
+  }
+  auto token = generate(out_mem);
   visited_tokens[token_length] = token;
   token_length++;
   history_length = token_length;
@@ -715,7 +732,15 @@ int Qwen3_VL::forward_next(ArrayInt const &position_ids) {
   int token = visited_tokens[token_length - 1];
   bm_memcpy_s2d(bm_handle, in_tensors[0].device_mem, (void *)&token);
   net_launch(net_embed_cache, in_tensors, out_tensors);
+  auto in_mem = in_tensors[0].device_mem;
   auto out_mem = out_tensors[0].device_mem;
+  if (do_lora_embedding) {
+    init_tensors(net_embed_cache_lora, in_tensors, out_tensors);
+    in_tensors[0].device_mem = in_mem;
+    in_tensors[1].device_mem = out_mem;
+    net_launch(net_embed_cache_lora, in_tensors, out_tensors);
+    out_mem = out_tensors[0].device_mem;
+  }
 
   // blocks
   int bytes =
@@ -731,8 +756,17 @@ int Qwen3_VL::forward_next(ArrayInt const &position_ids) {
   in_tensors[0].device_mem = out_mem;
   out_tensors[0].device_mem = dev_buffer;
   net_launch(net_lm, in_tensors, out_tensors);
+  out_mem = out_tensors[0].device_mem;
+  if (do_lora_lmhead) {
+    in_mem = in_tensors[0].device_mem;
+    init_tensors(net_lmhead_lora, in_tensors, out_tensors);
+    in_tensors[0].device_mem = in_mem;
+    in_tensors[1].device_mem = out_mem;
+    net_launch(net_lmhead_lora, in_tensors, out_tensors);
+    out_mem = out_tensors[0].device_mem;
+  }
 
-  token = generate(dev_buffer);
+  token = generate(out_mem);
   visited_tokens[token_length] = token;
   token_length++;
   history_length++;
@@ -741,7 +775,7 @@ int Qwen3_VL::forward_next(ArrayInt const &position_ids) {
 
 bool Qwen3_VL::lora_load(const std::string &lora_dir) {
   safetensors::dtype lora_type;
-  if (load_dir.empty()) {
+  if (lora_dir.empty()) {
     std::cerr << "Error: LoRA directory is empty." << std::endl;
     return false;
   }
@@ -750,7 +784,6 @@ bool Qwen3_VL::lora_load(const std::string &lora_dir) {
   } else {
     lora_type = safetensors::dtype::kBFLOAT16;
   }
-  int num_lora = 0;
   try {
     LoraContext loraCtx(lora_dir, lora_type);
     // embeding
@@ -762,7 +795,6 @@ bool Qwen3_VL::lora_load(const std::string &lora_dir) {
         bool ret = loraCtx.load_lora_to_device(coeff.path, bm_handle,
                                                coeff.device_mem, true);
         if (ret) {
-          num_lora++;
           do_lora_embedding = true;
         }
       }
@@ -774,11 +806,7 @@ bool Qwen3_VL::lora_load(const std::string &lora_dir) {
       for (int j = 0; j < num_coeff; j++) {
         auto &coeff = stage.coeffs[j];
         if (LoraContext::is_lora_path(coeff.path)) {
-          bool ret = loraCtx.load_lora_to_device(coeff.path, bm_handle,
-                                                 coeff.device_mem);
-          if (ret) {
-            num_lora++;
-          }
+          loraCtx.load_lora_to_device(coeff.path, bm_handle, coeff.device_mem);
         }
       }
     }
@@ -792,7 +820,6 @@ bool Qwen3_VL::lora_load(const std::string &lora_dir) {
                                                coeff.device_mem);
         if (ret) {
           do_lora_lmhead = true;
-          num_lora++;
         }
       }
     }
@@ -801,7 +828,6 @@ bool Qwen3_VL::lora_load(const std::string &lora_dir) {
     std::cerr << "Error: loading LoRA weights: " << e.what() << std::endl;
     return false;
   }
-  printf("Done. Load %d LoRA weights from %s.\n", num_lora, lora_dir.c_str());
   return true;
 }
 
