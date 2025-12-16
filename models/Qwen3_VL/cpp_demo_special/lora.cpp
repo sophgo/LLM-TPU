@@ -87,6 +87,8 @@ bool LoraContext::load_lora_to_device(const std::string &path,
     // lora_A
     if (is_embed) {
       read_type = DO_STRIDE_COPY;
+    } else if (loraPath.dim == 1) {
+      read_type = DO_TRANSPOSE_STRIDE_COPY;
     } else {
       read_type = DO_NOTHING;
     }
@@ -162,6 +164,15 @@ void LoraContext::read_tensor_data(int tensor_idx, void *dst, size_t size,
     stride_copy((uint16_t *)dst, (uint16_t *)data_ptr, tensor.shape[0],
                 tensor.shape[1], max_lora_rank, do_scale);
     break;
+  case DO_TRANSPOSE_STRIDE_COPY:
+    if (tensor.shape[0] > static_cast<size_t>(max_lora_rank)) {
+      throw std::runtime_error(
+          "LoRA tensor shape[0] is larger than max_lora_rank");
+    }
+    transpose_stride_copy((uint16_t *)dst, (uint16_t *)data_ptr,
+                          tensor.shape[0], tensor.shape[1], max_lora_rank,
+                          do_scale);
+    break;
   default:
     data_copy((uint16_t *)dst, (uint16_t *)data_ptr, bytes / 2, do_scale);
     break;
@@ -197,6 +208,22 @@ void LoraContext::transpose_copy(uint16_t *dst, uint16_t *src, int rows,
         *dst_col = a16_scale(src_row[c]);
       }
       dst_col += rows;
+    }
+  }
+}
+
+void LoraContext::transpose_stride_copy(uint16_t *dst, uint16_t *src, int dim0,
+                                        int dim1, int max_dim1, bool do_scale) {
+  for (int r = 0; r < dim0; r++) {
+    uint16_t *src_row = src + r * dim1;
+
+    for (int c = 0; c < dim1; c++) {
+      uint16_t *dst_elem = dst + c * max_dim1 + r;
+      if (!do_scale) {
+        *dst_elem = src_row[c];
+      } else {
+        *dst_elem = a16_scale(src_row[c]);
+      }
     }
   }
 }

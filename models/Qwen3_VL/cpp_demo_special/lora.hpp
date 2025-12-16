@@ -21,7 +21,7 @@ public:
 
   bool load_lora_to_device(const std::string &path, bm_handle_t bm_handle,
                            bm_device_mem_t devmem, bool is_embed = false);
-  
+
   void check_all_tensors_visited() {
     for (int i = 0; i < m_num_tensors; i++) {
       if (!m_tensors_visited[i]) {
@@ -32,7 +32,12 @@ public:
   }
 
 protected:
-  enum ReadType { DO_NOTHING = 0, DO_TRANSPOSE_COPY = 1, DO_STRIDE_COPY = 2 };
+  enum ReadType {
+    DO_NOTHING = 0,
+    DO_TRANSPOSE_COPY = 1,
+    DO_STRIDE_COPY = 2,
+    DO_TRANSPOSE_STRIDE_COPY = 3
+  };
   struct LoraPath {
     std::string key;
     int rank;
@@ -54,6 +59,9 @@ protected:
 
   void data_copy(uint16_t *dst, uint16_t *src, size_t num_elems,
                  bool do_scale = false);
+
+  void transpose_stride_copy(uint16_t *dst, uint16_t *src, int dim0, int dim1,
+                             int max_dim1, bool do_scale = false);
 
   uint16_t a16_scale(uint16_t data);
 

@@ -925,7 +925,7 @@ static std::string format_seconds(double curr_time) {
 // 构建提示
 std::string ChatPipe::build_text_prompt(const std::string &input_str) {
   std::string prompt = "<|im_start|>user\n";
-  prompt += input_str + "\n<|im_end|>\n<|im_start|>assistant\n";
+  prompt += input_str + "<|im_end|>\n<|im_start|>assistant\n";
   return prompt;
 }
 
