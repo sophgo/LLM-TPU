@@ -50,6 +50,9 @@ python3 pipeline.py -m qwen2-audio-7b_w8f16_seq599_1dev.bmodel -c config
 
 ### 评价指标
 
-| Metric | Dataset-Split                     | qwen2-audio-chat(fp32) | qwen2-audio-chat(fp16) | qwen2-audio-chat(bf16) | qwen2-audio-chat(w4f16) | qwen2-audio-chat(w8f16) |
-|--------|-----------------------------------|------------------------|------------------------|------------------------|--------------------------|--------------------------|
+| Metric | Dataset-Split                     | qwen2-audio-chat(fp32,A6000) | qwen2-audio-chat(fp16,A6000) | qwen2-audio-chat(bf16,A6000) | qwen2-audio-chat(w4f16, airbox) | qwen2-audio-chat(w8f16,airbox) |
+|--------|-----------------------------------|-----------------------------|-------------------------------|------------------------------|---------------------------------|--------------------------------|
 | WER⬇   | librispeech-test-clean (2619个)   | 2.33                   | 2.32                   | 2.33                   | 14.98                    | 19.10                    |
+
+### 评价工具
+https://github.com/OpenBMB/UltraEval-Audio
