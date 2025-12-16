@@ -40,15 +40,16 @@ class Qwen2Audio():
     def __init__(self, args):
         # devid
         self.device = args.devid
+        self.config_path = args.config_path
 
         # load model
         self.model = chat.Qwen2Audio()
         self.model.init(self.device, args.model_path)
-        self.processor = AutoProcessor.from_pretrained(args.config_path, 
+        self.processor = AutoProcessor.from_pretrained(self.config_path, 
                                                        trust_remote_code=True)
         
         self.tokenizer = self.processor.tokenizer
-        self.config = AutoConfig.from_pretrained(args.config_path, trust_remote_code=True)
+        self.config = AutoConfig.from_pretrained(self.config_path, trust_remote_code=True)
         self.ID_END = self.tokenizer.convert_tokens_to_ids("<|end|>")
         self.ID_AU_END = self.tokenizer.convert_tokens_to_ids("<|endoftext|>")
 
@@ -74,9 +75,17 @@ class Qwen2Audio():
                 for ele in message["content"]:
                     if ele["type"] == "audio":
                         audios.append(librosa.load(
-                            BytesIO(urlopen(ele['audio_url']).read()),
+                            ele['audio_url'],
                             sr=self.processor.feature_extractor.sampling_rate)[0]
                         )
+        #for message in conversation:
+        #    if isinstance(message["content"], list):
+        #        for ele in message["content"]:
+        #            if ele["type"] == "audio":
+        #                audios.append(librosa.load(
+        #                    BytesIO(urlopen(ele['audio_url']).read()),
+        #                    sr=self.processor.feature_extractor.sampling_rate)[0]
+        #                )
         inputs = self.processor(
             text=text,
             audios=audios,
@@ -107,11 +116,9 @@ class Qwen2Audio():
             if media_path == '':
                 media_path = 'https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen2-Audio/audio/translate_to_chinese.wav'
             if self.input_str == '':
-                self.input_str = "What does the person say?"
+                self.input_str = "这句话是什么意思"
             media_path = media_path.strip()
             messages = self.audio_message(self.input_str, media_path)
-            import time
-            t1 = time.time()
             inputs = self.process(messages)
             ###process inputs
             for k,v in inputs.items():
@@ -183,18 +190,9 @@ class Qwen2Audio():
             inputs_embeds = to_numpy(inputs_embeds)
             attention_mask = to_numpy(attention_mask.float())
             position_ids =  to_numpy(position_ids)
+            self.model.token_length = input_ids_shape
 
-            k_caches = []
-            v_caches = []
-            for i in tqdm(range(self.NUM_LAYERS)):
-                inputs_embeds, k, v = self.model.forward(inputs_embeds, position_ids, attention_mask, i)
-                k_caches.append(np.array(k).reshape(1, 32, 599, 128))
-                v_caches.append(np.array(v).reshape(1, 599, 32, 128).transpose(0,2,1,3))
-            inputs_embeds = np.array(inputs_embeds).reshape((1, 599, 4096))
-
-            inputs_embeds = inputs_embeds[:, input_ids.shape[-1] - 1:input_ids.shape[-1], :]
-            lmhead = self.model.forward_head(inputs_embeds)[None, None, :]
-            token = greedy(torch.from_numpy(np.array(lmhead))).view(1)
+            token  = self.model.forward_first(inputs_embeds, position_ids, attention_mask)
             out_ids = [int(token)]
             token_len = input_ids_shape
             valid_position_ids = position_ids.max()
@@ -202,28 +200,21 @@ class Qwen2Audio():
             while int(token) not in [self.ID_AU_END, self.ID_END
                                 ] and token_len < self.model.SEQLEN:
                 token_len += 1
-                input_id = torch.tensor([token]).unsqueeze(0).numpy()
-                inputs_embeds = self.model.forward_embed_cache(input_id.astype(np.int32))
-                inputs_embeds = inputs_embeds.reshape((1,1,4096))
                 valid_position_ids = valid_position_ids + 1
                 position_ids = np.array([[valid_position_ids]])
                 attention_mask = torch.zeros(
                         (1, 1, 1, 599)).float()
                 attention_mask[:, :, :, token_len-1:] = -.0
-                for idx in tqdm(range(self.NUM_LAYERS)):
-                    past_key_array = np.array(k_caches[idx])
-                    past_value_array = np.array(v_caches[idx])
-                    inputs_embeds, k, v = self.model.forward_cache_next(
-                        inputs_embeds, position_ids, attention_mask, past_key_array, past_value_array, idx)
-                    k_caches[idx][:,:, token_len-1:token_len, :] = np.array(k).reshape(1,32,1,128)[:, :, :, :]
-                    v_caches[idx][:,:, token_len-1:token_len, :] = np.array(v).reshape(1,1,32,128).transpose((0,2,1,3))[:, :, :, :]
-                lmhead = self.model.forward_head(np.array(inputs_embeds))[None, None, :]
-                token = greedy(torch.from_numpy(np.array(lmhead))).view(1)
+                token = self.model.forward_next(token, position_ids, attention_mask)
                 out_ids.append(int(token))
+                #print(out_ids)
+                output_text = self.processor.batch_decode(
+                    out_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
+                )
+                #print(''.join(output_text))
             output_text = self.processor.batch_decode(
                 out_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
             )
-            print("consume time:", time.time()-t1)
             print(''.join(output_text))
 
 

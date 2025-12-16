@@ -154,7 +154,7 @@ pushd $outdir
 model_transform.py \
     --model_name lm_head \
     --model_def ${exe_dir}/../../llm/lm_head.pt \
-    --input_shapes [[1,1,4096]] \
+    --input_shapes [[1,1,$hidden_size]] \
     --mlir lm_head.mlir
 
 model_deploy.py \
@@ -180,7 +180,7 @@ for ((i=0; i<$num_layers; i++)); do
     model_transform.py \
         --model_name block_$i \
         --model_def ${exe_dir}/../../llm/block_$i.onnx \
-        --input_shapes [[1,$seq_length,4096],[1,$seq_length],[1,$seq_length]] \
+        --input_shapes [[1,$seq_length,$hidden_size],[1,$seq_length],[1,$seq_length]] \
         --mlir block_$i.mlir
 
     model_deploy.py \
@@ -196,7 +196,7 @@ for ((i=0; i<$num_layers; i++)); do
     model_transform.py \
         --model_name block_cache_$i \
         --model_def ${exe_dir}/../../llm/block_cache_$i.pt \
-        --input_shapes [[1,1,4096],[1,1],[1,1,1,$seq_length],[1,32,$seq_length,$audio_seq_length],[1,32,$seq_length,$audio_seq_length]] \
+        --input_shapes [[1,1,$hidden_size],[1,1],[1,1,1,$seq_length],[1,32,$seq_length,$audio_seq_length],[1,32,$seq_length,$audio_seq_length]] \
         --mlir block_cache_$i.mlir
 
     model_deploy.py \

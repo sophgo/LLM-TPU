@@ -47,3 +47,9 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 python demo
 python3 pipeline.py -m qwen2-audio-7b_w8f16_seq599_1dev.bmodel -c config
 ```
+
+### 评价指标
+
+| Metric | Dataset-Split                     | qwen2-audio-chat(fp32) | qwen2-audio-chat(fp16) | qwen2-audio-chat(bf16) | qwen2-audio-chat(w4f16) | qwen2-audio-chat(w8f16) |
+|--------|-----------------------------------|------------------------|------------------------|------------------------|--------------------------|--------------------------|
+| WER⬇   | librispeech-test-clean (2619个)   | 2.33                   | 2.32                   | 2.33                   | 14.98                    | 19.10                    |

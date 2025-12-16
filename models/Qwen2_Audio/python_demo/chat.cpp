@@ -24,6 +24,8 @@
 #include <random>
 #include <stdio.h>
 #include <vector>
+#include <typeinfo>
+#include <unsupported/Eigen/CXX11/Tensor>
 
 namespace py = pybind11;
 using ArrayFloat =
@@ -66,7 +68,10 @@ public:
                             ArrayFloat const & attention_mask,
                             ArrayFloat const &past_key_array,
                             ArrayFloat const &past_value_array,
-                            const int idx); ;
+                            const int idx); 
+  int  forward_first(ArrayFloat const &input_embeds, ArrayInt const &position_ids, ArrayFloat const &input_attention_mask) ;
+  int forward_next(ArrayInt const &token, ArrayFloat const &position_ids, ArrayFloat const &attention_mask) ;
+
 
   std::mt19937 sgen;
   Qwen2Audio() : sgen(std::random_device()()) {};
@@ -76,6 +81,7 @@ private:
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
   void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   int greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
+  int greedy_argmax(const std::vector<float>& m_logits);
   void init_by_names();
 
 public:
@@ -99,6 +105,8 @@ private:
   bm_device_mem_t dev_buffer;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
+  std::vector<std::vector<float> > past_key_array;
+  std::vector<std::vector<float> > past_value_array;
 };
 
 void Qwen2Audio::net_launch(const bm_net_info_t *net, int stage_idx) {
@@ -205,8 +213,19 @@ void Qwen2Audio::init(int dev_id, std::string model_path) {
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
   for (int i = 0; i < NUM_LAYERS; i++) {
-    past_key[i] = net_blocks[i]->stages[0].output_mems[1];
-    past_value[i] = net_blocks[i]->stages[0].output_mems[2];
+    bm_device_mem_t key_buffer;
+    bm_device_mem_t value_buffer;
+    auto buffer_size =
+      bm_mem_get_device_size(net_blocks[i]->stages[0].output_mems[1]);
+    status = bm_malloc_device_byte(bm_handle, &key_buffer, buffer_size);
+    assert(BM_SUCCESS == status);
+    key_buffer = net_blocks[i]->stages[0].output_mems[1];
+    status = bm_malloc_device_byte(bm_handle, &value_buffer, buffer_size);
+    assert(BM_SUCCESS == status);
+    value_buffer = net_blocks[i]->stages[0].output_mems[2];
+    
+    past_key[i] = key_buffer;
+    past_value[i] = value_buffer;
     empty(bm_handle, past_key[i]);
     empty(bm_handle, past_value[i]);
   }
@@ -236,7 +255,6 @@ ArrayFloat Qwen2Audio::forward_embed(ArrayInt const &input_ids) {
                                 net_embed->stages[0].output_shapes[0].dims[1] *
                                 net_embed->stages[0].output_shapes[0].dims[2] ;
 
-    // 3. create a vector to copy data
   std::vector<float> host_output_buffer(total_elements);
   bm_memcpy_d2s(bm_handle, (void *)host_output_buffer.data(), out_mem);
   return  py::array_t<float>(host_output_buffer.size(), host_output_buffer.data());
@@ -249,7 +267,6 @@ ArrayFloat Qwen2Audio::forward_embed_cache(ArrayInt const &input_ids) {
   bm_memcpy_s2d(bm_handle, in_mem, (void *)input_ids.data());
   net_launch(net_embed_cache);
 
-    // 2. compute output number
   const size_t total_elements = net_embed_cache->stages[0].output_shapes[0].dims[0] *
                                 net_embed_cache->stages[0].output_shapes[0].dims[1] *
                                 net_embed_cache->stages[0].output_shapes[0].dims[2] ;
@@ -332,6 +349,14 @@ int Qwen2Audio::greedy_search(const bm_net_info_t *net,
   return token;
 }
 
+int Qwen2Audio::greedy_argmax(const std::vector<float>& m_logits) {
+    if (m_logits.empty()) return -1; 
+
+    auto max_it = std::max_element(m_logits.begin(), m_logits.end());
+
+    return static_cast<int>(std::distance(m_logits.begin(), max_it));
+}
+
 ArrayFloat Qwen2Audio::forward_head(ArrayFloat const &input_features) {
   empty_net(bm_handle, net_lm);
 
@@ -385,6 +410,139 @@ ArrayFloat Qwen2Audio::forward_head(ArrayFloat const &input_features) {
 
   return std::make_tuple(input_embeds_host_input_buffer, k_host_output_buffer, v_host_output_buffer);
  }
+
+int  Qwen2Audio::forward_first(ArrayFloat const &input_embeds, ArrayInt const &position_ids, ArrayFloat const &input_attention_mask) {
+  auto out_mem = dev_buffer;
+  empty(bm_handle, out_mem);
+  const size_t inputs_embeds_total_elements = net_blocks[0]->stages[0].output_shapes[0].dims[0] *
+                                    net_blocks[0]->stages[0].output_shapes[0].dims[1] *
+                                    net_blocks[0]->stages[0].output_shapes[0].dims[2];
+  //std::cout << "\n " << inputs_embeds_total_elements << " " << std::endl;
+  std::vector<float> input_embeds_host_input_buffer(inputs_embeds_total_elements);
+  for (int idx = 0; idx < NUM_LAYERS; idx++) {
+    auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
+    auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
+    auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
+    // d2d(in0_mem, block_out_mem);
+    d2d(in0_mem, out_mem);
+    if (idx == 0) {
+      // only first time need copy
+      bm_memcpy_s2d(bm_handle, in0_mem, (void *)input_embeds.data());
+      bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_ids.data());
+      bm_memcpy_s2d(bm_handle, in2_mem, (void *)input_attention_mask.data());
+    }
+    net_launch(net_blocks[idx]);
+    out_mem = net_blocks[idx]->stages[0].output_mems[0];
+    // key
+    std::vector<float> past_key_input_buffer(1*32*599*128);
+    bm_memcpy_d2s(bm_handle, (void *)past_key_input_buffer.data(), net_blocks[idx]->stages[0].output_mems[1]);
+    past_key_array.push_back(past_key_input_buffer);
+    //d2d(past_key[idx], net_blocks[idx]->stages[0].output_mems[1]);
+    Eigen::Tensor<float, 4, Eigen::RowMajor> tensor(1, 599, 32, 128);
+    bm_memcpy_d2s(bm_handle, (void *)tensor.data(), net_blocks[idx]->stages[0].output_mems[2]);
+    Eigen::array<int, 4> perm = {0, 2, 1, 3};
+    Eigen::Tensor<float, 4, Eigen::RowMajor> transposed = tensor.shuffle(perm);
+    float* transpose_ptr = transposed.data();
+    std::vector<float> vec(transpose_ptr, transpose_ptr + transposed.size());
+    past_value_array.push_back(vec);
+    
+  }
+  int bytes = HIDDEN_SIZE * sizeof(float);
+  int seq_len = net_blocks[0]->stages[0].output_shapes[0].dims[1];
+  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
+  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
+  bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
+                     (seq_len - 1) * bytes, bytes);
+  net_launch(net_lm);
+
+  int token = greedy_search(net_greedy_head, lm_out_mem);
+  token_length++;
+  //return std::make_tuple(input_embeds_host_input_buffer, lmhead_host_input_buffer, token);
+  return token;
+}
+
+int Qwen2Audio::forward_next(ArrayInt const &token, ArrayFloat const &position_ids, ArrayFloat const &attention_mask) {
+  // embedding
+
+
+  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
+  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
+  empty_net(bm_handle, net_embed_cache);
+  auto in_mem = net_embed_cache->stages[0].input_mems[0];
+  auto out_mem = net_embed_cache->stages[0].output_mems[0];
+  bm_memcpy_s2d(bm_handle, in_mem, (void *)token.data());
+  net_launch(net_embed_cache);
+
+  std::vector<float> embed_cache(net_embed_cache->stages[0].output_shapes[0].dims[0] * 
+                                net_embed_cache->stages[0].output_shapes[0].dims[1] * net_embed_cache->stages[0].output_shapes[0].dims[2]);
+  bm_memcpy_d2s(bm_handle, (void *)embed_cache.data(), out_mem);
+  for (int idx = 0; idx < NUM_LAYERS; idx++) {
+    auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
+    auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
+    auto &in2_mem = net_blocks_cache[idx]->stages[0].input_mems[2];
+    auto &in3_mem = net_blocks_cache[idx]->stages[0].input_mems[3];
+    auto &in4_mem = net_blocks_cache[idx]->stages[0].input_mems[4];
+
+    auto &out0_mem = net_blocks_cache[idx]->stages[0].output_mems[0];
+    auto &out1_mem = net_blocks_cache[idx]->stages[0].output_mems[1];
+    auto &out2_mem = net_blocks_cache[idx]->stages[0].output_mems[2];
+
+    if (idx == 0) {
+      d2d(in0_mem, out_mem);
+    } else {
+      d2d(in0_mem, out0_mem);
+    }
+    bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_ids.data());
+    bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+    bm_memcpy_s2d(bm_handle, in3_mem, (void *)past_key_array[idx].data());
+    bm_memcpy_s2d(bm_handle, in4_mem, (void *)past_value_array[idx].data());
+
+    net_launch(net_blocks_cache[idx]);
+    d2d(out_mem, out0_mem);
+
+    const size_t key_cache_total_elements = net_blocks_cache[0]->stages[0].output_shapes[1].dims[0] *
+                                    net_blocks_cache[0]->stages[0].output_shapes[1].dims[1] *
+                                    net_blocks_cache[0]->stages[0].output_shapes[1].dims[2] * 
+                                    net_blocks_cache[0]->stages[0].output_shapes[1].dims[3] ;
+
+    std::vector<float> key_cache_host_input_buffer(key_cache_total_elements);
+    bm_memcpy_d2s(bm_handle, (void *)key_cache_host_input_buffer.data(), out1_mem);
+    std::vector<float> value_cache_host_input_buffer(key_cache_total_elements);
+    bm_memcpy_d2s(bm_handle, (void *)value_cache_host_input_buffer.data(), out2_mem);
+
+    Eigen::TensorMap<Eigen::Tensor<float, 4, Eigen::RowMajor>> 
+        past_key(past_key_array[idx].data(), 1, 32, 599, 128);
+    Eigen::TensorMap<Eigen::Tensor<float, 4, Eigen::RowMajor>> 
+        past_value(past_value_array[idx].data(), 1, 32, 599, 128);
+      
+    Eigen::TensorMap<Eigen::Tensor<float, 4, Eigen::RowMajor>> 
+        past_key_cache(key_cache_host_input_buffer.data(), 1, 32, 1, 128);
+    Eigen::TensorMap<Eigen::Tensor<float, 4, Eigen::RowMajor>> 
+        past_value_cache(value_cache_host_input_buffer.data(), 1, 32, 1, 128);
+
+    past_key.chip(token_length-1, 2) = past_key_cache.chip(0, 2);
+    past_value.chip(token_length-1, 2) = past_value_cache.chip(0, 2);
+
+    std::vector<float> past_key_vector(past_key.data(), past_key.data() + past_key.size());
+    std::vector<float> past_value_vector(past_value.data(), past_value.data() + past_value.size());
+    past_value_array[idx] = past_value_vector;
+    past_key_array[idx] = past_key_vector;
+  }
+
+  // forward lmhead
+  d2d(lm_in_mem, out_mem);
+  net_launch(net_lm);
+
+  //int temp_token = greedy_search(net_greedy_head, lm_out_mem);
+  const size_t lm_total_elements = net_lm->stages[0].output_shapes[0].dims[0] *
+                                    net_lm->stages[0].output_shapes[0].dims[1] *
+                                    net_lm->stages[0].output_shapes[0].dims[2];
+  std::vector<float> lm_host_input_buffer(lm_total_elements);
+  bm_memcpy_d2s(bm_handle, (void *)lm_host_input_buffer.data(), lm_out_mem);
+  int temp_token = greedy_argmax(lm_host_input_buffer);
+  token_length++;
+  return temp_token;
+}
 
  std::tuple<std::vector<float>, std::vector<float>, std::vector<float> > 
     Qwen2Audio::forward_cache_next(ArrayFloat const &inputs_embeds, 
@@ -443,6 +601,8 @@ PYBIND11_MODULE(chat, m) {
       .def("forward_embed_cache", &Qwen2Audio::forward_embed_cache)
       .def("forward_audio", &Qwen2Audio::forward_audio)
       .def("forward_project", &Qwen2Audio::forward_project)
+      .def("forward_first", &Qwen2Audio::forward_first)
+      .def("forward_next", &Qwen2Audio::forward_next)
       .def("forward_head", &Qwen2Audio::forward_head)
       .def("forward_cache_next", &Qwen2Audio::forward_cache_next)
       .def("forward", &Qwen2Audio::forward)
