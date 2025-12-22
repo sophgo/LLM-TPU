@@ -1,0 +1,8 @@
+datasets
+Pillow
+numpy
+torch==2.4.1
+torchvision==0.19.1
+transformers
+auto-round>=0.5
+compressed-tensors
