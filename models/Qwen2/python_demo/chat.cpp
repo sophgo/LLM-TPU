@@ -115,16 +115,19 @@ private:
 
 void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
+  bm_thread_sync(bm_handle);
 }
 
 void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset) {
   bm_memcpy_d2d_byte(bm_handle, dst, offset, src, 0,
                      bm_mem_get_device_size(src));
+  bm_thread_sync(bm_handle);
 }
 
 void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset,
                int size) {
   bm_memcpy_d2d_byte(bm_handle, dst, offset, src, 0, size);
+  bm_thread_sync(bm_handle);
 }
 
 void Qwen::init_decrypt() {
