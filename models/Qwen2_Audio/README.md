@@ -53,11 +53,23 @@ python3 pipeline.py -m qwen2-audio-7b_w8f16_seq599_1dev.bmodel -c config
 | Metric | Dataset-Split                     | qwen2-audio-chat(fp32,A6000) | qwen2-audio-chat(fp16,A6000) | qwen2-audio-chat(bf16,A6000) | qwen2-audio-chat(w4f16, airbox) | qwen2-audio-chat(w8f16,airbox) |
 |--------|-----------------------------------|-----------------------------|-------------------------------|------------------------------|---------------------------------|--------------------------------|
 | WER⬇   | librispeech-test-clean (2619个)   | 2.33                   | 2.32                   | 2.33                   | 14.98                    | 19.10                    |
-
+下面的指标表示一个token所消耗的时间：
 | Metric |  qwen2-audio-chat(fp32,A6000)    |qwen2-audio-chat(w4f16, airbox) | qwen2-audio-chat(w8f16,airbox)   |
 |--------|----------------------------------|--------------------------------- |--------------------------------|
 | TPS(s)  | 0.051                          |  0.76                             | 0.80                             |
 | TTFT(s) |0.18                           | 24.29621                           | 24.36132                       |
+
+| pred(w8f16) |  qwen2-audio-chat    |w4f16 | wer   |
+|--------|----------------------------------|--------------------------------- |--------------------------------|
+| I love thee with a love that was never told; With a love that will not be told. I love thee more than words can say.  | I love thee with a love I seemed to lose With my lost saints. I love thee with the breath, smiles, tears, Of all my life: and if God choose, I shall but love thee better after death.                          |  I love thee with my life, and if God choose, I shall love thee better after death                             | 76/0/55.26                             |
+| I love thee with the passion put to use In my old griefs and with my childhood's faith. | I love thee with the passion put to use In my old griefs and with my childhood's faith.                           | I love thee with the passion put to use in my old griefs and with my childhood's faith.                           | 0/0/0                       |
+|  | and though i have grown serene and strong since then i think that god has willed a still renewable fear.               | and though i have grown serene and strong since then i think that god has willed a still renewable fear.                           | 100/0/0                       |
+
+| 模型             | 完全正确率 (%) | 完全错误率 (%) | 样本数 | 成功预测数 |
+|------------------|----------------|----------------|--------|------------|
+| w8f16            | 41.17          | 4.90           | 2619   | 2570       |
+| qwen2-audio-chat | 74.76          | 0.11           | 2619   | 2619       |
+| w4f16            | 43.23          | 1.48           | 2619   | 2570       |
 
 ### 评价工具
 https://github.com/OpenBMB/UltraEval-Audio
