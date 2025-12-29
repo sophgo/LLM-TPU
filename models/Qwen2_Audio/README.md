@@ -66,7 +66,7 @@ python3 pipeline.py -m qwen2-audio-7b_w8f16_seq599_1dev.bmodel -c config
 | I love thee with the passion put to use In my old griefs and with my childhood's faith. | I love thee with the passion put to use In my old griefs and with my childhood's faith.                           | I love thee with the passion put to use in my old griefs and with my childhood's faith.  | i love thee with the passion put to use in my old griefs and with my childhood's faith                        | 0/0/0                       |
 |  | and though i have grown serene and strong since then i think that god has willed a still renewable fear.               | and though i have grown serene and strong since then i think that god has willed a still renewable fear.                         | and though i have grown serene and strong since then i think that god has willed a still renewable fear | 100/0/0                       |
 
-| 模型             | 完全正确率 (%) | 完全错误率 (%) | 样本数 | 成功预测数 |
+| Model            | accuracy (%) | error (%) | samples | predict success |
 |------------------|----------------|----------------|--------|------------|
 | w8f16            | 41.17          | 4.90           | 2619   | 2570       |
 | qwen2-audio-chat | 74.76          | 0.11           | 2619   | 2619       |
