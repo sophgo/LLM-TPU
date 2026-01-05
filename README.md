@@ -166,7 +166,9 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 --max_input_leng
 
 动态编译可以根据输入长度动态推理，在输入长短变化幅度较大的情况下，可以减少短输入的延时。
 
-方法：在`llm_converter.py`命令加入`--dynamic`
+另外如果是多模态模型，图片尺寸有大有小，也建议用动态编译。
+
+方法：在`llm_converter.py`命令加入`--dynamic`。
 样例：
 
 1) [Qwen3](./models/Qwen3)，python与cpp demo都支持
@@ -230,13 +232,6 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 --max_input_leng
 
 1) [Qwen/share_cache_demo](./models/Qwen/share_cache_demo)
 2) [Qwen1_5/share_cache_demo](./models/Qwen1_5/share_cache_demo)
-
-## 8. VIT动态
-
-当实际应用图片有大有小时，为了兼顾到不同尺寸下的vit性能，可以把vit做成动态。命令加入`--dynamic_vit`即可。
-样例：
-
-1) [Qwen2.5VL](./models/Qwen2_5_VL)，python与cpp demo都支持
 
 
 # 精度优化

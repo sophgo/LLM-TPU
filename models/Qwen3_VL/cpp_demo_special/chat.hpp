@@ -84,8 +84,6 @@ public:
   bool vit_run = false;
   int num_deepstack;
   std::vector<int> visited_tokens;
-  std::vector<int> VIT_PATCH_LIST;
-  std::vector<int> INPUT_LENGTH_LIST;
   bool do_sample = false;
   // load bmodel to device memory
   bool in_device = false;

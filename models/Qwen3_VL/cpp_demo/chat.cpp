@@ -222,17 +222,6 @@ void Qwen3_VL::init_by_names() {
   VIT_DIMS = net_vit->stages[0].input_shapes[0].dims[1];
   KV_BYTES =
       bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
-  for (int i = 0; i < net_vit->stage_num; i++) {
-    VIT_PATCH_LIST.push_back(net_vit->stages[i].input_shapes[0].dims[0]);
-  }
-  if (net_blocks[0]->stage_num > 1) {
-    for (int i = 0; i < net_blocks[0]->stage_num; i++) {
-      INPUT_LENGTH_LIST.push_back(
-          net_blocks[0]->stages[i].input_shapes[0].dims[1]);
-    }
-  } else {
-    INPUT_LENGTH_LIST.push_back(MAX_INPUT_LENGTH);
-  }
   printf("Num Layers:%d\n", NUM_LAYERS);
   printf("Max Pixels: %d*%d*%d\n", MAX_PATCHES / 4, 32, 32);
   PREFILL_KV_LENGTH = 0;
@@ -260,6 +249,7 @@ void Qwen3_VL::init(int dev_id, std::string model_path, std::string config_path,
   printf("Model[%s] loading ....\n", model_path.c_str());
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
+  bm_thread_sync(bm_handle);
   printf("Done!\n");
 
   init_by_names();
@@ -280,7 +270,7 @@ void Qwen3_VL::init(int dev_id, std::string model_path, std::string config_path,
   status = bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
   assert(BM_SUCCESS == status);
   num_deepstack = net_vit->output_num - 1;
-  assert(num_deepstack > 0);
+  // assert(num_deepstack > 0);
   for (int i = 0; i < num_deepstack; i++) {
     bm_device_mem_t mem;
     status = bm_malloc_device_byte(bm_handle, &mem, buffer_size);
@@ -375,18 +365,10 @@ void Qwen3_VL::forward_vit(const float *pixel_values,
   auto p_position_ids = position_ids.data();
   auto p_pos_idx = pos_idx.data();
   auto p_pos_weight = pos_weight.data();
-  // select stage
-  int stage = 0;
-  for (stage = 0; stage < net_vit->stage_num; stage++) {
-    if (hw > VIT_PATCH_LIST[stage]) {
-      break;
-    }
-  }
-  stage = std::max(0, stage - 1);
-  empty_net(bm_handle, net_vit, stage);
+  empty_net(bm_handle, net_vit);
   std::vector<bm_tensor_t> in_tensors;
   std::vector<bm_tensor_t> out_tensors;
-  init_tensors(net_vit, in_tensors, out_tensors, stage);
+  init_tensors(net_vit, in_tensors, out_tensors);
   bm_memcpy_s2d_partial(bm_handle, in_tensors[0].device_mem,
                         (void *)pixel_values, num_pixels * sizeof(float));
   bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
@@ -398,21 +380,14 @@ void Qwen3_VL::forward_vit(const float *pixel_values,
                         (void *)p_pos_weight,
                         pos_weight.size() * sizeof(float));
   if (vit_dynamic) {
-    std::vector<float> attention_mask(hw * hw, 0.0f);
-    bm_memcpy_s2d_partial(bm_handle, in_tensors[4].device_mem,
-                          (void *)attention_mask.data(),
-                          attention_mask.size() * sizeof(float));
     in_tensors[0].shape.dims[0] = hw;
     in_tensors[1].shape.dims[0] = hw;
     in_tensors[2].shape.dims[0] = hw;
     in_tensors[3].shape.dims[0] = hw;
-    in_tensors[4].shape.dims[2] = hw;
-    in_tensors[4].shape.dims[3] = hw;
   } else {
-    int patches = VIT_PATCH_LIST[stage];
-    std::vector<float> attention_mask(patches * patches, -10000.0f);
+    std::vector<float> attention_mask(MAX_PATCHES * MAX_PATCHES, -10000.0f);
     for (int i = 0; i < hw; i++) {
-      auto row_begin = attention_mask.begin() + i * patches;
+      auto row_begin = attention_mask.begin() + i * MAX_PATCHES;
       std::fill(row_begin, row_begin + hw, 0.0f);
     }
     bm_memcpy_s2d(bm_handle, in_tensors[4].device_mem,
@@ -483,7 +458,6 @@ int Qwen3_VL::forward_first(ArrayInt const &position_ids) {
   const int *p_ids = position_ids.data();
   std::vector<int> position_ids_pad;
   std::vector<uint16_t> attention_mask;
-  int stage = 0;
   if (is_dynamic) {
     attention_mask.assign(token_length * token_length, mask_value);
     for (int i = 0; i < token_length; i++) {
@@ -495,14 +469,7 @@ int Qwen3_VL::forward_first(ArrayInt const &position_ids) {
     assert((int)position_ids.size() == token_length * 3);
     std::copy(p_ids, p_ids + token_length * 3, position_ids_pad.begin());
   } else {
-
-    for (stage = 0; stage < net_blocks[0]->stage_num; stage++) {
-      if (token_length > INPUT_LENGTH_LIST[stage]) {
-        break;
-      }
-    }
-    stage = std::max(0, stage - 1);
-    int length = INPUT_LENGTH_LIST[stage];
+    int length = MAX_INPUT_LENGTH;
     attention_mask.assign(length * length, mask_value);
     for (int i = 0; i < token_length; i++) {
       for (int j = 0; j <= i; j++) {
@@ -520,13 +487,13 @@ int Qwen3_VL::forward_first(ArrayInt const &position_ids) {
   }
 
   auto out_mem = dev_buffer;
-  empty_net(bm_handle, net_blocks[0], stage);
+  empty_net(bm_handle, net_blocks[0]);
   std::vector<bm_tensor_t> in_tensors;
   std::vector<bm_tensor_t> out_tensors;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
-    init_tensors(net_blocks[idx], in_tensors, out_tensors, stage);
-    in_tensors[0].device_mem = out_mem;
+    init_tensors(net_blocks[idx], in_tensors, out_tensors);
     if (is_dynamic) {
+      d2d(in_tensors[0].device_mem, out_mem);
       if (idx == 0) {
         // only first time need copy
         bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
@@ -541,6 +508,7 @@ int Qwen3_VL::forward_first(ArrayInt const &position_ids) {
       in_tensors[2].shape.dims[2] = token_length;
       in_tensors[2].shape.dims[3] = token_length;
     } else {
+      in_tensors[0].device_mem = out_mem;
       if (idx == 0) {
         // only first time need copy
         bm_memcpy_s2d(bm_handle, in_tensors[1].device_mem,
@@ -550,23 +518,19 @@ int Qwen3_VL::forward_first(ArrayInt const &position_ids) {
       }
     }
     net_launch(net_blocks[idx], in_tensors, out_tensors);
-    out_mem = net_blocks[idx]->stages[stage].output_mems[0];
+    out_mem = net_blocks[idx]->stages[0].output_mems[0];
     if (vit_run && (idx < num_deepstack)) {
       init_tensors(net_add, in_tensors, out_tensors);
-      if (stage == 0) {
-        in_tensors[0].device_mem = out_mem;
-      } else {
-        d2d(in_tensors[0].device_mem, out_mem);
-      }
+      in_tensors[0].device_mem = out_mem;
       in_tensors[1].device_mem = deepstack_buffers[idx];
       net_launch(net_add, in_tensors, out_tensors);
       out_mem = net_add->stages[0].output_mems[0];
     }
     bm_memcpy_d2d_byte(bm_handle, past_key[idx], 0,
-                       net_blocks[idx]->stages[stage].output_mems[1], 0,
+                       net_blocks[idx]->stages[0].output_mems[1], 0,
                        KV_BYTES * token_length);
     bm_memcpy_d2d_byte(bm_handle, past_value[idx], 0,
-                       net_blocks[idx]->stages[stage].output_mems[2], 0,
+                       net_blocks[idx]->stages[0].output_mems[2], 0,
                        KV_BYTES * token_length);
   }
   vit_run = false;

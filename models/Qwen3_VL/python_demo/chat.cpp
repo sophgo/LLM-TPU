@@ -179,8 +179,6 @@ void Qwen3_VL::vit_launch_dyn(int real_patches) {
   in_tensors[1].shape.dims[0] = real_patches;
   in_tensors[2].shape.dims[0] = real_patches;
   in_tensors[3].shape.dims[0] = real_patches;
-  in_tensors[4].shape.dims[2] = real_patches;
-  in_tensors[4].shape.dims[3] = real_patches;
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net_vit->name, in_tensors.data(),
                                    net_vit->input_num, out_tensors.data(),
                                    net_vit->output_num, true, false);
@@ -385,7 +383,7 @@ void Qwen3_VL::init(int dev_id, std::string model_path) {
   status = bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
   assert(BM_SUCCESS == status);
   num_deepstack = net_vit->output_num - 1;
-  assert(num_deepstack > 0);
+  // assert(num_deepstack > 0);
   for (int i = 0; i < num_deepstack; i++) {
     bm_device_mem_t mem;
     status = bm_malloc_device_byte(bm_handle, &mem, buffer_size);
@@ -468,9 +466,6 @@ void Qwen3_VL::forward_vit(ArrayFloat const &pixel_values,
   bm_memcpy_s2d_partial(bm_handle, vit_in3_mem, (void *)p_pos_weight.ptr,
                         pos_weight.size() * sizeof(float));
   if (vit_dynamic) {
-    std::vector<float> attention_mask(hw * hw, 0.0f);
-    bm_memcpy_s2d_partial(bm_handle, vit_in4_mem, (void *)attention_mask.data(),
-                          attention_mask.size() * sizeof(float));
     vit_launch_dyn(hw);
   } else {
     std::vector<float> attention_mask(MAX_PATCHES * MAX_PATCHES, -10000.0f);
