@@ -414,6 +414,8 @@ ArrayFloat Qwen2Audio::forward_head(ArrayFloat const &input_features) {
 int  Qwen2Audio::forward_first(ArrayFloat const &input_embeds, ArrayInt const &position_ids, ArrayFloat const &input_attention_mask) {
   auto out_mem = dev_buffer;
   empty(bm_handle, out_mem);
+  past_key_array.clear();
+  past_value_array.clear();
   const size_t inputs_embeds_total_elements = net_blocks[0]->stages[0].output_shapes[0].dims[0] *
                                     net_blocks[0]->stages[0].output_shapes[0].dims[1] *
                                     net_blocks[0]->stages[0].output_shapes[0].dims[2];
