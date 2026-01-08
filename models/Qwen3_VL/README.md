@@ -160,3 +160,24 @@ pip3 install torchvision pillow  transformers qwen_vl_utils -U
 默认每秒1帧。
 
 20秒视频取20帧，总token数为 $ 144 × 20 ÷ 2 = 1440 $
+
+#### 如何改用源码编译第三方库来编译cpp_demo ?
+第三方库指tokenizers_cpp,tokenizers_c和sentencepiece
+
+``` shell
+# 根据操作系统，提前准备好对应的rust安装包
+wget https://static.rust-lang.org/dist/rust-1.92.0-x86_64-unknown-linux-gnu.tar.gz
+wget https://static.rust-lang.org/dist/rust-1.92.0-aarch64-unknown-linux-gnu.tar.gz
+# 在编译环境中安装rust
+tar xzf rust-*.tar.gz
+cd rust-*
+sudo ./install.sh
+# 解压缩tokenizers-cpp
+cd cpp_demo/third_party
+tar xzf tokenizers-cpp.tar.gz
+# 编译cpp_demo
+export TOKENIZER_SRC_COMPILE=TRUE
+cd cpp_demo
+mkdir build && cd build
+cmake .. && make
+```
