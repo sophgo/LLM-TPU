@@ -37,6 +37,9 @@ endif()
 add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -Werror)
 set(CMAKE_BUILD_TYPE "Debug")
 
+set(TOKENIZERS_SOURCE_DIR ${PROJECT_SOURCE_DIR}/third_party/tokenizers-cpp)
+add_subdirectory(${TOKENIZERS_SOURCE_DIR})
+
 set(OPENCV_LIBS opencv_core opencv_imgproc opencv_imgcodecs opencv_videoio)
 add_executable(pipeline pipeline.cpp chat.cpp)
 target_link_libraries(pipeline PUBLIC bmrt bmlib tokenizers_cpp tokenizers_c sentencepiece ${OPENCV_LIBS} pthread dl)
