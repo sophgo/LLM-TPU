@@ -197,6 +197,7 @@ void LLama2::net_launch(const bm_net_info_t *net, int stage_idx) {
 
 void LLama2::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
+  bm_thread_sync(bm_handle);
 }
 
 void LLama2::head_launch(const bm_net_info_t *net,
