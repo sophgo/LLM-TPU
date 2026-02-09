@@ -39,12 +39,12 @@ void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
 }
 
 void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
-               int stage_idx = 0) {
+               int stage = 0) {
   for (int i = 0; i < net->input_num; i++) {
-    empty(bm_handle, net->stages[stage_idx].input_mems[i]);
+    empty(bm_handle, net->stages[stage].input_mems[i]);
   }
   for (int i = 0; i < net->output_num; i++) {
-    empty(bm_handle, net->stages[stage_idx].output_mems[i]);
+    empty(bm_handle, net->stages[stage].output_mems[i]);
   }
 }
 
@@ -64,18 +64,22 @@ public:
   Qwen3_VL() : sgen(std::random_device()()) {};
 
 private:
-  void net_launch(const bm_net_info_t *net, int stage_idx = 0);
-  void net_launch_block_dyn(const bm_net_info_t *net, int real_len);
+  void net_launch(const bm_net_info_t *net,
+                  const std::vector<bm_tensor_t> &in_tensors,
+                  std::vector<bm_tensor_t> &out_tensors);
   void net_launch_decode(int block_idx, int kv_offset,
                          bm_device_mem_t &input_mem, const int *position_id,
                          std::vector<uint16_t> &attention_mask);
-  void vit_launch_dyn(int real_patches);
-  void add_launch(bm_device_mem_t &in0_mem, bm_device_mem_t &in1_mem,
-                  bm_device_mem_t &out_mem);
-  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
+  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset = 0,
+                  int size = 0);
   void init_by_names();
   int forward_first_with_kv(ArrayInt const &position_ids);
+  int generate(bm_device_mem_t &logits_mem);
   int greedy_search(bm_device_mem_t &logits_mem);
+  int penalty_sample(bm_device_mem_t &logits_mem);
+  void init_tensors(const bm_net_info_t *net,
+                    std::vector<bm_tensor_t> &in_tensors,
+                    std::vector<bm_tensor_t> &out_tensors, int stage = 0);
 
 public:
   int token_length;
@@ -97,6 +101,7 @@ public:
   uint16_t mask_value;
   bool vit_run = false;
   int num_deepstack;
+  std::vector<int> visited_tokens;
 
 private:
   bm_handle_t bm_handle;
@@ -115,90 +120,30 @@ private:
   std::vector<bm_device_mem_t> past_value;
 };
 
-void Qwen3_VL::net_launch(const bm_net_info_t *net, int stage_idx) {
-  std::vector<bm_tensor_t> in_tensors(net->input_num);
-  std::vector<bm_tensor_t> out_tensors(net->output_num);
-
+void Qwen3_VL::init_tensors(const bm_net_info_t *net,
+                            std::vector<bm_tensor_t> &in_tensors,
+                            std::vector<bm_tensor_t> &out_tensors, int stage) {
+  in_tensors.resize(net->input_num);
+  out_tensors.resize(net->output_num);
   for (int i = 0; i < net->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net->stages[stage_idx].input_mems[i],
-        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
-  }
-
-  for (int i = 0; i < net->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net->stages[stage_idx].output_mems[i],
-        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
-  }
-  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
-                                   net->input_num, out_tensors.data(),
-                                   net->output_num, true, false);
-  assert(ret);
-}
-
-void Qwen3_VL::net_launch_block_dyn(const bm_net_info_t *net, int real_len) {
-  std::vector<bm_tensor_t> in_tensors(net->input_num);
-  std::vector<bm_tensor_t> out_tensors(net->output_num);
-
-  for (int i = 0; i < net->input_num; i++) {
-    bmrt_tensor_with_device(&in_tensors[i], net->stages[0].input_mems[i],
+    bmrt_tensor_with_device(&in_tensors[i], net->stages[stage].input_mems[i],
                             net->input_dtypes[i],
-                            net->stages[0].input_shapes[i]);
+                            net->stages[stage].input_shapes[i]);
   }
-  for (int i = 0; i < net->output_num; i++) {
-    bmrt_tensor_with_device(&out_tensors[i], net->stages[0].output_mems[i],
-                            net->output_dtypes[i],
-                            net->stages[0].output_shapes[i]);
-  }
-  in_tensors[0].shape.dims[1] = real_len;
-  in_tensors[1].shape.dims[1] = real_len;
-  in_tensors[2].shape.dims[2] = real_len;
-  in_tensors[2].shape.dims[3] = real_len;
 
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(&out_tensors[i], net->stages[stage].output_mems[i],
+                            net->output_dtypes[i],
+                            net->stages[stage].output_shapes[i]);
+  }
+}
+
+void Qwen3_VL::net_launch(const bm_net_info_t *net,
+                          const std::vector<bm_tensor_t> &in_tensors,
+                          std::vector<bm_tensor_t> &out_tensors) {
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
-  assert(ret);
-}
-
-void Qwen3_VL::vit_launch_dyn(int real_patches) {
-  std::vector<bm_tensor_t> in_tensors(net_vit->input_num);
-  std::vector<bm_tensor_t> out_tensors(net_vit->output_num);
-
-  for (int i = 0; i < net_vit->input_num; i++) {
-    bmrt_tensor_with_device(&in_tensors[i], net_vit->stages[0].input_mems[i],
-                            net_vit->input_dtypes[i],
-                            net_vit->stages[0].input_shapes[i]);
-  }
-  for (int i = 0; i < net_vit->output_num; i++) {
-    bmrt_tensor_with_device(&out_tensors[i], net_vit->stages[0].output_mems[i],
-                            net_vit->output_dtypes[i],
-                            net_vit->stages[0].output_shapes[i]);
-  }
-  in_tensors[0].shape.dims[0] = real_patches;
-  in_tensors[1].shape.dims[0] = real_patches;
-  in_tensors[2].shape.dims[0] = real_patches;
-  in_tensors[3].shape.dims[0] = real_patches;
-  auto ret = bmrt_launch_tensor_ex(p_bmrt, net_vit->name, in_tensors.data(),
-                                   net_vit->input_num, out_tensors.data(),
-                                   net_vit->output_num, true, false);
-  assert(ret);
-}
-
-void Qwen3_VL::add_launch(bm_device_mem_t &in0_mem, bm_device_mem_t &in1_mem,
-                          bm_device_mem_t &out_mem) {
-  std::vector<bm_tensor_t> in_tensors(net_add->input_num);
-  std::vector<bm_tensor_t> out_tensors(net_add->output_num);
-
-  bmrt_tensor_with_device(&in_tensors[0], in0_mem, net_add->input_dtypes[0],
-                          net_add->stages[0].input_shapes[0]);
-  bmrt_tensor_with_device(&in_tensors[1], in1_mem, net_add->input_dtypes[1],
-                          net_add->stages[0].input_shapes[1]);
-  bmrt_tensor_with_device(&out_tensors[0], out_mem, net_add->output_dtypes[0],
-                          net_add->stages[0].output_shapes[0]);
-  auto ret = bmrt_launch_tensor_ex(p_bmrt, net_add->name, in_tensors.data(),
-                                   net_add->input_num, out_tensors.data(),
-                                   net_add->output_num, true, false);
   assert(ret);
 }
 
@@ -206,56 +151,35 @@ void Qwen3_VL::net_launch_decode(int idx, int kv_offset,
                                  bm_device_mem_t &input_mem, const int *pos_id,
                                  std::vector<uint16_t> &attention_mask) {
   auto &net = net_blocks_cache[idx];
-  std::vector<bm_tensor_t> in_tensors(5);
-  std::vector<bm_tensor_t> out_tensors(3);
-  // auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
-  auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
-  auto &in2_mem = net_blocks_cache[idx]->stages[0].input_mems[2];
-  auto &in3_mem = net_blocks_cache[idx]->stages[0].input_mems[3];
-  auto &in4_mem = net_blocks_cache[idx]->stages[0].input_mems[4];
-  auto &out0_mem = net_blocks_cache[idx]->stages[0].output_mems[0];
+  std::vector<bm_tensor_t> in_tensors;
+  std::vector<bm_tensor_t> out_tensors;
+  init_tensors(net, in_tensors, out_tensors);
+
   // ===== prepare input tensors =====
-  bmrt_tensor_with_device(&in_tensors[0], input_mem, net->input_dtypes[0],
-                          net->stages[0].input_shapes[0]);
+  in_tensors[0].device_mem = input_mem;
   if (idx == 0) {
-    bm_memcpy_s2d(bm_handle, in1_mem, (void *)pos_id);
-    bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-    bmrt_tensor_with_device(&in_tensors[1], in1_mem, net->input_dtypes[1],
-                            net->stages[0].input_shapes[1]);
-    bmrt_tensor_with_device(&in_tensors[2], in2_mem, net->input_dtypes[2],
-                            net->stages[0].input_shapes[2]);
+    bm_memcpy_s2d(bm_handle, in_tensors[1].device_mem, (void *)pos_id);
+    bm_memcpy_s2d(bm_handle, in_tensors[2].device_mem,
+                  (void *)attention_mask.data());
   } else {
-    bmrt_tensor_with_device(
-        &in_tensors[1], net_blocks_cache[0]->stages[0].input_mems[1],
-        net->input_dtypes[1], net->stages[0].input_shapes[1]);
-    bmrt_tensor_with_device(
-        &in_tensors[2], net_blocks_cache[0]->stages[0].input_mems[2],
-        net->input_dtypes[2], net->stages[0].input_shapes[2]);
+    in_tensors[1].device_mem = net_blocks_cache[0]->stages[0].input_mems[1];
+    in_tensors[2].device_mem = net_blocks_cache[0]->stages[0].input_mems[2];
   }
-  bmrt_tensor_with_device(&in_tensors[3], in3_mem, net->input_dtypes[3],
-                          net->stages[0].input_shapes[3]);
-  bmrt_tensor_with_device(&in_tensors[4], in4_mem, net->input_dtypes[4],
-                          net->stages[0].input_shapes[4]);
-  // ===== prepare output tensors =====
-  bmrt_tensor_with_device(&out_tensors[0], out0_mem, net->output_dtypes[0],
-                          net->stages[0].output_shapes[0]);
-  auto k_mem = bm_mem_from_device(
+  out_tensors[1].device_mem = bm_mem_from_device(
       past_key[idx].u.device.device_addr + kv_offset, KV_BYTES);
-  auto v_mem = bm_mem_from_device(
+  out_tensors[2].device_mem = bm_mem_from_device(
       past_value[idx].u.device.device_addr + kv_offset, KV_BYTES);
-  bmrt_tensor_with_device(&out_tensors[1], k_mem, net->output_dtypes[1],
-                          net->stages[0].output_shapes[1]);
-  bmrt_tensor_with_device(&out_tensors[2], v_mem, net->output_dtypes[2],
-                          net->stages[0].output_shapes[2]);
+
   // ===== launch =====
-  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
-                                   in_tensors.size(), out_tensors.data(),
-                                   out_tensors.size(), true, false);
-  assert(ret);
+  net_launch(net, in_tensors, out_tensors);
 }
 
-void Qwen3_VL::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
-  bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
+void Qwen3_VL::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset,
+                   int size) {
+  if (!size) {
+    size = bm_mem_get_device_size(src);
+  }
+  bm_memcpy_d2d_byte(bm_handle, dst, offset, src, 0, size);
 }
 
 void Qwen3_VL::clear_history() {
@@ -365,9 +289,12 @@ void Qwen3_VL::init(int dev_id, std::string model_path) {
   printf("Model[%s] loading ....\n", model_path.c_str());
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
+  bm_thread_sync(bm_handle);
   printf("Done!\n");
 
   init_by_names();
+
+  visited_tokens.resize(SEQLEN);
 
   // kv cache
   past_key.resize(NUM_LAYERS);
@@ -403,27 +330,32 @@ void Qwen3_VL::deinit() {
 }
 
 int Qwen3_VL::greedy_search(bm_device_mem_t &logits_mem) {
-  auto &in_mem = net_greedy_head->stages[0].input_mems[0];
-  auto &out_mem = net_greedy_head->stages[0].output_mems[0];
-  d2d(in_mem, logits_mem);
-  net_launch(net_greedy_head);
+  std::vector<bm_tensor_t> in_tensors;
+  std::vector<bm_tensor_t> out_tensors;
+  init_tensors(net_greedy_head, in_tensors, out_tensors);
+  in_tensors[0].device_mem = logits_mem;
+  net_launch(net_greedy_head, in_tensors, out_tensors);
   int token = 0;
-  bm_memcpy_d2s(bm_handle, (void *)&token, out_mem);
+  bm_memcpy_d2s(bm_handle, (void *)&token, out_tensors[0].device_mem);
   return token;
 }
 
 void Qwen3_VL::forward_embed(ArrayInt const &tokens) {
-  std::vector<int> input_ids(MAX_INPUT_LENGTH, 0);
   auto num = tokens.size();
   auto p_buffer = tokens.request();
   auto p_tokens = static_cast<int *>(p_buffer.ptr);
-  std::copy(p_tokens, p_tokens + num, input_ids.data());
-
-  auto &in_mem = net_embed->stages[0].input_mems[0];
-  auto &out_mem = net_embed->stages[0].output_mems[0];
-  bm_memcpy_s2d(bm_handle, in_mem, (void *)input_ids.data());
-  net_launch(net_embed);
-  d2d(dev_buffer, out_mem);
+  std::fill(visited_tokens.begin(), visited_tokens.end(), 0);
+  std::copy(p_tokens, p_tokens + num, visited_tokens.data());
+  std::vector<bm_tensor_t> in_tensors;
+  std::vector<bm_tensor_t> out_tensors;
+  init_tensors(net_embed, in_tensors, out_tensors);
+  bm_memcpy_s2d_partial(bm_handle, in_tensors[0].device_mem,
+                        (void *)visited_tokens.data(),
+                        MAX_INPUT_LENGTH * sizeof(int));
+  net_launch(net_embed, in_tensors, out_tensors);
+  empty(bm_handle, dev_buffer);
+  d2d(dev_buffer, out_tensors[0].device_mem, 0,
+      tokens.size() * HIDDEN_SIZE * sizeof(uint16_t));
   token_length = tokens.size();
   for (auto &mem : deepstack_buffers) {
     empty(bm_handle, mem);
@@ -441,7 +373,8 @@ void Qwen3_VL::forward_vit(ArrayFloat const &pixel_values,
   int h = p_thw[1];
   int w = p_thw[2];
   int hw = t * h * w;
-  assert(pixel_values.size() == (hw * VIT_DIMS));
+  int num_pixels = hw * VIT_DIMS;
+  assert(pixel_values.size() == num_pixels);
   assert(position_ids.size() == (hw * 2));
   assert(pos_idx.size() == (hw * 4));
   assert(pos_weight.size() == (hw * 4));
@@ -451,49 +384,65 @@ void Qwen3_VL::forward_vit(ArrayFloat const &pixel_values,
   auto p_pos_weight = pos_weight.request();
 
   empty_net(bm_handle, net_vit);
-  auto &vit_in0_mem = net_vit->stages[0].input_mems[0]; // pixel_values
-  auto &vit_in1_mem = net_vit->stages[0].input_mems[1]; // position_ids
-  auto &vit_in2_mem = net_vit->stages[0].input_mems[2]; // pos_idx
-  auto &vit_in3_mem = net_vit->stages[0].input_mems[3]; // pos_weight
-  auto &vit_in4_mem = net_vit->stages[0].input_mems[4]; // mask
-  auto &vit_out_mem = net_vit->stages[0].output_mems[0];
-  bm_memcpy_s2d_partial(bm_handle, vit_in0_mem, (void *)p_pixel_values.ptr,
-                        pixel_values.size() * sizeof(float));
-  bm_memcpy_s2d_partial(bm_handle, vit_in1_mem, (void *)p_position_ids.ptr,
+  std::vector<bm_tensor_t> in_tensors;
+  std::vector<bm_tensor_t> out_tensors;
+  init_tensors(net_vit, in_tensors, out_tensors);
+  bm_memcpy_s2d_partial(bm_handle, in_tensors[0].device_mem,
+                        (void *)p_pixel_values.ptr, num_pixels * sizeof(float));
+  bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
+                        (void *)p_position_ids.ptr,
                         position_ids.size() * sizeof(int));
-  bm_memcpy_s2d_partial(bm_handle, vit_in2_mem, (void *)p_pos_idx.ptr,
-                        pos_idx.size() * sizeof(int));
-  bm_memcpy_s2d_partial(bm_handle, vit_in3_mem, (void *)p_pos_weight.ptr,
+  bm_memcpy_s2d_partial(bm_handle, in_tensors[2].device_mem,
+                        (void *)p_pos_idx.ptr, pos_idx.size() * sizeof(int));
+  bm_memcpy_s2d_partial(bm_handle, in_tensors[3].device_mem,
+                        (void *)p_pos_weight.ptr,
                         pos_weight.size() * sizeof(float));
   if (vit_dynamic) {
-    vit_launch_dyn(hw);
+    in_tensors[0].shape.dims[0] = hw;
+    in_tensors[1].shape.dims[0] = hw;
+    in_tensors[2].shape.dims[0] = hw;
+    in_tensors[3].shape.dims[0] = hw;
   } else {
     std::vector<float> attention_mask(MAX_PATCHES * MAX_PATCHES, -10000.0f);
     for (int i = 0; i < hw; i++) {
       auto row_begin = attention_mask.begin() + i * MAX_PATCHES;
       std::fill(row_begin, row_begin + hw, 0.0f);
     }
-    bm_memcpy_s2d(bm_handle, vit_in4_mem, (void *)attention_mask.data());
-    net_launch(net_vit);
+    bm_memcpy_s2d(bm_handle, in_tensors[4].device_mem,
+                  (void *)attention_mask.data());
   }
+
+  net_launch(net_vit, in_tensors, out_tensors);
 
   // concatenante texting embedding and image embedding
   int dst_offset = vit_offset * HIDDEN_SIZE * sizeof(uint16_t);
   int vit_size = hw / 4 * HIDDEN_SIZE * sizeof(uint16_t);
-  bm_memcpy_d2d_byte(bm_handle, dev_buffer, dst_offset, vit_out_mem, 0,
-                     vit_size);
+  bm_memcpy_d2d_byte(bm_handle, dev_buffer, dst_offset,
+                     out_tensors[0].device_mem, 0, vit_size);
   for (int i = 0; i < num_deepstack; i++) {
-    auto mem = net_vit->stages[0].output_mems[i + 1];
-    bm_memcpy_d2d_byte(bm_handle, deepstack_buffers[i], dst_offset, mem, 0,
-                       vit_size);
+    bm_memcpy_d2d_byte(bm_handle, deepstack_buffers[i], dst_offset,
+                       out_tensors[i + 1].device_mem, 0, vit_size);
   }
   vit_run = true;
+}
+
+int Qwen3_VL::generate(bm_device_mem_t &logits_mem) {
+  int token = 0;
+  if (lmhead_with_topk) {
+    bm_memcpy_d2s_partial(bm_handle, (void *)&token, logits_mem, sizeof(int));
+  } else {
+    token = greedy_search(logits_mem);
+  }
+  return token;
 }
 
 int Qwen3_VL::forward_first(ArrayInt const &position_ids) {
   if (support_history) {
     return forward_first_with_kv(position_ids);
   }
+  auto p_position_ids = position_ids.request();
+  auto p_ids = static_cast<int *>(p_position_ids.ptr);
+  std::vector<int> position_ids_pad;
   std::vector<uint16_t> attention_mask;
   if (is_dynamic) {
     attention_mask.assign(token_length * token_length, mask_value);
@@ -502,6 +451,9 @@ int Qwen3_VL::forward_first(ArrayInt const &position_ids) {
         attention_mask[i * token_length + j] = 0;
       }
     }
+    position_ids_pad.assign(3 * token_length, 0);
+    assert((int)position_ids.size() == token_length * 3);
+    std::copy(p_ids, p_ids + token_length * 3, position_ids_pad.begin());
   } else {
     attention_mask.assign(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH, mask_value);
     for (int i = 0; i < token_length; i++) {
@@ -509,15 +461,6 @@ int Qwen3_VL::forward_first(ArrayInt const &position_ids) {
         attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
       }
     }
-  }
-  auto p_position_ids = position_ids.request();
-  auto p_ids = static_cast<int *>(p_position_ids.ptr);
-  std::vector<int> position_ids_pad;
-  if (is_dynamic) {
-    position_ids_pad.assign(3 * token_length, 0);
-    assert((int)position_ids.size() == token_length * 3);
-    std::copy(p_ids, p_ids + token_length * 3, position_ids_pad.begin());
-  } else {
     position_ids_pad.assign(3 * MAX_INPUT_LENGTH, 0);
     int ori_length = position_ids.size() / 3;
     for (int i = 0; i < 3; i++) {
@@ -527,37 +470,45 @@ int Qwen3_VL::forward_first(ArrayInt const &position_ids) {
                 position_ids_pad.begin() + dst_offset);
     }
   }
+
   auto out_mem = dev_buffer;
   empty_net(bm_handle, net_blocks[0]);
+  std::vector<bm_tensor_t> in_tensors;
+  std::vector<bm_tensor_t> out_tensors;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
-    auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
-    auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
-    auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
-    bm_memcpy_d2d_byte(bm_handle, in0_mem, 0, out_mem, 0,
-                       token_length * HIDDEN_SIZE * sizeof(uint16_t));
+    init_tensors(net_blocks[idx], in_tensors, out_tensors);
     if (is_dynamic) {
+      d2d(in_tensors[0].device_mem, out_mem);
       if (idx == 0) {
         // only first time need copy
-        bm_memcpy_s2d_partial(bm_handle, in1_mem,
+        bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
                               (void *)position_ids_pad.data(),
                               token_length * 3 * sizeof(int));
-        bm_memcpy_s2d_partial(bm_handle, in2_mem, (void *)attention_mask.data(),
+        bm_memcpy_s2d_partial(bm_handle, in_tensors[2].device_mem,
+                              (void *)attention_mask.data(),
                               token_length * token_length * sizeof(uint16_t));
       }
-      net_launch_block_dyn(net_blocks[idx], token_length);
+      in_tensors[0].shape.dims[1] = token_length;
+      in_tensors[1].shape.dims[1] = token_length;
+      in_tensors[2].shape.dims[2] = token_length;
+      in_tensors[2].shape.dims[3] = token_length;
     } else {
+      in_tensors[0].device_mem = out_mem;
       if (idx == 0) {
         // only first time need copy
-        bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_ids_pad.data());
-        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+        bm_memcpy_s2d(bm_handle, in_tensors[1].device_mem,
+                      (void *)position_ids_pad.data());
+        bm_memcpy_s2d(bm_handle, in_tensors[2].device_mem,
+                      (void *)attention_mask.data());
       }
-      net_launch(net_blocks[idx]);
     }
-
+    net_launch(net_blocks[idx], in_tensors, out_tensors);
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
     if (vit_run && (idx < num_deepstack)) {
-      add_launch(out_mem, deepstack_buffers[idx],
-                 net_add->stages[0].output_mems[0]);
+      init_tensors(net_add, in_tensors, out_tensors);
+      in_tensors[0].device_mem = out_mem;
+      in_tensors[1].device_mem = deepstack_buffers[idx];
+      net_launch(net_add, in_tensors, out_tensors);
       out_mem = net_add->stages[0].output_mems[0];
     }
     bm_memcpy_d2d_byte(bm_handle, past_key[idx], 0,
@@ -571,17 +522,13 @@ int Qwen3_VL::forward_first(ArrayInt const &position_ids) {
 
   // forward lmhead
   int bytes = HIDDEN_SIZE * sizeof(uint16_t);
-  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
-  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
-  bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
-                     (token_length - 1) * bytes, bytes);
-  net_launch(net_lm);
-  int token = 0;
-  if (lmhead_with_topk) {
-    bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
-  } else {
-    token = greedy_search(lm_out_mem);
-  }
+  init_tensors(net_lm, in_tensors, out_tensors);
+  in_tensors[0].device_mem = bm_mem_from_device(
+      out_mem.u.device.device_addr + (token_length - 1) * bytes, bytes);
+  out_tensors[0].device_mem = dev_buffer;
+  net_launch(net_lm, in_tensors, out_tensors);
+  auto token = generate(dev_buffer);
+  visited_tokens[token_length] = token;
   token_length++;
   history_length = token_length;
   return token;
@@ -619,30 +566,29 @@ int Qwen3_VL::forward_first_with_kv(ArrayInt const &position_ids) {
 
   auto out_mem = dev_buffer;
   empty_net(bm_handle, net_blocks[0]);
+  std::vector<bm_tensor_t> in_tensors;
+  std::vector<bm_tensor_t> out_tensors;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
-    auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
-    auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
-    auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
-    auto &in3_mem = net_blocks[idx]->stages[0].input_mems[3];
-    auto &in4_mem = net_blocks[idx]->stages[0].input_mems[4];
-    bm_memcpy_d2d_byte(bm_handle, in0_mem, 0, out_mem, 0,
-                       token_length * HIDDEN_SIZE * sizeof(uint16_t));
+    init_tensors(net_blocks[idx], in_tensors, out_tensors);
+    in_tensors[0].device_mem = out_mem;
     if (old_length > 0) {
-      bm_memcpy_d2d_byte(bm_handle, in3_mem, 0, past_key[idx], 0,
-                         KV_BYTES * old_length);
-      bm_memcpy_d2d_byte(bm_handle, in4_mem, 0, past_value[idx], 0,
-                         KV_BYTES * old_length);
+      d2d(in_tensors[3].device_mem, past_key[idx], 0, KV_BYTES * old_length);
+      d2d(in_tensors[4].device_mem, past_value[idx], 0, KV_BYTES * old_length);
     } else if (idx == 0) {
-      empty(bm_handle, in3_mem);
-      empty(bm_handle, in4_mem);
+      empty(bm_handle, in_tensors[3].device_mem);
+      empty(bm_handle, in_tensors[4].device_mem);
     }
-    bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_ids_pad.data());
-    bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-    net_launch(net_blocks[idx]);
+    bm_memcpy_s2d(bm_handle, in_tensors[1].device_mem,
+                  (void *)position_ids_pad.data());
+    bm_memcpy_s2d(bm_handle, in_tensors[2].device_mem,
+                  (void *)attention_mask.data());
+    net_launch(net_blocks[idx], in_tensors, out_tensors);
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
     if (vit_run && (idx < num_deepstack)) {
-      add_launch(out_mem, deepstack_buffers[idx],
-                 net_add->stages[0].output_mems[0]);
+      init_tensors(net_add, in_tensors, out_tensors);
+      in_tensors[0].device_mem = out_mem;
+      in_tensors[1].device_mem = deepstack_buffers[idx];
+      net_launch(net_add, in_tensors, out_tensors);
       out_mem = net_add->stages[0].output_mems[0];
     }
     auto &out1_mem = net_blocks[idx]->stages[0].output_mems[1];
@@ -655,17 +601,13 @@ int Qwen3_VL::forward_first_with_kv(ArrayInt const &position_ids) {
 
   // forward lmhead
   int bytes = HIDDEN_SIZE * sizeof(uint16_t);
-  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
-  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
-  bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
-                     (token_length - 1) * bytes, bytes);
-  net_launch(net_lm);
-  int token = 0;
-  if (lmhead_with_topk) {
-    bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
-  } else {
-    token = greedy_search(lm_out_mem);
-  }
+  init_tensors(net_lm, in_tensors, out_tensors);
+  in_tensors[0].device_mem = bm_mem_from_device(
+      out_mem.u.device.device_addr + (token_length - 1) * bytes, bytes);
+  out_tensors[0].device_mem = dev_buffer;
+  net_launch(net_lm, in_tensors, out_tensors);
+  int token = generate(dev_buffer);
+  visited_tokens[token_length] = token;
   token_length++;
   history_length++;
   return token;
@@ -680,17 +622,13 @@ int Qwen3_VL::forward_next(ArrayInt const &position_ids) {
   auto p_position_ids = position_ids.request();
   auto p_ids = static_cast<int *>(p_position_ids.ptr);
   // embedding
-  auto &lm_in_mem = net_lm->stages[0].input_mems[0];
-  auto &lm_out_mem = net_lm->stages[0].output_mems[0];
-
-  auto in_mem = net_embed_cache->stages[0].input_mems[0];
-  auto out_mem = net_embed_cache->stages[0].output_mems[0];
-  if (lmhead_with_topk) {
-    d2d(in_mem, lm_out_mem);
-  } else {
-    d2d(in_mem, net_greedy_head->stages[0].output_mems[0]);
-  }
-  net_launch(net_embed_cache);
+  std::vector<bm_tensor_t> in_tensors;
+  std::vector<bm_tensor_t> out_tensors;
+  init_tensors(net_embed_cache, in_tensors, out_tensors);
+  int token = visited_tokens[token_length - 1];
+  bm_memcpy_s2d(bm_handle, in_tensors[0].device_mem, (void *)&token);
+  net_launch(net_embed_cache, in_tensors, out_tensors);
+  auto out_mem = out_tensors[0].device_mem;
 
   // blocks
   int bytes =
@@ -702,15 +640,13 @@ int Qwen3_VL::forward_next(ArrayInt const &position_ids) {
   }
 
   // forward lmhead
-  d2d(lm_in_mem, out_mem);
-  net_launch(net_lm);
+  init_tensors(net_lm, in_tensors, out_tensors);
+  in_tensors[0].device_mem = out_mem;
+  out_tensors[0].device_mem = dev_buffer;
+  net_launch(net_lm, in_tensors, out_tensors);
 
-  int token = 0;
-  if (lmhead_with_topk) {
-    bm_memcpy_d2s(bm_handle, (void *)&token, lm_out_mem);
-  } else {
-    token = greedy_search(lm_out_mem);
-  }
+  token = generate(dev_buffer);
+  visited_tokens[token_length] = token;
   token_length++;
   history_length++;
   return token;
