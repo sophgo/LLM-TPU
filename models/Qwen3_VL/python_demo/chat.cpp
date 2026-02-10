@@ -102,6 +102,7 @@ public:
   bool vit_run = false;
   int num_deepstack;
   std::vector<int> visited_tokens;
+  bool insert_mode;
 
 private:
   bm_handle_t bm_handle;
@@ -165,10 +166,18 @@ void Qwen3_VL::net_launch_decode(int idx, int kv_offset,
     in_tensors[1].device_mem = net_blocks_cache[0]->stages[0].input_mems[1];
     in_tensors[2].device_mem = net_blocks_cache[0]->stages[0].input_mems[2];
   }
-  out_tensors[1].device_mem = bm_mem_from_device(
-      past_key[idx].u.device.device_addr + kv_offset, KV_BYTES);
-  out_tensors[2].device_mem = bm_mem_from_device(
-      past_value[idx].u.device.device_addr + kv_offset, KV_BYTES);
+  if (!insert_mode) {
+    out_tensors[1].device_mem = bm_mem_from_device(
+        past_key[idx].u.device.device_addr + kv_offset, KV_BYTES);
+    out_tensors[2].device_mem = bm_mem_from_device(
+        past_value[idx].u.device.device_addr + kv_offset, KV_BYTES);
+  } else {
+    int insert_offset = history_length - 1;
+    if (idx == 0) {
+      bm_memcpy_s2d(bm_handle, in_tensors[5].device_mem,
+                    (void *)&insert_offset);
+    }
+  }
 
   // ===== launch =====
   net_launch(net, in_tensors, out_tensors);
@@ -262,7 +271,8 @@ void Qwen3_VL::init_by_names() {
   MAX_PIXELS = MAX_PATCHES * 16 * 16;
   VIT_DIMS = net_vit->stages[0].input_shapes[0].dims[1];
   KV_BYTES =
-      bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
+      bm_mem_get_device_size(net_blocks_cache[0]->stages[0].input_mems[3]) /
+      SEQLEN;
   printf("Num Layers:%d\n", NUM_LAYERS);
   printf("Max Pixels: %d*%d*%d\n", MAX_PATCHES / 4, 32, 32);
   PREFILL_KV_LENGTH = 0;
@@ -318,6 +328,7 @@ void Qwen3_VL::init(int dev_id, std::string model_path) {
     deepstack_buffers.push_back(mem);
   }
   vit_run = false;
+  insert_mode = net_blocks_cache[0]->output_num == 1; // kvcache insert to dst
 }
 
 void Qwen3_VL::deinit() {
@@ -615,7 +626,8 @@ int Qwen3_VL::forward_first_with_kv(ArrayInt const &position_ids) {
 
 int Qwen3_VL::forward_next(ArrayInt const &position_ids) {
   std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
-  for (int i = history_length - 1; i < SEQLEN; i++) {
+  int start = insert_mode ? history_length : (history_length - 1);
+  for (int i = start; i < SEQLEN; i++) {
     attention_mask[i] = mask_value;
   }
   assert(position_ids.size() == 3);
@@ -631,9 +643,7 @@ int Qwen3_VL::forward_next(ArrayInt const &position_ids) {
   auto out_mem = out_tensors[0].device_mem;
 
   // blocks
-  int bytes =
-      bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
-  int token_offset = (history_length - 1) * bytes;
+  int token_offset = (history_length - 1) * KV_BYTES;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     net_launch_decode(idx, token_offset, out_mem, p_ids, attention_mask);
     out_mem = net_blocks_cache[idx]->stages[0].output_mems[0];

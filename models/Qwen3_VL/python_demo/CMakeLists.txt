@@ -14,7 +14,7 @@ add_definitions(--std=c++17 -fPIC -Wall -Werror)
 find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development)
 set(pybind11_DIR "$ENV{HOME}/.local/lib/python3.10/site-packages/pybind11/share/cmake/pybind11")
 find_package(pybind11 REQUIRED CONFIG)
-
+set(CMAKE_BUILD_TYPE "Debug")
 pybind11_add_module(chat chat.cpp)
 target_link_libraries(chat PUBLIC bmrt bmlib)
 install(TARGETS chat DESTINATION python)
