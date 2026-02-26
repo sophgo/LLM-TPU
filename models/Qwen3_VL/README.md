@@ -116,6 +116,28 @@ llm_convert.py -m /workspace/Qwen3-VL-4B-Instruct -s 4096 --quantize w4bf16  -c 
 ```
 使用cpp_demo或者python_demo都支持。历史记录输入clear清理。
 
+### 2. 支持多batch (python)
+
+默认情况下模型是单batch，多batch需要加上`--batch`参数。
+可以直接下载编译好的模型：
+``` shell
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-2b-instruct-w4a16_w4bf16_seq768_bm1684x_1dev_4b_static_20260224_174219.bmodel
+```
+也可以自行编译模型：
+``` shell
+llm_convert.py -m /workspace/Qwen3-VL-2B-Instruct -s 768 --quantize w4bf16 -c bm1684x --out_dir qwen3vl_batch4 --max_pixels 768,768 --batch 4
+```
+
+编译与运行程序：
+``` shell
+cd python_demo_multibatch
+mkdir build 
+cd build && cmake .. && make && cp *cpython* .. && cd ..
+
+# run demo
+python3 pipeline.py -m xxxx.bmodel -c ../config 
+```
+
 ## 常见问题
 
 #### SoC如何配置python3.10环境 ?
