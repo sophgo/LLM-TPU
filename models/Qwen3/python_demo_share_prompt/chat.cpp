@@ -59,6 +59,10 @@ public:
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
+  void net_launch_dyn_prompt(const bm_net_info_t *net, int real_len,
+                             int stage_idx = 0);
+  void net_launch_dyn_prefill(const bm_net_info_t *net, int prefill_kv_len,
+                              int input_len, int stage_idx = 0);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset = 0,
                   int size = 0);
   void init_by_names();
@@ -75,6 +79,7 @@ public:
   int PREFILL_KV_LENGTH;
   int NUM_LAYERS;
   bool lmhead_with_topk;
+  bool is_dynamic;
   std::vector<int> visited_tokens;
   uint16_t mask_value;
 
@@ -219,6 +224,8 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   // kv cache
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
+  is_dynamic = net_blocks[0]->is_dynamic;
+  assert(is_dynamic == net_blocks_prompt[0]->is_dynamic);
   for (int i = 0; i < NUM_LAYERS; i++) {
     past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
     past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
@@ -253,7 +260,65 @@ void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
+}
+
+void Qwen::net_launch_dyn_prompt(const bm_net_info_t *net, int real_len,
+                                 int stage_idx) {
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  for (int i = 0; i < net->input_num; i++) {
+    bmrt_tensor_with_device(
+        &in_tensors[i], net->stages[stage_idx].input_mems[i],
+        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(
+        &out_tensors[i], net->stages[stage_idx].output_mems[i],
+        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
+  }
+
+  in_tensors[0].shape.dims[1] = real_len;
+  in_tensors[1].shape.dims[1] = real_len;
+  in_tensors[2].shape.dims[2] = real_len;
+  in_tensors[2].shape.dims[3] = real_len;
+
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
+                                   net->input_num, out_tensors.data(),
+                                   net->output_num, true, false);
+  assert(ret);
+  // bm_thread_sync(bm_handle);
+}
+
+void Qwen::net_launch_dyn_prefill(const bm_net_info_t *net, int prefill_kv_len,
+                                  int input_len, int stage_idx) {
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  for (int i = 0; i < net->input_num; i++) {
+    bmrt_tensor_with_device(
+        &in_tensors[i], net->stages[stage_idx].input_mems[i],
+        net->input_dtypes[i], net->stages[stage_idx].input_shapes[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(
+        &out_tensors[i], net->stages[stage_idx].output_mems[i],
+        net->output_dtypes[i], net->stages[stage_idx].output_shapes[i]);
+  }
+
+  in_tensors[0].shape.dims[1] = input_len;
+  in_tensors[1].shape.dims[1] = input_len;
+  in_tensors[2].shape.dims[2] = input_len;
+  in_tensors[2].shape.dims[3] = input_len + prefill_kv_len;
+  in_tensors[3].shape.dims[1] = input_len;
+  in_tensors[4].shape.dims[1] = input_len;
+
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
+                                   net->input_num, out_tensors.data(),
+                                   net->output_num, true, false);
+  assert(ret);
+  // bm_thread_sync(bm_handle);
 }
 
 int Qwen::greedy_search(bm_device_mem_t &logits_mem) {
@@ -309,14 +374,26 @@ void Qwen::forward_prompt(std::vector<int> &tokens) {
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
 
   prompt_length = tokens.size();
+  if (prompt_length > PREFILL_KV_LENGTH) {
+    std::cerr << "\nError: Prompt length exceeds the maximum prefill kv length:"
+              << prompt_length << " > " << PREFILL_KV_LENGTH << "\n";
+    exit(-1);
+  }
 
   for (int i = 0; i < prompt_length; i++) {
     position_id[i] = i;
   }
-
-  for (int i = 0; i < prompt_length; i++) {
-    for (int j = 0; j <= i; j++) {
-      attention_mask[i * PREFILL_KV_LENGTH + j] = 0;
+  if (is_dynamic) {
+    for (int i = 0; i < prompt_length; i++) {
+      for (int j = 0; j <= i; j++) {
+        attention_mask[i * prompt_length + j] = 0;
+      }
+    }
+  } else {
+    for (int i = 0; i < prompt_length; i++) {
+      for (int j = 0; j <= i; j++) {
+        attention_mask[i * PREFILL_KV_LENGTH + j] = 0;
+      }
     }
   }
 
@@ -342,7 +419,11 @@ void Qwen::forward_prompt(std::vector<int> &tokens) {
       bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
       bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     }
-    net_launch(net_blocks_prompt[idx]);
+    if (is_dynamic) {
+      net_launch_dyn_prompt(net_blocks_prompt[idx], prompt_length);
+    } else {
+      net_launch(net_blocks_prompt[idx]);
+    }
     out_mem = net_blocks_prompt[idx]->stages[0].output_mems[0];
     d2d(past_key[idx], net_blocks_prompt[idx]->stages[0].output_mems[1], 0,
         prompt_length * kv_bytes);
@@ -362,12 +443,23 @@ int Qwen::forward_first(std::vector<int> &inputs) {
                                        mask_value);
   assert(token_length < SEQLEN);
   assert(prompt_length <= PREFILL_KV_LENGTH);
-  for (int i = 0; i < input_length; i++) {
-    for (int j = 0; j < prompt_length; j++) {
-      attention_mask[i * max_kv_length + j] = 0;
+  if (is_dynamic) {
+    for (int i = 0; i < input_length; i++) {
+      for (int j = 0; j < prompt_length; j++) {
+        attention_mask[i * token_length + j] = 0;
+      }
+      for (int j = 0; j <= i; j++) {
+        attention_mask[i * token_length + j + prompt_length] = 0;
+      }
     }
-    for (int j = 0; j <= i; j++) {
-      attention_mask[i * max_kv_length + j + PREFILL_KV_LENGTH] = 0;
+  } else {
+    for (int i = 0; i < input_length; i++) {
+      for (int j = 0; j < prompt_length; j++) {
+        attention_mask[i * max_kv_length + j] = 0;
+      }
+      for (int j = 0; j <= i; j++) {
+        attention_mask[i * max_kv_length + j + PREFILL_KV_LENGTH] = 0;
+      }
     }
   }
   for (int i = 0; i < input_length; i++) {
@@ -399,7 +491,11 @@ int Qwen::forward_first(std::vector<int> &inputs) {
                        kv_bytes * prompt_length);
     bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
     bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-    net_launch(net_blocks[idx]);
+    if (is_dynamic) {
+      net_launch_dyn_prefill(net_blocks[idx], prompt_length, input_length);
+    } else {
+      net_launch(net_blocks[idx]);
+    }
     out_mem = net_blocks[idx]->stages[0].output_mems[0];
     auto &out1_mem = net_blocks[idx]->stages[0].output_mems[1];
     auto &out2_mem = net_blocks[idx]->stages[0].output_mems[2];
