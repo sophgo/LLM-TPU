@@ -85,6 +85,9 @@ class Qwen3():
         tokens = self.tokenizer(text).input_ids
         return tokens
 
+    def __del__(self):
+        self.model.deinit()
+
     def chat(self):
         """
         Start a chat session.

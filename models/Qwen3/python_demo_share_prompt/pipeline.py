@@ -7,6 +7,7 @@
 # ==============================================================================
 
 import argparse
+import os
 
 import chat
 import time
@@ -32,13 +33,22 @@ class Qwen():
         self.history = [{"role": "system", "content": self.system_prompt}]
         self.prompt = args.prompt
         self.EOS = [self.tokenizer.eos_token_id]
+        self.lora_path = args.lora
 
         self.model = chat.Qwen()
         self.init_params(args)
         self.load_model(args.model_path)
+        if self.lora_path:
+            print(f"Loading lora from {self.lora_path} ...")
+            if not os.path.exists(self.lora_path):
+                raise FileNotFoundError(f"Lora path {self.lora_path} does not exist!!")
+            self.model.lora_load(self.lora_path)
         print("Forward prompt first...")
         self.forward_prompt()
         print("Prompt finished.")
+
+    def __del__(self):
+        self.model.deinit()
 
     def forward_prompt(self):
         with open(self.prompt, "r") as f:
@@ -89,6 +99,16 @@ class Qwen():
             # Quit
             if input_str in ["exit", "q", "quit"]:
                 break
+            if input_str in ["lora_clear"]:
+                self.model.lora_clear()
+                continue
+            elif input_str in ["lora_load"]:
+                if not self.lora_path:
+                    print("No lora path provided!!")
+                else:
+                    print(f"Loading lora from {self.lora_path} ...")
+                    self.model.lora_load(self.lora_path)
+                continue
             # Chat
             tokens = self.tokenizer(input_str).input_ids
 
@@ -157,6 +177,7 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--model_path', type=str, required=True, help='path to the bmodel file')
     parser.add_argument('-c', '--config_path', type=str, default="../config", help='path to the tokenizer file')
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
+    parser.add_argument('-l', '--lora', type=str, default="", help='Set Lora directory path')
     parser.add_argument('--do_sample', action='store_true', help="if set, generate tokens by sample parameters")
     parser.add_argument('--prompt', type=str, required=True, help="set a text file as prompt")
     # yapf: enable

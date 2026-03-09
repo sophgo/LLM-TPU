@@ -24,7 +24,7 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-v
 
 #### 1. 从ModelScope下载`Qwen3-VL-4B-Instruct`
 
-(比较大，会花费较长时间)
+(比较大，会花费较长时间. 另外模型没有量化，需要更好的精度，请下载awq或者gptq量化的版本)
 
 ``` shell
 # 下载4B模型

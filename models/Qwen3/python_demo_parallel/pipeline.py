@@ -36,6 +36,8 @@ class Qwen3():
         self.model = chat.Qwen()
         self.load_model(args.model_path)
 
+    def __del__(self):
+        self.model.deinit()
 
     def load_model(self, model_path):
         load_start = time.time()

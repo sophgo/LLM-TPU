@@ -43,6 +43,9 @@ class Qwen3_VL():
         self.history_max_posid = 0
         self.total_pixels = (self.model.MAX_INPUT_LENGTH - 128) * 32 * 32
 
+    def __del__(self):
+        self.model.deinit()
+
     def text_message(self):
         # yapf: disable
         messages = [{

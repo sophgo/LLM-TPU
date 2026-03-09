@@ -124,7 +124,6 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 --max_input_leng
 * Phi系列：[Phi3](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct)/[Phi4](https://huggingface.co/microsoft/Phi-4-mini-instruct)
 * ChatGLM系列：[ChatGLM3](https://huggingface.co/THUDM/chatglm3-6b)
 
-除了一键编译外，其他模型可以采用传统方法编译，先转onnx再转bmodel，具体可以参考每个模型的Demo介绍。
 
 ## 4.已部署模型
 
