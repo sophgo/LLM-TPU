@@ -67,6 +67,7 @@ public:
            const std::string &model_path, const std::string &config_path,
            const std::string &lora_dir = "", bool do_sample = false,
            bool in_device = false);
+  ~ChatPipe() { model.deinit(); }
   // 聊天主循环
   void chat();
 
@@ -79,6 +80,7 @@ private:
   int num_grid_per_side;
   int spatial_merge_unit;
   bool support_history;
+  lora_cache_ptr_t lora_cache;
   // 分词器和处理器
   std::unique_ptr<Tokenizer> tok;
   std::unique_ptr<Maker> maker;
@@ -187,8 +189,7 @@ ChatPipe::ChatPipe(int devid, float video_ratio, float video_fps,
   support_history = model.support_history;
   this->lora_dir = lora_dir;
   if (!lora_dir.empty()) {
-    auto ret = model.lora_load(lora_dir);
-    assert(ret == true);
+    lora_cache = model.lora_create(lora_dir);
   }
 
   std::cout << "Processor [" << config_path.c_str() << "] loading .... ";
@@ -704,8 +705,7 @@ void ChatPipe::chat() {
         continue;
       }
       clock::time_point clock_start = clock::now();
-      auto ret = model.lora_load(lora_dir);
-      assert(ret == true);
+      model.lora_load(lora_cache);
       clock::time_point clock_end = clock::now();
       auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
                           clock_end - clock_start)

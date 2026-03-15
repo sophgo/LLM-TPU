@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "bmruntime_interface.h"
+#include "lora.hpp"
 #include "memory.h"
 #include <algorithm>
 #include <assert.h>
@@ -31,7 +32,8 @@ public:
   void init(int devid, std::string model_path, std::string config_path = "",
             bool do_sample = false, bool in_device = false);
   void deinit();
-  bool lora_load(const std::string &lora_dir);
+  lora_cache_ptr_t lora_create(const std::string &lora_dir);
+  void lora_load(lora_cache_ptr_t lora_cache);
   void lora_clear();
   void forward_embed(ArrayInt const &tokens);
   void forward_vit(const float *pixel_values, ArrayInt const &position_ids,

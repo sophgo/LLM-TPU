@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 #define SAFETENSORS_CPP_IMPLEMENTATION
 #include "lora.hpp"
+#include "chat.hpp"
 #include "json.hpp"
 #include <fstream>
 
@@ -53,27 +54,33 @@ bool LoraContext::is_lora_path(const std::string &path) {
   return true;
 }
 
-// true: load data to device; false: not find lora tensor
-bool LoraContext::load_lora_to_device(const std::string &path,
-                                      bm_handle_t bm_handle,
-                                      bm_device_mem_t devmem, bool is_embed) {
+bool LoraContext::is_exist(const std::string &path) {
   LoraPath loraPath;
   if (!parse_lora_path(path, loraPath)) {
     return false;
   }
   int tensor_idx = get_tensor_index(loraPath.key);
   if (tensor_idx < 0) {
-    int value = 0;
-    auto ret = bm_memset_device_ext(bm_handle, &value, 1, devmem);
-    if (ret != BM_SUCCESS) {
-      throw std::runtime_error("bm_memset_device_ext failed");
-    }
+    return false;
+  }
+  return true;
+}
+
+// true: load data to device; false: not find lora tensor
+bool LoraContext::create_lora_item(lora_item_t &lora_item,
+                                   const std::string &path,
+                                   bm_handle_t bm_handle,
+                                   bm_device_mem_t devmem, bool is_embed) {
+  LoraPath loraPath;
+  if (!parse_lora_path(path, loraPath)) {
     return false;
   }
   size_t dev_size = bm_mem_get_device_size(devmem);
-  uint8_t *buffer = new uint8_t[dev_size];
-  if (buffer == nullptr) {
-    throw std::runtime_error("malloc failed");
+  lora_item.first = devmem;
+  lora_item.second = std::make_shared<std::vector<uint8_t>>(dev_size, 0);
+  int tensor_idx = get_tensor_index(loraPath.key);
+  if (tensor_idx < 0) {
+    return false;
   }
   ReadType read_type = DO_NOTHING;
   if (loraPath.is_A == false) {
@@ -97,13 +104,8 @@ bool LoraContext::load_lora_to_device(const std::string &path,
   if (loraPath.is_A == false && m_scale != 1.0f) {
     do_scale = true;
   }
-  read_tensor_data(tensor_idx, buffer, dev_size, loraPath.rank, do_scale,
-                   read_type);
-  auto ret = bm_memcpy_s2d(bm_handle, devmem, buffer);
-  if (ret != BM_SUCCESS) {
-    throw std::runtime_error("bm_memset_device_ext failed");
-  }
-  delete[] buffer;
+  read_tensor_data(tensor_idx, lora_item.second->data(), dev_size,
+                   loraPath.rank, do_scale, read_type);
   return true;
 }
 
@@ -150,7 +152,6 @@ void LoraContext::read_tensor_data(int tensor_idx, void *dst, size_t size,
     throw std::runtime_error("Buffer size is smaller than tensor data size");
   }
   const uint8_t *data_ptr = m_st.storage.data() + tensor.data_offsets[0];
-  std::memset(dst, 0, size);
   switch (read_type) {
   case DO_TRANSPOSE_COPY:
     transpose_copy((uint16_t *)dst, (uint16_t *)data_ptr, tensor.shape[0],

@@ -10,8 +10,14 @@
 #include "bmlib_runtime.h"
 #include "safetensors.hh"
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
+
+typedef std::pair<bm_device_mem_t, std::shared_ptr<std::vector<uint8_t>>>
+    lora_item_t;
+typedef std::vector<lora_item_t> lora_cache_t;
+typedef std::shared_ptr<lora_cache_t> lora_cache_ptr_t;
 
 class LoraContext {
 public:
@@ -19,8 +25,11 @@ public:
 
   static bool is_lora_path(const std::string &path);
 
-  bool load_lora_to_device(const std::string &path, bm_handle_t bm_handle,
-                           bm_device_mem_t devmem, bool is_embed = false);
+  bool create_lora_item(lora_item_t &lora_item, const std::string &path,
+                        bm_handle_t bm_handle, bm_device_mem_t devmem,
+                        bool is_embed = false);
+  
+  bool is_exist(const std::string &path);
 
   void check_all_tensors_visited() {
     for (int i = 0; i < m_num_tensors; i++) {

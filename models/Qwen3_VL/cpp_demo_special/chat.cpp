@@ -9,7 +9,6 @@
 
 #include "chat.hpp"
 #include "json.hpp"
-#include "lora.hpp"
 #include <fstream>
 #include <iostream>
 //===------------------------------------------------------------===//
@@ -737,11 +736,12 @@ int Qwen3_VL::forward_next(ArrayInt const &position_ids) {
   return token;
 }
 
-bool Qwen3_VL::lora_load(const std::string &lora_dir) {
+lora_cache_ptr_t Qwen3_VL::lora_create(const std::string &lora_dir) {
+  lora_cache_ptr_t cache = std::make_shared<lora_cache_t>();
   safetensors::dtype lora_type;
   if (lora_dir.empty()) {
     std::cerr << "Error: LoRA directory is empty." << std::endl;
-    return false;
+    exit(-1);
   }
   if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
     lora_type = safetensors::dtype::kFLOAT16;
@@ -750,19 +750,19 @@ bool Qwen3_VL::lora_load(const std::string &lora_dir) {
   }
   try {
     LoraContext loraCtx(lora_dir, lora_type);
-    // embeding
+    // embedding
     int num_coeff = 0;
     auto coeff_info =
         bmrt_get_coeff_info(p_bmrt, net_embed->name, 0, &num_coeff);
     do_lora_embedding = false;
     for (int i = 0; i < num_coeff; i++) {
       auto &coeff = coeff_info[i];
-      if (LoraContext::is_lora_path(coeff.path)) {
-        bool ret = loraCtx.load_lora_to_device(coeff.path, bm_handle,
-                                               coeff.device_mem, true);
-        if (ret) {
-          do_lora_embedding = true;
-        }
+      if (loraCtx.is_exist(coeff.path)) {
+        do_lora_embedding = true;
+        lora_item_t item;
+        loraCtx.create_lora_item(item, coeff.path, bm_handle, coeff.device_mem,
+                                 true);
+        cache->emplace_back(item);
       }
     }
     // layers
@@ -773,7 +773,10 @@ bool Qwen3_VL::lora_load(const std::string &lora_dir) {
       for (int j = 0; j < num_coeff; j++) {
         auto &coeff = coeff_info[j];
         if (LoraContext::is_lora_path(coeff.path)) {
-          loraCtx.load_lora_to_device(coeff.path, bm_handle, coeff.device_mem);
+          lora_item_t item;
+          loraCtx.create_lora_item(item, coeff.path, bm_handle,
+                                   coeff.device_mem);
+          cache->emplace_back(item);
         }
       }
     }
@@ -783,20 +786,32 @@ bool Qwen3_VL::lora_load(const std::string &lora_dir) {
     coeff_info = bmrt_get_coeff_info(p_bmrt, net_lm->name, 0, &num_coeff);
     for (int i = 0; i < num_coeff; i++) {
       auto &coeff = coeff_info[i];
-      if (LoraContext::is_lora_path(coeff.path)) {
-        bool ret = loraCtx.load_lora_to_device(coeff.path, bm_handle,
-                                               coeff.device_mem);
-        if (ret) {
-          do_lora_lmhead = true;
-        }
+      if (loraCtx.is_exist(coeff.path)) {
+        do_lora_lmhead = true;
+        lora_item_t item;
+        loraCtx.create_lora_item(item, coeff.path, bm_handle, coeff.device_mem);
+        cache->emplace_back(item);
       }
     }
     loraCtx.check_all_tensors_visited();
+
   } catch (const std::exception &e) {
     std::cerr << "Error: loading LoRA weights: " << e.what() << std::endl;
-    return false;
+    exit(-1);
   }
-  return true;
+  return cache;
+}
+
+void Qwen3_VL::lora_load(lora_cache_ptr_t lora_cache) {
+  if (lora_cache->empty()) {
+    std::cerr << "Warning: No valid LoRA weights found in the directory. Skip "
+                 "LoRA loading."
+              << std::endl;
+    return;
+  }
+  for (auto &item : *lora_cache) {
+    bm_memcpy_s2d(bm_handle, item.first, item.second->data());
+  }
 }
 
 void Qwen3_VL::lora_clear() {
