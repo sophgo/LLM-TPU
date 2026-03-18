@@ -8,12 +8,18 @@
 
 ``` shell
 # =============== 1684x =====================
+# 1684x 2B 最大1K输入, max_pixel 768x768, 视频最长可以支持12s (每秒1帧)
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-2b-instruct-w4a16_w4bf16_seq2048_bm1684x_1dev_dynamic_20260318_164243.bmodel
 # 1684x 4B 最大1K输入, max_pixel 768x768, 视频最长可以支持12s (每秒1帧)
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-4b-instruct_w4bf16_seq2048_bm1684x_1dev_20251026_141347.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-4b-instruct-awq-4bit_w4bf16_seq2048_bm1684x_1dev_dynamic_20260318_165737.bmodel
 # 1684x 8B 最大1K输入, max_pixel 768x768, 视频最长可以支持12s (每秒1帧)
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-8b-instruct_w4bf16_seq2048_bm1684x_1dev_20251026_145323.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-8b-instruct-4bit-gptq_w4bf16_seq2048_bm1684x_1dev_dynamic_20260318_165042.bmodel
+
+# =============== 1688 ======================
+# 1688 2B 最大1K输入, max_pixel 768x768, 视频最长可以支持12s (每秒1帧)
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-2b-instruct-w4a16_w4bf16_seq2048_bm1688_2core_dynamic_20260318_170649.bmodel
 # 1688 4B 最大1K输入, max_pixel 768x768, 视频最长可以支持12s (每秒1帧)
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-4b-instruct_w4bf16_seq2048_bm1688_2core_20251026_141708.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-4b-instruct-awq-4bit_w4bf16_seq2048_bm1688_2core_dynamic_20260318_170105.bmodel
 
 ```
 
@@ -24,7 +30,7 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-v
 
 #### 1. 从ModelScope下载`Qwen3-VL-4B-Instruct`
 
-(比较大，会花费较长时间. 另外模型没有量化，需要更好的精度，请下载awq或者gptq量化的版本)
+(比较大，会花费较长时间. 另外模型没有量化，仅做参考。需要更好的精度，请**下载awq或者gptq**量化的版本)
 
 ``` shell
 # 下载4B模型
@@ -61,7 +67,7 @@ source ./envsetup.sh  #激活环境变量
 ``` shell
 # 如果有提示transformers/torch版本问题，pip3 install transformers torchvision -U
 # 这里max_input_length指定最大输入长度，如果不指定则为-s指定的长度
-llm_convert.py -m /workspace/Qwen3-VL-4B-Instruct  -s 2048 --max_input_length 1024  --quantize w4bf16  -c bm1684x --out_dir qwen3vl_4b  --max_pixels 768,768
+llm_convert.py -m /workspace/Qwen3-VL-4B-Instruct  -s 2048 --max_input_length 1024  --quantize w4bf16  -c bm1684x --out_dir qwen3vl_4b  --max_pixels 768,768 --dynamic
 ```
 编译完成后，在指定目录`qwen3vl_4b`生成`qwen3-vl-xxx.bmodel`和`config`
 
@@ -182,3 +188,19 @@ pip3 install torchvision pillow  transformers qwen_vl_utils -U
 默认每秒1帧。
 
 20秒视频取20帧，总token数为 $ 144 × 20 ÷ 2 = 1440 $
+
+#### 如何量化模型 ？
+
+可以使用Huggingface官方量化工具：
+
+* [AutoAWQ](https://huggingface.co/docs/transformers/main/en/quantization/awq)
+
+* [AutoGPTQ](https://huggingface.co/docs/transformers/main/en/quantization/gptq)
+
+这里有网上开源量化好的模型：
+
+* https://huggingface.co/kaitchup/Qwen3-VL-2B-Instruct-W4A16
+
+* https://huggingface.co/cpatonn/Qwen3-VL-4B-Instruct-AWQ-4bit
+
+* https://huggingface.co/aonaon/Qwen3-VL-8B-Instruct-4bit-GPTQ
