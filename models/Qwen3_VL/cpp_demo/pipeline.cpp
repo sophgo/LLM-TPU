@@ -66,6 +66,7 @@ public:
   ChatPipe(int devid, float video_ratio, float video_fps,
            const std::string &model_path, const std::string &config_path,
            bool do_sample = false);
+  ~ChatPipe() { model.deinit(); }
   // 聊天主循环
   void chat();
 

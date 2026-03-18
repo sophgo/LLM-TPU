@@ -191,7 +191,6 @@ float fp16_ieee_to_fp32_value(uint16_t d) {
   return t.fval;
 }
 
-
 //===------------------------------------------------------------===//
 // Dump Func
 //===------------------------------------------------------------===//
@@ -530,7 +529,7 @@ void compare_out_net(
 //===------------------------------------------------------------===//
 // Dump to file
 //===------------------------------------------------------------===//
-void dump_tensor_to_file(bm_handle_t &bm_handle, bm_tensor_t &t,
+void dump_tensor_to_file(bm_handle_t &bm_handle, const bm_tensor_t &t,
                          bm_shape_t bm_shape, cnpy::npz_t &npz_map,
                          bm_data_type_t tensor_type,
                          const std::string &tensor_name) {
@@ -590,6 +589,18 @@ void dump_net_input_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
   cnpy::npz_save_all(filename, npz_map);
 }
 
+void dump_net_input_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
+                            const std::vector<bm_tensor_t> &in_tensors,
+                            const std::string &filename) {
+  cnpy::npz_t npz_map;
+  bm_thread_sync(bm_handle);
+  for (int i = 0; i < net->input_num; i++) {
+    dump_tensor_to_file(bm_handle, in_tensors[i], in_tensors[i].shape, npz_map,
+                        in_tensors[i].dtype, net->input_names[i]);
+  }
+  cnpy::npz_save_all(filename, npz_map);
+}
+
 void dump_net_output_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
                              const std::string &filename) {
   std::vector<bm_tensor_t> out_tensors(net->output_num);
@@ -603,6 +614,18 @@ void dump_net_output_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
     dump_tensor_to_file(bm_handle, out_tensors[i],
                         net->stages[0].output_shapes[i], npz_map,
                         net->output_dtypes[i], net->output_names[i]);
+  }
+  cnpy::npz_save_all(filename, npz_map);
+}
+
+void dump_net_output_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
+                             const std::vector<bm_tensor_t> &out_tensors,
+                             const std::string &filename) {
+  cnpy::npz_t npz_map;
+  bm_thread_sync(bm_handle);
+  for (int i = 0; i < net->output_num; i++) {
+    dump_tensor_to_file(bm_handle, out_tensors[i], out_tensors[i].shape,
+                        npz_map, out_tensors[i].dtype, net->output_names[i]);
   }
   cnpy::npz_save_all(filename, npz_map);
 }
@@ -630,6 +653,23 @@ void dump_net_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
     dump_tensor_to_file(bm_handle, out_tensors[i],
                         net->stages[0].output_shapes[i], npz_map,
                         net->output_dtypes[i], net->output_names[i]);
+  }
+  cnpy::npz_save_all(filename, npz_map);
+}
+
+void dump_net_to_file(bm_handle_t &bm_handle, const bm_net_info_t *net,
+                      const std::vector<bm_tensor_t> &in_tensors,
+                      const std::vector<bm_tensor_t> &out_tensors,
+                      const std::string &filename) {
+  cnpy::npz_t npz_map;
+  bm_thread_sync(bm_handle);
+  for (int i = 0; i < net->input_num; i++) {
+    dump_tensor_to_file(bm_handle, in_tensors[i], in_tensors[i].shape, npz_map,
+                        in_tensors[i].dtype, net->input_names[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    dump_tensor_to_file(bm_handle, out_tensors[i], out_tensors[i].shape,
+                        npz_map, out_tensors[i].dtype, net->output_names[i]);
   }
   cnpy::npz_save_all(filename, npz_map);
 }

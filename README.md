@@ -15,6 +15,7 @@
 
 # 最近更新！ 🔥🔥🔥
 
+- **2026.04.15**：🚀 **Qwen3.5** BM1684X/1688已支持，详情见[Qwen3.5](./models/Qwen3_5/)。其中demo有python和c++两个版本，且都支持图片和视频。
 - **2025.10.15**：🚀 **Qwen3VL** BM1684X/1688已支持，详情见[Qwen3VL](./models/Qwen3_VL/)。其中demo有python和c++两个版本，且都支持图片和视频。
 - **2025.05.22**：🚀 **InternVL3** BM1684X/1688已支持，详情见[InternVL3](./models/InternVL3/)。支持图片和视频。
 - **2025.04.30**：🚀 **Qwen2.5VL** BM1684X/1688已支持，详情见[Qwen2.5VL](./models/Qwen2_5_VL/)。其中demo有python和c++两个版本，且都支持图片和视频。
@@ -110,6 +111,7 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 --max_input_leng
 `llm_convert.py`执行完成后在指定目录会生成对应的bmodel和配置目录config。
 
 支持一键编译的**VLM模型**包括：
+* [Qwen3.5](https://www.modelscope.cn/collections/Qwen/Qwen35)
 * [Qwen3VL](https://www.modelscope.cn/models/Qwen/Qwen3-VL-4B-Instruct)
 * [Qwen2.5VL](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct-AWQ)
 * [Qwen2VL](https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct-AWQ)
@@ -143,7 +145,7 @@ llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 2048 --max_input_leng
 
 
 多模态模型包括:  
-`Qwen3-VL`/`Qwen2.5-VL`/`Qwen2-VL`/`Qwen-VL`  
+`Qwen3.5`/`Qwen3-VL`/`Qwen2.5-VL`/`Qwen2-VL`/`Qwen-VL`  
 `InternVL3`/`InternVL2`  
 `MiniCPM-V-2_6`  
 `Llama3.2-Vision`  
