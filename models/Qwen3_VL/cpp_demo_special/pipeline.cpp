@@ -67,7 +67,13 @@ public:
            const std::string &model_path, const std::string &config_path,
            const std::string &lora_dir = "", bool do_sample = false,
            bool in_device = false);
-  ~ChatPipe() { model.deinit(); }
+  ~ChatPipe() {
+    model.deinit();
+    if (lora_buffer) {
+      delete[] lora_buffer;
+      lora_buffer = nullptr;
+    }
+  }
   // 聊天主循环
   void chat();
 
@@ -81,6 +87,7 @@ private:
   int spatial_merge_unit;
   bool support_history;
   lora_cache_ptr_t lora_cache;
+  uint8_t *lora_buffer;
   // 分词器和处理器
   std::unique_ptr<Tokenizer> tok;
   std::unique_ptr<Maker> maker;
@@ -189,7 +196,31 @@ ChatPipe::ChatPipe(int devid, float video_ratio, float video_fps,
   support_history = model.support_history;
   this->lora_dir = lora_dir;
   if (!lora_dir.empty()) {
-    lora_cache = model.lora_create(lora_dir);
+    std::ifstream infile(lora_dir + "/adapter_model.safetensors",
+                         std::ios::binary);
+    infile.seekg(0, std::ios::end);
+    size_t lora_size = infile.tellg();
+    infile.seekg(0, std::ios::beg);
+    printf("lora_size: %lu bytes\n", lora_size);
+    uint8_t *lora_ptr = new uint8_t[lora_size];
+    infile.read((char *)lora_ptr, lora_size);
+    infile.close();
+    std::string lora_config;
+    std::ifstream config_file(lora_dir + "/adapter_config.json");
+    if (config_file.is_open()) {
+      std::stringstream buffer;
+      buffer << config_file.rdbuf();
+      lora_config = buffer.str();
+    } else {
+      std::cerr << "Cannot open lora config file: " << lora_dir + "/adapter_config.json"
+                << std::endl;
+      exit(1);
+    }
+    config_file.close();
+    lora_buffer = new uint8_t[lora_size];
+    lora_cache =
+        model.lora_create(lora_ptr, lora_config, lora_buffer, lora_size);
+    delete[] lora_ptr;
   }
 
   std::cout << "Processor [" << config_path.c_str() << "] loading .... ";

@@ -736,11 +736,13 @@ int Qwen3_VL::forward_next(ArrayInt const &position_ids) {
   return token;
 }
 
-lora_cache_ptr_t Qwen3_VL::lora_create(const std::string &lora_dir) {
+lora_cache_ptr_t Qwen3_VL::lora_create(const void *lora,
+                                       const std::string &config, void *buffer,
+                                       size_t size) {
   lora_cache_ptr_t cache = std::make_shared<lora_cache_t>();
   safetensors::dtype lora_type;
-  if (lora_dir.empty()) {
-    std::cerr << "Error: LoRA directory is empty." << std::endl;
+  if (lora == nullptr || size == 0 || config.empty()) {
+    std::cerr << "Error: LoRA is empty." << std::endl;
     exit(-1);
   }
   if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
@@ -748,8 +750,9 @@ lora_cache_ptr_t Qwen3_VL::lora_create(const std::string &lora_dir) {
   } else {
     lora_type = safetensors::dtype::kBFLOAT16;
   }
+  uint8_t *p_buffer = (uint8_t *)buffer;
   try {
-    LoraContext loraCtx(lora_dir, lora_type);
+    LoraContext loraCtx(lora, config, size, lora_type);
     // embedding
     int num_coeff = 0;
     auto coeff_info =
@@ -759,9 +762,9 @@ lora_cache_ptr_t Qwen3_VL::lora_create(const std::string &lora_dir) {
       auto &coeff = coeff_info[i];
       if (loraCtx.is_exist(coeff.path)) {
         do_lora_embedding = true;
-        lora_item_t item;
-        loraCtx.create_lora_item(item, coeff.path, bm_handle, coeff.device_mem,
-                                 true);
+        auto item = loraCtx.create_lora_item(coeff.path, bm_handle,
+                                             coeff.device_mem, p_buffer, true);
+        p_buffer += item.size;
         cache->emplace_back(item);
       }
     }
@@ -773,9 +776,9 @@ lora_cache_ptr_t Qwen3_VL::lora_create(const std::string &lora_dir) {
       for (int j = 0; j < num_coeff; j++) {
         auto &coeff = coeff_info[j];
         if (LoraContext::is_lora_path(coeff.path)) {
-          lora_item_t item;
-          loraCtx.create_lora_item(item, coeff.path, bm_handle,
-                                   coeff.device_mem);
+          lora_item_t item = loraCtx.create_lora_item(
+              coeff.path, bm_handle, coeff.device_mem, p_buffer, false);
+          p_buffer += item.size;
           cache->emplace_back(item);
         }
       }
@@ -788,12 +791,18 @@ lora_cache_ptr_t Qwen3_VL::lora_create(const std::string &lora_dir) {
       auto &coeff = coeff_info[i];
       if (loraCtx.is_exist(coeff.path)) {
         do_lora_lmhead = true;
-        lora_item_t item;
-        loraCtx.create_lora_item(item, coeff.path, bm_handle, coeff.device_mem);
+        lora_item_t item = loraCtx.create_lora_item(
+            coeff.path, bm_handle, coeff.device_mem, p_buffer, false);
+        p_buffer += item.size;
         cache->emplace_back(item);
       }
     }
     loraCtx.check_all_tensors_visited();
+    if (p_buffer - (uint8_t *)buffer > (ptrdiff_t)size) {
+      std::cerr << "Error: LoRA size is smaller than required. Required size: "
+                << (p_buffer - (uint8_t *)buffer) << " bytes." << std::endl;
+      exit(-1);
+    }
 
   } catch (const std::exception &e) {
     std::cerr << "Error: loading LoRA weights: " << e.what() << std::endl;
@@ -810,7 +819,10 @@ void Qwen3_VL::lora_load(lora_cache_ptr_t lora_cache) {
     return;
   }
   for (auto &item : *lora_cache) {
-    bm_memcpy_s2d(bm_handle, item.first, item.second->data());
+    empty(bm_handle, item.mem);
+    if (item.size > 0) {
+      bm_memcpy_s2d_partial(bm_handle, item.mem, item.buffer, item.size);
+    }
   }
 }
 

@@ -32,7 +32,12 @@ public:
   void init(int devid, std::string model_path, std::string config_path = "",
             bool do_sample = false, bool in_device = false);
   void deinit();
-  lora_cache_ptr_t lora_create(const std::string &lora_dir);
+  // lora is a buffer stored with lora safetensors
+  // config is context of the json config for lora, which contains lora_alpha
+  // and rank buffer is output to store lora data after processing, size is the
+  // buffer size in bytes
+  lora_cache_ptr_t lora_create(const void *lora, const std::string &config,
+                               void *buffer, size_t size);
   void lora_load(lora_cache_ptr_t lora_cache);
   void lora_clear();
   void forward_embed(ArrayInt const &tokens);

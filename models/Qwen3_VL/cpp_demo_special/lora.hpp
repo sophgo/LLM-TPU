@@ -14,21 +14,28 @@
 #include <string>
 #include <vector>
 
-typedef std::pair<bm_device_mem_t, std::shared_ptr<std::vector<uint8_t>>>
-    lora_item_t;
+typedef struct lora_item {
+  bm_device_mem_t mem;
+  uint8_t *buffer;
+  size_t size; // buffer size, if zero, means the item is empty and should be clean
+} lora_item_t;
+
 typedef std::vector<lora_item_t> lora_cache_t;
 typedef std::shared_ptr<lora_cache_t> lora_cache_ptr_t;
 
 class LoraContext {
 public:
   LoraContext(const std::string &lora_path, safetensors::dtype lora_type);
+  // lora in DDR
+  LoraContext(const void *lora, const std::string &config, size_t size,
+              safetensors::dtype lora_type);
 
   static bool is_lora_path(const std::string &path);
 
-  bool create_lora_item(lora_item_t &lora_item, const std::string &path,
-                        bm_handle_t bm_handle, bm_device_mem_t devmem,
-                        bool is_embed = false);
-  
+  lora_item_t create_lora_item(const std::string &path, bm_handle_t bm_handle,
+                               bm_device_mem_t mem, uint8_t *buffer,
+                               bool is_embed = false);
+
   bool is_exist(const std::string &path);
 
   void check_all_tensors_visited() {
@@ -57,7 +64,8 @@ protected:
 
   int get_tensor_index(const std::string &path);
 
-  void read_tensor_data(int tensor_idx, void *dst, size_t size,
+  // return size
+  int read_tensor_data(int tensor_idx, void *dst, size_t size,
                         int max_lora_rank, bool do_scale, ReadType read_type);
 
   void transpose_copy(uint16_t *dst, uint16_t *src, int rows, int cols,

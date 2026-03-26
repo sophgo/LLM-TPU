@@ -47,6 +47,43 @@ LoraContext::LoraContext(const std::string &lora_path,
   m_lora_type = lora_type;
 }
 
+LoraContext::LoraContext(const void *lora, const std::string &config,
+                         size_t size, safetensors::dtype lora_type) {
+  if (lora == nullptr || size == 0 || config.empty()) {
+    throw std::runtime_error("Invalid LoRA input");
+  }
+  nlohmann::json j = nlohmann::json::parse(config);
+  int lora_alpha = 1;
+  if (j.contains("lora_alpha")) {
+    lora_alpha = j["lora_alpha"].get<int>();
+  }
+  int r = 32;
+  if (j.contains("r")) {
+    r = j["r"].get<int>();
+  }
+  m_scale = static_cast<float>(lora_alpha) / static_cast<float>(r);
+
+  std::string warn, err;
+  const uint8_t *lora_data = reinterpret_cast<const uint8_t *>(lora);
+  bool ret =
+      safetensors::load_from_memory(lora_data, size, "", &m_st, &warn, &err);
+  if (warn.empty() == false) {
+    std::cout << "Warning: " << warn << std::endl;
+  }
+  if (ret == false) {
+    std::cerr << "Error: Load LoRA safetensors failed: " << err << std::endl;
+    throw std::runtime_error("Load LoRA safetensors failed");
+  }
+  // Check if data_offsets are valid.
+  if (!safetensors::validate_data_offsets(m_st, err)) {
+    std::cerr << "Invalid data_offsets: " << err << "\n";
+    throw std::runtime_error("Invalid data_offsets");
+  }
+  m_num_tensors = m_st.tensors.size();
+  m_tensors_visited.assign(m_num_tensors, false);
+  m_lora_type = lora_type;
+}
+
 bool LoraContext::is_lora_path(const std::string &path) {
   if (path.rfind("lora.", 0) != 0) {
     return false;
@@ -67,20 +104,19 @@ bool LoraContext::is_exist(const std::string &path) {
 }
 
 // true: load data to device; false: not find lora tensor
-bool LoraContext::create_lora_item(lora_item_t &lora_item,
-                                   const std::string &path,
-                                   bm_handle_t bm_handle,
-                                   bm_device_mem_t devmem, bool is_embed) {
+lora_item_t LoraContext::create_lora_item(const std::string &path,
+                                          bm_handle_t bm_handle,
+                                          bm_device_mem_t mem, uint8_t *buffer,
+                                          bool is_embed) {
   LoraPath loraPath;
   if (!parse_lora_path(path, loraPath)) {
-    return false;
+    throw std::runtime_error("Invalid LoRA path: " + path);
   }
-  size_t dev_size = bm_mem_get_device_size(devmem);
-  lora_item.first = devmem;
-  lora_item.second = std::make_shared<std::vector<uint8_t>>(dev_size, 0);
+  lora_item_t item = {mem, buffer, 0};
+  size_t dev_size = bm_mem_get_device_size(mem);
   int tensor_idx = get_tensor_index(loraPath.key);
   if (tensor_idx < 0) {
-    return false;
+    return item; // empty item
   }
   ReadType read_type = DO_NOTHING;
   if (loraPath.is_A == false) {
@@ -104,9 +140,9 @@ bool LoraContext::create_lora_item(lora_item_t &lora_item,
   if (loraPath.is_A == false && m_scale != 1.0f) {
     do_scale = true;
   }
-  read_tensor_data(tensor_idx, lora_item.second->data(), dev_size,
-                   loraPath.rank, do_scale, read_type);
-  return true;
+  item.size = read_tensor_data(tensor_idx, buffer, dev_size, loraPath.rank,
+                               do_scale, read_type);
+  return item;
 }
 
 bool LoraContext::parse_lora_path(const std::string &path,
@@ -139,9 +175,9 @@ int LoraContext::get_tensor_index(const std::string &path) {
   return -1;
 }
 
-void LoraContext::read_tensor_data(int tensor_idx, void *dst, size_t size,
-                                   int max_lora_rank, bool do_scale,
-                                   ReadType read_type) {
+int LoraContext::read_tensor_data(int tensor_idx, void *dst, size_t size,
+                                  int max_lora_rank, bool do_scale,
+                                  ReadType read_type) {
   safetensors::tensor_t tensor;
   m_st.tensors.at(tensor_idx, &tensor);
   if (tensor.dtype != m_lora_type) {
@@ -150,6 +186,9 @@ void LoraContext::read_tensor_data(int tensor_idx, void *dst, size_t size,
   auto bytes = tensor.data_offsets[1] - tensor.data_offsets[0];
   if (bytes > size) {
     throw std::runtime_error("Buffer size is smaller than tensor data size");
+  }
+  if (bytes != tensor.shape[0] * tensor.shape[1] * sizeof(uint16_t)) {
+    throw std::runtime_error("Unexpected LoRA tensor data size");
   }
   const uint8_t *data_ptr = m_st.storage.data() + tensor.data_offsets[0];
   switch (read_type) {
@@ -164,6 +203,7 @@ void LoraContext::read_tensor_data(int tensor_idx, void *dst, size_t size,
     }
     stride_copy((uint16_t *)dst, (uint16_t *)data_ptr, tensor.shape[0],
                 tensor.shape[1], max_lora_rank, do_scale);
+    bytes = tensor.shape[0] * max_lora_rank * sizeof(uint16_t);
     break;
   case DO_TRANSPOSE_STRIDE_COPY:
     if (tensor.shape[0] > static_cast<size_t>(max_lora_rank)) {
@@ -173,12 +213,14 @@ void LoraContext::read_tensor_data(int tensor_idx, void *dst, size_t size,
     transpose_stride_copy((uint16_t *)dst, (uint16_t *)data_ptr,
                           tensor.shape[0], tensor.shape[1], max_lora_rank,
                           do_scale);
+    bytes = tensor.shape[1] * max_lora_rank * sizeof(uint16_t);
     break;
   default:
     data_copy((uint16_t *)dst, (uint16_t *)data_ptr, bytes / 2, do_scale);
     break;
   }
   m_tensors_visited[tensor_idx] = true;
+  return bytes;
 }
 
 uint16_t LoraContext::a16_scale(uint16_t data) {
