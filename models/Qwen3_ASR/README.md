@@ -6,6 +6,8 @@
 ```bash
 # BM1684X 1.7B 
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-asr-1.7b_bf16_seq512_bm1684x_1dev_static_20260408_094600.bmodel
+# BM1688 0.6B
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-asr-0.6b_bf16_seq256_bm1688_2core_static_20260415_173617.bmodel
 ```
 
 ## 编译模型
@@ -48,7 +50,7 @@ source ./envsetup.sh  #激活环境变量
 #### 3. 编译模型生成bmodel
 
 ``` shell
-# 如果有提示transformers/torch版本问题，pip3 install torch==2.4.1 transformers qwen_asr -U
+# 如果有提示transformers/torch版本问题，pip3 install torch==2.4.1 transformers==4.57.6 qwen_asr -U
 # 这里max_input_length指定最大输入长度，如果不指定则为-s指定的长度
 llm_convert.py -m /workspace/Qwen3-ASR-1.7B  -s 512 --max_input_length 256  --quantize bf16  -c bm1684x --out_dir qwen3_asr --qwen_asr
 ```
@@ -64,7 +66,7 @@ llm_convert.py -m /workspace/Qwen3-ASR-1.7B  -s 512 --max_input_length 256  --qu
 sudo apt-get update
 sudo apt-get install pybind11-dev
 
-pip3 install torch==2.4.1 transformers qwen_asr
+pip3 install torch==2.4.1 transformers==4.57.6 qwen_asr
 ```
 
 编译库文件，生成`chat.cpython*.so`文件，将该文件拷贝到`pipeline.py`文件目录
@@ -78,3 +80,7 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 python3 pipeline.py -m xxxx.bmodel -c ../config 
 ```
 model为实际的model储存路径；config_path为配置文件路径。
+
+* 注意：
+> demo为非流式
+> 1秒音频约占13个tokens
