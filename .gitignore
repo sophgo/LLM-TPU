@@ -1,13 +1,33 @@
+# Build / output artifacts
 tmp*/
 build/
 deploy/
+dist/
 *.bmodel
-.vscode
 *.npz
-__pycache__
-*.log
 *.zip
 *.tar.gz
 *.deb
+
+# Compiled / shared libraries from demos
 chat*.so
 verify*
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,53 +1,92 @@
-#!/bin/bash
-set -ex
+#!/usr/bin/env bash
+#
+# Quick-launch script for LLM-TPU demos.
+#
+# Usage:
+#   ./run.sh --model <name>
+#
+# Run `./run.sh --help` for the list of supported demo names.
 
-# Args
-parse_args() {
-    while [[ $# -gt 0 ]]; do
-        key="$1"
+set -euo pipefail
 
-        case $key in
-            --model)
-                model="$2"
-                shift 2
-                ;;
-            *)
-                echo "Invalid option: $key" >&2
-                exit 1
-                ;;
-            :)
-                echo "Option -$OPTARG requires an argument." >&2
-                exit 1
-                ;;
-        esac
-    done
-}
-
-# Mapping
-declare -A model_to_demo=(
+# Mapping from short demo name -> directory under models/
+declare -A MODEL_TO_DEMO=(
     ["qwen3"]="Qwen3"
     ["qwen2.5vl"]="Qwen2_5_VL"
     ["internvl3"]="InternVL3"
 )
 
-# Process Args
-parse_args "$@"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+usage() {
+    local names
+    names="$(printf '%s, ' "${!MODEL_TO_DEMO[@]}" | sed 's/, $//')"
+    cat <<EOF
+Usage: $(basename "$0") --model <name>
 
-# Function to validate model name
-validate_model() {
-    local model="$1"
-    if [[ ! ${model_to_demo[$model]} ]]; then
-        echo -e "Error: Invalid name $model, the input name must be \033[31m$(printf "%s|" "${!model_to_demo[@]}" | sed 's/|$//')\033[0m" >&2
-        return 1
-    fi
-    return 0
+Options:
+  --model <name>   Demo to run. Supported: ${names}
+  -h, --help       Show this help message and exit.
+
+Example:
+  $(basename "$0") --model qwen2.5vl
+EOF
 }
 
-# Check Model Name
-validate_model "$model" || exit 1
+err() { echo "Error: $*" >&2; }
 
-# Compile
-pushd "./models/${model_to_demo[$model]}"
-./run_demo.sh
-popd
+parse_args() {
+    model=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --model)
+                if [[ $# -lt 2 ]]; then
+                    err "--model requires an argument."
+                    usage >&2
+                    exit 2
+                fi
+                model="$2"
+                shift 2
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                err "Invalid option: $1"
+                usage >&2
+                exit 2
+                ;;
+        esac
+    done
+}
+
+parse_args "$@"
+
+if [[ -z "${model}" ]]; then
+    err "Missing required option: --model"
+    usage >&2
+    exit 2
+fi
+
+if [[ -z "${MODEL_TO_DEMO[$model]+_}" ]]; then
+    valid="$(printf '%s, ' "${!MODEL_TO_DEMO[@]}" | sed 's/, $//')"
+    err "Unknown model '${model}'. Supported: ${valid}"
+    exit 2
+fi
+
+demo_dir="${SCRIPT_DIR}/models/${MODEL_TO_DEMO[$model]}"
+demo_script="${demo_dir}/run_demo.sh"
+
+if [[ ! -d "${demo_dir}" ]]; then
+    err "Demo directory not found: ${demo_dir}"
+    exit 1
+fi
+if [[ ! -x "${demo_script}" ]]; then
+    err "Demo script missing or not executable: ${demo_script}"
+    exit 1
+fi
+
+echo ">>> Running demo: ${model} (${demo_dir})"
+cd "${demo_dir}"
+exec ./run_demo.sh

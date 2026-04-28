@@ -3,8 +3,16 @@ name: Check Model References in README
 on:
   push:
     paths:
-      - 'LLM-TPU/models/**'
-      - 'LLM-TPU/README.md'
+      - 'models/**'
+      - 'README.md'
+      - '.github/workflows/check_models_in_readme.py'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'models/**'
+      - 'README.md'
+      - '.github/workflows/check_models_in_readme.py'
+      - '.github/workflows/ci.yml'
 
 jobs:
   check-model-references:
@@ -13,13 +21,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.x'  # 选择 Python 版本
+          python-version: '3.x'
 
       - name: Run the check script
-        run: |
-          python .github/workflows/check_models_in_readme.py
+        run: python .github/workflows/check_models_in_readme.py
