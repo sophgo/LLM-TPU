@@ -295,9 +295,110 @@ class Qwen3_5():
                               return_tensors="pt",
                               **video_kwargs)
 
+    def run_once(self, input_str, media_path=""):
+        """
+        Run a single inference turn programmatically.
+
+        Returns the generated text (stdout streaming is preserved), or
+        None if the input could not be processed.
+        """
+        self.input_str = input_str
+        media_path = (media_path or "").strip()
+        if media_path == "":
+            messages = self.text_message()
+            media_type = "text"
+        elif not os.path.exists(media_path):
+            print("Can't find image or video: {}".format(media_path))
+            return None
+        else:
+            media_type = self.get_media_type(media_path)
+            if media_type == "image":
+                messages = self.image_message(media_path)
+            elif media_type == "video":
+                messages = self.video_message(media_path)
+            else:
+                print("Unsupported media type: {}".format(media_path))
+                return None
+
+        inputs = self.process(messages, media_type)
+        token_len = inputs.input_ids.numel()
+        if token_len > self.model.MAX_INPUT_LENGTH:
+            if media_type in ["image", "video"]:
+                print("grid_thw:{}".format(inputs.image_grid_thw if media_type ==
+                                           "image" else inputs.video_grid_thw))
+            print(
+                "Error: The maximum question length should be shorter than {} but we get {} instead."
+                .format(self.model.MAX_INPUT_LENGTH, token_len))
+            return None
+        if self.support_history:
+            if (token_len + self.model.history_length > self.model.SEQLEN - 128) or \
+            (self.model.history_length > self.model.PREFILL_KV_LENGTH):
+                print("Warning: History is full and clear it to continue.")
+                self.model.clear_history()
+                self.history_max_posid = 0
+        print("\nAnswer:")
+
+        # Chat
+        first_start = time.time()
+        self.model.forward_embed(inputs.input_ids.numpy())
+        vit_start = vit_end = 0
+        if media_type == "image":
+            vit_start = time.time()
+            self.vit_process_image(inputs)
+            vit_end = time.time()
+            position_ids = self.get_rope_index(inputs.input_ids, inputs.image_grid_thw,
+                                               self.ID_IMAGE_PAD)
+            self.max_posid = int(position_ids.max())
+            token = self.forward_prefill(position_ids.numpy())
+        elif media_type == "video":
+            vit_start = time.time()
+            self.vit_process_video(inputs)
+            vit_end = time.time()
+            position_ids = self.get_rope_index(inputs.input_ids, inputs.video_grid_thw,
+                                               self.ID_VIDEO_PAD)
+            self.max_posid = int(position_ids.max())
+            token = self.forward_prefill(position_ids.numpy())
+        else:
+            position_ids = 3 * [i for i in range(token_len)]
+            self.max_posid = token_len - 1
+            token = self.forward_prefill(np.array(position_ids, dtype=np.int32))
+        first_end = time.time()
+        tok_num = 0
+        # Following tokens
+        full_word_tokens = []
+        text = ""
+        while token not in [self.ID_IM_END] and self.model.history_length < self.model.SEQLEN:
+            full_word_tokens.append(token)
+            word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
+            if "�" not in word:
+                if len(full_word_tokens) == 1:
+                    pre_word = word
+                    word = self.tokenizer.decode([token, token],
+                                                 skip_special_tokens=True)[len(pre_word):]
+                text += word
+                print(word, flush=True, end="")
+                full_word_tokens = []
+            self.max_posid += 1
+            position_ids = np.array([self.max_posid, self.max_posid, self.max_posid],
+                                    dtype=np.int32)
+            token = self.model.forward_next(position_ids)
+            tok_num += 1
+        self.history_max_posid = self.max_posid + 2
+        next_end = time.time()
+        first_duration = first_end - first_start
+        next_duration = next_end - first_end
+        tps = tok_num / next_duration if next_duration > 0 else 0.0
+        print(f"\nFTL: {first_duration:.3f} s")
+        print(f"TPS: {tps:.3f} tokens/s")
+        if media_type == "image":
+            print(f"Vision({inputs.image_grid_thw.tolist()}): {vit_end - vit_start:.3f} s")
+        elif media_type == "video":
+            print(f"Vision({inputs.video_grid_thw.tolist()}): {vit_end - vit_start:.3f} s")
+        return text
+
     def chat(self):
         """
-        Start a chat session.
+        Start an interactive chat session.
         """
         # Instruct
         print("""\n=================================================================
@@ -306,112 +407,27 @@ class Qwen3_5():
 =================================================================""")
         # Stop Chatting with "exit" input
         while True:
-            self.input_str = input("\nQuestion: ")
+            input_str = input("\nQuestion: ")
             # Quit
-            if self.input_str in ["exit", "q", "quit"]:
+            if input_str in ["exit", "q", "quit"]:
                 break
-            if self.input_str in ["clear", "new", "c"]:
+            if input_str in ["clear", "new", "c"]:
                 print("New chat session created.")
                 self.model.clear_history()
                 self.history_max_posid = 0
                 continue
 
             media_path = input("\nImage or Video Path: ")
-            media_path = media_path.strip()
-            if media_path == "":
-                messages = self.text_message()
-                media_type = "text"
-            elif not os.path.exists(media_path):
-                print("Can't find image or video: {}".format(media_path))
-                continue
-            else:
-                media_type = self.get_media_type(media_path)
-                if media_type == "image":
-                    messages = self.image_message(media_path)
-                elif media_type == "video":
-                    messages = self.video_message(media_path)
-                else:
-                    print("Unsupported media type: {}".format(media_path))
-                    continue
-
-            inputs = self.process(messages, media_type)
-            token_len = inputs.input_ids.numel()
-            if token_len > self.model.MAX_INPUT_LENGTH:
-                if media_type in ["image", "video"]:
-                    print("grid_thw:{}".format(inputs.image_grid_thw if media_type ==
-                                               "image" else inputs.video_grid_thw))
-                print(
-                    "Error: The maximum question length should be shorter than {} but we get {} instead."
-                    .format(self.model.MAX_INPUT_LENGTH, token_len))
-                continue
-            if self.support_history:
-                if (token_len + self.model.history_length > self.model.SEQLEN - 128) or \
-                (self.model.history_length > self.model.PREFILL_KV_LENGTH):
-                    print("Warning: History is full and clear it to continue.")
-                    self.model.clear_history()
-                    self.history_max_posid = 0
-            print("\nAnswer:")
-
-            # Chat
-            first_start = time.time()
-            self.model.forward_embed(inputs.input_ids.numpy())
-            if media_type == "image":
-                vit_start = time.time()
-                self.vit_process_image(inputs)
-                vit_end = time.time()
-                position_ids = self.get_rope_index(inputs.input_ids, inputs.image_grid_thw,
-                                                   self.ID_IMAGE_PAD)
-                self.max_posid = int(position_ids.max())
-                token = self.forward_prefill(position_ids.numpy())
-            elif media_type == "video":
-                vit_start = time.time()
-                self.vit_process_video(inputs)
-                vit_end = time.time()
-                position_ids = self.get_rope_index(inputs.input_ids, inputs.video_grid_thw,
-                                                   self.ID_VIDEO_PAD)
-                self.max_posid = int(position_ids.max())
-                token = self.forward_prefill(position_ids.numpy())
-            else:
-                position_ids = 3 * [i for i in range(token_len)]
-                self.max_posid = token_len - 1
-                token = self.forward_prefill(np.array(position_ids, dtype=np.int32))
-            first_end = time.time()
-            tok_num = 0
-            # Following tokens
-            full_word_tokens = []
-            text = ""
-            while token not in [self.ID_IM_END] and self.model.history_length < self.model.SEQLEN:
-                full_word_tokens.append(token)
-                word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
-                if "�" not in word:
-                    if len(full_word_tokens) == 1:
-                        pre_word = word
-                        word = self.tokenizer.decode([token, token],
-                                                     skip_special_tokens=True)[len(pre_word):]
-                    text += word
-                    print(word, flush=True, end="")
-                    full_word_tokens = []
-                self.max_posid += 1
-                position_ids = np.array([self.max_posid, self.max_posid, self.max_posid],
-                                        dtype=np.int32)
-                token = self.model.forward_next(position_ids)
-                tok_num += 1
-            self.history_max_posid = self.max_posid + 2
-            next_end = time.time()
-            first_duration = first_end - first_start
-            next_duration = next_end - first_end
-            tps = tok_num / next_duration
-            print(f"\nFTL: {first_duration:.3f} s")
-            print(f"TPS: {tps:.3f} tokens/s")
-            if media_type == "image":
-                print(f"Vision({inputs.image_grid_thw.tolist()}): {vit_end - vit_start:.3f} s")
-            elif media_type == "video":
-                print(f"Vision({inputs.video_grid_thw.tolist()}): {vit_end - vit_start:.3f} s")
+            self.run_once(input_str, media_path)
 
 
 def main(args):
     model = Qwen3_5(args)
-    model.chat()
+    if args.prompt is not None:
+        # Programmatic (non-interactive) mode: run once and exit.
+        model.run_once(args.prompt, args.media_path)
+    else:
+        model.chat()
 
 
 if __name__ == "__main__":
@@ -423,6 +439,10 @@ if __name__ == "__main__":
                         help='path to the processor file')
     parser.add_argument('--video_ratio', type=float, default=0.25, help='Set video ratio, default is 0.25')
     parser.add_argument('-d', '--devid', type=int, default=0, help='device ID to use')
+    parser.add_argument('-p', '--prompt', type=str, default=None,
+                        help='If set, run programmatically (non-interactive): a single inference is performed using this prompt and then the program exits.')
+    parser.add_argument('--media_path', type=str, default="",
+                        help='Path to an image or video for programmatic mode (used together with --prompt). Leave empty for text-only.')
     # yapf: enable
     args = parser.parse_args()
     main(args)
