@@ -24,6 +24,18 @@
 #include <random>
 #include <stdio.h>
 #include <vector>
+
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 namespace py = pybind11;
 using ArrayFloat =
     py::array_t<float, py::array::c_style | py::array::forcecast>;
@@ -61,7 +73,7 @@ public:
   void clear_history();
 
   std::mt19937 sgen;
-  Qwen3_VL() : sgen(std::random_device()()) {};
+  Qwen3_VL() : sgen(std::random_device()()){};
 
 private:
   void net_launch(const bm_net_info_t *net,
@@ -291,6 +303,7 @@ void Qwen3_VL::init(int dev_id, std::string model_path) {
   assert(true == ret);
   bm_thread_sync(bm_handle);
   printf("Done!\n");
+  print_devmem_info(bm_handle);
 
   init_by_names();
 

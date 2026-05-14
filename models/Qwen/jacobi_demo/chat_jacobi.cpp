@@ -23,6 +23,17 @@
 #include <random>
 #include <vector>
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 static const int WINDOW_SIZE = 3;
 static const int N_GRAM = 3;
 static const int G_CANDI = 3;
@@ -41,7 +52,7 @@ public:
   std::vector<int> answer(std::vector<int> history_tokens);
 
   std::mt19937 sgen;
-  Qwen() : sgen(std::random_device()()) {};
+  Qwen() : sgen(std::random_device()()){};
   int sample(const std::vector<float> &probs, const std::vector<int> &tokens);
   std::vector<int> jacobi_sample(const std::vector<float> &probs,
                                  const std::vector<int> &tokens);
@@ -103,7 +114,7 @@ void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
@@ -142,6 +153,7 @@ void Qwen::init(const std::vector<int> &devices, int eos_token_id,
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(handles[0]);
 
   // net embed and lm_head
   net_embed = bmrt_get_network_info(p_bmrt, "embedding");

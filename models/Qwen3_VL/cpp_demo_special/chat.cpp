@@ -11,6 +11,18 @@
 #include "json.hpp"
 #include <fstream>
 #include <iostream>
+
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 //===------------------------------------------------------------===//
 // Empty Func
 //===------------------------------------------------------------===//
@@ -257,6 +269,7 @@ void Qwen3_VL::init(int dev_id, std::string model_path, std::string config_path,
   printf("Model[%s] loading ....\n", model_path.c_str());
   if (in_device_ == false) {
     bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
+    print_devmem_info(bm_handle);
     assert(true == ret);
   } else {
     std::ifstream infile(model_path, std::ios::binary);

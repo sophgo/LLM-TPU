@@ -24,6 +24,17 @@
 #include <stdio.h>
 #include <vector>
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 static const uint16_t ATTENTION_MASK = 0xC61C;
 //===------------------------------------------------------------===//
 // Empty Func
@@ -53,7 +64,7 @@ public:
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
   std::mt19937 sgen;
-  Model() : sgen(std::random_device()()) {};
+  Model() : sgen(std::random_device()()){};
 
 private:
   // 以下几个辅助函数不变
@@ -162,6 +173,7 @@ void Model::init(const std::vector<int> &devices, std::string model_path) {
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(handles[0]);
 
   // 获取 embedding 与 lm 模块
   // net_embed = bmrt_get_network_info(p_bmrt, "embedding");

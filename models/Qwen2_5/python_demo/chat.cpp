@@ -23,6 +23,17 @@
 #include <stdio.h>
 #include <vector>
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 //===------------------------------------------------------------===//
 // Empty Func
 //===------------------------------------------------------------===//
@@ -54,7 +65,7 @@ public:
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
   std::mt19937 sgen;
-  Qwen() : sgen(std::random_device()()) {};
+  Qwen() : sgen(std::random_device()()){};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -196,6 +207,7 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
   ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(handles[0]);
 
   init_by_names();
 

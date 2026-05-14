@@ -24,6 +24,18 @@
 #include <random>
 #include <stdio.h>
 #include <vector>
+
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 namespace py = pybind11;
 using ArrayFloat =
     py::array_t<float, py::array::c_style | py::array::forcecast>;
@@ -61,7 +73,7 @@ public:
   void clear_history();
 
   std::mt19937 sgen;
-  Qwen3_VL() : sgen(std::random_device()()) {};
+  Qwen3_VL() : sgen(std::random_device()()){};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -250,20 +262,22 @@ void Qwen3_VL::net_launch_decode(int idx, std::vector<int> kv_offset,
   assert(ret);
   for (int batch_idx = 0; batch_idx < BATCH; batch_idx++) {
     // copy key
-    auto k_mem = bm_mem_from_device(
-        past_key[idx].u.device.device_addr + kv_offset[batch_idx],
-        KV_BYTES / BATCH);
-    auto out1_mem = bm_mem_from_device(
-        past_key[idx].u.device.device_addr + (SEQLEN * (batch_idx + 1) - 1) * KV_BYTES / BATCH,
-        KV_BYTES / BATCH);
+    auto k_mem = bm_mem_from_device(past_key[idx].u.device.device_addr +
+                                        kv_offset[batch_idx],
+                                    KV_BYTES / BATCH);
+    auto out1_mem = bm_mem_from_device(past_key[idx].u.device.device_addr +
+                                           (SEQLEN * (batch_idx + 1) - 1) *
+                                               KV_BYTES / BATCH,
+                                       KV_BYTES / BATCH);
     d2d(k_mem, out1_mem);
     // copy value
-    auto v_mem = bm_mem_from_device(
-        past_value[idx].u.device.device_addr + kv_offset[batch_idx],
-        KV_BYTES / BATCH);
-    auto out2_mem = bm_mem_from_device(
-        past_value[idx].u.device.device_addr + (SEQLEN * (batch_idx + 1) - 1) * KV_BYTES / BATCH,
-        KV_BYTES / BATCH);
+    auto v_mem = bm_mem_from_device(past_value[idx].u.device.device_addr +
+                                        kv_offset[batch_idx],
+                                    KV_BYTES / BATCH);
+    auto out2_mem = bm_mem_from_device(past_value[idx].u.device.device_addr +
+                                           (SEQLEN * (batch_idx + 1) - 1) *
+                                               KV_BYTES / BATCH,
+                                       KV_BYTES / BATCH);
     d2d(v_mem, out2_mem);
   }
 }
@@ -280,7 +294,7 @@ void Qwen3_VL::clear_history() {
     empty(bm_handle, past_key[i]);
     empty(bm_handle, past_value[i]);
   }
-  for (int batch = 0; batch < BATCH; batch++){
+  for (int batch = 0; batch < BATCH; batch++) {
     history_length[batch] = 0;
   }
 }
@@ -359,8 +373,9 @@ void Qwen3_VL::init_by_names() {
   MAX_PATCHES = net_vit->stages[0].input_shapes[0].dims[0];
   MAX_PIXELS = MAX_PATCHES * 16 * 16;
   VIT_DIMS = net_vit->stages[0].input_shapes[0].dims[1];
-  KV_BYTES = bm_mem_get_device_size(
-             net_blocks_cache[0]->stages[0].input_mems[3]) / SEQLEN;
+  KV_BYTES =
+      bm_mem_get_device_size(net_blocks_cache[0]->stages[0].input_mems[3]) /
+      SEQLEN;
   printf("Num Layers:%d\n", NUM_LAYERS);
   printf("Max Pixels: %d*%d*%d\n", MAX_PATCHES / 4, 32, 32);
   PREFILL_KV_LENGTH = 0;
@@ -388,6 +403,7 @@ void Qwen3_VL::init(int dev_id, std::string model_path) {
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(bm_handle);
 
   init_by_names();
 
@@ -599,7 +615,6 @@ int Qwen3_VL::forward_first(ArrayInt const &position_ids, int batch_idx) {
     bm_memcpy_d2d_byte(bm_handle, past_value[idx], offset,
                        net_blocks[idx]->stages[0].output_mems[2], 0,
                        KV_BYTES * token_length / BATCH);
-  
   }
   vit_run = false;
 
@@ -712,7 +727,7 @@ std::vector<int> Qwen3_VL::forward_next(ArrayInt const &position_ids) {
   assert(position_ids.size() == 3 * BATCH);
   auto p_position_ids = position_ids.request();
   auto p_ids = static_cast<int *>(p_position_ids.ptr);
-  
+
   std::vector<uint16_t> attention_mask(SEQLEN * BATCH, 0);
   auto hidden_states = net_blocks_cache[0]->stages[0].input_mems[0];
   int hidden_bytes = HIDDEN_SIZE * sizeof(uint16_t);
@@ -731,15 +746,16 @@ std::vector<int> Qwen3_VL::forward_next(ArrayInt const &position_ids) {
       d2d(in_mem, net_greedy_head->stages[0].output_mems[0]);
     }
     net_launch(net_embed_cache);
-    bm_memcpy_d2d_byte(bm_handle, hidden_states, batch_idx * hidden_bytes, 
+    bm_memcpy_d2d_byte(bm_handle, hidden_states, batch_idx * hidden_bytes,
                        out_mem, 0, hidden_bytes);
   }
 
   // blocks
-  int bytes = KV_BYTES / BATCH;   // 8 * 128 * sizeof(bf16)
+  int bytes = KV_BYTES / BATCH; // 8 * 128 * sizeof(bf16)
   std::vector<int> token_offset(BATCH, 0);
   for (int batch_idx = 0; batch_idx < BATCH; batch_idx++) {
-    token_offset[batch_idx] = (history_length[batch_idx] - 1 + batch_idx * SEQLEN) * bytes;
+    token_offset[batch_idx] =
+        (history_length[batch_idx] - 1 + batch_idx * SEQLEN) * bytes;
   }
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     net_launch_decode(idx, token_offset, hidden_states, p_ids, attention_mask);
@@ -753,9 +769,10 @@ std::vector<int> Qwen3_VL::forward_next(ArrayInt const &position_ids) {
                        hidden_states, batch_idx * hidden_bytes, hidden_bytes);
     net_launch(net_lm);
     d2d(lm_out_mems[batch_idx], net_lm->stages[0].output_mems[0]);
-    
+
     if (lmhead_with_topk) {
-      bm_memcpy_d2s(bm_handle, (void *)&token[batch_idx], lm_out_mems[batch_idx]);
+      bm_memcpy_d2s(bm_handle, (void *)&token[batch_idx],
+                    lm_out_mems[batch_idx]);
     } else {
       token[batch_idx] = greedy_search(lm_out_mems[batch_idx]);
     }

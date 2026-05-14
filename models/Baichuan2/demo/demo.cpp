@@ -25,23 +25,16 @@ static const float ATTENTION_MASK = -1000.;
 
 static const std::string TOKENIZER_MODEL = "../model/tokenizer.model";
 
-// #define EXPORT_RESULTS
-#ifdef EXPORT_RESULTS
-#include "cnpy.h"
-static cnpy::npz_t map;
-
-template <typename T>
-static void add_array(std::string name, bm_handle_t bm_handle,
-                      const bm_device_mem_t &dst) {
-  std::vector<T> data(dst.size / sizeof(T));
-  bm_memcpy_d2s(bm_handle, data.data(), dst);
-  cnpy::npz_add_array(map, name, data);
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
 }
-
-static void save_array(std::string filename) {
-  cnpy::npz_save_all(filename, map);
-}
-#endif
 
 class Baichuan2 {
 public:
@@ -118,6 +111,7 @@ void Baichuan2::init(const std::vector<int> &devices, std::string model) {
   bool ret = bmrt_load_bmodel(p_bmrt, model.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(bm_handle);
   // net names
   name_embed = "embedding";
   name_embed_cache = "embedding_cache";

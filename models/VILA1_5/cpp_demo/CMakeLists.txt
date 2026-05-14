@@ -17,9 +17,9 @@ target_link_libraries(vila_cpp PUBLIC bmrt bmlib bmcv opencv_core opencv_imgproc
 target_compile_options(vila_cpp PRIVATE -Wno-error=attributes)
 install(TARGETS vila_cpp DESTINATION lib)
 
-add_executable(vlm_test vlm_test.cpp)
-target_link_libraries(vlm_test PUBLIC vila_cpp opencv_videoio)
-target_compile_options(vlm_test PRIVATE -Wno-error=attributes)
-install(TARGETS vlm_test DESTINATION bin)
+add_executable(pipeline vlm_test.cpp)
+target_link_libraries(pipeline PUBLIC vila_cpp opencv_videoio)
+target_compile_options(pipeline PRIVATE -Wno-error=attributes)
+install(TARGETS pipeline DESTINATION bin)
 
 

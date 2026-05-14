@@ -24,6 +24,17 @@
 #include "bmruntime_interface.h"
 #include "memory.h"
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 class CodeFuse {
 public:
   void init(const std::vector<int> &devid, std::string model_path);
@@ -33,7 +44,7 @@ public:
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
   std::mt19937 sgen;
-  CodeFuse() : sgen(std::random_device()()) {};
+  CodeFuse() : sgen(std::random_device()()){};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -90,7 +101,7 @@ void CodeFuse::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 void CodeFuse::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
@@ -126,6 +137,7 @@ void CodeFuse::init(const std::vector<int> &devices, std::string model_path) {
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(handles[0]);
 
   // net embed and lm_head
   net_embed = bmrt_get_network_info(p_bmrt, "embedding");
@@ -201,7 +213,7 @@ void CodeFuse::head_launch(const bm_net_info_t *net,
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 int CodeFuse::greedy_search(const bm_net_info_t *net,

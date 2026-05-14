@@ -4,11 +4,11 @@ mkdir build
 cd build
 cmake ..
 make
-mv vlm_test ../
+mv pipeline ../
 
 ## how to test
 
-./vlm_test
+./pipeline
 
 ## PillowResize
 

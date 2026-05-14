@@ -19,6 +19,17 @@
 
 #include "bmruntime_interface.h"
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 class RWKV6 {
 public:
   void init(const std::vector<int> &devices, std::string model_path);
@@ -35,7 +46,7 @@ public:
   std::vector<int> generate(std::vector<uint32_t> &input_tokens, int EOS);
 
   std::mt19937 sgen;
-  RWKV6() : sgen(std::random_device()()) {};
+  RWKV6() : sgen(std::random_device()()){};
 
 private:
   // Internal implementation
@@ -103,7 +114,7 @@ void RWKV6::net_launch(const bm_net_info_t *net, uint32_t stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 /**
@@ -145,6 +156,7 @@ void RWKV6::init(const std::vector<int> &devices, std::string model_path) {
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(handles[0]);
 
   // get rwkv model
   net_embed = bmrt_get_network_info(p_bmrt, "embedding");
@@ -219,7 +231,7 @@ void RWKV6::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 /**
  * greedy search
@@ -454,7 +466,7 @@ int RWKV6::rnn_gen(bool use_cached_state, bool cache_state2mem) {
             net_blocks[NUM_LAYERS - 1]->stages[0].output_mems[1];
         d2d(in1_mem, past_out1_mem); // 初始化state为上一波跑完的state
         d2d(in0_mem, emb_out_mem);
-      } // 第一层，输入来自emb
+      }    // 第一层，输入来自emb
     } else // 非第一层，复制上一层输出
     {
       out0_mem = net_blocks[idx - 1]->stages[0].output_mems[0];

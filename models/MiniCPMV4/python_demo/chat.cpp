@@ -25,6 +25,17 @@
 #include <stdio.h>
 #include <vector>
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 namespace py = pybind11;
 using ArrayFloat =
     py::array_t<float, py::array::c_style | py::array::forcecast>;
@@ -38,7 +49,7 @@ union bfloat16 {
   uint16_t bits;
   struct {
     uint16_t frac : 7; // mantissa
-    uint16_t exp  : 8; // exponent
+    uint16_t exp : 8;  // exponent
     uint16_t sign : 1; // sign
   } format;
 };
@@ -50,7 +61,6 @@ bfloat16 fp32_to_bf16(float value) {
   bf16_var.bits = static_cast<uint16_t>(temp >> 16);
   return bf16_var;
 }
-
 
 //===------------------------------------------------------------===//
 // Empty Func
@@ -87,13 +97,14 @@ public:
   void deinit();
   void forward_embed(ArrayInt const &tokens);
   void forward_vit(ArrayFloat const &pixel_values, ArrayInt const &position_ids,
-                   ArrayFloat const &full_attn_mask, ArrayInt const &pos_embed_ids,
-                   ArrayInt const &grid_hw, int vit_offset);
+                   ArrayFloat const &full_attn_mask,
+                   ArrayInt const &pos_embed_ids, ArrayInt const &grid_hw,
+                   int vit_offset);
   int forward_first(ArrayInt const &position_ids);
   int forward_next(ArrayInt const &position_ids);
 
   std::mt19937 sgen;
-  MiniCPMV4() : sgen(std::random_device()()) {};
+  MiniCPMV4() : sgen(std::random_device()()){};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -207,7 +218,6 @@ void MiniCPMV4::net_launch_decode(int idx, int kv_offset,
   assert(ret);
 }
 
-
 void MiniCPMV4::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
   bm_memcpy_d2d_byte(bm_handle, dst, 0, src, 0, bm_mem_get_device_size(src));
 }
@@ -282,6 +292,7 @@ void MiniCPMV4::init(int dev_id, std::string model_path) {
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(bm_handle);
   init_by_names();
   HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[1];
   MAX_PATCHES = net_vit->stages[0].input_shapes[0].dims[0];
@@ -329,11 +340,10 @@ void MiniCPMV4::forward_embed(ArrayInt const &tokens) {
 }
 
 void MiniCPMV4::forward_vit(ArrayFloat const &pixel_values,
-                          ArrayInt const &position_ids,
-                          ArrayFloat const &full_attn_mask,
-                          ArrayInt const &pos_embed_ids,
-                          ArrayInt const &grid_hw,
-                          int vit_offset) {
+                            ArrayInt const &position_ids,
+                            ArrayFloat const &full_attn_mask,
+                            ArrayInt const &pos_embed_ids,
+                            ArrayInt const &grid_hw, int vit_offset) {
   auto p_grid_hw = grid_hw.request();
   auto p_hw = static_cast<int *>(p_grid_hw.ptr);
   int h = p_hw[0];
@@ -387,7 +397,7 @@ void MiniCPMV4::forward_vit(ArrayFloat const &pixel_values,
 }
 
 void MiniCPMV4::head_launch(const bm_net_info_t *net,
-                          bm_device_mem_t &logits_mem) {
+                            bm_device_mem_t &logits_mem) {
   std::vector<bm_tensor_t> in_tensors(net->input_num);
   std::vector<bm_tensor_t> out_tensors(net->output_num);
 
@@ -412,7 +422,7 @@ void MiniCPMV4::head_launch(const bm_net_info_t *net,
 }
 
 int MiniCPMV4::greedy_search(const bm_net_info_t *net,
-                           bm_device_mem_t &logits_mem) {
+                             bm_device_mem_t &logits_mem) {
   auto &out_mem = net->stages[0].output_mems[0];
   head_launch(net, logits_mem);
   int token = 0;

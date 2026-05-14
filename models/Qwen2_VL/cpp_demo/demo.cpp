@@ -21,6 +21,17 @@
 #include <tokenizers-cpp/tokenizers_cpp.h>
 #include <vector>
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 using tokenizers::Tokenizer;
 
 static const int VISION_PAD_TOKEN = 151654;
@@ -66,7 +77,7 @@ public:
   int forward_next();
   std::string build_prompt(std::string input_str);
   std::mt19937 sgen;
-  Qwen2VL() : sgen(std::random_device()()) {};
+  Qwen2VL() : sgen(std::random_device()()){};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -127,7 +138,7 @@ void Qwen2VL::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 void Qwen2VL::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, size_t offset,
@@ -174,6 +185,7 @@ void Qwen2VL::init(std::string model_path, std::string config_path,
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   std::cout << "Done!" << std::endl;
+  print_devmem_info(handles[0]);
 
   // init networks
   net_vit = bmrt_get_network_info(p_bmrt, "vit");

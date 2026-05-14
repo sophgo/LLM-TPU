@@ -12,6 +12,17 @@
 #include <fstream>
 #include <iostream>
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 //===------------------------------------------------------------===//
 // Generation Config
 //===------------------------------------------------------------===//
@@ -88,8 +99,8 @@ void LmHead::init_by_names() {
   lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
 }
 
-void LmHead::init(int dev_id, std::string model_path,
-                  std::string config_path, bool do_sample_) {
+void LmHead::init(int dev_id, std::string model_path, std::string config_path,
+                  bool do_sample_) {
   // request bm_handle
   std::cout << "Device [ " << dev_id << " ] loading .....\n";
   bm_status_t status = bm_dev_request(&bm_handle, dev_id);
@@ -105,11 +116,11 @@ void LmHead::init(int dev_id, std::string model_path,
   assert(true == ret);
   bm_thread_sync(bm_handle);
   printf("Done!\n");
+  print_devmem_info(bm_handle);
 
   init_by_names();
 
-  auto buffer_size =
-      bm_mem_get_device_size(net_lm->stages[0].output_mems[0]);
+  auto buffer_size = bm_mem_get_device_size(net_lm->stages[0].output_mems[0]);
   status = bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
   assert(BM_SUCCESS == status);
 
@@ -218,4 +229,3 @@ int LmHead::forward(ArrayUint16 &hidden_states) {
   token_length++;
   return token;
 }
-

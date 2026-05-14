@@ -24,6 +24,17 @@
 #include <stdio.h>
 #include <vector>
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 static const uint16_t ATTENTION_MASK = 0xC61C;
 typedef uint8_t *(*decrypt_func)(const uint8_t *, uint64_t, uint64_t *);
 
@@ -57,7 +68,7 @@ public:
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
   std::mt19937 sgen;
-  Qwen() : sgen(std::random_device()()) {};
+  Qwen() : sgen(std::random_device()()){};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -135,16 +146,17 @@ void Qwen::init_decrypt() {
   }
   decrypt_handle_ = dlopen(lib_path.c_str(), RTLD_LAZY);
   if (!decrypt_handle_) {
-    std::cout << "Error:" << "Decrypt lib [" << lib_path << "] load failed."
-              << std::endl;
+    std::cout << "Error:"
+              << "Decrypt lib [" << lib_path << "] load failed." << std::endl;
     throw std::runtime_error("");
   }
   decrypt_func_ = (decrypt_func)dlsym(decrypt_handle_, "decrypt");
   auto error = dlerror();
   if (error) {
     dlclose(decrypt_handle_);
-    std::cout << "Error:" << "Decrypt lib [" << lib_path
-              << "] symbol find failed." << std::endl;
+    std::cout << "Error:"
+              << "Decrypt lib [" << lib_path << "] symbol find failed."
+              << std::endl;
     throw std::runtime_error("");
   }
   return;
@@ -248,6 +260,7 @@ void Qwen::init(const std::vector<int> &devices, std::string model_path) {
     bmodel_error();
   }
   printf("Done!\n");
+  print_devmem_info(handles[0]);
 
   // net embed and lm_head
   net_embed = bmrt_get_network_info(p_bmrt, "embedding");
@@ -324,7 +337,7 @@ void Qwen::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
   if (!ret) {
     launch_error();
   } else {
-   // bm_thread_sync(bm_handle);
+    // bm_thread_sync(bm_handle);
   }
 }
 
@@ -348,7 +361,7 @@ void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
   if (!ret) {
     launch_error();
   } else {
-   // bm_thread_sync(bm_handle);
+    // bm_thread_sync(bm_handle);
   }
 }
 

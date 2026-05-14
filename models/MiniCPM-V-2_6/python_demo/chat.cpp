@@ -7,41 +7,34 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <iostream>
-#include <cstdlib>
-#include <vector>
+#include "bmruntime_interface.h"
+#include "memory.h"
+#include <algorithm>
 #include <assert.h>
 #include <chrono>
-#include <algorithm>
+#include <cstdlib>
+#include <getopt.h>
+#include <inttypes.h>
+#include <iostream>
+#include <numeric>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include "memory.h"
-#include "bmruntime_interface.h"
-#include <getopt.h>
-#include <stdio.h>
-#include <inttypes.h>
 #include <random>
-#include <numeric>
+#include <stdio.h>
+#include <vector>
 
 static const uint16_t ATTENTION_MASK = 0xC61C; // -9984 by bfloat16
 
-#if 0
-// for debug
-#include "cnpy.h"
-static cnpy::npz_t map;
-
-template <typename T>
-static void add_array(std::string name, bm_handle_t bm_handle,
-                      const bm_device_mem_t &dst) {
-  std::vector<T> data(dst.size / sizeof(T));
-  bm_memcpy_d2s(bm_handle, data.data(), dst);
-  cnpy::npz_add_array(map, name, data);
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
 }
-
-static void save_array(std::string filename) {
-  cnpy::npz_save_all(filename, map);
-}
-#endif
 
 class MiniCPMV {
 public:
@@ -52,7 +45,7 @@ public:
   int forward_next();
 
   std::mt19937 sgen;
-  MiniCPMV() : sgen(std::random_device()()) {};
+  MiniCPMV() : sgen(std::random_device()()){};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -97,7 +90,7 @@ void MiniCPMV::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 void MiniCPMV::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
@@ -120,6 +113,7 @@ void MiniCPMV::init(int dev_id, std::string model_path) {
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(bm_handle);
 
   // net embed and lm_head
   net_embed = bmrt_get_network_info(p_bmrt, "embedding");
@@ -148,7 +142,8 @@ void MiniCPMV::init(int dev_id, std::string model_path) {
     past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
   }
 
-  auto buffer_size = bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
+  auto buffer_size =
+      bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
   status = bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
   assert(BM_SUCCESS == status);
 }
@@ -160,7 +155,8 @@ void MiniCPMV::deinit() {
 }
 
 int MiniCPMV::forward_first(std::vector<int> &tokens,
-                             std::vector<float> &pixel_values, std::vector<int> &img_offsets, int patch_num) {
+                            std::vector<float> &pixel_values,
+                            std::vector<int> &img_offsets, int patch_num) {
   std::vector<int> input_ids(SEQLEN, 0);
   std::vector<int> position_id(SEQLEN, 0);
   std::vector<uint16_t> attention_mask(SEQLEN * SEQLEN, ATTENTION_MASK);
@@ -188,9 +184,12 @@ int MiniCPMV::forward_first(std::vector<int> &tokens,
   int patch_size = net_vit->stages[0].output_shapes[0].dims[1];
   int type_byte = sizeof(uint16_t);
 
-  if (patch_num > 0 && pixel_values.size() * sizeof(float) == patch_num * IMAGE_BYTES && img_offsets.size() > 0) {
+  if (patch_num > 0 &&
+      pixel_values.size() * sizeof(float) == patch_num * IMAGE_BYTES &&
+      img_offsets.size() > 0) {
     for (int i = 0; i < patch_num; i++) {
-      float* patch_pixel_values_ptr = pixel_values.data() + i * IMAGE_BYTES / sizeof(float);
+      float *patch_pixel_values_ptr =
+          pixel_values.data() + i * IMAGE_BYTES / sizeof(float);
       d2d(dev_buffer, out_mem);
       out_mem = dev_buffer;
       // forward vision transformer
@@ -202,7 +201,8 @@ int MiniCPMV::forward_first(std::vector<int> &tokens,
       // concatenante texting embedding and image embedding
       int vit_out_size = bm_mem_get_device_size(vit_out_mem);
       int dst_offset = img_offsets[i * patch_size] * HIDDEN_SIZE * type_byte;
-      bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, vit_out_mem, 0, vit_out_size);
+      bm_memcpy_d2d_byte(bm_handle, out_mem, dst_offset, vit_out_mem, 0,
+                         vit_out_size);
     }
   }
 

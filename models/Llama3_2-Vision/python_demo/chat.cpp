@@ -23,6 +23,17 @@
 #include <stdio.h>
 #include <vector>
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 class Llama3_2 {
 public:
   void init(const std::vector<int> &devid, std::string model_path);
@@ -34,7 +45,7 @@ public:
   int forward_next();
 
   std::mt19937 sgen;
-  Llama3_2() : sgen(std::random_device()()) {};
+  Llama3_2() : sgen(std::random_device()()){};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -132,6 +143,7 @@ void Llama3_2::init(const std::vector<int> &devices, std::string model_path) {
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(handles[0]);
 
   // net embed and lm_head
   net_vit = bmrt_get_network_info(p_bmrt, "vit");
@@ -360,14 +372,14 @@ int Llama3_2::forward_first(std::vector<int> &tokens,
   std::vector<bm_tensor_t> in_tensors(net_lm->input_num);
   std::vector<bm_tensor_t> out_tensors(net_lm->output_num);
   for (int i = 0; i < net_lm->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net_lm->stages[0].input_mems[i],
-        net_lm->input_dtypes[i], net_lm->stages[0].input_shapes[i]);
+    bmrt_tensor_with_device(&in_tensors[i], net_lm->stages[0].input_mems[i],
+                            net_lm->input_dtypes[i],
+                            net_lm->stages[0].input_shapes[i]);
   }
   for (int i = 0; i < net_lm->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net_lm->stages[0].output_mems[i],
-        net_lm->output_dtypes[i], net_lm->stages[0].output_shapes[i]);
+    bmrt_tensor_with_device(&out_tensors[i], net_lm->stages[0].output_mems[i],
+                            net_lm->output_dtypes[i],
+                            net_lm->stages[0].output_shapes[i]);
   }
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net_lm->name, in_tensors.data(),
                                    net_lm->input_num, out_tensors.data(),
@@ -454,14 +466,14 @@ int Llama3_2::forward_next() {
   std::vector<bm_tensor_t> in_tensors(net_lm->input_num);
   std::vector<bm_tensor_t> out_tensors(net_lm->output_num);
   for (int i = 0; i < net_lm->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net_lm->stages[0].input_mems[i],
-        net_lm->input_dtypes[i], net_lm->stages[0].input_shapes[i]);
+    bmrt_tensor_with_device(&in_tensors[i], net_lm->stages[0].input_mems[i],
+                            net_lm->input_dtypes[i],
+                            net_lm->stages[0].input_shapes[i]);
   }
   for (int i = 0; i < net_lm->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net_lm->stages[0].output_mems[i],
-        net_lm->output_dtypes[i], net_lm->stages[0].output_shapes[i]);
+    bmrt_tensor_with_device(&out_tensors[i], net_lm->stages[0].output_mems[i],
+                            net_lm->output_dtypes[i],
+                            net_lm->stages[0].output_shapes[i]);
   }
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net_lm->name, in_tensors.data(),
                                    net_lm->input_num, out_tensors.data(),

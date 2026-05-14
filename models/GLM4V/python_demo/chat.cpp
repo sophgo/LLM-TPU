@@ -25,6 +25,17 @@
 #include <stdio.h>
 #include <vector>
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 namespace py = pybind11;
 using ArrayFloat =
     py::array_t<float, py::array::c_style | py::array::forcecast>;
@@ -82,7 +93,7 @@ public:
   int forward_next(ArrayInt const &position_ids);
 
   std::mt19937 sgen;
-  GLM4V() : sgen(std::random_device()()) {};
+  GLM4V() : sgen(std::random_device()()){};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -211,6 +222,7 @@ void GLM4V::init(int dev_id, std::string model_path) {
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(bm_handle);
   init_by_names();
   HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[1];
   MAX_PATCHES = net_vit->stages[0].input_shapes[0].dims[0];

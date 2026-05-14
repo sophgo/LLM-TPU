@@ -26,6 +26,17 @@
 #include "bmruntime_interface.h"
 #include "memory.h"
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 static const int K = 4;
 static const int GUESS_LEN = K + 1;
 static const uint16_t ATTENTION_MASK = 0xF0E2;
@@ -135,7 +146,7 @@ void Qwen::net_launch(void *p_bmrt, const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 void Qwen::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
@@ -176,6 +187,7 @@ void Qwen::init(const std::vector<int> &devices, std::string draft_model_path,
   printf("Model[%s] loading ....\n", target_model_path.c_str());
   assert(true == bmrt_load_bmodel(t_bmrt, target_model_path.c_str()));
   printf("Done!\n");
+  print_devmem_info(handles[0]);
 
   // draft net embed and lm_head
   draft_net_embed = bmrt_get_network_info(d_bmrt, "embedding");
@@ -317,7 +329,7 @@ void Qwen::head_launch(void *p_bmrt, const bm_net_info_t *net,
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 int Qwen::greedy_search(void *p_bmrt, const bm_net_info_t *net,
@@ -610,10 +622,12 @@ Qwen::target_forward_first(std::vector<int> &tokens) {
   bm_memcpy_d2d_byte(bm_handle, lm_in0_mem, 0, out_mem,
                      (target_token_length - GUESS_LEN) * bytes,
                      GUESS_LEN * bytes);
-  std::vector<int> generated_tokens(SEQLEN, target_visited_tokens[target_token_length - 1]);
+  std::vector<int> generated_tokens(
+      SEQLEN, target_visited_tokens[target_token_length - 1]);
   repeat_last_n = std::min(repeat_last_n, target_token_length);
   std::copy(target_visited_tokens.begin() + target_token_length - repeat_last_n,
-            target_visited_tokens.begin() + target_token_length, generated_tokens.begin());
+            target_visited_tokens.begin() + target_token_length,
+            generated_tokens.begin());
   bm_memcpy_s2d(bm_handle, lm_in1_mem, (void *)generated_tokens.data());
   bm_memcpy_s2d(bm_handle, lm_in2_mem, (void *)&top_p);
   bm_memcpy_s2d(bm_handle, lm_in3_mem, (void *)&temperature);
@@ -627,7 +641,6 @@ Qwen::target_forward_first(std::vector<int> &tokens) {
   bm_memcpy_d2s(bm_handle, batch_probs.data(), lm_out0_mem);
   std::vector<int> batch_tokens(candidate_num * GUESS_LEN);
   bm_memcpy_d2s(bm_handle, batch_tokens.data(), lm_out1_mem);
-
 
   for (int i = 0; i < K; i++) {
     std::vector<float> candidate_probs(batch_probs.begin() + i * candidate_num,
@@ -718,10 +731,12 @@ std::pair<std::vector<float>, std::vector<int>> Qwen::target_forward_next() {
 
   // repeat_penalty + top_p + top_k + temperature
   d2d(lm_in0_mem, out_mem);
-  std::vector<int> generated_tokens(SEQLEN, target_visited_tokens[target_token_length - 1]);
+  std::vector<int> generated_tokens(
+      SEQLEN, target_visited_tokens[target_token_length - 1]);
   repeat_last_n = std::min(repeat_last_n, target_token_length);
   std::copy(target_visited_tokens.begin() + target_token_length - repeat_last_n,
-            target_visited_tokens.begin() + target_token_length, generated_tokens.begin());
+            target_visited_tokens.begin() + target_token_length,
+            generated_tokens.begin());
   bm_memcpy_s2d(bm_handle, lm_in1_mem, (void *)generated_tokens.data());
   bm_memcpy_s2d(bm_handle, lm_in2_mem, (void *)&top_p);
   bm_memcpy_s2d(bm_handle, lm_in3_mem, (void *)&temperature);
@@ -735,7 +750,6 @@ std::pair<std::vector<float>, std::vector<int>> Qwen::target_forward_next() {
   bm_memcpy_d2s(bm_handle, batch_probs.data(), lm_out0_mem);
   std::vector<int> batch_tokens(candidate_num * GUESS_LEN);
   bm_memcpy_d2s(bm_handle, batch_tokens.data(), lm_out1_mem);
-
 
   for (int i = 0; i < K; i++) {
     std::vector<float> candidate_probs(batch_probs.begin() + i * candidate_num,

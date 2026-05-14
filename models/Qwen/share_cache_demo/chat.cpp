@@ -26,6 +26,17 @@
 #include "bmruntime_interface.h"
 #include "memory.h"
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 typedef uint8_t *(*decrypt_func)(const uint8_t *, uint64_t, uint64_t *);
 
 //===------------------------------------------------------------===//
@@ -421,6 +432,7 @@ void Qwen::load_bmodel(const std::vector<int> &devices,
     bmodel_error();
   }
   printf("Done!\n");
+  print_devmem_info(handles[0]);
 }
 
 void Qwen::init_nets() {

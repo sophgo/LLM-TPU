@@ -23,6 +23,17 @@
 #include <stdio.h>
 #include <vector>
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 static const uint16_t ATTENTION_MASK = 0xF0E2;
 
 class Phi3 {
@@ -34,7 +45,7 @@ public:
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
   std::mt19937 sgen;
-  Phi3() : sgen(std::random_device()()) {};
+  Phi3() : sgen(std::random_device()()){};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -90,7 +101,7 @@ void Phi3::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 void Phi3::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
@@ -126,13 +137,15 @@ void Phi3::init(const std::vector<int> &devices, std::string model_path) {
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(handles[0]);
 
   // net embed and lm_head
   net_embed = bmrt_get_network_info(p_bmrt, "embedding");
   net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
   net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
   // net_greedy_head = bmrt_get_network_info(p_bmrt, "greedy_head");
-  // net_penalty_sample_head = bmrt_get_network_info(p_bmrt, "penalty_sample_head");
+  // net_penalty_sample_head = bmrt_get_network_info(p_bmrt,
+  // "penalty_sample_head");
   SEQLEN = net_embed->stages[0].input_shapes[0].dims[1]; // real seqlen
   auto num_nets = bmrt_get_network_number(p_bmrt);
   NUM_LAYERS = (num_nets - 5) / 2;
@@ -188,7 +201,7 @@ void Phi3::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 int Phi3::greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem) {
@@ -293,14 +306,14 @@ int Phi3::forward_first(std::vector<int> &tokens) {
   std::vector<bm_tensor_t> in_tensors(net_lm->input_num);
   std::vector<bm_tensor_t> out_tensors(net_lm->output_num);
   for (int i = 0; i < net_lm->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net_lm->stages[0].input_mems[i],
-        net_lm->input_dtypes[i], net_lm->stages[0].input_shapes[i]);
+    bmrt_tensor_with_device(&in_tensors[i], net_lm->stages[0].input_mems[i],
+                            net_lm->input_dtypes[i],
+                            net_lm->stages[0].input_shapes[i]);
   }
   for (int i = 0; i < net_lm->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net_lm->stages[0].output_mems[i],
-        net_lm->output_dtypes[i], net_lm->stages[0].output_shapes[i]);
+    bmrt_tensor_with_device(&out_tensors[i], net_lm->stages[0].output_mems[i],
+                            net_lm->output_dtypes[i],
+                            net_lm->stages[0].output_shapes[i]);
   }
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net_lm->name, in_tensors.data(),
                                    net_lm->input_num, out_tensors.data(),
@@ -370,21 +383,21 @@ int Phi3::forward_next() {
   std::vector<bm_tensor_t> in_tensors(net_lm->input_num);
   std::vector<bm_tensor_t> out_tensors(net_lm->output_num);
   for (int i = 0; i < net_lm->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net_lm->stages[0].input_mems[i],
-        net_lm->input_dtypes[i], net_lm->stages[0].input_shapes[i]);
+    bmrt_tensor_with_device(&in_tensors[i], net_lm->stages[0].input_mems[i],
+                            net_lm->input_dtypes[i],
+                            net_lm->stages[0].input_shapes[i]);
   }
   for (int i = 0; i < net_lm->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net_lm->stages[0].output_mems[i],
-        net_lm->output_dtypes[i], net_lm->stages[0].output_shapes[i]);
+    bmrt_tensor_with_device(&out_tensors[i], net_lm->stages[0].output_mems[i],
+                            net_lm->output_dtypes[i],
+                            net_lm->stages[0].output_shapes[i]);
   }
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net_lm->name, in_tensors.data(),
                                    net_lm->input_num, out_tensors.data(),
                                    net_lm->output_num, true, false);
   assert(ret);
   bm_memcpy_d2s(bm_handle, (void *)&token, out_tensors[0].device_mem);
-  
+
   visited_tokens[token_length] = token;
   token_length += 1;
   return token;

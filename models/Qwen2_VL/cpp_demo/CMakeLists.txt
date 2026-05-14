@@ -29,5 +29,5 @@ set(OPENCV_LIBS opencv_core opencv_imgcodecs opencv_videoio)
 add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -Werror)
 set(CMAKE_BUILD_TYPE "Debug")
 
-add_executable(qwen2_vl demo.cpp)
-target_link_libraries(qwen2_vl PUBLIC bmlib bmrt tokenizers_cpp  -lpthread -ltokenizers_c ${OPENCV_LIBS} dl)
+add_executable(pipeline demo.cpp)
+target_link_libraries(pipeline PUBLIC bmlib bmrt tokenizers_cpp  -lpthread -ltokenizers_c ${OPENCV_LIBS} dl)

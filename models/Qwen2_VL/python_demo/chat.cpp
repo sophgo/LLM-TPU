@@ -25,6 +25,17 @@
 #include <stdio.h>
 #include <vector>
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 namespace py = pybind11;
 using ArrayFloat =
     py::array_t<float, py::array::c_style | py::array::forcecast>;
@@ -61,7 +72,7 @@ public:
   int forward_next(ArrayInt const &position_ids);
 
   std::mt19937 sgen;
-  Qwen2VL() : sgen(std::random_device()()) {};
+  Qwen2VL() : sgen(std::random_device()()){};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -116,7 +127,7 @@ void Qwen2VL::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 void Qwen2VL::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
@@ -199,6 +210,7 @@ void Qwen2VL::init(int dev_id, std::string model_path) {
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(bm_handle);
   init_by_names();
   HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[1];
   MAX_PATCHES = net_vit->stages[0].input_shapes[0].dims[0];
@@ -314,7 +326,7 @@ void Qwen2VL::head_launch(const bm_net_info_t *net,
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 int Qwen2VL::greedy_search(const bm_net_info_t *net,

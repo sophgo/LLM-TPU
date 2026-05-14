@@ -125,11 +125,11 @@ cd build
 cmake .. && make && cd ..
 
 # how to run
-./qwen3 -m qwen3_xxx.bmodel -c config
+./pipeline -m qwen3_xxx.bmodel -c config
 ```
 
 程序化（非交互）模式：通过 `-p/--prompt` 指定一次性问题，运行一次推理后退出。
 
 ``` shell
-./qwen3 -m qwen3_xxx.bmodel -c config -p "你好，请简单介绍一下你自己。"
+./pipeline -m qwen3_xxx.bmodel -c config -p "你好，请简单介绍一下你自己。"
 ```

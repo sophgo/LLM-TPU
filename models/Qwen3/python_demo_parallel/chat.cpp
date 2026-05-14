@@ -19,6 +19,17 @@
 #include <pybind11/stl.h>
 #include <vector>
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 class Qwen {
 public:
   void init(const std::vector<int> &devices, const std::string &model_path);
@@ -73,7 +84,7 @@ void Qwen::net_launch(const std::string &net_name,
                                    inputs.size(), outputs.data(),
                                    outputs.size(), true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 void Qwen::init(const std::vector<int> &devices,
@@ -102,6 +113,7 @@ void Qwen::init(const std::vector<int> &devices,
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(handles[0]);
 
   // embed, lm_head
   name_embed = "embedding";
@@ -317,7 +329,7 @@ int Qwen::forward_first(std::vector<int> &tokens) {
       p_bmrt, name_embed.c_str(), inputs_embed.data(), inputs_embed.size(),
       output_embeds.data(), output_embeds.size(), true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 
   // forward blocks
   std::vector<void *> pos_id_datas(device_num, (void *)position_id.data());
@@ -374,7 +386,7 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &inputs_lm[0], 1,
                               &outputs_lm[0], 1, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);
@@ -410,7 +422,7 @@ int Qwen::forward_next(int cur_token) {
       inputs_embed_cache.size(), outputs_embed_cache.data(),
       outputs_embed_cache.size(), true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 
   // blocks
   std::vector<void *> attn_datas(device_num, attention_mask.data());
@@ -456,7 +468,7 @@ int Qwen::forward_next(int cur_token) {
   ret = bmrt_launch_tensor_ex(p_bmrt, name_lm.c_str(), &hidden_states_cache[0],
                               1, &outputs_lm[0], 1, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 
   int token = 0;
   bm_memcpy_d2s(bm_handle, (void *)&token, outputs_lm[0].device_mem);

@@ -26,6 +26,16 @@
 #include "bmruntime_interface.h"
 #include "memory.h"
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
 
 static const float ATTENTION_MASK = -10000.;
 typedef uint8_t *(*decrypt_func)(const uint8_t *, uint64_t, uint64_t *);
@@ -184,7 +194,7 @@ Qwen::Qwen() {
   MAX_SHARE_LENGTH = 0;
   MAX_UNSHARE_LENGTH = 0;
 
-  // 
+  //
   sgen = std::mt19937(std::random_device()());
   bm_handle = nullptr;
   p_bmrt = nullptr;
@@ -322,7 +332,7 @@ void Qwen::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
   if (!ret) {
     launch_error();
   } else {
-   // bm_thread_sync(bm_handle);
+    // bm_thread_sync(bm_handle);
   }
 }
 
@@ -346,7 +356,7 @@ void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
   if (!ret) {
     launch_error();
   } else {
-   // bm_thread_sync(bm_handle);
+    // bm_thread_sync(bm_handle);
   }
 }
 
@@ -378,7 +388,7 @@ void Qwen::dynamic_net_launch(const bm_net_info_t *net, int token_length,
   if (!ret) {
     launch_error();
   } else {
-   // bm_thread_sync(bm_handle);
+    // bm_thread_sync(bm_handle);
   }
 }
 
@@ -423,12 +433,14 @@ void Qwen::load_bmodel(const std::vector<int> &devices,
     bmodel_error();
   }
   printf("Done!\n");
+  print_devmem_info(handles[0]);
 }
 
 void Qwen::init_nets() {
   // net embed and lm_head
   ASSERT(bmrt_get_network_index(p_bmrt, "embedding") != -1 ||
-         !embedding_path.empty(), "bmodel is lack of embedding or embedding_path is empty");
+             !embedding_path.empty(),
+         "bmodel is lack of embedding or embedding_path is empty");
   if (embedding_path.empty()) {
     net_embed = bmrt_get_network_info(p_bmrt, "embedding");
     net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
@@ -522,7 +534,7 @@ void Qwen::init_params() {
 }
 
 void Qwen::make_in_tensors(bool read_bmodel) {
-  if (!read_bmodel){
+  if (!read_bmodel) {
     free_in_tensors();
   }
 

@@ -23,6 +23,16 @@
 #include <stdio.h>
 #include <vector>
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
 
 class JanusPro {
 public:
@@ -32,7 +42,7 @@ public:
   int forward_next();
 
   std::mt19937 sgen;
-  JanusPro() : sgen(std::random_device()()) {};
+  JanusPro() : sgen(std::random_device()()){};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -91,7 +101,7 @@ void JanusPro::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 void JanusPro::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
@@ -127,6 +137,7 @@ void JanusPro::init(const std::vector<int> &devices, std::string model_path) {
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(handles[0]);
 
   // net embed and lm_head
   net_vit = bmrt_get_network_info(p_bmrt, "vit");
@@ -212,7 +223,7 @@ void JanusPro::head_launch(const bm_net_info_t *net,
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 int JanusPro::greedy_search(const bm_net_info_t *net,
@@ -318,18 +329,18 @@ int JanusPro::forward_first(std::vector<int> &tokens,
                      (token_length - 1) * bytes, bytes);
   // net_launch(net_lm);
   int token = 0;
-  
+
   std::vector<bm_tensor_t> in_tensors(net_lm->input_num);
   std::vector<bm_tensor_t> out_tensors(net_lm->output_num);
   for (int i = 0; i < net_lm->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net_lm->stages[0].input_mems[i],
-        net_lm->input_dtypes[i], net_lm->stages[0].input_shapes[i]);
+    bmrt_tensor_with_device(&in_tensors[i], net_lm->stages[0].input_mems[i],
+                            net_lm->input_dtypes[i],
+                            net_lm->stages[0].input_shapes[i]);
   }
   for (int i = 0; i < net_lm->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net_lm->stages[0].output_mems[i],
-        net_lm->output_dtypes[i], net_lm->stages[0].output_shapes[i]);
+    bmrt_tensor_with_device(&out_tensors[i], net_lm->stages[0].output_mems[i],
+                            net_lm->output_dtypes[i],
+                            net_lm->stages[0].output_shapes[i]);
   }
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net_lm->name, in_tensors.data(),
                                    net_lm->input_num, out_tensors.data(),
@@ -391,18 +402,18 @@ int JanusPro::forward_next() {
   // net_launch(net_lm);
 
   int token = 0;
-  
+
   std::vector<bm_tensor_t> in_tensors(net_lm->input_num);
   std::vector<bm_tensor_t> out_tensors(net_lm->output_num);
   for (int i = 0; i < net_lm->input_num; i++) {
-    bmrt_tensor_with_device(
-        &in_tensors[i], net_lm->stages[0].input_mems[i],
-        net_lm->input_dtypes[i], net_lm->stages[0].input_shapes[i]);
+    bmrt_tensor_with_device(&in_tensors[i], net_lm->stages[0].input_mems[i],
+                            net_lm->input_dtypes[i],
+                            net_lm->stages[0].input_shapes[i]);
   }
   for (int i = 0; i < net_lm->output_num; i++) {
-    bmrt_tensor_with_device(
-        &out_tensors[i], net_lm->stages[0].output_mems[i],
-        net_lm->output_dtypes[i], net_lm->stages[0].output_shapes[i]);
+    bmrt_tensor_with_device(&out_tensors[i], net_lm->stages[0].output_mems[i],
+                            net_lm->output_dtypes[i],
+                            net_lm->stages[0].output_shapes[i]);
   }
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net_lm->name, in_tensors.data(),
                                    net_lm->input_num, out_tensors.data(),

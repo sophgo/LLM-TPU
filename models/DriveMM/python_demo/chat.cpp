@@ -24,6 +24,17 @@
 #include "bmruntime_interface.h"
 #include "memory.h"
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 //===------------------------------------------------------------===//
 // Empty Func
 //===------------------------------------------------------------===//
@@ -53,7 +64,7 @@ public:
   int forward_next();
 
   std::mt19937 sgen;
-  Model() : sgen(std::random_device()()) {};
+  Model() : sgen(std::random_device()()){};
 
 private:
   void vit_launch(std::vector<float> &pixel_values, int vit_offset,
@@ -130,6 +141,7 @@ void Model::init(int dev_id, std::string model_path) {
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(bm_handle);
 
   // net embed and lm_head
   net_embed = bmrt_get_network_info(p_bmrt, "embedding");

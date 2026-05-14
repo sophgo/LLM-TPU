@@ -26,6 +26,16 @@
 #include "bmruntime_interface.h"
 #include "memory.h"
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
 
 static const float ATTENTION_MASK = -10000.;
 typedef uint8_t *(*decrypt_func)(const uint8_t *, uint64_t, uint64_t *);
@@ -63,12 +73,15 @@ public:
   void deinit_decrypt();
   int forward_first(std::vector<int> &tokens);
   int forward_next();
-  void update_bmodel_weight(
-    const std::string &model_path, const std::string &lora_path, const std::string &net_idx,
-    const std::string &mem_idx, const std::vector<std::string> &weight_idx);
-  void empty_bmodel_weight(
-    const std::string &model_path, const std::string &net_idx,
-    const std::string &mem_idx, const std::vector<std::string> &weight_idx);
+  void update_bmodel_weight(const std::string &model_path,
+                            const std::string &lora_path,
+                            const std::string &net_idx,
+                            const std::string &mem_idx,
+                            const std::vector<std::string> &weight_idx);
+  void empty_bmodel_weight(const std::string &model_path,
+                           const std::string &net_idx,
+                           const std::string &mem_idx,
+                           const std::vector<std::string> &weight_idx);
   std::vector<int> generate(std::vector<int> &history_tokens, int EOS);
 
   std::mt19937 sgen;
@@ -187,7 +200,7 @@ Qwen::Qwen() {
   NUM_LAYERS = 0;
   MAX_PREFILL_LENGTH = 0;
 
-  // 
+  //
   sgen = std::mt19937(std::random_device()());
   bm_handle = nullptr;
   p_bmrt = nullptr;
@@ -221,9 +234,7 @@ void Qwen::deinit() {
   handles.clear();
 }
 
-Qwen::~Qwen() {
-  deinit();
-}
+Qwen::~Qwen() { deinit(); }
 
 static inline void ASSERT(bool ret) {
   if (!ret) {
@@ -349,7 +360,7 @@ void Qwen::head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem,
   if (!ret) {
     launch_error();
   } else {
-   // bm_thread_sync(bm_handle);
+    // bm_thread_sync(bm_handle);
   }
 }
 
@@ -373,7 +384,7 @@ void Qwen::net_launch(const bm_net_info_t *net, int stage_idx) {
   if (!ret) {
     launch_error();
   } else {
-   // bm_thread_sync(bm_handle);
+    // bm_thread_sync(bm_handle);
   }
 }
 
@@ -405,7 +416,7 @@ void Qwen::dynamic_net_launch(const bm_net_info_t *net, int token_length,
   if (!ret) {
     launch_error();
   } else {
-   // bm_thread_sync(bm_handle);
+    // bm_thread_sync(bm_handle);
   }
 }
 
@@ -451,12 +462,14 @@ void Qwen::load_bmodel(const std::vector<int> &devices,
     bmodel_error();
   }
   printf("Done!\n");
+  print_devmem_info(handles[0]);
 }
 
 void Qwen::init_nets() {
   // net embed and lm_head
   ASSERT(bmrt_get_network_index(p_bmrt, "embedding") != -1 ||
-         !embedding_path.empty(), "bmodel is lack of embedding or embedding_path is empty");
+             !embedding_path.empty(),
+         "bmodel is lack of embedding or embedding_path is empty");
   if (embedding_path.empty()) {
     net_embed = bmrt_get_network_info(p_bmrt, "embedding");
     net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
@@ -473,7 +486,8 @@ void Qwen::init_nets() {
   }
   if (lora_embedding_flag != -1) {
     net_lora_embed = bmrt_get_network_info(p_bmrt, "lora_embedding");
-    net_lora_embed_cache = bmrt_get_network_info(p_bmrt, "lora_embedding_cache");
+    net_lora_embed_cache =
+        bmrt_get_network_info(p_bmrt, "lora_embedding_cache");
     num_nets = num_nets - 2;
   }
   NUM_LAYERS = num_nets / 2;
@@ -534,7 +548,7 @@ void Qwen::init_params() {
 }
 
 void Qwen::make_in_tensors() {
-  if (make_in_tensors_flag){
+  if (make_in_tensors_flag) {
     return;
   }
 
@@ -582,11 +596,13 @@ void Qwen::init(const std::vector<int> &devices, const std::string &model_path,
   make_in_tensors();
 }
 
-void Qwen::update_bmodel_weight(
-  const std::string &model_path, const std::string &lora_path, const std::string &net_idx,
-  const std::string &mem_idx, const std::vector<std::string> &weight_idx) {
+void Qwen::update_bmodel_weight(const std::string &model_path,
+                                const std::string &lora_path,
+                                const std::string &net_idx,
+                                const std::string &mem_idx,
+                                const std::vector<std::string> &weight_idx) {
 
-  std::vector<const char*> weight_idx_cstr;
+  std::vector<const char *> weight_idx_cstr;
   weight_idx_cstr.reserve(weight_idx.size());
 
   for (const auto &idx : weight_idx) {
@@ -594,29 +610,29 @@ void Qwen::update_bmodel_weight(
   }
 
   auto ret = bmrt_update_bmodel_weight_with_decrypt(
-    p_bmrt, model_path.c_str(), lora_path.c_str(), net_idx.c_str(), mem_idx.c_str(),
-    weight_idx_cstr.data(), static_cast<int>(weight_idx_cstr.size()), decrypt_func_
-  );
+      p_bmrt, model_path.c_str(), lora_path.c_str(), net_idx.c_str(),
+      mem_idx.c_str(), weight_idx_cstr.data(),
+      static_cast<int>(weight_idx_cstr.size()), decrypt_func_);
 
   ASSERT(true == ret, "load lora binary weight error");
 }
 
+void Qwen::empty_bmodel_weight(const std::string &model_path,
+                               const std::string &net_idx,
+                               const std::string &mem_idx,
+                               const std::vector<std::string> &weight_idx) {
 
-void Qwen::empty_bmodel_weight(
-  const std::string &model_path, const std::string &net_idx,
-  const std::string &mem_idx, const std::vector<std::string> &weight_idx) {
-
-  std::vector<const char*> weight_idx_cstr;
+  std::vector<const char *> weight_idx_cstr;
   weight_idx_cstr.reserve(weight_idx.size());
 
   for (const auto &idx : weight_idx) {
-      weight_idx_cstr.push_back(idx.c_str());
+    weight_idx_cstr.push_back(idx.c_str());
   }
 
   auto ret = bmrt_empty_bmodel_weight_with_decrypt(
-    p_bmrt, model_path.c_str(), net_idx.c_str(), mem_idx.c_str(),
-    weight_idx_cstr.data(), static_cast<int>(weight_idx_cstr.size()), decrypt_func_
-  );
+      p_bmrt, model_path.c_str(), net_idx.c_str(), mem_idx.c_str(),
+      weight_idx_cstr.data(), static_cast<int>(weight_idx_cstr.size()),
+      decrypt_func_);
 
   ASSERT(true == ret, "load lora binary weight error");
 }
@@ -688,7 +704,8 @@ Qwen::load_and_infer_embedding(const std::vector<int> &tokens) {
   file.seekg(0, std::ios::beg);
   file.read(reinterpret_cast<char *>(&file_size_in_header), sizeof(uint64_t));
   if (file_size_in_disk != file_size_in_header) {
-    throw std::runtime_error("Error: file size is not equal to file size in header\n");
+    throw std::runtime_error(
+        "Error: file size is not equal to file size in header\n");
   }
 
   size_t embedding_bytes = hidden_bytes;
@@ -697,7 +714,8 @@ Qwen::load_and_infer_embedding(const std::vector<int> &tokens) {
 
   std::vector<uint16_t> buffer(size * embedding_dim);
   for (int i = 0; i < std::min(size, total_length); i++) {
-    long long start_position = (long long)tokens[i] * embedding_bytes + header_size;
+    long long start_position =
+        (long long)tokens[i] * embedding_bytes + header_size;
     file.seekg(start_position, std::ios::beg);
     if (file.fail()) {
       throw std::runtime_error("File size is not correct\n");
@@ -718,9 +736,10 @@ bm_device_mem_t Qwen::embedding_launch(const bm_net_info_t *net0,
   // embedding : net0->stages[stage_idx]
   // embedding_cache : net0->stages[0]
   bm_device_mem_t out_mem;
-  if (!embedding_path.empty() && lora_embedding_flag != -1 && enable_lora_embedding) 
-  {
-    int this_stage_idx = (strcmp(net2->name, "lora_embedding") == 0) ? stage_idx : 0;
+  if (!embedding_path.empty() && lora_embedding_flag != -1 &&
+      enable_lora_embedding) {
+    int this_stage_idx =
+        (strcmp(net2->name, "lora_embedding") == 0) ? stage_idx : 0;
     auto &in0_mem = net2->stages[this_stage_idx].input_mems[0];
     auto &in1_mem = net2->stages[this_stage_idx].input_mems[1];
     out_mem = net2->stages[this_stage_idx].output_mems[0];
@@ -731,15 +750,13 @@ bm_device_mem_t Qwen::embedding_launch(const bm_net_info_t *net0,
     bm_memcpy_s2d(bm_handle, in1_mem, (void *)buffer.data());
 
     net_launch(net2, this_stage_idx); // prefil embedding
-  } else if (embedding_path.empty()) 
-  {
+  } else if (embedding_path.empty()) {
     int this_stage_idx = (strcmp(net0->name, "embedding") == 0) ? stage_idx : 0;
     auto &in_mem = net0->stages[this_stage_idx].input_mems[0];
     out_mem = net0->stages[this_stage_idx].output_mems[0];
     bm_memcpy_s2d(bm_handle, in_mem, (void *)tokens.data());
     net_launch(net0, this_stage_idx); // prefil embedding
-  } else if (!embedding_path.empty())
-  {
+  } else if (!embedding_path.empty()) {
     out_mem = net1->stages[stage_idx].input_mems[0];
     empty(bm_handle, out_mem);
     auto buffer = load_and_infer_embedding(tokens);
@@ -762,7 +779,8 @@ bm_device_mem_t Qwen::lm_launch(const bm_net_info_t *net,
 
 int Qwen::forward_first(std::vector<int> &tokens) {
   if ((int)tokens.size() >= MAX_PREFILL_LENGTH) {
-    throw std::runtime_error("the sequence length you input exceeds MAX_PREFILL_LENGTH");
+    throw std::runtime_error(
+        "the sequence length you input exceeds MAX_PREFILL_LENGTH");
   }
   std::vector<int> first_tokens(MAX_PREFILL_LENGTH, 0);
   std::vector<int> position_id(MAX_PREFILL_LENGTH, 0);
@@ -793,7 +811,8 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   }
 
   // forward embeding
-  auto out_mem = embedding_launch(net_embed, net_blocks[0], net_lora_embed, first_tokens);
+  auto out_mem =
+      embedding_launch(net_embed, net_blocks[0], net_lora_embed, first_tokens);
 
   // forward blocks
   // make in tensors
@@ -858,8 +877,8 @@ int Qwen::forward_next() {
 
   // embedding
   std::vector<int> cur_tokens = {cur_token};
-  auto out_mem =
-      embedding_launch(net_embed_cache, net_blocks_cache[0], net_lora_embed_cache, cur_tokens);
+  auto out_mem = embedding_launch(net_embed_cache, net_blocks_cache[0],
+                                  net_lora_embed_cache, cur_tokens);
 
   // blocks
   // move psition_id & attention_mask to device
@@ -901,7 +920,7 @@ int Qwen::forward_next() {
     token = penalty_sample(net_penalty_sample_head, lm_out_mem, total_tokens,
                            total_length);
   }
-  
+
   total_tokens[total_length] = token;
   total_length += 1;
   return token;

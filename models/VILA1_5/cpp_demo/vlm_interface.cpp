@@ -5,6 +5,17 @@
 #include <iostream>
 #include <vector>
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 static const int IMG_TOKEN = -200;
 static const int IMG_HEIGHT = 384;
 static const int IMG_WIDTH = 384;
@@ -77,7 +88,7 @@ void Vila::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 void Vila::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
@@ -105,6 +116,7 @@ void Vila::init(const std::string &llm_model, const std::string &vit_model,
   ret = bmrt_load_bmodel(p_bmrt, vit_model.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(bm_handle);
 
   // net embed and lm_head
   net_embed = bmrt_get_network_info(p_bmrt, "embedding");

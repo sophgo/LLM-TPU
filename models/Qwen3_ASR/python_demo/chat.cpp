@@ -25,6 +25,17 @@
 #include <stdio.h>
 #include <vector>
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 namespace py = pybind11;
 using ArrayFloat =
     py::array_t<float, py::array::c_style | py::array::forcecast>;
@@ -62,7 +73,7 @@ public:
   void clear_history();
 
   std::mt19937 sgen;
-  Qwen3_ASR() : sgen(std::random_device()()) {};
+  Qwen3_ASR() : sgen(std::random_device()()){};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -155,8 +166,8 @@ void Qwen3_ASR::net_launch_block_dyn(const bm_net_info_t *net, int real_len) {
 }
 
 void Qwen3_ASR::net_launch_decode(int idx, int kv_offset,
-                                 bm_device_mem_t &input_mem, const int *pos_id,
-                                 std::vector<uint16_t> &attention_mask) {
+                                  bm_device_mem_t &input_mem, const int *pos_id,
+                                  std::vector<uint16_t> &attention_mask) {
   auto &net = net_blocks_cache[idx];
   std::vector<bm_tensor_t> in_tensors(5);
   std::vector<bm_tensor_t> out_tensors(3);
@@ -313,6 +324,7 @@ void Qwen3_ASR::init(int dev_id, std::string model_path) {
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(bm_handle);
 
   init_by_names();
 
@@ -366,7 +378,7 @@ void Qwen3_ASR::forward_embed(ArrayInt const &tokens) {
 }
 
 void Qwen3_ASR::forward_audio(ArrayFloat const &audio_features,
-                             ArrayInt const &audio_offset) {
+                              ArrayInt const &audio_offset) {
   auto p_audio_features = audio_features.request();
   auto p_audio = static_cast<float *>(p_audio_features.ptr);
   auto p_audio_offset = audio_offset.request();

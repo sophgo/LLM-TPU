@@ -7,4 +7,4 @@ make
 
 # how to run
 
-./qwen3 -m qwen2_xxx.bmodel -c config
+./pipeline -m qwen2_xxx.bmodel -c config

@@ -9,6 +9,17 @@
 
 #include "block.hpp"
 
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
+
 void Block::net_launch_decode(int local_idx, int kv_offset, const int *pos_id,
                               std::vector<uint16_t> &attention_mask) {
   auto &net = net_blocks_cache[local_idx];
@@ -125,6 +136,7 @@ void Block::init(int dev_id, std::string model_path) {
   assert(true == ret);
   bm_thread_sync(bm_handle);
   printf("Done!\n");
+  print_devmem_info(bm_handle);
 
   init_by_names();
 
@@ -136,7 +148,8 @@ void Block::init(int dev_id, std::string model_path) {
       past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
       past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
     } else {
-      // Linear/recurrent layer: reuse input_mems[1]/[2] as conv/recurrent state.
+      // Linear/recurrent layer: reuse input_mems[1]/[2] as conv/recurrent
+      // state.
       past_key[i] = net_blocks_cache[i]->stages[0].input_mems[1];
       past_value[i] = net_blocks_cache[i]->stages[0].input_mems[2];
     }
@@ -241,10 +254,8 @@ ArrayUint16 Block::forward_first(ArrayInt const &position_ids,
                          KV_BYTES * token_length);
     } else {
       // reuse key as conv state, value as recurrent state
-      d2d(bm_handle, past_key[idx],
-          net_blocks[idx]->stages[0].output_mems[1]);
-      d2d(bm_handle, past_value[idx],
-          net_blocks[idx]->stages[0].input_mems[1]);
+      d2d(bm_handle, past_key[idx], net_blocks[idx]->stages[0].output_mems[1]);
+      d2d(bm_handle, past_value[idx], net_blocks[idx]->stages[0].input_mems[1]);
     }
   }
   bm_thread_sync(bm_handle);

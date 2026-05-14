@@ -9,11 +9,11 @@
 
 #include "bmruntime_interface.h"
 #include "memory.h"
-#include <vector>
 #include <algorithm>
 #include <assert.h>
 #include <chrono>
 #include <cstdlib>
+#include <dlfcn.h>
 #include <getopt.h>
 #include <inttypes.h>
 #include <iostream>
@@ -22,7 +22,18 @@
 #include <pybind11/stl.h>
 #include <random>
 #include <stdio.h>
-#include <dlfcn.h>
+#include <vector>
+
+static void print_devmem_info(bm_handle_t &bm_handle) {
+  bm_dev_stat_t stat;
+  auto ret = bm_get_stat(bm_handle, &stat);
+  if (ret != BM_SUCCESS) {
+    std::cerr << "Failed to get device status" << std::endl;
+    return;
+  }
+  std::cout << "DevMem: " << stat.mem_used << "/" << stat.mem_total << " MB"
+            << std::endl;
+}
 
 class RWKV7 {
 public:
@@ -37,7 +48,8 @@ public:
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
-  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset = 0, int size = 0);
+  inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset = 0,
+                  int size = 0);
 
 public:
   int token_length;
@@ -55,8 +67,10 @@ private:
   std::vector<bm_device_mem_t> state2;
 };
 
-void RWKV7::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset, int size) {
-  if (!size) size = bm_mem_get_device_size(src);
+void RWKV7::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset,
+                int size) {
+  if (!size)
+    size = bm_mem_get_device_size(src);
   bm_memcpy_d2d_byte(bm_handle, dst, offset, src, 0, size);
 }
 
@@ -89,6 +103,7 @@ void RWKV7::init(const std::vector<int> &devices, std::string model_path) {
   ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   printf("Done!\n");
+  print_devmem_info(handles[0]);
 
   // net embed and lm_head
   net_forward_one = bmrt_get_network_info(p_bmrt, "rwkv_forward_one");
@@ -106,7 +121,7 @@ void RWKV7::init(const std::vector<int> &devices, std::string model_path) {
 
   int value = 0;
   for (int i = 0; i < NUM_LAYERS; i++) {
-    bm_malloc_device_byte(bm_handle, &state0[i], 
+    bm_malloc_device_byte(bm_handle, &state0[i],
                           net_forward_one->max_input_bytes[1]);
     bm_malloc_device_byte(bm_handle, &state1[i],
                           net_forward_one->max_input_bytes[1 + NUM_LAYERS]);
@@ -148,7 +163,7 @@ void RWKV7::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
- // bm_thread_sync(bm_handle);
+  // bm_thread_sync(bm_handle);
 }
 
 std::vector<float> RWKV7::forward_seq(std::vector<int> &tokens) {
@@ -156,30 +171,24 @@ std::vector<float> RWKV7::forward_seq(std::vector<int> &tokens) {
   auto &out_mem = net_forward_seq->stages[0].output_mems[0];
   bm_memcpy_s2d(bm_handle, in_mem, (void *)tokens.data());
   for (int i = 0; i < NUM_LAYERS; i++) {
+    bm_set_device_mem(&net_forward_seq->stages[0].input_mems[i + 1],
+                      bm_mem_get_device_size(state0[i]),
+                      state0[i].u.device.device_addr);
     bm_set_device_mem(
-        &net_forward_seq->stages[0].input_mems[i+1],
-        bm_mem_get_device_size(state0[i]),
-        state0[i].u.device.device_addr);
+        &net_forward_seq->stages[0].input_mems[i + 1 + NUM_LAYERS],
+        bm_mem_get_device_size(state1[i]), state1[i].u.device.device_addr);
     bm_set_device_mem(
-        &net_forward_seq->stages[0].input_mems[i+1+NUM_LAYERS],
-        bm_mem_get_device_size(state1[i]),
-        state1[i].u.device.device_addr);
+        &net_forward_seq->stages[0].input_mems[i + 1 + 2 * NUM_LAYERS],
+        bm_mem_get_device_size(state2[i]), state2[i].u.device.device_addr);
+    bm_set_device_mem(&net_forward_seq->stages[0].output_mems[i + 1],
+                      bm_mem_get_device_size(state0[i]),
+                      state0[i].u.device.device_addr);
     bm_set_device_mem(
-        &net_forward_seq->stages[0].input_mems[i+1+2*NUM_LAYERS],
-        bm_mem_get_device_size(state2[i]),
-        state2[i].u.device.device_addr);
+        &net_forward_seq->stages[0].output_mems[i + 1 + NUM_LAYERS],
+        bm_mem_get_device_size(state1[i]), state1[i].u.device.device_addr);
     bm_set_device_mem(
-        &net_forward_seq->stages[0].output_mems[i+1],
-        bm_mem_get_device_size(state0[i]),
-        state0[i].u.device.device_addr);
-    bm_set_device_mem(
-        &net_forward_seq->stages[0].output_mems[i+1+NUM_LAYERS],
-        bm_mem_get_device_size(state1[i]),
-        state1[i].u.device.device_addr);
-    bm_set_device_mem(
-        &net_forward_seq->stages[0].output_mems[i+1+2*NUM_LAYERS],
-        bm_mem_get_device_size(state2[i]),
-        state2[i].u.device.device_addr);  
+        &net_forward_seq->stages[0].output_mems[i + 1 + 2 * NUM_LAYERS],
+        bm_mem_get_device_size(state2[i]), state2[i].u.device.device_addr);
   }
   net_launch(net_forward_seq);
 
@@ -193,30 +202,24 @@ std::vector<float> RWKV7::forward_one(int &token) {
   auto &out_mem = net_forward_one->stages[0].output_mems[0];
   bm_memcpy_s2d(bm_handle, in_mem, (void *)&token);
   for (int i = 0; i < NUM_LAYERS; i++) {
+    bm_set_device_mem(&net_forward_one->stages[0].input_mems[i + 1],
+                      bm_mem_get_device_size(state0[i]),
+                      state0[i].u.device.device_addr);
     bm_set_device_mem(
-        &net_forward_one->stages[0].input_mems[i+1],
-        bm_mem_get_device_size(state0[i]),
-        state0[i].u.device.device_addr);
+        &net_forward_one->stages[0].input_mems[i + 1 + NUM_LAYERS],
+        bm_mem_get_device_size(state1[i]), state1[i].u.device.device_addr);
     bm_set_device_mem(
-        &net_forward_one->stages[0].input_mems[i+1+NUM_LAYERS],
-        bm_mem_get_device_size(state1[i]),
-        state1[i].u.device.device_addr);
+        &net_forward_one->stages[0].input_mems[i + 1 + 2 * NUM_LAYERS],
+        bm_mem_get_device_size(state2[i]), state2[i].u.device.device_addr);
+    bm_set_device_mem(&net_forward_one->stages[0].output_mems[i + 1],
+                      bm_mem_get_device_size(state0[i]),
+                      state0[i].u.device.device_addr);
     bm_set_device_mem(
-        &net_forward_one->stages[0].input_mems[i+1+2*NUM_LAYERS],
-        bm_mem_get_device_size(state2[i]),
-        state2[i].u.device.device_addr);
+        &net_forward_one->stages[0].output_mems[i + 1 + NUM_LAYERS],
+        bm_mem_get_device_size(state1[i]), state1[i].u.device.device_addr);
     bm_set_device_mem(
-        &net_forward_one->stages[0].output_mems[i+1],
-        bm_mem_get_device_size(state0[i]),
-        state0[i].u.device.device_addr);
-    bm_set_device_mem(
-        &net_forward_one->stages[0].output_mems[i+1+NUM_LAYERS],
-        bm_mem_get_device_size(state1[i]),
-        state1[i].u.device.device_addr);
-    bm_set_device_mem(
-        &net_forward_one->stages[0].output_mems[i+1+2*NUM_LAYERS],
-        bm_mem_get_device_size(state2[i]),
-        state2[i].u.device.device_addr);  
+        &net_forward_one->stages[0].output_mems[i + 1 + 2 * NUM_LAYERS],
+        bm_mem_get_device_size(state2[i]), state2[i].u.device.device_addr);
   }
   net_launch(net_forward_one);
 
@@ -225,18 +228,24 @@ std::vector<float> RWKV7::forward_one(int &token) {
   return logits;
 }
 
-void RWKV7::load_state(std::vector<float> &state) {
-  return;
-}
+void RWKV7::load_state(std::vector<float> &state) { return; }
 
 std::vector<float> RWKV7::clear_state() {
   /*
-  * init_ctx :
-  *  "User: hi" + "\n\n" + 
-  *  "Assistant: Hi. I am your assistant and I will provide expert full response in full details. 
-  *   Please feel free to ask any question and I will always answer it." + "\n\n"
-  */
-  std::vector<int> init_tokens = {24281, 59, 4571, 261, 5585, 41693, 59, 3880, 47, 308, 4418, 32515, 59179, 21265, 308, 32475, 52597, 45929, 30923, 57119, 4596, 30923, 51454, 47, 44712, 30836, 30911, 4811, 21295, 21273, 57009, 21265, 308, 32475, 45150, 45175, 4601, 47, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 33, 261};
+   * init_ctx :
+   *  "User: hi" + "\n\n" +
+   *  "Assistant: Hi. I am your assistant and I will provide expert full
+   * response in full details. Please feel free to ask any question and I will
+   * always answer it." + "\n\n"
+   */
+  std::vector<int> init_tokens = {
+      24281, 59,    4571,  261,   5585,  41693, 59,    3880,  47,    308,
+      4418,  32515, 59179, 21265, 308,   32475, 52597, 45929, 30923, 57119,
+      4596,  30923, 51454, 47,    44712, 30836, 30911, 4811,  21295, 21273,
+      57009, 21265, 308,   32475, 45150, 45175, 4601,  47,    33,    33,
+      33,    33,    33,    33,    33,    33,    33,    33,    33,    33,
+      33,    33,    33,    33,    33,    33,    33,    33,    33,    33,
+      33,    33,    33,    261};
   return forward_seq(init_tokens);
 }
 
