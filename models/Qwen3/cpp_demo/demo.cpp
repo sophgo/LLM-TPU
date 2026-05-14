@@ -825,24 +825,28 @@ void Usage() {
          "  -c, --config    : Set processor config path \n"
          "  -e, --enable_history : if set, enable history memory\n"
          "  -s, --do_sample : if set, sample by generation config\n"
-         "  -d, --devid     : Set devices to run for model, default is '0'\n");
+         "  -d, --devid     : Set devices to run for model, default is '0'\n"
+         "  -p, --prompt    : Programmatic mode prompt; if set, run a single\n"
+         "                    inference and exit (non-interactive)\n");
 }
 
 void processArguments(int argc, char *argv[], std::string &model_path,
                       std::string &config_path, std::vector<int> &devices,
-                      bool &enable_history, bool &do_sample) {
+                      bool &enable_history, bool &do_sample,
+                      std::string &prompt, bool &has_prompt) {
   struct option longOptions[] = {{"model", required_argument, nullptr, 'm'},
                                  {"config", required_argument, nullptr, 'c'},
                                  {"devid", required_argument, nullptr, 'd'},
                                  {"enable_history", no_argument, nullptr, 'e'},
                                  {"do_sample", no_argument, nullptr, 's'},
+                                 {"prompt", required_argument, nullptr, 'p'},
                                  {"help", no_argument, nullptr, 'h'},
                                  {nullptr, 0, nullptr, 0}};
 
   int optionIndex = 0;
   int option;
 
-  while ((option = getopt_long(argc, argv, "m:c:d:esh", longOptions,
+  while ((option = getopt_long(argc, argv, "m:c:d:p:esh", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -860,6 +864,10 @@ void processArguments(int argc, char *argv[], std::string &model_path,
     case 's':
       do_sample = true;
       break;
+    case 'p':
+      prompt = optarg;
+      has_prompt = true;
+      break;
     case 'h':
     case '?':
       Usage();
@@ -876,9 +884,11 @@ int main(int argc, char **argv) {
   std::vector<int> devices = {0};
   bool enable_history = false;
   bool do_sample = false;
+  std::string prompt;
+  bool has_prompt = false;
 
   processArguments(argc, argv, model_path, config_path, devices, enable_history,
-                   do_sample);
+                   do_sample, prompt, has_prompt);
   if (model_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);
@@ -890,7 +900,15 @@ int main(int argc, char **argv) {
   std::cout << "Init Environment ..." << std::endl;
   model.init(model_path, config_path, system_prompt, enable_history, do_sample,
              devices);
-  model.chat();
+  if (has_prompt) {
+    // Programmatic (non-interactive) mode: run a single inference and exit.
+    std::cout << "\nQuestion: " << prompt << std::endl;
+    std::cout << "\nAnswer: " << std::flush;
+    model.answer(prompt);
+    std::cout << std::endl;
+  } else {
+    model.chat();
+  }
   model.deinit();
   return 0;
 }

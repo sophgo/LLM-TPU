@@ -110,6 +110,11 @@ python3 pipeline.py -m qwen_xxx.bmodel -c config
 model为实际的bmodel储存路径；config为编译模型时生成的配置文件，demo中存放了qwen3的config。
 * 如果更换其他系列模型，如deepseek-r1-distill-qwen，需要指定新的config
 * qwen3支持关闭深度思考功能，通过在问题后加'/no_think'关闭深度思考，deepseek-distill版不支持该功能
+* 程序化（非交互）模式：通过 `-p/--prompt` 指定一次性问题，运行一次推理后退出。
+
+``` shell
+python3 pipeline.py -m qwen_xxx.bmodel -c config -p "你好，请简单介绍一下你自己。"
+```
 
 
 #### cpp demo
@@ -121,4 +126,10 @@ cmake .. && make && cd ..
 
 # how to run
 ./qwen3 -m qwen3_xxx.bmodel -c config
+```
+
+程序化（非交互）模式：通过 `-p/--prompt` 指定一次性问题，运行一次推理后退出。
+
+``` shell
+./qwen3 -m qwen3_xxx.bmodel -c config -p "你好，请简单介绍一下你自己。"
 ```

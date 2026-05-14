@@ -88,6 +88,26 @@ class Qwen3():
     def __del__(self):
         self.model.deinit()
 
+    def run_once(self, input_str):
+        """
+        Run a single inference turn programmatically.
+        """
+        self.input_str = input_str
+        tokens = self.encode_tokens()
+
+        # check tokens
+        if not tokens:
+            print("Sorry: your question is empty!!")
+            return
+        if len(tokens) > self.model.MAX_INPUT_LENGTH:
+            print(
+                "The maximum question length should be shorter than {} but we get {} instead."
+                .format(self.model.MAX_INPUT_LENGTH, len(tokens)))
+            return
+
+        print("\nAnswer: ", end="")
+        self.stream_answer(tokens)
+
     def chat(self):
         """
         Start a chat session.
@@ -108,20 +128,7 @@ class Qwen3():
                 self.clear()
             # Chat
             else:
-                tokens = self.encode_tokens()
-
-                # check tokens
-                if not tokens:
-                    print("Sorry: your question is empty!!")
-                    return
-                if len(tokens) > self.model.MAX_INPUT_LENGTH:
-                    print(
-                        "The maximum question length should be shorter than {} but we get {} instead."
-                        .format(self.model.MAX_INPUT_LENGTH, len(tokens)))
-                    return
-
-                print("\nAnswer: ", end="")
-                self.stream_answer(tokens)
+                self.run_once(self.input_str)
 
     def stream_answer(self, tokens):
         """
@@ -171,7 +178,11 @@ class Qwen3():
 
 def main(args):
     model = Qwen3(args)
-    model.chat()
+    if args.prompt is not None:
+        # Programmatic (non-interactive) mode: run once and exit.
+        model.run_once(args.prompt)
+    else:
+        model.chat()
 
 
 if __name__ == "__main__":
@@ -182,6 +193,8 @@ if __name__ == "__main__":
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
     parser.add_argument('--do_sample', action='store_true', help="if set, generate tokens by sample parameters")
     parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory")
+    parser.add_argument('-p', '--prompt', type=str, default=None,
+                        help='If set, run programmatically (non-interactive): a single inference is performed using this prompt and then the program exits.')
     # yapf: enable
     args = parser.parse_args()
     main(args)
