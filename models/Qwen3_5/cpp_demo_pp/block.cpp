@@ -108,7 +108,7 @@ void Block::init_by_names() {
   auto fa_block = net_blocks[first_fa_local];
   auto fa_cache = net_blocks_cache[first_fa_local];
   support_history = fa_block->input_num == 5;
-  is_dynamic = fa_block->is_dynamic;
+  prefill_mask = fa_block->input_num > 2; // with prefill attention mask
   history_length = 0;
   MAX_INPUT_LENGTH = fa_block->stages[0].input_shapes[0].dims[1];
   HIDDEN_SIZE = fa_cache->stages[0].input_shapes[0].dims[2];
@@ -171,33 +171,17 @@ ArrayUint16 Block::forward_first(ArrayInt const &position_ids,
   const int *p_ids = position_ids.data();
   std::vector<int> position_ids_pad;
   std::vector<uint16_t> attention_mask;
-  if (is_dynamic) {
+  if (prefill_mask) {
     attention_mask.assign(token_length * token_length, mask_value);
     for (int i = 0; i < token_length; i++) {
       for (int j = 0; j <= i; j++) {
         attention_mask[i * token_length + j] = 0;
       }
     }
-    position_ids_pad.assign(3 * token_length, 0);
-    assert((int)position_ids.size() == token_length * 3);
-    std::copy(p_ids, p_ids + token_length * 3, position_ids_pad.begin());
-  } else {
-    int length = MAX_INPUT_LENGTH;
-    attention_mask.assign(length * length, mask_value);
-    for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j <= i; j++) {
-        attention_mask[i * length + j] = 0;
-      }
-    }
-    position_ids_pad.assign(3 * length, 0);
-    int ori_length = position_ids.size() / 3;
-    for (int i = 0; i < 3; i++) {
-      int ori_offset = i * ori_length;
-      int dst_offset = i * length;
-      std::copy(p_ids + ori_offset, p_ids + ori_offset + ori_length,
-                position_ids_pad.begin() + dst_offset);
-    }
   }
+  position_ids_pad.assign(3 * token_length, 0);
+  assert((int)position_ids.size() == token_length * 3);
+  std::copy(p_ids, p_ids + token_length * 3, position_ids_pad.begin());
 
   bm_device_mem_t out_mem;
   empty_net(bm_handle, net_blocks[0]);
@@ -217,28 +201,21 @@ ArrayUint16 Block::forward_first(ArrayInt const &position_ids,
     }
 
     if (fa) {
-      if (is_dynamic) {
-        bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
-                              (void *)position_ids_pad.data(),
-                              token_length * 3 * sizeof(int));
+      bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
+                            (void *)position_ids_pad.data(),
+                            token_length * 3 * sizeof(int));
+      if (prefill_mask) {
         bm_memcpy_s2d_partial(bm_handle, in_tensors[2].device_mem,
                               (void *)attention_mask.data(),
                               token_length * token_length * sizeof(uint16_t));
-        in_tensors[0].shape.dims[1] = token_length;
-        in_tensors[1].shape.dims[1] = token_length;
         in_tensors[2].shape.dims[2] = token_length;
         in_tensors[2].shape.dims[3] = token_length;
-      } else {
-        bm_memcpy_s2d(bm_handle, in_tensors[1].device_mem,
-                      (void *)position_ids_pad.data());
-        bm_memcpy_s2d(bm_handle, in_tensors[2].device_mem,
-                      (void *)attention_mask.data());
       }
+      in_tensors[0].shape.dims[1] = token_length;
+      in_tensors[1].shape.dims[1] = token_length;
     } else {
       // Non-FA layer: input[1] is the recurrent state (zeroed for prefill).
-      if (is_dynamic) {
-        in_tensors[0].shape.dims[1] = token_length;
-      }
+      in_tensors[0].shape.dims[1] = token_length;
       empty(bm_handle, in_tensors[1].device_mem);
     }
 

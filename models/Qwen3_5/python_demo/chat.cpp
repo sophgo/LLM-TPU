@@ -73,7 +73,7 @@ public:
   void clear_history();
 
   std::mt19937 sgen;
-  Qwen3_5() : sgen(std::random_device()()){};
+  Qwen3_5() : sgen(std::random_device()()) {};
 
 private:
   void net_launch(const bm_net_info_t *net,
@@ -111,6 +111,7 @@ public:
   int max_pos;
   bool lmhead_with_topk;
   bool support_history;
+  bool prefill_mask;
   uint16_t mask_value;
   std::vector<int> visited_tokens;
   const int FA_INTERVAL = 4; // full attention interval
@@ -266,6 +267,8 @@ void Qwen3_5::init_by_names() {
   VIT_DIMS = net_vit->stages[0].input_shapes[0].dims[1];
   KV_BYTES = bm_mem_get_device_size(
       net_blocks_cache[FA_INTERVAL - 1]->stages[0].output_mems[1]);
+  // with prefill attention mask
+  prefill_mask = net_blocks[FA_INTERVAL - 1]->input_num > 2;
   printf("Num Layers:%d\n", NUM_LAYERS);
   printf("Max Pixels: %d*%d*%d\n", MAX_PATCHES / 4, 32, 32);
   PREFILL_KV_LENGTH = 0;
@@ -426,10 +429,13 @@ int Qwen3_5::forward_first(ArrayInt const &position_ids) {
   auto p_position_ids = position_ids.request();
   auto p_ids = static_cast<int *>(p_position_ids.ptr);
   std::vector<int> position_ids_pad;
-  std::vector<uint16_t> attention_mask(token_length * token_length, mask_value);
-  for (int i = 0; i < token_length; i++) {
-    for (int j = 0; j <= i; j++) {
-      attention_mask[i * token_length + j] = 0;
+  std::vector<uint16_t> attention_mask;
+  if (prefill_mask) {
+    attention_mask.resize(token_length * token_length, mask_value);
+    for (int i = 0; i < token_length; i++) {
+      for (int j = 0; j <= i; j++) {
+        attention_mask[i * token_length + j] = 0;
+      }
     }
   }
   position_ids_pad.assign(3 * token_length, 0);
@@ -449,13 +455,15 @@ int Qwen3_5::forward_first(ArrayInt const &position_ids) {
       bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
                             (void *)position_ids_pad.data(),
                             token_length * 3 * sizeof(int));
-      bm_memcpy_s2d_partial(bm_handle, in_tensors[2].device_mem,
-                            (void *)attention_mask.data(),
-                            token_length * token_length * sizeof(uint16_t));
+      if (prefill_mask) {
+        bm_memcpy_s2d_partial(bm_handle, in_tensors[2].device_mem,
+                              (void *)attention_mask.data(),
+                              token_length * token_length * sizeof(uint16_t));
+        in_tensors[2].shape.dims[2] = token_length;
+        in_tensors[2].shape.dims[3] = token_length;
+      }
       in_tensors[0].shape.dims[1] = token_length;
       in_tensors[1].shape.dims[1] = token_length;
-      in_tensors[2].shape.dims[2] = token_length;
-      in_tensors[2].shape.dims[3] = token_length;
     } else {
       in_tensors[0].shape.dims[1] = token_length;
       empty(bm_handle, in_tensors[1].device_mem); // recurrent state

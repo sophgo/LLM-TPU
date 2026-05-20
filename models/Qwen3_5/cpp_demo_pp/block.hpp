@@ -47,7 +47,7 @@ public:
   int num_blocks; // number of layers in this Block instance
   int start_idx;  // global index of the first layer in this Block instance
   bool support_history;
-  bool is_dynamic;
+  bool prefill_mask;
   uint16_t mask_value;
   const int FA_INTERVAL = 4;
 

@@ -79,6 +79,7 @@ public:
   int max_pos;
   bool lmhead_with_topk;
   bool support_history;
+  bool prefill_mask;
   uint16_t mask_value;
   std::vector<int> visited_tokens;
   const int FA_INTERVAL = 4; // full attention interval
