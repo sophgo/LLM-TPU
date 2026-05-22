@@ -31,7 +31,8 @@
 
 | 日期 | 更新内容 |
 | :--- | :--- |
-| 🔥 **2026.04.15** | **Qwen3.5** 已支持 BM1684X / BM1688，提供 Python 与 C++ Demo，支持图片与视频 → [查看](./models/Qwen3_5/) |
+| 🔥 **2026.05.21** | **Gemma4** 已支持 BM1684X / BM1688，Python Demo，支持图片 / 视频 / 音频 → [查看](./models/Gemma4/) |
+| **2026.04.15** | **Qwen3.5** 已支持 BM1684X / BM1688，提供 Python 与 C++ Demo，支持图片与视频 → [查看](./models/Qwen3_5/) |
 | **2025.10.15** | **Qwen3-VL** 已支持 BM1684X / BM1688，Python / C++ Demo，支持图片与视频 → [查看](./models/Qwen3_VL/) |
 | **2025.05.22** | **InternVL3** 已支持 BM1684X / BM1688，支持图片与视频 → [查看](./models/InternVL3/) |
 | **2025.04.30** | **Qwen2.5-VL** 已支持 BM1684X / BM1688，Python / C++ Demo → [查看](./models/Qwen2_5_VL/) |
@@ -101,6 +102,7 @@ cd LLM-TPU
 | [Qwen2.5-VL](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct-AWQ) | BM1684X / 1688 | ✅ | Python + C++ |
 | [Qwen2-VL](https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct-AWQ) | BM1684X / 1688 | ✅ | — |
 | [InternVL3](https://huggingface.co/OpenGVLab/InternVL3-2B-AWQ) | BM1684X / 1688 | ✅ | 支持视频 |
+| [Gemma4](https://huggingface.co/google/gemma-4-E2B-it) | BM1684X / 1688 | ✅ | Python，图片 / 视频 / 音频 |
 | [Gemma3](https://huggingface.co/google/gemma-3-4b-it) | BM1684X / 1688 | ✅ | — |
 | Qwen-VL / InternVL2 / MiniCPM-V-2.6 / Llama3.2-Vision | BM1684X / 1688 | — | 已部署 |
 
@@ -149,6 +151,7 @@ cd LLM-TPU
 **多模态 (Vision / Video / Audio)**：
 [DriveMM](./models/DriveMM) ·
 [Gemma3](./models/Gemma3) ·
+[Gemma4](./models/Gemma4) ·
 [GLM4V](./models/GLM4V) ·
 [InternVL2](./models/InternVL2) ·
 [InternVL3](./models/InternVL3) ·
