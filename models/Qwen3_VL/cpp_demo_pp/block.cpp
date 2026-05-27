@@ -100,6 +100,7 @@ void Block::init_by_names() {
   }
   support_history = net_blocks[0]->input_num == 5;
   is_dynamic = net_blocks[0]->is_dynamic;
+  prefill_mask = net_blocks[0]->input_num > 2;
   history_length = 0;
   MAX_INPUT_LENGTH = net_blocks[0]->stages[0].input_shapes[0].dims[1];
   HIDDEN_SIZE = net_blocks_cache[0]->stages[0].input_shapes[0].dims[2];
@@ -158,29 +159,34 @@ ArrayUint16 Block::forward_first(ArrayInt const &position_ids,
   const int *p_ids = position_ids.data();
   std::vector<int> position_ids_pad;
   std::vector<uint16_t> attention_mask;
-  if (is_dynamic) {
-    attention_mask.assign(token_length * token_length, mask_value);
-    for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j <= i; j++) {
-        attention_mask[i * token_length + j] = 0;
+  if (prefill_mask) {
+    if (is_dynamic) {
+      attention_mask.assign(token_length * token_length, mask_value);
+      for (int i = 0; i < token_length; i++) {
+        for (int j = 0; j <= i; j++) {
+          attention_mask[i * token_length + j] = 0;
+        }
+      }
+    } else {
+      int length = MAX_INPUT_LENGTH;
+      attention_mask.assign(length * length, mask_value);
+      for (int i = 0; i < token_length; i++) {
+        for (int j = 0; j <= i; j++) {
+          attention_mask[i * length + j] = 0;
+        }
       }
     }
+  }
+  if (is_dynamic) {
     position_ids_pad.assign(3 * token_length, 0);
     assert((int)position_ids.size() == token_length * 3);
     std::copy(p_ids, p_ids + token_length * 3, position_ids_pad.begin());
   } else {
-    int length = MAX_INPUT_LENGTH;
-    attention_mask.assign(length * length, mask_value);
-    for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j <= i; j++) {
-        attention_mask[i * length + j] = 0;
-      }
-    }
-    position_ids_pad.assign(3 * length, 0);
+    position_ids_pad.assign(3 * MAX_INPUT_LENGTH, 0);
     int ori_length = position_ids.size() / 3;
     for (int i = 0; i < 3; i++) {
       int ori_offset = i * ori_length;
-      int dst_offset = i * length;
+      int dst_offset = i * MAX_INPUT_LENGTH;
       std::copy(p_ids + ori_offset, p_ids + ori_offset + ori_length,
                 position_ids_pad.begin() + dst_offset);
     }
@@ -204,20 +210,26 @@ ArrayUint16 Block::forward_first(ArrayInt const &position_ids,
         bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
                               (void *)position_ids_pad.data(),
                               token_length * 3 * sizeof(int));
-        bm_memcpy_s2d_partial(bm_handle, in_tensors[2].device_mem,
-                              (void *)attention_mask.data(),
-                              token_length * token_length * sizeof(uint16_t));
+        if (prefill_mask) {
+          bm_memcpy_s2d_partial(bm_handle, in_tensors[2].device_mem,
+                                (void *)attention_mask.data(),
+                                token_length * token_length * sizeof(uint16_t));
+        }
       }
       in_tensors[0].shape.dims[1] = token_length;
       in_tensors[1].shape.dims[1] = token_length;
-      in_tensors[2].shape.dims[2] = token_length;
-      in_tensors[2].shape.dims[3] = token_length;
+      if (prefill_mask) {
+        in_tensors[2].shape.dims[2] = token_length;
+        in_tensors[2].shape.dims[3] = token_length;
+      }
     } else {
       if (idx == 0) {
         bm_memcpy_s2d(bm_handle, in_tensors[1].device_mem,
                       (void *)position_ids_pad.data());
-        bm_memcpy_s2d(bm_handle, in_tensors[2].device_mem,
-                      (void *)attention_mask.data());
+        if (prefill_mask) {
+          bm_memcpy_s2d(bm_handle, in_tensors[2].device_mem,
+                        (void *)attention_mask.data());
+        }
       }
     }
     net_launch(p_bmrt, net_blocks[idx], in_tensors, out_tensors);

@@ -136,6 +136,7 @@ public:
   int NUM_LAYERS;
   bool lmhead_with_topk;
   bool is_dynamic;
+  bool prefill_mask;
   std::vector<int> visited_tokens;
   bool support_prefill_kv;
   int history_length;
@@ -262,6 +263,7 @@ void Qwen::init(int device, std::string model_path) {
   past_key.resize(NUM_LAYERS);
   past_value.resize(NUM_LAYERS);
   is_dynamic = net_blocks[0].is_dynamic;
+  prefill_mask = net_blocks[0].input.num > 2;
   kv_buffer_size = ShapeCount(net_blocks_cache[0].stages[0].input_shapes[3]) *
                    DtypeSize(net_blocks_cache[0].input.dtypes[3]);
   for (int i = 0; i < NUM_LAYERS; i++) {
@@ -294,8 +296,10 @@ void Qwen::net_launch_dyn(const tpuRtNetInfo_t &net, int real_len) {
 
   in_tensors[0].shape.dims[1] = real_len;
   in_tensors[1].shape.dims[1] = real_len;
-  in_tensors[2].shape.dims[2] = real_len;
-  in_tensors[2].shape.dims[3] = real_len;
+  if (prefill_mask) {
+    in_tensors[2].shape.dims[2] = real_len;
+    in_tensors[2].shape.dims[3] = real_len;
+  }
 
   auto ret = tpuRtLaunchNetAsync(m_net, in_tensors.data(), out_tensors.data(),
                                  net.name, m_stream);
@@ -336,8 +340,10 @@ int Qwen::forward_first(std::vector<int> &tokens) {
     return forward_first_with_kv(tokens);
   }
   std::vector<int> position_id(MAX_INPUT_LENGTH, 0);
-  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH,
-                                       mask_value);
+  std::vector<uint16_t> attention_mask;
+  if (prefill_mask) {
+    attention_mask.resize(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH, mask_value);
+  }
   std::fill(visited_tokens.begin(), visited_tokens.end(), 0);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
 
@@ -346,16 +352,18 @@ int Qwen::forward_first(std::vector<int> &tokens) {
   for (int i = 0; i < token_length; i++) {
     position_id[i] = i;
   }
-  if (is_dynamic) {
-    for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j <= i; j++) {
-        attention_mask[i * token_length + j] = 0;
+  if (prefill_mask) {
+    if (is_dynamic) {
+      for (int i = 0; i < token_length; i++) {
+        for (int j = 0; j <= i; j++) {
+          attention_mask[i * token_length + j] = 0;
+        }
       }
-    }
-  } else {
-    for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j <= i; j++) {
-        attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
+    } else {
+      for (int i = 0; i < token_length; i++) {
+        for (int j = 0; j <= i; j++) {
+          attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
+        }
       }
     }
   }
@@ -383,9 +391,10 @@ int Qwen::forward_first(std::vector<int> &tokens) {
       // only first time need copy
       tpuRtMemcpyS2DAsync(in1_mem, (void *)position_id.data(),
                           token_length * sizeof(int), m_stream);
-      tpuRtMemcpyS2DAsync(
-          in2_mem, (void *)attention_mask.data(),
-          MAX_INPUT_LENGTH * MAX_INPUT_LENGTH * sizeof(uint16_t), m_stream);
+      if (prefill_mask) {
+        tpuRtMemcpyS2DAsync(in2_mem, (void *)attention_mask.data(),
+                            attention_mask.size() * sizeof(uint16_t), m_stream);
+      }
     }
     if (is_dynamic) {
       net_launch_dyn(net_blocks[idx], token_length);

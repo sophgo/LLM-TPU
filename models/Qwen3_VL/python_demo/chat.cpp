@@ -109,6 +109,7 @@ public:
   bool lmhead_with_topk;
   bool support_history;
   bool is_dynamic;
+  bool prefill_mask;
   bool vit_dynamic;
   uint16_t mask_value;
   bool vit_run = false;
@@ -264,6 +265,7 @@ void Qwen3_VL::init_by_names() {
   }
   support_history = net_blocks[0]->input_num == 5; // with kv cache
   is_dynamic = net_blocks[0]->is_dynamic;
+  prefill_mask = net_blocks[0]->input_num > 2; // with prefill attention mask
   vit_dynamic = net_vit->is_dynamic;
   history_length = 0;
   lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
@@ -457,23 +459,28 @@ int Qwen3_VL::forward_first(ArrayInt const &position_ids) {
   auto p_ids = static_cast<int *>(p_position_ids.ptr);
   std::vector<int> position_ids_pad;
   std::vector<uint16_t> attention_mask;
-  if (is_dynamic) {
-    attention_mask.assign(token_length * token_length, mask_value);
-    for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j <= i; j++) {
-        attention_mask[i * token_length + j] = 0;
+  if (prefill_mask) {
+    if (is_dynamic) {
+      attention_mask.assign(token_length * token_length, mask_value);
+      for (int i = 0; i < token_length; i++) {
+        for (int j = 0; j <= i; j++) {
+          attention_mask[i * token_length + j] = 0;
+        }
+      }
+    } else {
+      attention_mask.assign(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH, mask_value);
+      for (int i = 0; i < token_length; i++) {
+        for (int j = 0; j <= i; j++) {
+          attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
+        }
       }
     }
+  }
+  if (is_dynamic) {
     position_ids_pad.assign(3 * token_length, 0);
     assert((int)position_ids.size() == token_length * 3);
     std::copy(p_ids, p_ids + token_length * 3, position_ids_pad.begin());
   } else {
-    attention_mask.assign(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH, mask_value);
-    for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j <= i; j++) {
-        attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
-      }
-    }
     position_ids_pad.assign(3 * MAX_INPUT_LENGTH, 0);
     int ori_length = position_ids.size() / 3;
     for (int i = 0; i < 3; i++) {
@@ -497,22 +504,28 @@ int Qwen3_VL::forward_first(ArrayInt const &position_ids) {
         bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
                               (void *)position_ids_pad.data(),
                               token_length * 3 * sizeof(int));
-        bm_memcpy_s2d_partial(bm_handle, in_tensors[2].device_mem,
-                              (void *)attention_mask.data(),
-                              token_length * token_length * sizeof(uint16_t));
+        if (prefill_mask) {
+          bm_memcpy_s2d_partial(bm_handle, in_tensors[2].device_mem,
+                                (void *)attention_mask.data(),
+                                token_length * token_length * sizeof(uint16_t));
+        }
       }
       in_tensors[0].shape.dims[1] = token_length;
       in_tensors[1].shape.dims[1] = token_length;
-      in_tensors[2].shape.dims[2] = token_length;
-      in_tensors[2].shape.dims[3] = token_length;
+      if (prefill_mask) {
+        in_tensors[2].shape.dims[2] = token_length;
+        in_tensors[2].shape.dims[3] = token_length;
+      }
     } else {
       in_tensors[0].device_mem = out_mem;
       if (idx == 0) {
         // only first time need copy
         bm_memcpy_s2d(bm_handle, in_tensors[1].device_mem,
                       (void *)position_ids_pad.data());
-        bm_memcpy_s2d(bm_handle, in_tensors[2].device_mem,
-                      (void *)attention_mask.data());
+        if (prefill_mask) {
+          bm_memcpy_s2d(bm_handle, in_tensors[2].device_mem,
+                        (void *)attention_mask.data());
+        }
       }
     }
     net_launch(net_blocks[idx], in_tensors, out_tensors);

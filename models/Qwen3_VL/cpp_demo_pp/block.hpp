@@ -44,6 +44,7 @@ public:
   int start_idx;
   bool support_history;
   bool is_dynamic;
+  bool prefill_mask;
   uint16_t mask_value;
   std::vector<int> visited_tokens;
 

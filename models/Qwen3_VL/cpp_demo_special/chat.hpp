@@ -86,6 +86,7 @@ public:
   bool lmhead_with_topk;
   bool support_history;
   bool is_dynamic;
+  bool prefill_mask;
   bool vit_dynamic;
   uint16_t mask_value;
   bool vit_run = false;

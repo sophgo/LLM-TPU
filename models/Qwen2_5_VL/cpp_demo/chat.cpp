@@ -77,8 +77,10 @@ void Qwen2_5VL::net_launch_block_dyn(const bm_net_info_t *net, int real_len) {
   }
   in_tensors[0].shape.dims[1] = real_len;
   in_tensors[1].shape.dims[1] = real_len;
-  in_tensors[2].shape.dims[2] = real_len;
-  in_tensors[2].shape.dims[3] = real_len;
+  if (prefill_mask) {
+    in_tensors[2].shape.dims[2] = real_len;
+    in_tensors[2].shape.dims[3] = real_len;
+  }
 
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
@@ -238,6 +240,7 @@ void Qwen2_5VL::init_by_names() {
   }
   support_history = net_blocks[0]->input_num == 5; // with kv cache
   is_dynamic = net_blocks[0]->is_dynamic;
+  prefill_mask = net_blocks[0]->input_num > 2; // with prefill attention mask
   vit_dynamic = net_vit->is_dynamic;
   history_length = 0;
   lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
@@ -425,18 +428,20 @@ int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
     return forward_first_with_kv(position_ids);
   }
   std::vector<uint16_t> attention_mask;
-  if (is_dynamic) {
-    attention_mask.assign(token_length * token_length, mask_value);
-    for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j <= i; j++) {
-        attention_mask[i * token_length + j] = 0;
+  if (prefill_mask) {
+    if (is_dynamic) {
+      attention_mask.assign(token_length * token_length, mask_value);
+      for (int i = 0; i < token_length; i++) {
+        for (int j = 0; j <= i; j++) {
+          attention_mask[i * token_length + j] = 0;
+        }
       }
-    }
-  } else {
-    attention_mask.assign(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH, mask_value);
-    for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j <= i; j++) {
-        attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
+    } else {
+      attention_mask.assign(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH, mask_value);
+      for (int i = 0; i < token_length; i++) {
+        for (int j = 0; j <= i; j++) {
+          attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
+        }
       }
     }
   }
@@ -473,15 +478,19 @@ int Qwen2_5VL::forward_first(ArrayInt const &position_ids) {
         bm_memcpy_s2d_partial(bm_handle, in1_mem,
                               (void *)position_ids_pad.data(),
                               token_length * 3 * sizeof(int));
-        bm_memcpy_s2d_partial(bm_handle, in2_mem, (void *)attention_mask.data(),
-                              token_length * token_length * sizeof(uint16_t));
+        if (prefill_mask) {
+          bm_memcpy_s2d_partial(bm_handle, in2_mem, (void *)attention_mask.data(),
+                                token_length * token_length * sizeof(uint16_t));
+        } 
       }
       net_launch_block_dyn(net_blocks[idx], token_length);
     } else {
       if (idx == 0) {
         // only first time need copy
         bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_ids_pad.data());
-        bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+        if (prefill_mask) {
+          bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+        } 
       }
       net_launch(net_blocks[idx]);
     }

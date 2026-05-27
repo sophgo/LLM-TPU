@@ -72,7 +72,7 @@ public:
   void clear_history();
 
   std::mt19937 sgen;
-  InternVL3() : sgen(std::random_device()()){};
+  InternVL3() : sgen(std::random_device()()) {};
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
@@ -96,6 +96,7 @@ public:
   int NUM_IMAGE_TOKEN;
   int MAX_INPUT_LENGTH;
   int PREFILL_KV_LENGTH;
+  bool prefill_mask;
   uint16_t mask_value;
   bool lmhead_with_topk;
   bool support_history;
@@ -160,8 +161,10 @@ void InternVL3::net_launch_block_dyn(const bm_net_info_t *net, int real_len) {
   }
   in_tensors[0].shape.dims[1] = real_len;
   in_tensors[1].shape.dims[1] = real_len;
-  in_tensors[2].shape.dims[2] = real_len;
-  in_tensors[2].shape.dims[3] = real_len;
+  if (prefill_mask) {
+    in_tensors[2].shape.dims[2] = real_len;
+    in_tensors[2].shape.dims[3] = real_len;
+  }
 
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
@@ -339,6 +342,7 @@ void InternVL3::init_by_names() {
   MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
   SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[3].dims[1];
   is_dynamic = net_blocks[0]->is_dynamic;
+  prefill_mask = net_blocks[0]->input_num > 2; // with prefill attention mask
   support_history = net_blocks[0]->input_num == 5; // with kv cache
   history_length = 0;
   printf("Num Layers:%d\n", NUM_LAYERS);
@@ -467,18 +471,20 @@ int InternVL3::forward_first() {
     position_id[i] = i;
   }
   std::vector<uint16_t> attention_mask;
-  if (is_dynamic) {
-    attention_mask.assign(token_length * token_length, mask_value);
-    for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j <= i; j++) {
-        attention_mask[i * token_length + j] = 0;
+  if (prefill_mask) {
+    if (is_dynamic) {
+      attention_mask.assign(token_length * token_length, mask_value);
+      for (int i = 0; i < token_length; i++) {
+        for (int j = 0; j <= i; j++) {
+          attention_mask[i * token_length + j] = 0;
+        }
       }
-    }
-  } else {
-    attention_mask.assign(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH, mask_value);
-    for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j <= i; j++) {
-        attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
+    } else {
+      attention_mask.assign(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH, mask_value);
+      for (int i = 0; i < token_length; i++) {
+        for (int j = 0; j <= i; j++) {
+          attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
+        }
       }
     }
   }
@@ -497,8 +503,11 @@ int InternVL3::forward_first() {
         // only first time need copy
         bm_memcpy_s2d_partial(bm_handle, in1_mem, (void *)position_id.data(),
                               token_length * sizeof(int));
-        bm_memcpy_s2d_partial(bm_handle, in2_mem, (void *)attention_mask.data(),
-                              token_length * token_length * sizeof(uint16_t));
+        if (prefill_mask) {
+          bm_memcpy_s2d_partial(bm_handle, in2_mem,
+                                (void *)attention_mask.data(),
+                                token_length * token_length * sizeof(uint16_t));
+        }
       }
       net_launch_block_dyn(net_blocks[idx], token_length);
     } else {
