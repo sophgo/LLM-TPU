@@ -57,6 +57,7 @@ private:
   std::vector<const bm_net_info_t *> net_blocks;
   std::vector<const bm_net_info_t *> net_blocks_cache;
   // KV cache (or conv/recurrent state for non-FA layers); indexed by local idx.
+  bm_device_mem_t dev_buffer;
   std::vector<bm_device_mem_t> past_key;
   std::vector<bm_device_mem_t> past_value;
 };

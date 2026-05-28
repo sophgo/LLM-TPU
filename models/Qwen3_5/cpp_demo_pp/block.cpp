@@ -156,9 +156,14 @@ void Block::init(int dev_id, std::string model_path) {
     empty(bm_handle, past_key[i]);
     empty(bm_handle, past_value[i]);
   }
+  auto buffer_size =
+      bm_mem_get_device_size(net_blocks[0]->stages[0].output_mems[0]);
+  status = bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
+  assert(BM_SUCCESS == status);
 }
 
 void Block::deinit() {
+  bm_free_device(bm_handle, dev_buffer);
   bmrt_destroy(p_bmrt);
   bm_dev_free(bm_handle);
 }
@@ -183,7 +188,7 @@ ArrayUint16 Block::forward_first(ArrayInt const &position_ids,
   assert((int)position_ids.size() == token_length * 3);
   std::copy(p_ids, p_ids + token_length * 3, position_ids_pad.begin());
 
-  bm_device_mem_t out_mem;
+  bm_device_mem_t out_mem = dev_buffer;
   empty_net(bm_handle, net_blocks[0]);
   std::vector<bm_tensor_t> in_tensors;
   std::vector<bm_tensor_t> out_tensors;
@@ -191,7 +196,7 @@ ArrayUint16 Block::forward_first(ArrayInt const &position_ids,
     int global_idx = start_idx + idx;
     bool fa = is_FA(global_idx);
     init_tensors(net_blocks[idx], in_tensors, out_tensors);
-
+    out_tensors[0].device_mem = out_mem;
     if (idx == 0) {
       bm_memcpy_s2d_partial(bm_handle, in_tensors[0].device_mem,
                             hidden_states.data(),
@@ -220,7 +225,6 @@ ArrayUint16 Block::forward_first(ArrayInt const &position_ids,
     }
 
     net_launch(p_bmrt, net_blocks[idx], in_tensors, out_tensors);
-    out_mem = net_blocks[idx]->stages[0].output_mems[0];
 
     if (fa) {
       bm_memcpy_d2d_byte(bm_handle, past_key[idx], 0,

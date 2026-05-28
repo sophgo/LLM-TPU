@@ -68,6 +68,8 @@ public:
            const std::string &vocab_path, const std::string &system_prompt);
   // 聊天主循环
   void chat();
+  // 单次（程序化）推理：处理一次输入并返回，不进入交互循环
+  void run_once(const std::string &input_str, const std::string &media_path);
 
 private:
   Qwen2_5VL model;
@@ -77,6 +79,8 @@ private:
   int spatial_merge_unit;
   float video_ratio;
   bool support_history;
+  // 持久状态：用于 chat() 与 run_once() 之间共享多轮历史信息
+  int history_max_posid_state = 0;
   // 分词器和处理器
   std::unique_ptr<Tokenizer> tok;
   std::unique_ptr<Maker> maker;
@@ -806,6 +810,367 @@ void ChatPipe::chat() {
   }
 }
 
+// 单次（程序化）推理
+void ChatPipe::run_once(const std::string &input_str_in,
+                         const std::string &media_path) {
+  using clock = std::chrono::steady_clock;
+  std::string input_str = strip(input_str_in);
+  int token = 0;
+  int max_posid = 0;
+  int &history_max_posid = history_max_posid_state;
+
+  auto media_type = get_media_type(media_path);
+  if (media_type == ChatPipe::UNKNOWN) {
+    std::cout << "Unsupported media type. Please provide a valid image or video."
+              << std::endl;
+    return;
+  }
+  if (media_type != ChatPipe::TEXT && !media_path != "") {
+    if (!std::filesystem::exists(media_path)) {
+      std::cerr << "File does not exist: " << media_path << std::endl;
+      return;
+    }
+  }
+
+  std::cout << "\nAnswer:\n";
+  int64_t duration_prefill = 0, duration_vit = 0, duration_decode = 0;
+  clock::time_point clock_start;
+  std::string sentence_input = build_prompt(input_str, media_type);
+
+  std::vector<int> raw_tokens = encode_input(sentence_input);
+  switch (media_type) {
+  case ChatPipe::IMAGE: {
+    std::vector<float> pixel_values;
+    auto ret = process_image(pixel_values, media_path, config);
+    if (ret == false) {
+      std::cerr << "Error processing image: " << media_path << std::endl;
+      return;
+    }
+    std::vector<int> tokens =
+        maker->insert_tokens(raw_tokens, IMAGE_PAD_TOKEN);
+    if ((int)(tokens.size()) > model.MAX_INPUT_LENGTH) {
+      std::cerr << "Input tokens exceed maximum length: "
+                << model.MAX_INPUT_LENGTH << std::endl;
+      return;
+    }
+
+    int vit_offset = 0;
+    vit_offset = find_token_offset(tokens, IMAGE_PAD_TOKEN);
+    clock_start = clock::now();
+    model.forward_embed(tokens);
+    auto clock_vit_start = clock::now();
+    vit_process_image(pixel_values, vit_offset);
+    auto clock_vit_end = clock::now();
+    duration_vit = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       clock_vit_end - clock_vit_start)
+                       .count();
+    std::vector<std::vector<std::vector<int>>> position_ids =
+        get_rope_index({tokens}, {config.grid_thw}, IMAGE_PAD_TOKEN);
+
+    // 找到三维数组position_ids中的最大值
+    for (const auto &sub_tensor : position_ids[0]) {
+      for (int val : sub_tensor) {
+        if (val > max_posid) {
+          max_posid = val;
+        }
+      }
+    }
+    // 将三维数组position_ids转换维1维
+    std::vector<int> position_ids_1d;
+    for (const auto &two_dim_tensor : position_ids) {
+      for (const auto &one_dim_tensor : two_dim_tensor) {
+        position_ids_1d.insert(position_ids_1d.end(), one_dim_tensor.begin(),
+                               one_dim_tensor.end());
+      }
+    }
+    token = forward_prefill(position_ids_1d, max_posid, history_max_posid);
+  } break;
+  case VIDEO: {
+    std::vector<float> pixel_values;
+    auto ret = process_video(pixel_values, media_path, config);
+    if (ret == false) {
+      std::cerr << "Error processing video: " << media_path << std::endl;
+      return;
+    }
+    std::vector<int> tokens =
+        maker->insert_tokens(raw_tokens, VIDEO_PAD_TOKEN);
+    if ((int)(tokens.size()) > model.MAX_INPUT_LENGTH) {
+      std::cerr << "Input tokens exceed maximum length: "
+                << model.MAX_INPUT_LENGTH << std::endl;
+      return;
+    }
+
+    auto vit_offset = find_token_offset(tokens, VIDEO_PAD_TOKEN);
+    clock_start = clock::now();
+    model.forward_embed(tokens);
+    auto clock_vit_start = clock::now();
+    vit_process_video(pixel_values, vit_offset);
+    auto clock_vit_end = clock::now();
+    duration_vit = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       clock_vit_end - clock_vit_start)
+                       .count();
+    std::vector<std::vector<std::vector<int>>> position_ids =
+        get_rope_index({tokens}, {config.grid_thw}, VIDEO_PAD_TOKEN);
+
+    // 找到三维数组position_ids中的最大值
+    for (const auto &sub_tensor : position_ids[0]) {
+      for (int val : sub_tensor) {
+        if (val > max_posid) {
+          max_posid = val;
+        }
+      }
+    }
+    // 将三维数组position_ids转换维1维
+    std::vector<int> position_ids_1d;
+    for (const auto &two_dim_tensor : position_ids) {
+      for (const auto &one_dim_tensor : two_dim_tensor) {
+        position_ids_1d.insert(position_ids_1d.end(), one_dim_tensor.begin(),
+                               one_dim_tensor.end());
+      }
+    }
+    token = forward_prefill(position_ids_1d, max_posid, history_max_posid);
+  } break;
+  case TEXT: {
+    if ((int)(raw_tokens.size()) > model.MAX_INPUT_LENGTH) {
+      std::cerr << "Input tokens exceed maximum length: "
+                << model.MAX_INPUT_LENGTH << std::endl;
+      return;
+    }
+    clock_start = clock::now();
+    model.forward_embed(raw_tokens);
+    auto position_ids_1d = get_position_ids(raw_tokens.size());
+    max_posid = raw_tokens.size() - 1;
+    token = forward_prefill(position_ids_1d, max_posid, history_max_posid);
+  } break;
+  default:
+    std::cerr << "Unsupported media type." << std::endl;
+    return;
+  }
+  auto clock_prefill = clock::now();
+  duration_prefill = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         clock_prefill - clock_start)
+                         .count();
+  // 后续分词
+  std::vector<int> full_word_tokens;
+  std::string text;
+  int tok_num = 0;
+  while (token != ID_IM_END && model.history_length < model.SEQLEN) {
+    full_word_tokens.push_back(token);
+    std::string word = tok->Decode(full_word_tokens);
+    if (word.find("") == std::string::npos) {
+      if (full_word_tokens.size() == 1) {
+        std::string pre_word = word;
+        std::vector<int> double_token = {token, token};
+        word = tok->Decode(double_token).substr(pre_word.length());
+      }
+      text += word;
+      std::cout << word << std::flush;
+      full_word_tokens.clear();
+    }
+    max_posid++;
+    std::vector<int> following_position_ids = {max_posid, max_posid,
+                                               max_posid};
+    token = model.forward_next(following_position_ids);
+    tok_num++;
+  }
+  history_max_posid = max_posid + 2;
+  std::cout << std::endl;
+  auto clock_end = clock::now();
+  duration_decode = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       clock_end - clock_prefill)
+                       .count();
+  std::cout << "FTL: " << duration_prefill / 1000.0f << " s" << std::endl;
+  if (tok_num > 0) {
+    std::cout << "TPS: " << tok_num * 1000.0f / duration_decode << " tokens/s"
+              << std::endl;
+  }
+  if (duration_vit > 0) {
+    std::cout << "Vision [" << config.grid_thw[0] << ", "
+              << config.grid_thw[1] << ", " << config.grid_thw[2]
+              << "]: " << duration_vit / 1000.0f << " s" << std::endl;
+  }
+}
+
+// 单次（程序化）推理
+void ChatPipe::run_once(const std::string &input_str_in,
+                        const std::string &media_path) {
+  using clock = std::chrono::steady_clock;
+  std::string input_str = strip(input_str_in);
+  int token = 0;
+  int max_posid = 0;
+  int &history_max_posid = history_max_posid_state;
+
+  auto media_type = get_media_type(media_path);
+  if (media_type == ChatPipe::UNKNOWN) {
+    std::cout << "Unsupported media type. Please provide a valid image or video."
+              << std::endl;
+    return;
+  }
+  if (media_type != ChatPipe::TEXT) {
+    if (!std::filesystem::exists(media_path)) {
+      std::cerr << "File does not exist: " << media_path << std::endl;
+      return;
+    }
+  }
+
+  std::cout << "\nAnswer:\n";
+  int64_t duration_prefill = 0, duration_vit = 0, duration_decode = 0;
+  clock::time_point clock_start;
+  std::string sentence_input = build_prompt(input_str, media_type);
+
+  std::vector<int> raw_tokens = encode_input(sentence_input);
+  switch (media_type) {
+  case ChatPipe::IMAGE: {
+    std::vector<float> pixel_values;
+    auto ret = process_image(pixel_values, media_path, config);
+    if (ret == false) {
+      std::cerr << "Error processing image: " << media_path << std::endl;
+      return;
+    }
+    std::vector<int> tokens =
+        maker->insert_tokens(raw_tokens, IMAGE_PAD_TOKEN);
+    if ((int)(tokens.size()) > model.MAX_INPUT_LENGTH) {
+      std::cerr << "Input tokens exceed maximum length: "
+                << model.MAX_INPUT_LENGTH << std::endl;
+      return;
+    }
+
+    int vit_offset = 0;
+    vit_offset = find_token_offset(tokens, IMAGE_PAD_TOKEN);
+    clock_start = clock::now();
+    model.forward_embed(tokens);
+    auto clock_vit_start = clock::now();
+    vit_process_image(pixel_values, vit_offset);
+    auto clock_vit_end = clock::now();
+    duration_vit = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       clock_vit_end - clock_vit_start)
+                       .count();
+    std::vector<std::vector<std::vector<int>>> position_ids =
+        get_rope_index({tokens}, {config.grid_thw}, IMAGE_PAD_TOKEN);
+
+    // 找到三维数组position_ids中的最大值
+    for (const auto &sub_tensor : position_ids[0]) {
+      for (int val : sub_tensor) {
+        if (val > max_posid) {
+          max_posid = val;
+        }
+      }
+    }
+    // 将三维数组position_ids转换维1维
+    std::vector<int> position_ids_1d;
+    for (const auto &two_dim_tensor : position_ids) {
+      for (const auto &one_dim_tensor : two_dim_tensor) {
+        position_ids_1d.insert(position_ids_1d.end(), one_dim_tensor.begin(),
+                               one_dim_tensor.end());
+      }
+    }
+    token = forward_prefill(position_ids_1d, max_posid, history_max_posid);
+  } break;
+  case ChatPipe::VIDEO: {
+    std::vector<float> pixel_values;
+    auto ret = process_video(pixel_values, media_path, config);
+    if (ret == false) {
+      std::cerr << "Error processing video: " << media_path << std::endl;
+      return;
+    }
+    std::vector<int> tokens =
+        maker->insert_tokens(raw_tokens, VIDEO_PAD_TOKEN);
+    if ((int)(tokens.size()) > model.MAX_INPUT_LENGTH) {
+      std::cerr << "Input tokens exceed maximum length: "
+                << model.MAX_INPUT_LENGTH << std::endl;
+      return;
+    }
+    auto vit_offset = find_token_offset(tokens, VIDEO_PAD_TOKEN);
+    clock_start = clock::now();
+    model.forward_embed(tokens);
+    auto clock_vit_start = clock::now();
+    vit_process_video(pixel_values, vit_offset);
+    auto clock_vit_end = clock::now();
+    duration_vit = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       clock_vit_end - clock_vit_start)
+                       .count();
+    std::vector<std::vector<std::vector<int>>> position_ids =
+        get_rope_index({tokens}, {config.grid_thw}, VIDEO_PAD_TOKEN);
+
+    // 找到三维数组position_ids中的最大值
+    for (const auto &sub_tensor : position_ids[0]) {
+      for (int val : sub_tensor) {
+        if (val > max_posid) {
+          max_posid = val;
+        }
+      }
+    }
+    // 将三维数组position_ids转换维1维
+    std::vector<int> position_ids_1d;
+    for (const auto &two_dim_tensor : position_ids) {
+      for (const auto &one_dim_tensor : two_dim_tensor) {
+        position_ids_1d.insert(position_ids_1d.end(), one_dim_tensor.begin(),
+                               one_dim_tensor.end());
+      }
+    }
+    token = forward_prefill(position_ids_1d, max_posid, history_max_posid);
+  } break;
+  case ChatPipe::TEXT: {
+    if ((int)(raw_tokens.size()) > model.MAX_INPUT_LENGTH) {
+      std::cerr << "Input tokens exceed maximum length: "
+                << model.MAX_INPUT_LENGTH << std::endl;
+      return;
+    }
+    clock_start = clock::now();
+    model.forward_embed(raw_tokens);
+    auto position_ids_1d = get_position_ids(raw_tokens.size());
+    max_posid = raw_tokens.size() - 1;
+    token = forward_prefill(position_ids_1d, max_posid, history_max_posid);
+  } break;
+  default:
+    std::cerr << "Unsupported media type." << std::endl;
+    return;
+  }
+  auto clock_prefill = clock::now();
+  duration_prefill = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         clock_prefill - clock_start)
+                         .count();
+  // 后续分词
+  std::vector<int> full_word_tokens;
+  std::string text;
+  int tok_num = 0;
+  while (token != ID_IM_END && model.history_length < model.SEQLEN) {
+    full_word_tokens.push_back(token);
+    std::string word = tok->Decode(full_word_tokens);
+    if (word.find("\xef\xbf\xbd") == std::string::npos) {
+      if (full_word_tokens.size() == 1) {
+        std::string pre_word = word;
+        std::vector<int> double_token = {token, token};
+        word = tok->Decode(double_token).substr(pre_word.length());
+      }
+      text += word;
+      std::cout << word << std::flush;
+      full_word_tokens.clear();
+    }
+    max_posid++;
+    std::vector<int> following_position_ids = {max_posid, max_posid,
+                                               max_posid};
+    token = model.forward_next(following_position_ids);
+    tok_num++;
+  }
+  history_max_posid = max_posid + 2;
+  std::cout << std::endl;
+  auto clock_end = clock::now();
+  duration_decode = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        clock_end - clock_prefill)
+                        .count();
+  std::cout << "FTL: " << duration_prefill / 1000.0f << " s" << std::endl;
+  if (tok_num > 0) {
+    std::cout << "TPS: " << tok_num * 1000.0f / duration_decode << " tokens/s"
+              << std::endl;
+  }
+  if (duration_vit > 0) {
+    std::cout << "Vision [" << config.grid_thw[0] << ", "
+              << config.grid_thw[1] << ", " << config.grid_thw[2]
+              << "]: " << duration_vit / 1000.0f << " s" << std::endl;
+  }
+}
+
 // 构建提示
 std::string ChatPipe::build_prompt(std::string input_str,
                                    MediaType media_type) {
@@ -1044,23 +1409,29 @@ void Usage() {
          "  -m, --model     : Set model path \n"
          "  -c, --config    : Set config path \n"
          "  -v, --video_ratio : Set video ratio, default is 0.25\n"
-         "  -d, --devid     : Set devices to run for model, default is '0'\n");
+         "  -d, --devid     : Set devices to run for model, default is '0'\n"
+         "  -p, --prompt    : Programmatic mode prompt; if set, run a single\n"
+         "                    inference and exit (non-interactive)\n"
+         "  -i, --media_path : Image/video path for programmatic mode\n");
 }
 
 void processArguments(int argc, char *argv[], std::string &model_path,
                       std::string &config_path, std::string &image_path,
-                      int &device, float &video_ratio) {
+                      int &device, float &video_ratio, std::string &prompt,
+                      std::string &media_path, bool &has_prompt) {
   struct option longOptions[] = {
       {"model", required_argument, nullptr, 'm'},
       {"config", required_argument, nullptr, 'c'},
       {"devid", required_argument, nullptr, 'd'},
       {"video_ratio", required_argument, nullptr, 'v'},
+      {"prompt", required_argument, nullptr, 'p'},
+      {"media_path", required_argument, nullptr, 'i'},
       {"help", no_argument, nullptr, 'h'},
       {nullptr, 0, nullptr, 0}};
 
   int optionIndex = 0;
   int option;
-  while ((option = getopt_long(argc, argv, "m:c:d:v:h", longOptions,
+    while ((option = getopt_long(argc, argv, "m:c:d:v:p:i:h", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -1075,17 +1446,24 @@ void processArguments(int argc, char *argv[], std::string &model_path,
     case 'v':
       video_ratio = atof(optarg);
       break;
-    case 'h':
-      Usage();
-      exit(EXIT_SUCCESS);
-    case '?':
-      Usage();
-      exit(EXIT_FAILURE);
-    default:
-      exit(EXIT_FAILURE);
+      case 'p':
+        prompt = optarg;
+        has_prompt = true;
+        break;
+      case 'i':
+        media_path = optarg;
+        break;
+      case 'h':
+        Usage();
+        exit(EXIT_SUCCESS);
+      case '?':
+        Usage();
+        exit(EXIT_FAILURE);
+      default:
+        exit(EXIT_FAILURE);
+      }
     }
   }
-}
 
 int main(int argc, char *argv[]) {
   std::string model_path;
@@ -1093,9 +1471,12 @@ int main(int argc, char *argv[]) {
   std::string image_path;
   int dev_id = 0;
   float video_ratio = 0.25f; // 默认视频比例为0.25
+  std::string prompt;
+  std::string media_path;
+  bool has_prompt = false;
 
   processArguments(argc, argv, model_path, config_path, image_path, dev_id,
-                   video_ratio);
+                   video_ratio, prompt, media_path, has_prompt);
   if (model_path.empty() || config_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);
@@ -1105,6 +1486,11 @@ int main(int argc, char *argv[]) {
 
   ChatPipe pipeline(dev_id, video_ratio, model_path, config_path,
                     system_prompt);
-  pipeline.chat();
+  if (has_prompt) {
+    // 程序化（非交互）模式：执行一次推理后退出
+    pipeline.run_once(prompt, media_path);
+  } else {
+    pipeline.chat();
+  }
   return 0;
 }

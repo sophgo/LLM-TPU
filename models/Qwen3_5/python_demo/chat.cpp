@@ -448,7 +448,7 @@ int Qwen3_5::forward_first(ArrayInt const &position_ids) {
   std::vector<bm_tensor_t> out_tensors;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     init_tensors(net_blocks[idx], in_tensors, out_tensors);
-
+    out_tensors[0].device_mem = out_mem;
     d2d(in_tensors[0].device_mem, out_mem, 0,
         token_length * HIDDEN_SIZE * sizeof(uint16_t));
     if (is_FA(idx)) {
@@ -470,7 +470,6 @@ int Qwen3_5::forward_first(ArrayInt const &position_ids) {
     }
 
     net_launch(net_blocks[idx], in_tensors, out_tensors);
-    out_mem = net_blocks[idx]->stages[0].output_mems[0];
     if (is_FA(idx)) {
       bm_memcpy_d2d_byte(bm_handle, past_key[idx], 0,
                          net_blocks[idx]->stages[0].output_mems[1], 0,
