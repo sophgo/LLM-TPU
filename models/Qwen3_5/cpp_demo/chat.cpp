@@ -217,6 +217,7 @@ void Qwen3_5::init_by_names() {
   }
   support_history =
       net_blocks[FA_INTERVAL - 1]->input_num == 5; // with kv cache
+  prefill_mask = net_blocks[FA_INTERVAL - 1]->input_num > 2; // with prefill attention mask
   history_length = 0;
   lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
   MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
