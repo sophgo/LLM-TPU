@@ -614,28 +614,6 @@ int Gemma4::forward_first() {
       sliding_attention_mask[i * mask_stride + j] = 0;
     }
   }
-  // Pre-compute bidirectional groups with single linear scan
-  // Vision soft tokens (image/video) are bidirectionally visible within their group.
-  // Audio tokens use standard causal attention (no bidirectional group) per HF.
-  std::vector<std::pair<int, int>> groups;
-  for (int i = 0; i < token_length; i++) {
-    if (cur_input_ids[i] == ID_IMAGE_PAD || cur_input_ids[i] == ID_VIDEO_PAD) {
-      int start = i;
-      while (i + 1 < token_length &&
-             (cur_input_ids[i + 1] == ID_IMAGE_PAD || cur_input_ids[i + 1] == ID_VIDEO_PAD)) {
-        i++;
-      }
-      groups.emplace_back(start, i);
-    }
-  }
-  for (auto &g : groups) {
-    for (int a = g.first; a <= g.second; a++) {
-      for (int b = g.first; b <= g.second; b++) {
-        sliding_attention_mask[a * mask_stride + b] = 0;
-        full_attention_mask[a * mask_stride + b] = 0;
-      }
-    }
-  }
 
   // Write reusable inputs to device buffers
   if (is_dynamic) {
