@@ -159,3 +159,5 @@ pip3 install torchvision pillow  transformers qwen_vl_utils -U
 * https://huggingface.co/Intel/Qwen3.5-4B-int4-AutoRound
 
 * https://huggingface.co/Intel/Qwen3.5-9B-int4-AutoRound
+
+* https://huggingface.co/Intel/Qwen3.5-35B-A3B-int4-AutoRound

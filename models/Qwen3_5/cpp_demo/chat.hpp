@@ -78,8 +78,8 @@ public:
   int MAX_PIXELS;
   int max_pos;
   bool lmhead_with_topk;
-  bool support_history;
-  bool prefill_mask;
+  bool support_history = false;
+  bool prefill_mask = false;
   uint16_t mask_value;
   std::vector<int> visited_tokens;
   const int FA_INTERVAL = 4; // full attention interval
@@ -96,6 +96,8 @@ private:
   void *p_bmrt;
   std::vector<const bm_net_info_t *> net_blocks;
   std::vector<const bm_net_info_t *> net_blocks_cache;
+  std::vector<const bm_net_info_t *>
+      net_blocks_prompt; // first time for full attention
   const bm_net_info_t *net_embed;
   const bm_net_info_t *net_embed_cache;
   const bm_net_info_t *net_lm;
