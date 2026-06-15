@@ -110,8 +110,8 @@ public:
   int MAX_PIXELS;
   int max_pos;
   bool lmhead_with_topk;
-  bool support_history;
-  bool prefill_mask;
+  bool support_history = false;
+  bool prefill_mask = false;
   uint16_t mask_value;
   std::vector<int> visited_tokens;
   const int FA_INTERVAL = 4; // full attention interval
@@ -121,6 +121,8 @@ private:
   void *p_bmrt;
   std::vector<const bm_net_info_t *> net_blocks;
   std::vector<const bm_net_info_t *> net_blocks_cache;
+  std::vector<const bm_net_info_t *>
+      net_blocks_prompt; // first time for full attention
   const bm_net_info_t *net_embed;
   const bm_net_info_t *net_embed_cache;
   const bm_net_info_t *net_lm;
@@ -227,8 +229,18 @@ void Qwen3_5::init_by_names() {
     net_sample_head = bmrt_get_network_info(p_bmrt, "sample_head");
     num_blocks--; // sample_head is not a block
   }
+  std::string prompt_name = "block_prompt_" + std::to_string(FA_INTERVAL - 1);
+  if (is_exist(prompt_name.c_str(), net_names, num_nets)) {
+    support_history = true;
+  } else {
+    support_history = false;
+  }
   // 2 nets for each block, one for cache
-  NUM_LAYERS = num_blocks / 2;
+  if (support_history) {
+    NUM_LAYERS = num_blocks / (2 + 1.0 / FA_INTERVAL);
+  } else {
+    NUM_LAYERS = num_blocks / 2;
+  }
 
   // net blocks
   for (int i = 0; i < NUM_LAYERS; i++) {
@@ -244,6 +256,11 @@ void Qwen3_5::init_by_names() {
     net_blocks.emplace_back(bmrt_get_network_info(p_bmrt, block_name.c_str()));
     net_blocks_cache.emplace_back(
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
+    if (is_FA(i) && support_history) {
+      auto prompt_name = "block_prompt_" + std::to_string(i);
+      net_blocks_prompt.emplace_back(
+          bmrt_get_network_info(p_bmrt, prompt_name.c_str()));
+    }
   }
   free(net_names);
   if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
@@ -255,8 +272,6 @@ void Qwen3_5::init_by_names() {
     std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
     throw std::runtime_error("Invalid attention dtype");
   }
-  support_history =
-      net_blocks[FA_INTERVAL - 1]->input_num == 5; // with kv cache
   history_length = 0;
   lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
   MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
@@ -268,7 +283,8 @@ void Qwen3_5::init_by_names() {
   KV_BYTES = bm_mem_get_device_size(
       net_blocks_cache[FA_INTERVAL - 1]->stages[0].output_mems[1]);
   // with prefill attention mask
-  prefill_mask = net_blocks[FA_INTERVAL - 1]->input_num > 2;
+  prefill_mask =
+      net_blocks[FA_INTERVAL - 1]->input_num == (support_history ? 5 : 3);
   printf("Num Layers:%d\n", NUM_LAYERS);
   printf("Max Pixels: %d*%d*%d\n", MAX_PATCHES / 4, 32, 32);
   PREFILL_KV_LENGTH = 0;
@@ -500,67 +516,88 @@ int Qwen3_5::forward_first(ArrayInt const &position_ids) {
 }
 
 int Qwen3_5::forward_first_with_kv(ArrayInt const &position_ids) {
-  printf("Error: forward_first_with_kv is not implemented yet.\n");
-  throw std::runtime_error("Not implemented");
-  return 0;
-#if 0
-  int max_kv_length = MAX_INPUT_LENGTH + PREFILL_KV_LENGTH;
-  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * max_kv_length,
-                                       mask_value);
+  std::vector<uint16_t> attention_mask;
   auto old_length = history_length;
   history_length += token_length;
   assert(history_length < SEQLEN);
   assert(old_length <= PREFILL_KV_LENGTH);
-  for (int i = 0; i < token_length; i++) {
-    for (int j = 0; j < old_length; j++) {
-      attention_mask[i * max_kv_length + j] = 0;
-    }
-    for (int j = 0; j <= i; j++) {
-      attention_mask[i * max_kv_length + j + PREFILL_KV_LENGTH] = 0;
+  if (prefill_mask) {
+    attention_mask.resize(token_length * history_length, 0);
+    for (int i = 0; i < token_length; i++) {
+      for (int j = i + 1; j < token_length; j++) {
+        attention_mask[i * history_length + old_length + j] = mask_value;
+      }
     }
   }
+  assert((int)position_ids.size() == token_length * 3);
   auto p_position_ids = position_ids.request();
   auto p_ids = static_cast<int *>(p_position_ids.ptr);
-
-  std::vector<int> position_ids_pad(3 * MAX_INPUT_LENGTH, 0);
-  int ori_length = position_ids.size() / 3;
-  assert(ori_length == token_length);
-  assert(ori_length <= MAX_INPUT_LENGTH);
-  for (int i = 0; i < 3; i++) {
-    int ori_offset = i * ori_length;
-    int dst_offset = i * MAX_INPUT_LENGTH;
-    std::copy(p_ids + ori_offset, p_ids + ori_offset + ori_length,
-              position_ids_pad.begin() + dst_offset);
-  }
 
   auto out_mem = dev_buffer;
   empty_net(bm_handle, net_blocks[0]);
   std::vector<bm_tensor_t> in_tensors;
   std::vector<bm_tensor_t> out_tensors;
+  int k_idx = prefill_mask ? 3 : 2;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
-    init_tensors(net_blocks[idx], in_tensors, out_tensors);
-    in_tensors[0].device_mem = out_mem;
-    if (old_length > 0) {
-      d2d(in_tensors[3].device_mem, past_key[idx], 0, KV_BYTES * old_length);
-      d2d(in_tensors[4].device_mem, past_value[idx], 0, KV_BYTES * old_length);
-    } else if (idx == 0) {
-      empty(bm_handle, in_tensors[3].device_mem);
-      empty(bm_handle, in_tensors[4].device_mem);
+    auto &net = (is_FA(idx) && old_length == 0)
+                    ? net_blocks_prompt[idx / FA_INTERVAL]
+                    : net_blocks[idx];
+    init_tensors(net, in_tensors, out_tensors);
+    out_tensors[0].device_mem = out_mem;
+    d2d(in_tensors[0].device_mem, out_mem, 0,
+        token_length * HIDDEN_SIZE * sizeof(uint16_t));
+    if (is_FA(idx)) {
+      bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
+                            (void *)p_ids,
+                            token_length * 3 * sizeof(int));
+      if (prefill_mask) {
+        bm_memcpy_s2d_partial(bm_handle, in_tensors[2].device_mem,
+                              (void *)attention_mask.data(),
+                              token_length * history_length * sizeof(uint16_t));
+        in_tensors[2].shape.dims[2] = token_length;
+        in_tensors[2].shape.dims[3] = history_length;
+      }
+      in_tensors[0].shape.dims[1] = token_length;
+      in_tensors[1].shape.dims[1] = token_length;
+      // copy old kv to new kv with offset
+      if (old_length > 0) {
+        int old_kvlen = old_length - 1;
+        d2d(in_tensors[k_idx].device_mem, past_key[idx], 0,
+            KV_BYTES * old_kvlen);
+        d2d(in_tensors[k_idx + 1].device_mem, past_value[idx], 0,
+            KV_BYTES * old_kvlen);
+        in_tensors[k_idx].shape.dims[1] = old_kvlen;
+        in_tensors[k_idx + 1].shape.dims[1] = old_kvlen;
+      } else {
+        // do nothing
+      }
+    } else {
+      if (old_length > 0) {
+        d2d(in_tensors[1].device_mem, past_value[idx]);
+        d2d(in_tensors[2].device_mem, past_key[idx]);
+      } else {
+        empty(bm_handle, in_tensors[1].device_mem); // recurrent state
+        empty(bm_handle, in_tensors[2].device_mem); // conv state
+      }
+      in_tensors[0].shape.dims[1] = token_length;
     }
-    bm_memcpy_s2d(bm_handle, in_tensors[1].device_mem,
-                  (void *)position_ids_pad.data());
-    bm_memcpy_s2d(bm_handle, in_tensors[2].device_mem,
-                  (void *)attention_mask.data());
-    net_launch(net_blocks[idx], in_tensors, out_tensors);
-    out_mem = net_blocks[idx]->stages[0].output_mems[0];
-    auto &out1_mem = net_blocks[idx]->stages[0].output_mems[1];
-    auto &out2_mem = net_blocks[idx]->stages[0].output_mems[2];
-    bm_memcpy_d2d_byte(bm_handle, past_key[idx], old_length * KV_BYTES,
-                       out1_mem, 0, KV_BYTES * token_length);
-    bm_memcpy_d2d_byte(bm_handle, past_value[idx], old_length * KV_BYTES,
-                       out2_mem, 0, KV_BYTES * token_length);
-  }
 
+    net_launch(net, in_tensors, out_tensors);
+    if (is_FA(idx)) {
+      int old_kvlen = (old_length > 0) ? (old_length - 1) : 0;
+      bm_memcpy_d2d_byte(bm_handle, past_key[idx], old_kvlen * KV_BYTES,
+                         net->stages[0].output_mems[1], 0,
+                         KV_BYTES * token_length);
+      bm_memcpy_d2d_byte(bm_handle, past_value[idx], old_kvlen * KV_BYTES,
+                         net->stages[0].output_mems[2], 0,
+                         KV_BYTES * token_length);
+    } else {
+      // reuse key as conv state
+      d2d(past_key[idx], net->stages[0].output_mems[1]);
+      // reuse value as recurrent state
+      d2d(past_value[idx], net->stages[0].input_mems[1]);
+    }
+  }
   // forward lmhead
   int bytes = HIDDEN_SIZE * sizeof(uint16_t);
   init_tensors(net_lm, in_tensors, out_tensors);
@@ -573,7 +610,6 @@ int Qwen3_5::forward_first_with_kv(ArrayInt const &position_ids) {
   token_length++;
   history_length++;
   return token;
-#endif
 }
 
 int Qwen3_5::forward_next(ArrayInt const &position_ids) {

@@ -566,12 +566,13 @@ int Qwen3_5::forward_first_with_kv(ArrayInt const &position_ids) {
       in_tensors[1].shape.dims[1] = token_length;
       // copy old kv to new kv with offset
       if (old_length > 0) {
+        int old_kvlen = old_length - 1;
         d2d(in_tensors[k_idx].device_mem, past_key[idx], 0,
-            KV_BYTES * old_length);
+            KV_BYTES * old_kvlen);
         d2d(in_tensors[k_idx + 1].device_mem, past_value[idx], 0,
-            KV_BYTES * old_length);
-        in_tensors[k_idx].shape.dims[1] = old_length;
-        in_tensors[k_idx + 1].shape.dims[1] = old_length;
+            KV_BYTES * old_kvlen);
+        in_tensors[k_idx].shape.dims[1] = old_kvlen;
+        in_tensors[k_idx + 1].shape.dims[1] = old_kvlen;
       } else {
         // do nothing
       }
@@ -588,10 +589,11 @@ int Qwen3_5::forward_first_with_kv(ArrayInt const &position_ids) {
 
     net_launch(net, in_tensors, out_tensors);
     if (is_FA(idx)) {
-      bm_memcpy_d2d_byte(bm_handle, past_key[idx], old_length * KV_BYTES,
+      int old_kvlen = (old_length > 0) ? (old_length - 1) : 0;
+      bm_memcpy_d2d_byte(bm_handle, past_key[idx], old_kvlen * KV_BYTES,
                          net->stages[0].output_mems[1], 0,
                          KV_BYTES * token_length);
-      bm_memcpy_d2d_byte(bm_handle, past_value[idx], old_length * KV_BYTES,
+      bm_memcpy_d2d_byte(bm_handle, past_value[idx], old_kvlen * KV_BYTES,
                          net->stages[0].output_mems[2], 0,
                          KV_BYTES * token_length);
     } else {

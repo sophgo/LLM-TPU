@@ -99,6 +99,21 @@ cd build && cmake .. && make && cp pipeline .. && cd ..
 ./pipeline -m xxx.bmodel -c config
 ```
 
+## 进阶应用
+
+### 1. 支持历史上下文
+
+默认情况下模型是不支持历史上下文，需要加上`--use_block_with_kv`参数；
+指定输入最大长度`--max_input_length`，不指定时默认是seq_length的1/4；
+指定输入最大kv长度`--max_prefill_kv_length`, 不指定时默认是seq_length.
+
+如下：
+``` shell
+# 如果有提示transformers/torch版本问题，pip3 install transformers torchvision -U
+llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-2B-int4-AutoRound -s 4096 -c bm1684x --out_dir qwen3.5_kv --use_block_with_kv --max_input_length 1024
+```
+使用cpp_demo或者python_demo都支持。历史记录输入clear清理。
+
 ## 常见问题
 
 #### SoC如何配置python3.10环境 ?
