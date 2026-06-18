@@ -13,6 +13,7 @@
 #include <assert.h>
 #include <chrono>
 #include <cstdlib>
+#include <fstream>
 #include <getopt.h>
 #include <inttypes.h>
 #include <iostream>
@@ -51,7 +52,7 @@ void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
 
 class Gemma4 {
 public:
-  void init(int devid, std::string model_path);
+  void init(int devid, std::string model_path, std::string embed_path = "");
   void deinit();
   void forward_embed(std::vector<int> &tokens);
   void forward_vit(
@@ -74,6 +75,7 @@ private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset = 0,
                   int size = 0);
+  void gather_per_layer_embeds(const std::vector<int> &tokens);
   void init_by_names();
   int greedy_search(bm_device_mem_t &logits_mem);
   int penalty_sample(bm_device_mem_t &logits_mem);
@@ -93,6 +95,7 @@ public:
   int ID_EOA;          // end of audio marker
   int AUDIO_MEL;      // max mel frames (from audio bmodel input shape)
   int AUDIO_TOKENS;   // max audio tokens (from audio bmodel output shape)
+  int PER_LAYER_DIM;  // hidden_size_per_layer_input (256 for Gemma4)
   std::vector<int> cur_input_ids;
   bool lmhead_with_topk;
   bool is_dynamic;
@@ -137,6 +140,13 @@ private:
   const bm_net_info_t *net_lm, *net_greedy_head, *net_sample_head;
   std::vector<bm_device_mem_t> past_key;   // allocated for normal layers only
   std::vector<bm_device_mem_t> past_value; // allocated for normal layers only
+
+  // per_layer_token_embd external bin file
+  std::string embed_path_;
+  int per_layer_row_bytes_;              // NUM_LAYERS * PER_LAYER_DIM * sizeof(uint16_t)
+  std::ifstream per_layer_emb_file_;
+  std::vector<uint16_t> per_layer_gather_buf_; // reusable host buffer for gather results
+  std::vector<uint16_t> per_layer_slice_buf_;  // reusable host buffer for per-layer slice
 };
 
 void Gemma4::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset,
@@ -294,7 +304,7 @@ void Gemma4::init_by_names() {
   }
 }
 
-void Gemma4::init(int dev_id, std::string model_path) {
+void Gemma4::init(int dev_id, std::string model_path, std::string embed_path) {
   std::cout << "Device [" << dev_id << "] loading ....\n";
   bm_status_t status = bm_dev_request(&bm_handle, dev_id);
   assert(BM_SUCCESS == status);
@@ -380,6 +390,35 @@ void Gemma4::init(int dev_id, std::string model_path) {
       past_value[i] = past_value[source];
     }
   }
+
+  // per_layer_token_embd bin file - validate against bmodel input type
+  embed_path_ = embed_path;
+  bool bmodel_expects_per_layer_embeds =
+      (net_blocks[0]->input_dtypes[3] != BM_INT32);
+
+  if (bmodel_expects_per_layer_embeds && embed_path_.empty()) {
+    fprintf(stderr,
+            "ERROR: bmodel expects per_layer_embeds (input[3] dtype=%d) "
+            "but --embed_path is not provided.\n",
+            net_blocks[0]->input_dtypes[3]);
+    assert(false && "Missing --embed_path for per_layer_token_embd.bin");
+  }
+  if (!bmodel_expects_per_layer_embeds && !embed_path_.empty()) {
+    fprintf(stderr,
+            "WARNING: --embed_path is provided but bmodel expects input_ids "
+            "(input[3] is INT32). --embed_path will be ignored.\n");
+    embed_path_.clear();
+  }
+
+  if (!embed_path_.empty()) {
+    per_layer_emb_file_.open(embed_path_, std::ios::binary);
+    assert(per_layer_emb_file_.is_open() && "Failed to open per_layer_token_embd.bin");
+    per_layer_row_bytes_ = NUM_LAYERS * PER_LAYER_DIM * sizeof(uint16_t);
+    // Pre-allocate reusable host buffers
+    size_t full_dim = NUM_LAYERS * PER_LAYER_DIM;
+    per_layer_gather_buf_.resize(MAX_INPUT_LENGTH * full_dim);
+    per_layer_slice_buf_.resize(MAX_INPUT_LENGTH * PER_LAYER_DIM);
+  }
 }
 
 void Gemma4::deinit() {
@@ -400,6 +439,9 @@ void Gemma4::deinit() {
       bm_free_device(bm_handle, past_key[i]);
       bm_free_device(bm_handle, past_value[i]);
     }
+  }
+  if (per_layer_emb_file_.is_open()) {
+    per_layer_emb_file_.close();
   }
   bmrt_destroy(p_bmrt);
   bm_dev_free(bm_handle);
@@ -440,8 +482,16 @@ void Gemma4::forward_embed(std::vector<int> &tokens) {
   bm_memcpy_s2d(bm_handle, in_mem, (void *)input_ids.data());
   net_launch(net_embed);
   d2d(dev_buffer, out_mem);
-  d2d(dev_buffer_ids, in_mem);
-  cur_input_ids = tokens;
+  if (embed_path_.empty()) {
+    d2d(dev_buffer_ids, in_mem);  // only needed when block uses dev_buffer_ids as input[3]
+  }
+  cur_input_ids = tokens;  // only store token_length elements (no MAX_INPUT_LENGTH padding)
+  for (int i = 0; i < token_length; i++) {
+    if (cur_input_ids[i] == ID_IMAGE_PAD || cur_input_ids[i] == ID_VIDEO_PAD ||
+        cur_input_ids[i] == ID_AUDIO_PAD) {
+      cur_input_ids[i] = 0;
+    }
+  }
 }
 
 void Gemma4::forward_vit(
@@ -589,6 +639,18 @@ int Gemma4::penalty_sample(bm_device_mem_t &logits_mem) {
   return tokens[dist(sgen)];
 }
 
+void Gemma4::gather_per_layer_embeds(const std::vector<int> &tokens) {
+  size_t num_tokens = tokens.size();
+  size_t full_dim = NUM_LAYERS * PER_LAYER_DIM;  // 8960
+  for (size_t i = 0; i < num_tokens; i++) {
+    long long offset = (long long)tokens[i] * per_layer_row_bytes_;
+    per_layer_emb_file_.seekg(offset, std::ios::beg);
+    per_layer_emb_file_.read(
+        reinterpret_cast<char *>(&per_layer_gather_buf_[i * full_dim]),
+        per_layer_row_bytes_);
+  }
+}
+
 int Gemma4::forward_first() {
   // Mask stride: dynamic uses token_length, non-dynamic uses MAX_INPUT_LENGTH
   int mask_stride = is_dynamic ? token_length : MAX_INPUT_LENGTH;
@@ -654,6 +716,12 @@ int Gemma4::forward_first() {
   } else {
     d2d(hidden_state, dev_buffer);
   }
+
+  // Gather per_layer_token_embd from bin file (one-shot for all tokens)
+  if (!embed_path_.empty()) {
+    gather_per_layer_embeds(cur_input_ids);
+  }
+
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &net = net_blocks[idx];
     int input_num = net->input_num;
@@ -689,10 +757,27 @@ int Gemma4::forward_first() {
                               net->stages[0].input_shapes[2]);
     }
 
-    // input[3]: input_ids - from persistent dev_buffer_ids
-    bmrt_tensor_with_device(&in_tensors[3], dev_buffer_ids,
-                            net->input_dtypes[3],
-                            net->stages[0].input_shapes[3]);
+    // input[3]: per_layer_embeds - gather from bin file, slice for this layer
+    if (!embed_path_.empty()) {
+      size_t full_dim = NUM_LAYERS * PER_LAYER_DIM;  // 8960
+      size_t col_offset = idx * PER_LAYER_DIM;
+      for (int t = 0; t < token_length; t++) {
+        memcpy(&per_layer_slice_buf_[t * PER_LAYER_DIM],
+               &per_layer_gather_buf_[t * full_dim + col_offset],
+               PER_LAYER_DIM * sizeof(uint16_t));
+      }
+      auto &in3_mem = net->stages[0].input_mems[3];
+      size_t valid_bytes = token_length * PER_LAYER_DIM * sizeof(uint16_t);
+      bm_memcpy_s2d_partial(bm_handle, in3_mem,
+                            (void *)per_layer_slice_buf_.data(), valid_bytes);
+      bmrt_tensor_with_device(&in_tensors[3], in3_mem,
+                              net->input_dtypes[3],
+                              net->stages[0].input_shapes[3]);
+    } else {
+      bmrt_tensor_with_device(&in_tensors[3], dev_buffer_ids,
+                              net->input_dtypes[3],
+                              net->stages[0].input_shapes[3]);
+    }
 
     // input[4]: inputs_embeds - from dev_buffer (embedding output)
     bmrt_tensor_with_device(&in_tensors[4], dev_buffer,
@@ -833,12 +918,21 @@ int Gemma4::forward_next() {
   auto out_mem = net_embed_cache->stages[0].output_mems[0];
   bm_memcpy_s2d(bm_handle, in_mem, (void *)&cur_token);
   net_launch(net_embed_cache);
-  d2d(dev_buffer_ids_cache, in_mem);
+  if (embed_path_.empty()) {
+    d2d(dev_buffer_ids_cache, in_mem);  // only needed when block uses dev_buffer_ids_cache as input[3]
+  }
   d2d(dev_buffer_cache, out_mem);
 
   // Forward blocks
   auto hidden_state = net_blocks_cache[0]->stages[0].output_mems[0];
   d2d(hidden_state, dev_buffer_cache);
+
+  // Gather per_layer_token_embd for single token
+  if (!embed_path_.empty()) {
+    std::vector<int> single_token = {cur_token};
+    gather_per_layer_embeds(single_token);
+  }
+
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &net = net_blocks_cache[idx];
     int input_num = net->input_num;
@@ -866,10 +960,20 @@ int Gemma4::forward_next() {
                             net->input_dtypes[2],
                             net->stages[0].input_shapes[2]);
 
-    // input[3]: input_ids - from persistent dev_buffer_ids_cache
-    bmrt_tensor_with_device(&in_tensors[3], dev_buffer_ids_cache,
-                            net->input_dtypes[3],
-                            net->stages[0].input_shapes[3]);
+    // input[3]: per_layer_embeds - from bin file (single token, data is contiguous)
+    if (!embed_path_.empty()) {
+      size_t host_offset = idx * PER_LAYER_DIM * sizeof(uint16_t);
+      auto &in3_mem = net->stages[0].input_mems[3];
+      bm_memcpy_s2d(bm_handle, in3_mem,
+                    (void *)((uint8_t *)per_layer_gather_buf_.data() + host_offset));
+      bmrt_tensor_with_device(&in_tensors[3], in3_mem,
+                              net->input_dtypes[3],
+                              net->stages[0].input_shapes[3]);
+    } else {
+      bmrt_tensor_with_device(&in_tensors[3], dev_buffer_ids_cache,
+                              net->input_dtypes[3],
+                              net->stages[0].input_shapes[3]);
+    }
 
     // input[4]: inputs_embeds - reference net_embed_cache's output
     bmrt_tensor_with_device(&in_tensors[4], dev_buffer_cache,
@@ -947,7 +1051,8 @@ int Gemma4::forward_next() {
 PYBIND11_MODULE(chat, m) {
   pybind11::class_<Gemma4>(m, "Gemma4")
       .def(pybind11::init<>())
-      .def("init", &Gemma4::init)
+      .def("init", &Gemma4::init, py::arg("devid"), py::arg("model_path"),
+           py::arg("embed_path") = "")
       .def("forward_embed", &Gemma4::forward_embed)
       .def("forward_vit", &Gemma4::forward_vit, py::arg("pixel_values"),
            py::arg("pixel_position_ids"), py::arg("vit_offsets"),
@@ -966,6 +1071,7 @@ PYBIND11_MODULE(chat, m) {
       .def_readwrite("top_k", &Gemma4::top_k)
       .def_readwrite("top_p", &Gemma4::top_p)
       .def_readwrite("SLIDING_WINDOW", &Gemma4::SLIDING_WINDOW)
+      .def_readwrite("PER_LAYER_DIM", &Gemma4::PER_LAYER_DIM)
       .def_readwrite("ID_IMAGE_PAD", &Gemma4::ID_IMAGE_PAD)
       .def_readwrite("ID_VIDEO_PAD", &Gemma4::ID_VIDEO_PAD)
       .def_readwrite("ID_AUDIO_PAD", &Gemma4::ID_AUDIO_PAD)

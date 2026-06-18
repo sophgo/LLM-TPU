@@ -52,20 +52,22 @@ class Gemma4():
 
         self.model = chat.Gemma4()
         self.init_params(args)
-        self.load_model(args.model_path)
         self.model.SLIDING_WINDOW = self.config.text_config.sliding_window
+        self.model.PER_LAYER_DIM = getattr(self.config.text_config,
+                                           'hidden_size_per_layer_input', 256)
         self.model.ID_IMAGE_PAD = self.ID_IMAGE_PAD
         self.model.ID_VIDEO_PAD = self.ID_VIDEO_PAD
         self.model.ID_AUDIO_PAD = self.ID_AUDIO_PAD
         self.model.ID_BOA = self.ID_BOA
         self.model.ID_EOA = self.ID_EOA
+        self.load_model(args.model_path, args.embed_path)
 
     def __del__(self):
         self.model.deinit()
 
-    def load_model(self, model_path):
+    def load_model(self, model_path, embed_path=""):
         load_start = time.time()
-        self.model.init(self.devid, model_path)
+        self.model.init(self.devid, model_path, embed_path)
         load_end = time.time()
         print(f"\nLoad Time: {(load_end - load_start):.3f} s")
 
@@ -351,6 +353,7 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--model_path', type=str, required=True, help='path to the bmodel file')
     parser.add_argument('-c', '--config_path', type=str, default="../config", help='path to the tokenizer file')
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
+    parser.add_argument('-e', '--embed_path', type=str, default='', help='path to per_layer_token_embd.bin')
     parser.add_argument('--do_sample', action='store_true', help="if set, generate tokens by sample parameters")
     args = parser.parse_args()
     main(args)
