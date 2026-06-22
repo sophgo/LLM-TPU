@@ -12,6 +12,9 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-4b-int4-autoround_w4bf16_seq2048_bm1684x_1dev_dynamic_20260416_144422.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-9b-int4-autoround_w4bf16_seq2048_bm1684x_1dev_dynamic_20260416_150658.bmodel
 
+# 支持8K，支持历史上下文
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-4b-int4-autoround_w4bf16_seq8192_bm1684x_1dev_dynamic_20260622_175403.bmodel
+
 # =============== 1688 ======================
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-2b-int4-autoround_w4bf16_seq2048_bm1688_2core_dynamic_20260415_212627.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-4b-int4-autoround_w4bf16_seq2048_bm1688_2core_dynamic_20260416_145112.bmodel
@@ -104,15 +107,20 @@ cd build && cmake .. && make && cp pipeline .. && cd ..
 ### 1. 支持历史上下文
 
 默认情况下模型是不支持历史上下文，需要加上`--use_block_with_kv`参数；
-指定输入最大长度`--max_input_length`，不指定时默认是seq_length的1/4；
+指定prefill每次处理的最大长度`--prefill_chunk_length`，不指定时默认是seq_length的1/4，当实际输入大于它时会进行多段prefill运行；
 指定输入最大kv长度`--max_prefill_kv_length`, 不指定时默认是seq_length.
 
 如下：
 ``` shell
 # 如果有提示transformers/torch版本问题，pip3 install transformers torchvision -U
-llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-2B-int4-AutoRound -s 4096 -c bm1684x --out_dir qwen3.5_kv --use_block_with_kv --max_input_length 1024
+llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-2B-int4-AutoRound -s 8192 -c bm1684x --out_dir qwen3.5_kv --use_block_with_kv --prefill_chunk_length 1024
 ```
 使用cpp_demo或者python_demo都支持。历史记录输入clear清理。
+如下：
+```
+./pipeline -m qwen3.5_xxxx.bmodel -c config --prompt_file story.txt --prompt "what is it talking about ?"
+```
+
 
 ## 常见问题
 

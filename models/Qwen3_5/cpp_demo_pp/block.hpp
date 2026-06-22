@@ -56,6 +56,10 @@ private:
   void *p_bmrt;
   std::vector<const bm_net_info_t *> net_blocks;
   std::vector<const bm_net_info_t *> net_blocks_cache;
+  // prompt net used for the first FA layer prefill when no history (optional,
+  // present only when support_history == true). Indexed by local idx, nullptr
+  // for non-FA layers.
+  std::vector<const bm_net_info_t *> net_blocks_prompt;
   // KV cache (or conv/recurrent state for non-FA layers); indexed by local idx.
   bm_device_mem_t dev_buffer;
   std::vector<bm_device_mem_t> past_key;

@@ -714,8 +714,9 @@ void ChatPipe::run_once(const std::string &input_str_in,
   auto medias = splitString(media_path);
   auto media_type = get_media_type(medias);
   if (media_type == ChatPipe::UNKNOWN) {
-    std::cout << "Unsupported media type. Please provide a valid image or video."
-              << std::endl;
+    std::cout
+        << "Unsupported media type. Please provide a valid image or video."
+        << std::endl;
     return;
   }
   if (media_type != ChatPipe::TEXT) {
@@ -747,9 +748,11 @@ void ChatPipe::run_once(const std::string &input_str_in,
     }
     std::string sentence_input = build_image_prompt(input_str, grid_thws);
     std::vector<int> tokens = encode_input(sentence_input);
-    if ((int)(tokens.size()) > model.MAX_INPUT_LENGTH) {
-      std::cerr << "Input tokens exceed maximum length: "
-                << model.MAX_INPUT_LENGTH << std::endl;
+    int max_input_tokens =
+        model.support_history ? model.SEQLEN : model.MAX_INPUT_LENGTH;
+    if ((int)(tokens.size()) > max_input_tokens) {
+      std::cerr << "Input tokens exceed maximum length: " << max_input_tokens
+                << std::endl;
       return;
     }
     input_token_num = tokens.size();
@@ -797,9 +800,11 @@ void ChatPipe::run_once(const std::string &input_str_in,
     std::string sentence_input =
         build_video_prompt(input_str, config.grid_thw, timestamps);
     std::vector<int> tokens = encode_input(sentence_input);
-    if ((int)(tokens.size()) > model.MAX_INPUT_LENGTH) {
-      std::cerr << "Input tokens exceed maximum length: "
-                << model.MAX_INPUT_LENGTH << std::endl;
+    int max_input_tokens =
+        model.support_history ? model.SEQLEN : model.MAX_INPUT_LENGTH;
+    if ((int)(tokens.size()) > max_input_tokens) {
+      std::cerr << "Input tokens exceed maximum length: " << max_input_tokens
+                << std::endl;
       return;
     }
     input_token_num = tokens.size();
@@ -833,9 +838,11 @@ void ChatPipe::run_once(const std::string &input_str_in,
   case TEXT: {
     std::string sentence_input = build_text_prompt(input_str);
     std::vector<int> tokens = encode_input(sentence_input);
-    if ((int)(tokens.size()) > model.MAX_INPUT_LENGTH) {
-      std::cerr << "Input tokens exceed maximum length: "
-                << model.MAX_INPUT_LENGTH << std::endl;
+    int max_input_tokens =
+        model.support_history ? model.SEQLEN : model.MAX_INPUT_LENGTH;
+    if ((int)(tokens.size()) > max_input_tokens) {
+      std::cerr << "Input tokens exceed maximum length: " << max_input_tokens
+                << std::endl;
       return;
     }
     input_token_num = tokens.size();
@@ -876,8 +883,7 @@ void ChatPipe::run_once(const std::string &input_str_in,
       full_word_tokens.clear();
     }
     max_posid++;
-    std::vector<int> following_position_ids = {max_posid, max_posid,
-                                               max_posid};
+    std::vector<int> following_position_ids = {max_posid, max_posid, max_posid};
     token = model.forward_next(following_position_ids);
     output_token_num++;
   }
@@ -893,12 +899,15 @@ void ChatPipe::run_once(const std::string &input_str_in,
               << " tokens/s" << std::endl;
   }
   if (duration_vit > 0) {
-    std::cout << "Vision [" << config.grid_thw[0] << ", "
-              << config.grid_thw[1] << ", " << config.grid_thw[2]
-              << "]: " << duration_vit / 1000.0f << " s" << std::endl;
+    std::cout << "Vision [" << config.grid_thw[0] << ", " << config.grid_thw[1]
+              << ", " << config.grid_thw[2] << "]: " << duration_vit / 1000.0f
+              << " s" << std::endl;
   }
   std::cout << "Input Tokens: " << input_token_num
             << ", Output Tokens: " << output_token_num + 1 << std::endl;
+  if (model.support_history) {
+    std::cout << "Total Tokens: " << model.history_length << std::endl;
+  }
 }
 
 static std::string format_seconds(double curr_time) {
@@ -1041,6 +1050,10 @@ void Usage() {
       "  -d, --devid       : Set devices to run for model, default is '0'\n"
       "  -p, --prompt      : Programmatic mode prompt; if set, run a single\n"
       "                      inference and exit (non-interactive)\n"
+      "  -t, --prompt_file : Path to a text file whose contents are used as the\n"
+      "                      programmatic mode prompt. If --prompt is also set,\n"
+      "                      the file contents come first, followed by the\n"
+      "                      --prompt value (combined with a newline)\n"
       "  -i, --media_path  : Image/video path(s) for programmatic mode\n"
       "                      (comma-separated for multiple images)\n");
 }
@@ -1049,7 +1062,8 @@ void processArguments(int argc, char *argv[], std::string &model_path,
                       std::string &config_path, std::string &image_path,
                       int &device, float &video_ratio, float &video_fps,
                       bool &do_sample, std::string &prompt,
-                      std::string &media_path, bool &has_prompt) {
+                      std::string &media_path, bool &has_prompt,
+                      std::string &prompt_file) {
   struct option longOptions[] = {
       {"model", required_argument, nullptr, 'm'},
       {"config", required_argument, nullptr, 'c'},
@@ -1058,13 +1072,14 @@ void processArguments(int argc, char *argv[], std::string &model_path,
       {"video_fps", required_argument, nullptr, 'f'},
       {"do_sample", no_argument, nullptr, 's'},
       {"prompt", required_argument, nullptr, 'p'},
+      {"prompt_file", required_argument, nullptr, 't'},
       {"media_path", required_argument, nullptr, 'i'},
       {"help", no_argument, nullptr, 'h'},
       {nullptr, 0, nullptr, 0}};
 
   int optionIndex = 0;
   int option;
-  while ((option = getopt_long(argc, argv, "m:c:d:r:f:p:i:sh", longOptions,
+  while ((option = getopt_long(argc, argv, "m:c:d:r:f:p:t:i:sh", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -1087,6 +1102,10 @@ void processArguments(int argc, char *argv[], std::string &model_path,
       break;
     case 'p':
       prompt = optarg;
+      has_prompt = true;
+      break;
+    case 't':
+      prompt_file = optarg;
       has_prompt = true;
       break;
     case 'i':
@@ -1114,16 +1133,41 @@ int main(int argc, char *argv[]) {
   bool do_sample = false;
   std::string prompt;
   std::string media_path;
+  std::string prompt_file;
   bool has_prompt = false;
 
   processArguments(argc, argv, model_path, config_path, image_path, dev_id,
                    video_ratio, video_fps, do_sample, prompt, media_path,
-                   has_prompt);
+                   has_prompt, prompt_file);
   if (model_path.empty() || config_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);
   }
   assert(video_fps > 0);
+  // If --prompt_file was provided, load the prompt text from that file. If
+  // --prompt is also given, the file contents come first and the --prompt
+  // value is appended afterwards so that the two can be combined.
+  if (has_prompt && !prompt_file.empty()) {
+    std::ifstream fs(prompt_file, std::ios::in | std::ios::binary);
+    if (fs.fail()) {
+      std::cerr << "Cannot open prompt file [ " << prompt_file << " ]"
+                << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    std::ostringstream oss;
+    oss << fs.rdbuf();
+    std::string file_prompt = oss.str();
+    // Trim a trailing newline so the file behaves like a CLI-supplied prompt.
+    while (!file_prompt.empty() &&
+           (file_prompt.back() == '\n' || file_prompt.back() == '\r')) {
+      file_prompt.pop_back();
+    }
+    if (prompt.empty()) {
+      prompt = file_prompt;
+    } else {
+      prompt = file_prompt + "\n" + prompt;
+    }
+  }
   ChatPipe pipeline(dev_id, video_ratio, video_fps, model_path, config_path,
                     do_sample);
   if (has_prompt) {

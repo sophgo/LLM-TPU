@@ -102,6 +102,14 @@ void Qwen3_5::init(std::vector<int> devids, std::string model_path,
   support_history = blocks[0].support_history;
   PREFILL_KV_LENGTH = blocks[0].PREFILL_KV_LENGTH;
 
+  // When the bmodel supports history / chunk prefill, the EmbedVit dev_buffer
+  // (sized MAX_INPUT_LENGTH by default) must grow to hold the full SEQLEN so
+  // that long inputs can be embedded in one pass and consumed in chunks by the
+  // blocks.
+  if (support_history) {
+    embed_vit.allocate_history_buffer(SEQLEN);
+  }
+
   do_sample = do_sample_;
   history_length = 0;
   token_length = 0;
@@ -122,6 +130,7 @@ void Qwen3_5::deinit() {
 }
 
 void Qwen3_5::forward_embed(ArrayInt const &tokens) {
+  assert (token_length < SEQLEN);
   std::fill(visited_tokens.begin(), visited_tokens.end(), 0);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
   embed_vit.forward_embed(tokens);

@@ -296,10 +296,18 @@ void Qwen3_5::init(int dev_id, std::string model_path, std::string config_path,
     empty(bm_handle, past_key[i]);
     empty(bm_handle, past_value[i]);
   }
-  auto buffer_size =
-      bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
-  status = bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
-  assert(BM_SUCCESS == status);
+
+  if (!support_history) {
+    auto buffer_size =
+        bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
+    status = bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
+    assert(BM_SUCCESS == status);
+  } else {
+    // for history, we need a big buffer to store long input
+    auto buffer_size = SEQLEN * HIDDEN_SIZE * sizeof(uint16_t);
+    status = bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
+    assert(BM_SUCCESS == status);
+  }
   do_sample = do_sample_;
   if (do_sample) {
     if (!net_sample_head) {
@@ -349,19 +357,31 @@ int Qwen3_5::greedy_search(bm_device_mem_t &logits_mem) {
 }
 
 void Qwen3_5::forward_embed(ArrayInt const &tokens) {
+  token_length = tokens.size();
+  assert(token_length < SEQLEN);
+
   std::fill(visited_tokens.begin(), visited_tokens.end(), 0);
   std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
-  std::vector<bm_tensor_t> in_tensors;
-  std::vector<bm_tensor_t> out_tensors;
-  init_tensors(net_embed, in_tensors, out_tensors);
-  bm_memcpy_s2d_partial(bm_handle, in_tensors[0].device_mem,
-                        (void *)visited_tokens.data(),
-                        MAX_INPUT_LENGTH * sizeof(int));
-  net_launch(net_embed, in_tensors, out_tensors);
+  if (!support_history) {
+    assert(token_length <= MAX_INPUT_LENGTH);
+  }
   empty(bm_handle, dev_buffer);
-  d2d(dev_buffer, out_tensors[0].device_mem, 0,
-      tokens.size() * HIDDEN_SIZE * sizeof(uint16_t));
-  token_length = tokens.size();
+  for (int i = 0; i < token_length; i += MAX_INPUT_LENGTH) {
+    std::vector<bm_tensor_t> in_tensors;
+    std::vector<bm_tensor_t> out_tensors;
+    init_tensors(net_embed, in_tensors, out_tensors);
+    int real_len = std::min(MAX_INPUT_LENGTH, token_length - i);
+    if (real_len != MAX_INPUT_LENGTH) {
+      empty(bm_handle, in_tensors[0].device_mem);
+    }
+    bm_memcpy_s2d_partial(bm_handle, in_tensors[0].device_mem,
+                          (void *)(visited_tokens.data() + i),
+                          real_len * sizeof(int));
+    net_launch(net_embed, in_tensors, out_tensors);
+    int offset = i * HIDDEN_SIZE * sizeof(uint16_t);
+    d2d(dev_buffer, out_tensors[0].device_mem, offset,
+        real_len * HIDDEN_SIZE * sizeof(uint16_t));
+  }
 }
 
 void Qwen3_5::forward_vit(const float *pixel_values,
@@ -523,91 +543,102 @@ int Qwen3_5::forward_first(ArrayInt const &position_ids) {
 }
 
 int Qwen3_5::forward_first_with_kv(ArrayInt const &position_ids) {
-  std::vector<uint16_t> attention_mask;
-  auto old_length = history_length;
-  history_length += token_length;
-  assert(history_length < SEQLEN);
-  assert(old_length <= PREFILL_KV_LENGTH);
-  if (prefill_mask) {
-    attention_mask.resize(token_length * history_length, 0);
-    for (int i = 0; i < token_length; i++) {
-      for (int j = i + 1; j < token_length; j++) {
-        attention_mask[i * history_length + old_length + j] = mask_value;
-      }
-    }
-  }
-  assert((int)position_ids.size() == token_length * 3);
+  assert(history_length + token_length < SEQLEN);
+  assert(prefill_mask == false);
+  assert((int)position_ids.size() == 3 * token_length);
+  ArrayInt pos_ids(3 * MAX_INPUT_LENGTH, 0);
 
   auto out_mem = dev_buffer;
   empty_net(bm_handle, net_blocks[0]);
   std::vector<bm_tensor_t> in_tensors;
   std::vector<bm_tensor_t> out_tensors;
   int k_idx = prefill_mask ? 3 : 2;
-  for (int idx = 0; idx < NUM_LAYERS; idx++) {
-    auto &net = (is_FA(idx) && old_length == 0)
-                    ? net_blocks_prompt[idx / FA_INTERVAL]
-                    : net_blocks[idx];
-    init_tensors(net, in_tensors, out_tensors);
-    out_tensors[0].device_mem = out_mem;
-    d2d(in_tensors[0].device_mem, out_mem, 0,
-        token_length * HIDDEN_SIZE * sizeof(uint16_t));
-    if (is_FA(idx)) {
-      bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
-                            (void *)position_ids.data(),
-                            token_length * 3 * sizeof(int));
-      if (prefill_mask) {
-        bm_memcpy_s2d_partial(bm_handle, in_tensors[2].device_mem,
-                              (void *)attention_mask.data(),
-                              token_length * history_length * sizeof(uint16_t));
-        in_tensors[2].shape.dims[2] = token_length;
-        in_tensors[2].shape.dims[3] = history_length;
-      }
-      in_tensors[0].shape.dims[1] = token_length;
-      in_tensors[1].shape.dims[1] = token_length;
-      // copy old kv to new kv with offset
-      if (old_length > 0) {
-        int old_kvlen = old_length - 1;
-        d2d(in_tensors[k_idx].device_mem, past_key[idx], 0,
-            KV_BYTES * old_kvlen);
-        d2d(in_tensors[k_idx + 1].device_mem, past_value[idx], 0,
-            KV_BYTES * old_kvlen);
-        in_tensors[k_idx].shape.dims[1] = old_kvlen;
-        in_tensors[k_idx + 1].shape.dims[1] = old_kvlen;
-      } else {
-        // do nothing
-      }
-    } else {
-      if (old_length > 0) {
-        d2d(in_tensors[1].device_mem, past_value[idx]);
-        d2d(in_tensors[2].device_mem, past_key[idx]);
-      } else {
-        empty(bm_handle, in_tensors[1].device_mem); // recurrent state
-        empty(bm_handle, in_tensors[2].device_mem); // conv state
-      }
-      in_tensors[0].shape.dims[1] = token_length;
+  int old_kvlen = (history_length > 0) ? (history_length - 1) : 0;
+  int last_cur_len = 0; // cur_len of the last chunk, for lmhead offset
+  for (int t = 0; t < token_length; t += MAX_INPUT_LENGTH) {
+    auto old_length = history_length;
+    int cur_len = std::min(MAX_INPUT_LENGTH, token_length - t);
+    last_cur_len = cur_len;
+    history_length += cur_len;
+    // copy position ids with offset
+    for (int i = 0; i < 3; i++) {
+      std::copy(position_ids.data() + i * token_length + t,
+                position_ids.data() + i * token_length + t + cur_len,
+                pos_ids.data() + i * cur_len);
     }
 
-    net_launch(net, in_tensors, out_tensors);
-    if (is_FA(idx)) {
-      int old_kvlen = (old_length > 0) ? (old_length - 1) : 0;
-      bm_memcpy_d2d_byte(bm_handle, past_key[idx], old_kvlen * KV_BYTES,
-                         net->stages[0].output_mems[1], 0,
-                         KV_BYTES * token_length);
-      bm_memcpy_d2d_byte(bm_handle, past_value[idx], old_kvlen * KV_BYTES,
-                         net->stages[0].output_mems[2], 0,
-                         KV_BYTES * token_length);
-    } else {
-      // reuse key as conv state
-      d2d(past_key[idx], net->stages[0].output_mems[1]);
-      // reuse value as recurrent state
-      d2d(past_value[idx], net->stages[0].input_mems[1]);
+    assert(old_length <= PREFILL_KV_LENGTH);
+    for (int idx = 0; idx < NUM_LAYERS; idx++) {
+      auto &net = (is_FA(idx) && old_length == 0 && t == 0)
+                      ? net_blocks_prompt[idx / FA_INTERVAL]
+                      : net_blocks[idx];
+      init_tensors(net, in_tensors, out_tensors);
+      out_tensors[0].device_mem = out_mem;
+
+      if (idx == 0) {
+        // for the first block, we need to copy input from dev_buffer to
+        // in_tensors[0] with offset
+        bm_memcpy_d2d_byte(bm_handle, in_tensors[0].device_mem, 0, dev_buffer,
+                           t * HIDDEN_SIZE * sizeof(uint16_t),
+                           cur_len * HIDDEN_SIZE * sizeof(uint16_t));
+      } else {
+        d2d(in_tensors[0].device_mem, out_mem, 0,
+            cur_len * HIDDEN_SIZE * sizeof(uint16_t));
+      }
+      if (is_FA(idx)) {
+        bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
+                              (void *)(pos_ids.data()),
+                              cur_len * 3 * sizeof(int));
+        in_tensors[0].shape.dims[1] = cur_len;
+        in_tensors[1].shape.dims[1] = cur_len;
+        // copy old kv to new kv with offset
+        if (old_kvlen > 0) {
+          d2d(in_tensors[k_idx].device_mem, past_key[idx], 0,
+              KV_BYTES * old_kvlen);
+          d2d(in_tensors[k_idx + 1].device_mem, past_value[idx], 0,
+              KV_BYTES * old_kvlen);
+          in_tensors[k_idx].shape.dims[1] = old_kvlen;
+          in_tensors[k_idx + 1].shape.dims[1] = old_kvlen;
+        } else {
+          // do nothing
+        }
+      } else {
+        if (old_kvlen > 0) {
+          d2d(in_tensors[1].device_mem, past_value[idx]);
+          d2d(in_tensors[2].device_mem, past_key[idx]);
+        } else {
+          empty(bm_handle, in_tensors[1].device_mem); // recurrent state
+          empty(bm_handle, in_tensors[2].device_mem); // conv state
+        }
+        in_tensors[0].shape.dims[1] = cur_len;
+      }
+
+      net_launch(net, in_tensors, out_tensors);
+      if (is_FA(idx)) {
+        size_t offset = old_kvlen * KV_BYTES;
+        bm_memcpy_d2d_byte(bm_handle, past_key[idx], offset,
+                           net->stages[0].output_mems[1], 0,
+                           KV_BYTES * cur_len);
+        bm_memcpy_d2d_byte(bm_handle, past_value[idx], offset,
+                           net->stages[0].output_mems[2], 0,
+                           KV_BYTES * cur_len);
+      } else {
+        // reuse key as conv state
+        d2d(past_key[idx], net->stages[0].output_mems[1]);
+        // reuse value as recurrent state
+        d2d(past_value[idx], net->stages[0].input_mems[1]);
+      }
     }
+    old_kvlen += cur_len;
   }
   // forward lmhead
+  // the last chunk writes its block output to dev_buffer[0..last_cur_len),
+  // so the last token's hidden state is at (last_cur_len - 1) * bytes,
+  // not (token_length - 1) * bytes (which is stale/garbage when chunked).
   int bytes = HIDDEN_SIZE * sizeof(uint16_t);
   init_tensors(net_lm, in_tensors, out_tensors);
   in_tensors[0].device_mem = bm_mem_from_device(
-      out_mem.u.device.device_addr + (token_length - 1) * bytes, bytes);
+      out_mem.u.device.device_addr + (last_cur_len - 1) * bytes, bytes);
   out_tensors[0].device_mem = dev_buffer;
   net_launch(net_lm, in_tensors, out_tensors);
   int token = generate(dev_buffer);

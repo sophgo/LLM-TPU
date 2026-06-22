@@ -34,7 +34,7 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-9b-int4-autoround_w4bf16_seq2048_bm1684x_6dev_dynamic_20260429_152927_embed_vit.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-9b-int4-autoround_w4bf16_seq2048_bm1684x_6dev_dynamic_20260429_152927_lmhead.bmodel
 
-# Qwen3.5-35B-A3B 七芯
+# Qwen3.5-35B-A3B 七芯(2K)
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_7dev/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq2048_bm1684x_7dev_dynamic_20260611_174448_block_00.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_7dev/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq2048_bm1684x_7dev_dynamic_20260611_174448_block_01.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_7dev/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq2048_bm1684x_7dev_dynamic_20260611_174448_block_02.bmodel
@@ -42,6 +42,9 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_7dev/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq2048_bm1684x_7dev_dynamic_20260611_174448_block_04.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_7dev/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq2048_bm1684x_7dev_dynamic_20260611_174448_embed_vit.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_7dev/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq2048_bm1684x_7dev_dynamic_20260611_174448_lmhead.bmodel
+
+# Qwen3.5-35B-A3B 七芯(10K)
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_int4_10k_7dev.tar
 ```
 
 ## 目录结构
@@ -138,6 +141,35 @@ export LD_LIBRARY_PATH=/opt/sophon/libsophon-current/lib:$LD_LIBRARY_PATH
 其余 CLI 参数 (`-s` 采样、`-r` 视频比例、`-f` 视频 fps 等) 与
 `cpp_demo/pipeline.cpp` 一致。
 
+### 长文本 / Chunk Prefill
+
+当 bmodel 使用 `--use_block_with_kv` 导出（即带 history 支持）时，
+`cpp_demo_pp` 支持 **chunk prefill**：输入超过单次 prefill chunk 长度
+（`prefill_chunk_length`，默认为 `seq_length / 4`）时会自动分段处理，
+从而支持远超 `MAX_INPUT_LENGTH` 的长文本输入。
+
+启动时若检测到 `block_prompt_<idx>` 网络，会打印 `History Support: True`。
+
+| 参数 | 说明 |
+| --- | --- |
+| `-p, --prompt` | 以程序化模式运行单次推理，传入提示文本 |
+| `-t, --prompt_file` | 从文本文件读取内容作为提示；与 `-p` 同时使用时拼接 |
+| `-i, --media_path` | 指定图片/视频路径（逗号分隔多个） |
+
+示例：
+
+```bash
+# 从文件读取长文本并提问
+./pipeline -m /path/to/qwen3.5_kv -c config -d 8,9,10,11 \
+    -t novel.txt -p "what is it talking about ?"
+
+# 仅传入提示文本
+./pipeline -m /path/to/qwen3.5_kv -c config -d 8,9,10,11 \
+    -p "请介绍一下杭州"
+```
+
+程序化模式下会打印 `Total Tokens: <n>` 表示输入 token 数。
+
 启动时会打印组件 → device 映射，例如：
 
 ```
@@ -172,7 +204,7 @@ Qwen3.5 每 `FA_INTERVAL=4` 层插入一层 Full-Attention（带 KV cache），
 | --- | --- |
 | `bmodel not found for component …` | 文件名缺少 `embed_vit` / `block` / `lmhead` 子串；用最新版 `_pp_combine` 重新生成 |
 | `bmrt_load_bmodel ... NOT_INITIALIZED` | `-d` 指定的卡被占用或处于 Fault；`bm-smi` 检查 |
-| `History Support: False`（信息提示） | 当前 `_pp_combine` 输出不带 history-with-kv，正常 |
-| 调用 `forward_first_with_kv` 抛异常 | 该路径暂未实现；不要使用 history-enabled 的 bmodel |
+| `History Support: False`（信息提示） | 当前 `_pp_combine` 输出不带 history-with-kv，正常；长文本需要使用带 KV 的 bmodel |
+| 长文本输入报 `exceed maximum length` | 使用 `--use_block_with_kv` + `--prefill_chunk_length` 导出的 bmodel 才支持 chunk prefill |
 | 找不到 `libbmrt.so` / `libbmlib.so` | `export LD_LIBRARY_PATH=/opt/sophon/libsophon-current/lib:$LD_LIBRARY_PATH` |
 | 加载阶段卡住 | 卡处于 Fault；换一组 device id 或重启驱动 |

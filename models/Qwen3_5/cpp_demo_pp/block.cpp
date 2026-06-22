@@ -53,6 +53,15 @@ void Block::init_by_names() {
   const char **net_names = nullptr;
   bmrt_get_network_names(p_bmrt, &net_names);
 
+  auto is_exist = [net_names, num_nets](const std::string &name) {
+    for (int i = 0; i < num_nets; i++) {
+      if (name == net_names[i]) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   // Discover the global block index range from network names "block_cache_<i>"
   int min_idx = 100000, max_idx = -1;
   const std::string block_cache_prefix = "block_cache_";
@@ -64,8 +73,8 @@ void Block::init_by_names() {
       max_idx = std::max(max_idx, idx);
     }
   }
-  free(net_names);
   if (max_idx < 0) {
+    free(net_names);
     throw std::runtime_error("No block_cache_* networks found in bmodel");
   }
 
@@ -85,6 +94,7 @@ void Block::init_by_names() {
   } else if (net_blocks[0]->output_dtypes[0] == BM_BFLOAT16) {
     mask_value = 0xC61C; // -9984 by bfloat16
   } else {
+    free(net_names);
     std::cerr << "\nError: Invalid attention dtype\n";
     std::cerr << "Supported dtype are 'BM_FLOAT16' or 'BM_BFLOAT16'\n";
     throw std::runtime_error("Invalid attention dtype");
@@ -99,16 +109,39 @@ void Block::init_by_names() {
     }
   }
   if (first_fa_local < 0) {
+    free(net_names);
     throw std::runtime_error(
         "Block instance must contain at least one Full-Attention layer "
         "(every " +
         std::to_string(FA_INTERVAL) + "-th layer)");
   }
 
+  // support_history is enabled by the bmodel when
+  // block_prompt_<first_fa_global> exists. The prompt net is the first-time
+  // full-attention prefill path that allocates a fresh KV cache (no history
+  // input).
+  std::string prompt_name =
+      "block_prompt_" + std::to_string(start_idx + first_fa_local);
+  support_history = is_exist(prompt_name);
+
+  // Load prompt nets for FA layers (nullptr for non-FA layers).
+  net_blocks_prompt.assign(num_blocks, nullptr);
+  if (support_history) {
+    for (int i = 0; i < num_blocks; i++) {
+      int global_idx = start_idx + i;
+      if (!is_FA(global_idx)) {
+        continue;
+      }
+      auto name = "block_prompt_" + std::to_string(global_idx);
+      if (is_exist(name)) {
+        net_blocks_prompt[i] = bmrt_get_network_info(p_bmrt, name.c_str());
+      }
+    }
+  }
+
   auto fa_block = net_blocks[first_fa_local];
   auto fa_cache = net_blocks_cache[first_fa_local];
-  support_history = fa_block->input_num == 5;
-  prefill_mask = fa_block->input_num > 2; // with prefill attention mask
+  prefill_mask = fa_block->input_num == (support_history ? 5 : 3);
   history_length = 0;
   MAX_INPUT_LENGTH = fa_block->stages[0].input_shapes[0].dims[1];
   HIDDEN_SIZE = fa_cache->stages[0].input_shapes[0].dims[2];
@@ -117,10 +150,11 @@ void Block::init_by_names() {
   PREFILL_KV_LENGTH = 0;
   if (support_history) {
     PREFILL_KV_LENGTH = fa_block->stages[0].input_shapes[3].dims[1];
-    printf("History Support: True\n");
+    printf("History Support: True (block_prompt detected)\n");
   } else {
     printf("History Support: False\n");
   }
+  free(net_names);
 }
 
 void Block::init(int dev_id, std::string model_path) {
@@ -248,11 +282,106 @@ ArrayUint16 Block::forward_first(ArrayInt const &position_ids,
 
 ArrayUint16 Block::forward_first_with_kv(ArrayInt const &position_ids,
                                          ArrayUint16 &hidden_states) {
-  // History support is not enabled in current Qwen3_5 bmodels for this demo.
-  (void)position_ids;
-  (void)hidden_states;
-  printf("Error: forward_first_with_kv is not implemented yet.\n");
-  throw std::runtime_error("Not implemented");
+  // Chunked prefill with KV cache, adapted to the pipeline-parallel layout:
+  // hidden_states arrives on the host (transferred from the previous device),
+  // so each chunk is S2D'd into the first layer's input mem, processed across
+  // all layers with on-device D2D, and the chunk output is D2S'd back to host.
+  assert(history_length + token_length < SEQLEN);
+  assert(prefill_mask == false);
+  assert((int)position_ids.size() == 3 * token_length);
+  ArrayInt pos_ids(3 * MAX_INPUT_LENGTH, 0);
+
+  bm_device_mem_t out_mem = dev_buffer;
+  empty_net(bm_handle, net_blocks[0]);
+  std::vector<bm_tensor_t> in_tensors;
+  std::vector<bm_tensor_t> out_tensors;
+  int k_idx = 2;
+  int old_kvlen = (history_length > 0) ? (history_length - 1) : 0;
+
+  // Holds the full sequence output to pass to the next Block / LmHead.
+  ArrayUint16 result(token_length * HIDDEN_SIZE);
+
+  for (int t = 0; t < token_length; t += MAX_INPUT_LENGTH) {
+    auto old_length = history_length;
+    int cur_len = std::min(MAX_INPUT_LENGTH, token_length - t);
+    history_length += cur_len;
+    // copy position ids with offset (chunk t of each of the 3 dimensions)
+    for (int i = 0; i < 3; i++) {
+      std::copy(position_ids.data() + i * token_length + t,
+                position_ids.data() + i * token_length + t + cur_len,
+                pos_ids.data() + i * cur_len);
+    }
+
+    assert(old_length <= PREFILL_KV_LENGTH);
+    for (int idx = 0; idx < num_blocks; idx++) {
+      int global_idx = start_idx + idx;
+      bool fa = is_FA(global_idx);
+      bool use_prompt =
+          fa && old_length == 0 && t == 0 && net_blocks_prompt[idx] != nullptr;
+      auto &net = use_prompt ? net_blocks_prompt[idx] : net_blocks[idx];
+      init_tensors(net, in_tensors, out_tensors);
+      out_tensors[0].device_mem = out_mem;
+
+      if (idx == 0) {
+        // first block: copy chunk input from host hidden_states with offset
+        bm_memcpy_s2d_partial(bm_handle, in_tensors[0].device_mem,
+                              (void *)(hidden_states.data() + t * HIDDEN_SIZE),
+                              cur_len * HIDDEN_SIZE * sizeof(uint16_t));
+      } else {
+        d2d(bm_handle, in_tensors[0].device_mem, out_mem, 0,
+            cur_len * HIDDEN_SIZE * sizeof(uint16_t));
+      }
+      if (fa) {
+        bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
+                              (void *)(pos_ids.data()),
+                              cur_len * 3 * sizeof(int));
+        in_tensors[0].shape.dims[1] = cur_len;
+        in_tensors[1].shape.dims[1] = cur_len;
+        // copy old kv to new kv with offset
+        if (old_kvlen > 0) {
+          d2d(bm_handle, in_tensors[k_idx].device_mem, past_key[idx], 0,
+              KV_BYTES * old_kvlen);
+          d2d(bm_handle, in_tensors[k_idx + 1].device_mem, past_value[idx], 0,
+              KV_BYTES * old_kvlen);
+          in_tensors[k_idx].shape.dims[1] = old_kvlen;
+          in_tensors[k_idx + 1].shape.dims[1] = old_kvlen;
+        } else {
+          // do nothing
+        }
+      } else {
+        if (old_kvlen > 0) {
+          d2d(bm_handle, in_tensors[1].device_mem, past_value[idx]);
+          d2d(bm_handle, in_tensors[2].device_mem, past_key[idx]);
+        } else {
+          empty(bm_handle, in_tensors[1].device_mem); // recurrent state
+          empty(bm_handle, in_tensors[2].device_mem); // conv state
+        }
+        in_tensors[0].shape.dims[1] = cur_len;
+      }
+
+      net_launch(p_bmrt, net, in_tensors, out_tensors);
+      if (fa) {
+        size_t offset = old_kvlen * KV_BYTES;
+        bm_memcpy_d2d_byte(bm_handle, past_key[idx], offset,
+                           net->stages[0].output_mems[1], 0,
+                           KV_BYTES * cur_len);
+        bm_memcpy_d2d_byte(bm_handle, past_value[idx], offset,
+                           net->stages[0].output_mems[2], 0,
+                           KV_BYTES * cur_len);
+      } else {
+        // reuse key as conv state
+        d2d(bm_handle, past_key[idx], net->stages[0].output_mems[1]);
+        // reuse value as recurrent state
+        d2d(bm_handle, past_value[idx], net->stages[0].input_mems[1]);
+      }
+    }
+    old_kvlen += cur_len;
+    // D2S this chunk's output back to host result with offset
+    int chunk_bytes = cur_len * HIDDEN_SIZE * sizeof(uint16_t);
+    bm_memcpy_d2s_partial(bm_handle, result.data() + t * HIDDEN_SIZE, out_mem,
+                          chunk_bytes);
+  }
+  return result;
 }
 
 ArrayUint16 Block::forward_next(ArrayInt const &position_ids,

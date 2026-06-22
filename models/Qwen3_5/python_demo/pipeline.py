@@ -12,6 +12,7 @@ from transformers import AutoProcessor
 from qwen_vl_utils import process_vision_info
 import chat
 import os
+import sys
 import torch
 import numpy as np
 import torch.nn.functional as F
@@ -322,13 +323,15 @@ class Qwen3_5():
 
         inputs = self.process(messages, media_type)
         token_len = inputs.input_ids.numel()
-        if token_len > self.model.MAX_INPUT_LENGTH:
+        max_input_tokens = self.model.SEQLEN if self.model.support_history \
+            else self.model.MAX_INPUT_LENGTH
+        if token_len > max_input_tokens:
             if media_type in ["image", "video"]:
                 print("grid_thw:{}".format(inputs.image_grid_thw if media_type ==
                                            "image" else inputs.video_grid_thw))
             print(
                 "Error: The maximum question length should be shorter than {} but we get {} instead."
-                .format(self.model.MAX_INPUT_LENGTH, token_len))
+                .format(max_input_tokens, token_len))
             return None
         if self.support_history:
             if (token_len + self.model.history_length > self.model.SEQLEN - 128) or \
@@ -394,6 +397,8 @@ class Qwen3_5():
             print(f"Vision({inputs.image_grid_thw.tolist()}): {vit_end - vit_start:.3f} s")
         elif media_type == "video":
             print(f"Vision({inputs.video_grid_thw.tolist()}): {vit_end - vit_start:.3f} s")
+        if self.support_history:
+            print(f"Total Tokens: {self.model.history_length}")
         return text
 
     def chat(self):
@@ -441,8 +446,26 @@ if __name__ == "__main__":
     parser.add_argument('-d', '--devid', type=int, default=0, help='device ID to use')
     parser.add_argument('-p', '--prompt', type=str, default=None,
                         help='If set, run programmatically (non-interactive): a single inference is performed using this prompt and then the program exits.')
+    parser.add_argument('-t', '--prompt_file', type=str, default=None,
+                        help='Path to a text file whose contents are used as the programmatic mode prompt. If --prompt is also set, the file contents come first, followed by the --prompt value (combined with a newline).')
     parser.add_argument('--media_path', type=str, default="",
                         help='Path to an image or video for programmatic mode (used together with --prompt). Leave empty for text-only.')
     # yapf: enable
     args = parser.parse_args()
+    # If --prompt_file was provided, load the prompt text from that file. If
+    # --prompt is also given, the file contents come first and the --prompt
+    # value is appended afterwards so that the two can be combined.
+    if args.prompt_file is not None:
+        try:
+            with open(args.prompt_file, 'r', encoding='utf-8') as f:
+                file_prompt = f.read()
+        except OSError as e:
+            print(f"Cannot open prompt file [ {args.prompt_file} ]: {e}")
+            sys.exit(1)
+        # Trim a trailing newline so the file behaves like a CLI-supplied prompt.
+        file_prompt = file_prompt.rstrip('\r\n')
+        if args.prompt is None or args.prompt == "":
+            args.prompt = file_prompt
+        else:
+            args.prompt = file_prompt + "\n" + args.prompt
     main(args)

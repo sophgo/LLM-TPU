@@ -40,7 +40,6 @@ void EmbedVit::init_by_names() {
   MAX_PIXELS = MAX_PATCHES * 16 * 16;
   VIT_DIMS = net_vit->stages[0].input_shapes[0].dims[1];
   printf("Max Pixels: %d*%d*%d\n", MAX_PATCHES / 4, 32, 32);
-  num_deepstack = net_vit->output_num - 1;
 }
 
 void EmbedVit::init(int dev_id, std::string model_path) {
@@ -63,46 +62,47 @@ void EmbedVit::init(int dev_id, std::string model_path) {
 
   init_by_names();
 
-  visited_tokens.resize(SEQLEN);
-
-  auto buffer_size =
-      bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
-  status = bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
-  assert(BM_SUCCESS == status);
-  for (int i = 0; i < num_deepstack; i++) {
-    bm_device_mem_t mem;
-    status = bm_malloc_device_byte(bm_handle, &mem, buffer_size);
-    assert(BM_SUCCESS == status);
-    deepstack_buffers.push_back(mem);
-  }
   vit_run = false;
 }
 
 void EmbedVit::deinit() {
-  for (int i = 0; i < num_deepstack; i++) {
-    bm_free_device(bm_handle, deepstack_buffers[i]);
-  }
-  bm_free_device(bm_handle, dev_buffer);
   bmrt_destroy(p_bmrt);
   bm_dev_free(bm_handle);
 }
 
+void EmbedVit::allocate_history_buffer(int seq_len) {
+  support_history = true;
+  if (seq_len <= MAX_INPUT_LENGTH) {
+    return; // existing buffer already large enough
+  }
+  SEQLEN = seq_len;
+}
+
 void EmbedVit::forward_embed(ArrayInt const &tokens) {
-  std::fill(visited_tokens.begin(), visited_tokens.end(), 0);
-  std::copy(tokens.begin(), tokens.end(), visited_tokens.data());
-  std::vector<bm_tensor_t> in_tensors;
-  std::vector<bm_tensor_t> out_tensors;
-  init_tensors(net_embed, in_tensors, out_tensors);
-  bm_memcpy_s2d_partial(bm_handle, in_tensors[0].device_mem,
-                        (void *)visited_tokens.data(),
-                        MAX_INPUT_LENGTH * sizeof(int));
-  net_launch(p_bmrt, net_embed, in_tensors, out_tensors);
-  empty(bm_handle, dev_buffer);
-  d2d(bm_handle, dev_buffer, out_tensors[0].device_mem, 0,
-      tokens.size() * HIDDEN_SIZE * sizeof(uint16_t));
   token_length = tokens.size();
-  for (auto &mem : deepstack_buffers) {
-    empty(bm_handle, mem);
+  sys_buffer.assign(token_length * HIDDEN_SIZE, 0);
+  if (!support_history) {
+    assert(token_length <= MAX_INPUT_LENGTH);
+  }
+  // chunked embed: each launch handles up to MAX_INPUT_LENGTH tokens, and
+  // the resulting hidden states are appended into sys_buffer with offset.
+  // For inputs that fit in one chunk this loop runs a single iteration.
+  for (int i = 0; i < token_length; i += MAX_INPUT_LENGTH) {
+    std::vector<bm_tensor_t> in_tensors;
+    std::vector<bm_tensor_t> out_tensors;
+    init_tensors(net_embed, in_tensors, out_tensors);
+    int real_len = std::min(MAX_INPUT_LENGTH, token_length - i);
+    if (real_len != MAX_INPUT_LENGTH) {
+      empty(bm_handle, in_tensors[0].device_mem);
+    }
+    bm_memcpy_s2d_partial(bm_handle, in_tensors[0].device_mem,
+                          (void *)(tokens.data() + i), real_len * sizeof(int));
+    net_launch(p_bmrt, net_embed, in_tensors, out_tensors);
+    int offset = i * HIDDEN_SIZE;
+    bm_thread_sync(bm_handle);
+    bm_memcpy_d2s_partial(bm_handle, sys_buffer.data() + offset,
+                          out_tensors[0].device_mem,
+                          real_len * HIDDEN_SIZE * sizeof(uint16_t));
   }
 }
 
@@ -155,14 +155,11 @@ void EmbedVit::forward_vit(const float *pixel_values,
   net_launch(p_bmrt, net_vit, in_tensors, out_tensors);
 
   // concatenate text embedding and image embedding
-  int dst_offset = vit_offset * HIDDEN_SIZE * sizeof(uint16_t);
-  int vit_size = hw / 4 * HIDDEN_SIZE * sizeof(uint16_t);
-  bm_memcpy_d2d_byte(bm_handle, dev_buffer, dst_offset,
-                     out_tensors[0].device_mem, 0, vit_size);
-  for (int i = 0; i < num_deepstack; i++) {
-    bm_memcpy_d2d_byte(bm_handle, deepstack_buffers[i], dst_offset,
-                       out_tensors[i + 1].device_mem, 0, vit_size);
-  }
+  bm_thread_sync(bm_handle);
+  int dst_offset = vit_offset * HIDDEN_SIZE;
+  int vit_size = hw / 4 * HIDDEN_SIZE;
+  bm_memcpy_d2s_partial(bm_handle, sys_buffer.data() + dst_offset,
+                        out_tensors[0].device_mem, vit_size * sizeof(uint16_t));
   vit_run = true;
 }
 
@@ -180,20 +177,4 @@ ArrayUint16 EmbedVit::forward_embed_cache(int token) {
   return result;
 }
 
-ArrayUint16 EmbedVit::get_hidden_states() {
-  int bytes = token_length * HIDDEN_SIZE * sizeof(uint16_t);
-  ArrayUint16 result(token_length * HIDDEN_SIZE);
-  bm_memcpy_d2s_partial(bm_handle, result.data(), dev_buffer, bytes);
-  return result;
-}
-
-ArrayUint162D EmbedVit::get_deepstacks() {
-  ArrayUint162D result;
-  int bytes = token_length * HIDDEN_SIZE * sizeof(uint16_t);
-  for (int i = 0; i < num_deepstack; i++) {
-    ArrayUint16 ds(token_length * HIDDEN_SIZE);
-    bm_memcpy_d2s_partial(bm_handle, ds.data(), deepstack_buffers[i], bytes);
-    result.push_back(std::move(ds));
-  }
-  return result;
-}
+ArrayUint16 &EmbedVit::get_hidden_states() { return sys_buffer; }
