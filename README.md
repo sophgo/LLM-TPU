@@ -31,7 +31,8 @@
 
 | 日期 | 更新内容 |
 | :--- | :--- |
-| 🔥 **2026.05.21** | **Gemma4** 已支持 BM1684X / BM1688，Python Demo，支持图片 / 视频 / 音频 → [查看](./models/Gemma4/) |
+| 🔥 **2026.06.30** | **MiniCPM-V-4.6** 已支持 BM1684X / BM1688，Python Demo，支持图片与视频 → [查看](./models/MiniCPMV4_6/) |
+| **2026.05.21** | **Gemma4** 已支持 BM1684X / BM1688，Python Demo，支持图片 / 视频 / 音频 → [查看](./models/Gemma4/) |
 | **2026.04.15** | **Qwen3.5** 已支持 BM1684X / BM1688，提供 Python 与 C++ Demo，支持图片与视频 → [查看](./models/Qwen3_5/) |
 | **2025.10.15** | **Qwen3-VL** 已支持 BM1684X / BM1688，Python / C++ Demo，支持图片与视频 → [查看](./models/Qwen3_VL/) |
 | **2025.05.22** | **InternVL3** 已支持 BM1684X / BM1688，支持图片与视频 → [查看](./models/InternVL3/) |
@@ -159,6 +160,7 @@ cd LLM-TPU
 [Llama3_2-Vision](./models/Llama3_2-Vision) ·
 [MiniCPM-V-2_6](./models/MiniCPM-V-2_6) ·
 [MiniCPMV4](./models/MiniCPMV4) ·
+[MiniCPMV4_6](./models/MiniCPMV4_6) ·
 [Molmo](./models/Molmo) ·
 [NVILA](./models/NVILA) ·
 [Qwen2_5_Omni](./models/Qwen2_5_Omni) ·
