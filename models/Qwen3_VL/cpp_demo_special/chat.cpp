@@ -57,8 +57,13 @@ struct GenerationConfig {
     std::ifstream in(path);
     nlohmann::json j;
     in >> j;
-    if (j.contains("eos_token_id"))
-      config.eos_token_id = j["eos_token_id"].get<std::vector<int>>();
+    if (j.contains("eos_token_id")) {
+      auto &eos = j["eos_token_id"];
+      if (eos.is_array())
+        config.eos_token_id = eos.get<std::vector<int>>();
+      else if (eos.is_number_integer())
+        config.eos_token_id = {eos.get<int>()};
+    }
     if (j.contains("repetition_penalty"))
       config.repetition_penalty = j["repetition_penalty"].get<float>();
     if (j.contains("temperature"))
