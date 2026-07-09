@@ -1,0 +1,18 @@
+{
+  "auto_map": {
+    "AutoImageProcessor": "image_processing_locateanything.LocateAnythingImageProcessor",
+    "AutoProcessor": "processing_locateanything.LocateAnythingProcessor"
+  },
+  "image_end_token": "</img>",
+  "image_placeholder": "image",
+  "image_start_token": "<img>",
+  "image_token": "<IMG_CONTEXT>",
+  "merge_kernel_size": [
+    2,
+    2
+  ],
+  "processor_class": "LocateAnythingProcessor",
+  "video_placeholder": "video",
+  "video_token": "<IMG_CONTEXT>",
+  "patch_size": 14
+}

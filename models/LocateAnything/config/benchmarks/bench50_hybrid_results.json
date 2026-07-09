@@ -1,0 +1,2313 @@
+{
+  "manifest": "/home/op/locateanything-int4/benchmarks/synthetic50/manifest.json",
+  "mode": "hybrid",
+  "bf16_url": "http://127.0.0.1:18011",
+  "int4_url": "http://127.0.0.1:18012",
+  "n": 50,
+  "total_sec": 138.02288341522217,
+  "bf16_results": [
+    {
+      "id": 0,
+      "kind": "shape",
+      "object": "blue hexagon",
+      "prompt": "Locate the blue hexagon.",
+      "gt_box_norm": [
+        407,
+        102,
+        609,
+        336
+      ],
+      "answer": "<ref>blue hex hex hex</ref><box><406><101><611><338></box><|im_end|>",
+      "pred_box_norm": [
+        406,
+        101,
+        611,
+        338
+      ],
+      "valid": true,
+      "elapsed_sec": 2.674611806869507,
+      "iou": 0.9728928681691881,
+      "center_l1": 1.0
+    },
+    {
+      "id": 1,
+      "kind": "shape",
+      "object": "yellow square",
+      "prompt": "Locate the yellow square.",
+      "gt_box_norm": [
+        130,
+        594,
+        481,
+        945
+      ],
+      "answer": "<ref>locate the the yellow</ref><box><129><593><484><947></box><|im_end|>",
+      "pred_box_norm": [
+        129,
+        593,
+        484,
+        947
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6339266300201416,
+      "iou": 0.980353306278348,
+      "center_l1": 1.5
+    },
+    {
+      "id": 2,
+      "kind": "shape",
+      "object": "yellow hexagon",
+      "prompt": "Locate the yellow hexagon.",
+      "gt_box_norm": [
+        180,
+        316,
+        329,
+        488
+      ],
+      "answer": "<ref>yellowate hex hexagon</ref><box><177><314><331><492></box><|im_end|>",
+      "pred_box_norm": [
+        177,
+        314,
+        331,
+        492
+      ],
+      "valid": true,
+      "elapsed_sec": 2.693080186843872,
+      "iou": 0.934919013570699,
+      "center_l1": 1.5
+    },
+    {
+      "id": 3,
+      "kind": "shape",
+      "object": "crimson hexagon",
+      "prompt": "Locate the crimson hexagon.",
+      "gt_box_norm": [
+        773,
+        502,
+        938,
+        693
+      ],
+      "answer": "<ref>Locate hex hexagon</ref><box><772><500><942><698></box><|im_end|>",
+      "pred_box_norm": [
+        772,
+        500,
+        942,
+        698
+      ],
+      "valid": true,
+      "elapsed_sec": 2.728316307067871,
+      "iou": 0.9362745098039216,
+      "center_l1": 3.0
+    },
+    {
+      "id": 4,
+      "kind": "shape",
+      "object": "blue hexagon",
+      "prompt": "Locate the blue hexagon.",
+      "gt_box_norm": [
+        599,
+        548,
+        873,
+        864
+      ],
+      "answer": "<ref>blue hex hex hexagon</ref><box><597><546><875><865></box><|im_end|>",
+      "pred_box_norm": [
+        597,
+        546,
+        875,
+        865
+      ],
+      "valid": true,
+      "elapsed_sec": 2.672801971435547,
+      "iou": 0.976342437022169,
+      "center_l1": 0.5
+    },
+    {
+      "id": 5,
+      "kind": "shape",
+      "object": "green hexagon",
+      "prompt": "Locate the green hexagon.",
+      "gt_box_norm": [
+        467,
+        611,
+        700,
+        881
+      ],
+      "answer": "<ref>Locate hex green</ref><box><464><610><710><883></box><|im_end|>",
+      "pred_box_norm": [
+        464,
+        610,
+        710,
+        883
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6758179664611816,
+      "iou": 0.9367461806486197,
+      "center_l1": 4.0
+    },
+    {
+      "id": 6,
+      "kind": "shape",
+      "object": "red triangle",
+      "prompt": "Locate the red triangle.",
+      "gt_box_norm": [
+        482,
+        36,
+        676,
+        203
+      ],
+      "answer": "<ref>red triangle</ref><box><481><35><677><207></box><|im_end|>",
+      "pred_box_norm": [
+        481,
+        35,
+        677,
+        207
+      ],
+      "valid": true,
+      "elapsed_sec": 2.684298276901245,
+      "iou": 0.9610227812055054,
+      "center_l1": 1.5
+    },
+    {
+      "id": 7,
+      "kind": "shape",
+      "object": "olive square",
+      "prompt": "Locate the olive square.",
+      "gt_box_norm": [
+        350,
+        216,
+        707,
+        573
+      ],
+      "answer": "<ref>ollive square</ref><box><349><215><708><575></box><|im_end|>",
+      "pred_box_norm": [
+        349,
+        215,
+        708,
+        575
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7072179317474365,
+      "iou": 0.9861420612813371,
+      "center_l1": 0.5
+    },
+    {
+      "id": 8,
+      "kind": "shape",
+      "object": "crimson hexagon",
+      "prompt": "Locate the crimson hexagon.",
+      "gt_box_norm": [
+        757,
+        141,
+        893,
+        297
+      ],
+      "answer": "<ref>Locate hex hexagon</ref><box><753><137><897><300></box><|im_end|>",
+      "pred_box_norm": [
+        753,
+        137,
+        897,
+        300
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7242794036865234,
+      "iou": 0.9038854805725971,
+      "center_l1": 0.5
+    },
+    {
+      "id": 9,
+      "kind": "shape",
+      "object": "red circle",
+      "prompt": "Locate the red circle.",
+      "gt_box_norm": [
+        116,
+        562,
+        374,
+        819
+      ],
+      "answer": "<ref>Locate red red circle</ref><box><113><557><378><823></box><|im_end|>",
+      "pred_box_norm": [
+        113,
+        557,
+        378,
+        823
+      ],
+      "valid": true,
+      "elapsed_sec": 2.739058256149292,
+      "iou": 0.9406440629876578,
+      "center_l1": 1.0
+    },
+    {
+      "id": 10,
+      "kind": "shape",
+      "object": "blue circle",
+      "prompt": "Locate the blue circle.",
+      "gt_box_norm": [
+        473,
+        451,
+        711,
+        689
+      ],
+      "answer": "<ref>Locate blue blue</ref><box><471><450><716><692></box><|im_end|>",
+      "pred_box_norm": [
+        471,
+        450,
+        716,
+        692
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7035162448883057,
+      "iou": 0.9553719008264463,
+      "center_l1": 2.5
+    },
+    {
+      "id": 11,
+      "kind": "shape",
+      "object": "purple triangle",
+      "prompt": "Locate the purple triangle.",
+      "gt_box_norm": [
+        453,
+        205,
+        596,
+        328
+      ],
+      "answer": "<ref>purpleate triangle purple</ref><box><444><201><601><332></box><|im_end|>",
+      "pred_box_norm": [
+        444,
+        201,
+        601,
+        332
+      ],
+      "valid": true,
+      "elapsed_sec": 2.708627462387085,
+      "iou": 0.8552049399523508,
+      "center_l1": 2.0
+    },
+    {
+      "id": 12,
+      "kind": "shape",
+      "object": "olive triangle",
+      "prompt": "Locate the olive triangle.",
+      "gt_box_norm": [
+        442,
+        233,
+        614,
+        383
+      ],
+      "answer": "<ref>ol olive triangle</ref><box><438><233><616><386></box><|im_end|>",
+      "pred_box_norm": [
+        438,
+        233,
+        616,
+        386
+      ],
+      "valid": true,
+      "elapsed_sec": 2.747788906097412,
+      "iou": 0.9473452302269222,
+      "center_l1": 2.5
+    },
+    {
+      "id": 13,
+      "kind": "shape",
+      "object": "purple hexagon",
+      "prompt": "Locate the purple hexagon.",
+      "gt_box_norm": [
+        243,
+        606,
+        510,
+        915
+      ],
+      "answer": "<ref>Locate hex purple</ref><box><238><604><515><918></box><|im_end|>",
+      "pred_box_norm": [
+        238,
+        604,
+        515,
+        918
+      ],
+      "valid": true,
+      "elapsed_sec": 2.72615122795105,
+      "iou": 0.9485502080985997,
+      "center_l1": 0.5
+    },
+    {
+      "id": 14,
+      "kind": "shape",
+      "object": "yellow square",
+      "prompt": "Locate the yellow square.",
+      "gt_box_norm": [
+        73,
+        461,
+        272,
+        660
+      ],
+      "answer": "<ref>yellow square</ref><box><72><461><273><662></box><|im_end|>",
+      "pred_box_norm": [
+        72,
+        461,
+        273,
+        662
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7089319229125977,
+      "iou": 0.9801985099378728,
+      "center_l1": 1.0
+    },
+    {
+      "id": 15,
+      "kind": "shape",
+      "object": "purple square",
+      "prompt": "Locate the purple square.",
+      "gt_box_norm": [
+        525,
+        562,
+        881,
+        918
+      ],
+      "answer": "<ref>purple square</ref> purple</ref><box><521><562><882><919></box><|im_end|>",
+      "pred_box_norm": [
+        521,
+        562,
+        882,
+        919
+      ],
+      "valid": true,
+      "elapsed_sec": 2.758929967880249,
+      "iou": 0.9833872607214631,
+      "center_l1": 2.0
+    },
+    {
+      "id": 16,
+      "kind": "shape",
+      "object": "green triangle",
+      "prompt": "Locate the green triangle.",
+      "gt_box_norm": [
+        388,
+        578,
+        659,
+        812
+      ],
+      "answer": "<ref>Loc the</ref><box><387><575><662><815></box><|im_end|>",
+      "pred_box_norm": [
+        387,
+        575,
+        662,
+        815
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7414495944976807,
+      "iou": 0.9608181818181818,
+      "center_l1": 1.0
+    },
+    {
+      "id": 17,
+      "kind": "shape",
+      "object": "green hexagon",
+      "prompt": "Locate the green hexagon.",
+      "gt_box_norm": [
+        145,
+        392,
+        304,
+        575
+      ],
+      "answer": "<ref>Locate hex hex</ref><box><142><391><307><578></box><|im_end|>",
+      "pred_box_norm": [
+        142,
+        391,
+        307,
+        578
+      ],
+      "valid": true,
+      "elapsed_sec": 2.727130174636841,
+      "iou": 0.9430238210986874,
+      "center_l1": 1.0
+    },
+    {
+      "id": 18,
+      "kind": "shape",
+      "object": "green hexagon",
+      "prompt": "Locate the green hexagon.",
+      "gt_box_norm": [
+        159,
+        259,
+        430,
+        571
+      ],
+      "answer": "<ref>Loc hex hex green</ref><box><158><256><433><575></box><|im_end|>",
+      "pred_box_norm": [
+        158,
+        256,
+        433,
+        575
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7106447219848633,
+      "iou": 0.9638301510401824,
+      "center_l1": 1.5
+    },
+    {
+      "id": 19,
+      "kind": "shape",
+      "object": "crimson square",
+      "prompt": "Locate the crimson square.",
+      "gt_box_norm": [
+        140,
+        279,
+        329,
+        469
+      ],
+      "answer": "<ref>crquare square</ref><box><137><279><331><470></box><|im_end|>",
+      "pred_box_norm": [
+        137,
+        279,
+        331,
+        470
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7367913722991943,
+      "iou": 0.9691261402277757,
+      "center_l1": 1.0
+    },
+    {
+      "id": 20,
+      "kind": "shape",
+      "object": "red square",
+      "prompt": "Locate the red square.",
+      "gt_box_norm": [
+        444,
+        621,
+        696,
+        873
+      ],
+      "answer": "<ref>red the</ref> red square</ref><box><434><620><700><876></box><|im_end|>",
+      "pred_box_norm": [
+        434,
+        620,
+        700,
+        876
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7593812942504883,
+      "iou": 0.9325657894736842,
+      "center_l1": 4.0
+    },
+    {
+      "id": 21,
+      "kind": "shape",
+      "object": "yellow circle",
+      "prompt": "Locate the yellow circle.",
+      "gt_box_norm": [
+        291,
+        573,
+        656,
+        938
+      ],
+      "answer": "<ref>Locate yellow yellow</ref><box><289><572><659><941></box><|im_end|>",
+      "pred_box_norm": [
+        289,
+        572,
+        659,
+        941
+      ],
+      "valid": true,
+      "elapsed_sec": 2.74253511428833,
+      "iou": 0.9757928660367685,
+      "center_l1": 1.5
+    },
+    {
+      "id": 22,
+      "kind": "shape",
+      "object": "green circle",
+      "prompt": "Locate the green circle.",
+      "gt_box_norm": [
+        399,
+        125,
+        769,
+        494
+      ],
+      "answer": "<ref>Loc the green green</ref><box><397><122><771><497></box><|im_end|>",
+      "pred_box_norm": [
+        397,
+        122,
+        771,
+        497
+      ],
+      "valid": true,
+      "elapsed_sec": 2.727430582046509,
+      "iou": 0.973475935828877,
+      "center_l1": 0.0
+    },
+    {
+      "id": 23,
+      "kind": "shape",
+      "object": "pink hexagon",
+      "prompt": "Locate the pink hexagon.",
+      "gt_box_norm": [
+        181,
+        461,
+        402,
+        717
+      ],
+      "answer": "<ref>pinkate hex hexagon</ref><box><179><460><404><720></box><|im_end|>",
+      "pred_box_norm": [
+        179,
+        460,
+        404,
+        720
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7672178745269775,
+      "iou": 0.9671111111111111,
+      "center_l1": 1.0
+    },
+    {
+      "id": 24,
+      "kind": "shape",
+      "object": "pink square",
+      "prompt": "Locate the pink square.",
+      "gt_box_norm": [
+        428,
+        361,
+        775,
+        709
+      ],
+      "answer": "<ref>pink the pink pink</ref><box><427><361><776><710></box><|im_end|>",
+      "pred_box_norm": [
+        427,
+        361,
+        776,
+        710
+      ],
+      "valid": true,
+      "elapsed_sec": 2.8300840854644775,
+      "iou": 0.991420431687753,
+      "center_l1": 0.5
+    },
+    {
+      "id": 25,
+      "kind": "letter",
+      "object": "letter O",
+      "prompt": "Locate the letter O.",
+      "gt_box_norm": [
+        513,
+        312,
+        838,
+        603
+      ],
+      "answer": "<ref>letter the O</ref><box><502><362><838><678></box><|im_end|>",
+      "pred_box_norm": [
+        502,
+        362,
+        838,
+        678
+      ],
+      "valid": true,
+      "elapsed_sec": 2.770564079284668,
+      "iou": 0.6397742309640109,
+      "center_l1": 68.0
+    },
+    {
+      "id": 26,
+      "kind": "letter",
+      "object": "letter S",
+      "prompt": "Locate the letter S.",
+      "gt_box_norm": [
+        401,
+        110,
+        672,
+        395
+      ],
+      "answer": "<ref>letter</ref><box><398><163><673><485></box><|im_end|>",
+      "pred_box_norm": [
+        398,
+        163,
+        673,
+        485
+      ],
+      "valid": true,
+      "elapsed_sec": 2.781400442123413,
+      "iou": 0.6109237899973764,
+      "center_l1": 72.5
+    },
+    {
+      "id": 27,
+      "kind": "letter",
+      "object": "letter X",
+      "prompt": "Locate the letter X.",
+      "gt_box_norm": [
+        539,
+        382,
+        825,
+        652
+      ],
+      "answer": "<ref>letter</ref><box><537><437><838><770></box><|im_end|>",
+      "pred_box_norm": [
+        537,
+        437,
+        838,
+        770
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7519094944000244,
+      "iou": 0.5302553400653657,
+      "center_l1": 92.0
+    },
+    {
+      "id": 28,
+      "kind": "letter",
+      "object": "letter D",
+      "prompt": "Locate the letter D.",
+      "gt_box_norm": [
+        317,
+        279,
+        773,
+        680
+      ],
+      "answer": "<ref>letter the</ref><box><337><387><772><815></box><|im_end|>",
+      "pred_box_norm": [
+        337,
+        387,
+        772,
+        815
+      ],
+      "valid": true,
+      "elapsed_sec": 2.757133722305298,
+      "iou": 0.5275870205024402,
+      "center_l1": 131.0
+    },
+    {
+      "id": 29,
+      "kind": "letter",
+      "object": "letter Q",
+      "prompt": "Locate the letter Q.",
+      "gt_box_norm": [
+        641,
+        265,
+        957,
+        596
+      ],
+      "answer": "<ref>letter</ref><box><631><303><970><704></box><|im_end|>",
+      "pred_box_norm": [
+        631,
+        303,
+        970,
+        704
+      ],
+      "valid": true,
+      "elapsed_sec": 2.8004374504089355,
+      "iou": 0.6258187053471851,
+      "center_l1": 74.5
+    },
+    {
+      "id": 30,
+      "kind": "letter",
+      "object": "letter O",
+      "prompt": "Locate the letter O.",
+      "gt_box_norm": [
+        115,
+        545,
+        434,
+        827
+      ],
+      "answer": "<ref>letter the O</ref><box><98><593><438><901></box><|im_end|>",
+      "pred_box_norm": [
+        98,
+        593,
+        438,
+        901
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7669148445129395,
+      "iou": 0.6218841642228738,
+      "center_l1": 67.5
+    },
+    {
+      "id": 31,
+      "kind": "letter",
+      "object": "letter R",
+      "prompt": "Locate the letter R.",
+      "gt_box_norm": [
+        109,
+        110,
+        471,
+        452
+      ],
+      "answer": "<ref>letter</ref><box><0><0><1000><1000></box><|im_end|>",
+      "pred_box_norm": [
+        0,
+        0,
+        1000,
+        1000
+      ],
+      "valid": true,
+      "elapsed_sec": 2.8597474098205566,
+      "iou": 0.123804,
+      "center_l1": 429.0
+    },
+    {
+      "id": 32,
+      "kind": "letter",
+      "object": "letter G",
+      "prompt": "Locate the letter G.",
+      "gt_box_norm": [
+        369,
+        434,
+        832,
+        860
+      ],
+      "answer": "<ref>letter</ref><box><372><513><838><1000></box><|im_end|>",
+      "pred_box_norm": [
+        372,
+        513,
+        838,
+        1000
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7963874340057373,
+      "iou": 0.6033413970365891,
+      "center_l1": 114.0
+    },
+    {
+      "id": 33,
+      "kind": "letter",
+      "object": "letter E",
+      "prompt": "Locate the letter E.",
+      "gt_box_norm": [
+        424,
+        168,
+        771,
+        537
+      ],
+      "answer": "<ref>E</ref><box><440><244><776><669></box><|im_end|>",
+      "pred_box_norm": [
+        440,
+        244,
+        776,
+        669
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7667031288146973,
+      "iou": 0.5578223858276774,
+      "center_l1": 114.5
+    },
+    {
+      "id": 34,
+      "kind": "letter",
+      "object": "letter I",
+      "prompt": "Locate the letter I.",
+      "gt_box_norm": [
+        698,
+        218,
+        895,
+        603
+      ],
+      "answer": "<ref>letter</ref><box><737><300><878><737></box><|im_end|>",
+      "pred_box_norm": [
+        737,
+        300,
+        878,
+        737
+      ],
+      "valid": true,
+      "elapsed_sec": 2.757258176803589,
+      "iou": 0.450954728253412,
+      "center_l1": 119.0
+    },
+    {
+      "id": 35,
+      "kind": "letter",
+      "object": "letter E",
+      "prompt": "Locate the letter E.",
+      "gt_box_norm": [
+        492,
+        287,
+        828,
+        646
+      ],
+      "answer": "<ref>letter</ref><box><513><369><820><766></box><|im_end|>",
+      "pred_box_norm": [
+        513,
+        369,
+        820,
+        766
+      ],
+      "valid": true,
+      "elapsed_sec": 2.771965742111206,
+      "iou": 0.5400535995529137,
+      "center_l1": 107.5
+    },
+    {
+      "id": 36,
+      "kind": "letter",
+      "object": "letter Q",
+      "prompt": "Locate the letter Q.",
+      "gt_box_norm": [
+        493,
+        371,
+        923,
+        820
+      ],
+      "answer": "<ref>letter the letter Q</ref><box><500><437><922><923></box><|im_end|>",
+      "pred_box_norm": [
+        500,
+        437,
+        922,
+        923
+      ],
+      "valid": true,
+      "elapsed_sec": 2.792861223220825,
+      "iou": 0.6833040213751818,
+      "center_l1": 87.5
+    },
+    {
+      "id": 37,
+      "kind": "letter",
+      "object": "letter D",
+      "prompt": "Locate the letter D.",
+      "gt_box_norm": [
+        403,
+        253,
+        810,
+        609
+      ],
+      "answer": "<ref>letter the</ref><box><416><333><815><744></box><|im_end|>",
+      "pred_box_norm": [
+        416,
+        333,
+        815,
+        744
+      ],
+      "valid": true,
+      "elapsed_sec": 2.771075963973999,
+      "iou": 0.5433478067523746,
+      "center_l1": 116.5
+    },
+    {
+      "id": 38,
+      "kind": "letter",
+      "object": "letter N",
+      "prompt": "Locate the letter N.",
+      "gt_box_norm": [
+        440,
+        397,
+        762,
+        678
+      ],
+      "answer": "<ref>N</ref><box><454><437><767><775></box><|im_end|>",
+      "pred_box_norm": [
+        454,
+        437,
+        767,
+        775
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7811007499694824,
+      "iou": 0.6081869428421605,
+      "center_l1": 78.0
+    },
+    {
+      "id": 39,
+      "kind": "letter",
+      "object": "letter K",
+      "prompt": "Locate the letter K.",
+      "gt_box_norm": [
+        438,
+        247,
+        854,
+        624
+      ],
+      "answer": "<ref>letter the</ref><box><464><350><868><733></box><|im_end|>",
+      "pred_box_norm": [
+        464,
+        350,
+        868,
+        733
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7928149700164795,
+      "iou": 0.5220220415819916,
+      "center_l1": 126.0
+    },
+    {
+      "id": 40,
+      "kind": "letter",
+      "object": "letter X",
+      "prompt": "Locate the letter X.",
+      "gt_box_norm": [
+        79,
+        188,
+        380,
+        473
+      ],
+      "answer": "<ref>letter</ref><box><0><233><407><575></box><|im_end|>",
+      "pred_box_norm": [
+        0,
+        233,
+        407,
+        575
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7912847995758057,
+      "iou": 0.47296368314575843,
+      "center_l1": 99.5
+    },
+    {
+      "id": 41,
+      "kind": "letter",
+      "object": "letter X",
+      "prompt": "Locate the letter X.",
+      "gt_box_norm": [
+        295,
+        140,
+        667,
+        491
+      ],
+      "answer": "<ref>letter</ref><box><271><210><728><625></box><|im_end|>",
+      "pred_box_norm": [
+        271,
+        210,
+        728,
+        625
+      ],
+      "valid": true,
+      "elapsed_sec": 2.8001129627227783,
+      "iou": 0.48462875820023643,
+      "center_l1": 120.5
+    },
+    {
+      "id": 42,
+      "kind": "letter",
+      "object": "letter G",
+      "prompt": "Locate the letter G.",
+      "gt_box_norm": [
+        382,
+        379,
+        777,
+        743
+      ],
+      "answer": "<ref>letter</ref><box><378><437><782><857></box><|im_end|>",
+      "pred_box_norm": [
+        378,
+        437,
+        782,
+        857
+      ],
+      "valid": true,
+      "elapsed_sec": 2.783384084701538,
+      "iou": 0.6276026792668363,
+      "center_l1": 86.5
+    },
+    {
+      "id": 43,
+      "kind": "letter",
+      "object": "letter R",
+      "prompt": "Locate the letter R.",
+      "gt_box_norm": [
+        66,
+        462,
+        376,
+        755
+      ],
+      "answer": "<ref>R R</ref><box><76><523><382><857></box><|im_end|>",
+      "pred_box_norm": [
+        76,
+        523,
+        382,
+        857
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7955894470214844,
+      "iou": 0.5638640893108868,
+      "center_l1": 89.5
+    },
+    {
+      "id": 44,
+      "kind": "letter",
+      "object": "letter E",
+      "prompt": "Locate the letter E.",
+      "gt_box_norm": [
+        536,
+        219,
+        831,
+        533
+      ],
+      "answer": "<ref>letter</ref><box><550><282><820><640></box><|im_end|>",
+      "pred_box_norm": [
+        550,
+        282,
+        820,
+        640
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7852203845977783,
+      "iou": 0.5576859776168532,
+      "center_l1": 86.5
+    },
+    {
+      "id": 45,
+      "kind": "letter",
+      "object": "letter T",
+      "prompt": "Locate the letter T.",
+      "gt_box_norm": [
+        213,
+        520,
+        571,
+        902
+      ],
+      "answer": "<ref>letter</ref><box><191><597><574><1000></box><|im_end|>",
+      "pred_box_norm": [
+        191,
+        597,
+        574,
+        1000
+      ],
+      "valid": true,
+      "elapsed_sec": 2.801645278930664,
+      "iou": 0.6002253799851579,
+      "center_l1": 97.0
+    },
+    {
+      "id": 46,
+      "kind": "letter",
+      "object": "letter M",
+      "prompt": "Locate the letter M.",
+      "gt_box_norm": [
+        311,
+        335,
+        836,
+        720
+      ],
+      "answer": "<ref>letter</ref><box><322><437><827><847></box><|im_end|>",
+      "pred_box_norm": [
+        322,
+        437,
+        827,
+        847
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7882707118988037,
+      "iou": 0.5367497934349884,
+      "center_l1": 115.5
+    },
+    {
+      "id": 47,
+      "kind": "letter",
+      "object": "letter R",
+      "prompt": "Locate the letter R.",
+      "gt_box_norm": [
+        481,
+        604,
+        822,
+        926
+      ],
+      "answer": "<ref>R</ref><box><500><669><837><1000></box><|im_end|>",
+      "pred_box_norm": [
+        500,
+        669,
+        837,
+        1000
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7760448455810547,
+      "iou": 0.5970922471950647,
+      "center_l1": 86.5
+    },
+    {
+      "id": 48,
+      "kind": "letter",
+      "object": "letter M",
+      "prompt": "Locate the letter M.",
+      "gt_box_norm": [
+        262,
+        447,
+        805,
+        846
+      ],
+      "answer": "<ref>letter</ref><box><271><537><812><1000></box><|im_end|>",
+      "pred_box_norm": [
+        271,
+        537,
+        812,
+        1000
+      ],
+      "valid": true,
+      "elapsed_sec": 2.794265031814575,
+      "iou": 0.5461351585720243,
+      "center_l1": 130.0
+    },
+    {
+      "id": 49,
+      "kind": "letter",
+      "object": "letter P",
+      "prompt": "Locate the letter P.",
+      "gt_box_norm": [
+        617,
+        362,
+        922,
+        666
+      ],
+      "answer": "<ref>letter P</ref><box><637><417><923><766></box><|im_end|>",
+      "pred_box_norm": [
+        637,
+        417,
+        923,
+        766
+      ],
+      "valid": true,
+      "elapsed_sec": 2.8047995567321777,
+      "iou": 0.5837425659502011,
+      "center_l1": 88.0
+    }
+  ],
+  "int4_results": [
+    {
+      "id": 0,
+      "kind": "shape",
+      "object": "blue hexagon",
+      "prompt": "Locate the blue hexagon.",
+      "gt_box_norm": [
+        407,
+        102,
+        609,
+        336
+      ],
+      "answer": "<ref>Loc hex hex hex</ref><box><407><101><611><337></box><|im_end|>",
+      "pred_box_norm": [
+        407,
+        101,
+        611,
+        337
+      ],
+      "valid": true,
+      "elapsed_sec": 2.5353212356567383,
+      "iou": 0.9818045862412762,
+      "center_l1": 1.0
+    },
+    {
+      "id": 1,
+      "kind": "shape",
+      "object": "yellow square",
+      "prompt": "Locate the yellow square.",
+      "gt_box_norm": [
+        130,
+        594,
+        481,
+        945
+      ],
+      "answer": "<ref>yellow yellow square yellow</ref><box><129><593><483><947></box><|im_end|>",
+      "pred_box_norm": [
+        129,
+        593,
+        483,
+        947
+      ],
+      "valid": true,
+      "elapsed_sec": 2.537963628768921,
+      "iou": 0.9831226659006033,
+      "center_l1": 1.0
+    },
+    {
+      "id": 2,
+      "kind": "shape",
+      "object": "yellow hexagon",
+      "prompt": "Locate the yellow hexagon.",
+      "gt_box_norm": [
+        180,
+        316,
+        329,
+        488
+      ],
+      "answer": "<ref>Locate hex hex hexagon</ref><box><179><313><331><490></box><|im_end|>",
+      "pred_box_norm": [
+        179,
+        313,
+        331,
+        490
+      ],
+      "valid": true,
+      "elapsed_sec": 2.5924477577209473,
+      "iou": 0.9525721082366935,
+      "center_l1": 1.0
+    },
+    {
+      "id": 3,
+      "kind": "shape",
+      "object": "crimson hexagon",
+      "prompt": "Locate the crimson hexagon.",
+      "gt_box_norm": [
+        773,
+        502,
+        938,
+        693
+      ],
+      "answer": "<ref>Loc the hex hexagon</ref><box><772><497><945><698></box><|im_end|>",
+      "pred_box_norm": [
+        772,
+        497,
+        945,
+        698
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6095542907714844,
+      "iou": 0.9063066172030023,
+      "center_l1": 3.0
+    },
+    {
+      "id": 4,
+      "kind": "shape",
+      "object": "blue hexagon",
+      "prompt": "Locate the blue hexagon.",
+      "gt_box_norm": [
+        599,
+        548,
+        873,
+        864
+      ],
+      "answer": "<ref>Loc hex hex hexagon</ref><box><598><547><875><865></box><|im_end|>",
+      "pred_box_norm": [
+        598,
+        547,
+        875,
+        865
+      ],
+      "valid": true,
+      "elapsed_sec": 2.5965449810028076,
+      "iou": 0.9829484821651567,
+      "center_l1": 0.5
+    },
+    {
+      "id": 5,
+      "kind": "shape",
+      "object": "green hexagon",
+      "prompt": "Locate the green hexagon.",
+      "gt_box_norm": [
+        467,
+        611,
+        700,
+        881
+      ],
+      "answer": "<ref>Loc the hex hex hex</ref><box><466><611><703><883></box><|im_end|>",
+      "pred_box_norm": [
+        466,
+        611,
+        703,
+        883
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6077120304107666,
+      "iou": 0.9758935219657483,
+      "center_l1": 2.0
+    },
+    {
+      "id": 6,
+      "kind": "shape",
+      "object": "red triangle",
+      "prompt": "Locate the red triangle.",
+      "gt_box_norm": [
+        482,
+        36,
+        676,
+        203
+      ],
+      "answer": "<ref>red triangle</ref><box><481><37><684><212></box><|im_end|>",
+      "pred_box_norm": [
+        481,
+        37,
+        684,
+        212
+      ],
+      "valid": true,
+      "elapsed_sec": 2.551879644393921,
+      "iou": 0.9015929897253563,
+      "center_l1": 8.5
+    },
+    {
+      "id": 7,
+      "kind": "shape",
+      "object": "olive square",
+      "prompt": "Locate the olive square.",
+      "gt_box_norm": [
+        350,
+        216,
+        707,
+        573
+      ],
+      "answer": "<ref>ollive square</ref><box><349><216><708><574></box><|im_end|>",
+      "pred_box_norm": [
+        349,
+        216,
+        708,
+        574
+      ],
+      "valid": true,
+      "elapsed_sec": 2.554426670074463,
+      "iou": 0.9916512348080484,
+      "center_l1": 0.5
+    },
+    {
+      "id": 8,
+      "kind": "shape",
+      "object": "crimson hexagon",
+      "prompt": "Locate the crimson hexagon.",
+      "gt_box_norm": [
+        757,
+        141,
+        893,
+        297
+      ],
+      "answer": "<ref>Loc the hex hexagon</ref><box><750><137><903><303></box><|im_end|>",
+      "pred_box_norm": [
+        750,
+        137,
+        903,
+        303
+      ],
+      "valid": true,
+      "elapsed_sec": 2.630565643310547,
+      "iou": 0.8353413654618473,
+      "center_l1": 2.5
+    },
+    {
+      "id": 9,
+      "kind": "shape",
+      "object": "red circle",
+      "prompt": "Locate the red circle.",
+      "gt_box_norm": [
+        116,
+        562,
+        374,
+        819
+      ],
+      "answer": "<ref>Locate the red circle</ref><box><113><557><376><824></box><|im_end|>",
+      "pred_box_norm": [
+        113,
+        557,
+        376,
+        824
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6140995025634766,
+      "iou": 0.9442474473448114,
+      "center_l1": 0.5
+    },
+    {
+      "id": 10,
+      "kind": "shape",
+      "object": "blue circle",
+      "prompt": "Locate the blue circle.",
+      "gt_box_norm": [
+        473,
+        451,
+        711,
+        689
+      ],
+      "answer": "<ref>Locate circle blue circle</ref><box><470><450><716><694></box><|im_end|>",
+      "pred_box_norm": [
+        470,
+        450,
+        716,
+        694
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6373541355133057,
+      "iou": 0.9436891909902706,
+      "center_l1": 3.0
+    },
+    {
+      "id": 11,
+      "kind": "shape",
+      "object": "purple triangle",
+      "prompt": "Locate the purple triangle.",
+      "gt_box_norm": [
+        453,
+        205,
+        596,
+        328
+      ],
+      "answer": "<ref>purple purple</ref><box><453><205><597><331></box><|im_end|>",
+      "pred_box_norm": [
+        453,
+        205,
+        597,
+        331
+      ],
+      "valid": true,
+      "elapsed_sec": 2.5675463676452637,
+      "iou": 0.9694113756613757,
+      "center_l1": 2.0
+    },
+    {
+      "id": 12,
+      "kind": "shape",
+      "object": "olive triangle",
+      "prompt": "Locate the olive triangle.",
+      "gt_box_norm": [
+        442,
+        233,
+        614,
+        383
+      ],
+      "answer": "<ref>ol olive triangle</ref><box><441><233><616><386></box><|im_end|>",
+      "pred_box_norm": [
+        441,
+        233,
+        616,
+        386
+      ],
+      "valid": true,
+      "elapsed_sec": 2.538550615310669,
+      "iou": 0.9635854341736695,
+      "center_l1": 2.0
+    },
+    {
+      "id": 13,
+      "kind": "shape",
+      "object": "purple hexagon",
+      "prompt": "Locate the purple hexagon.",
+      "gt_box_norm": [
+        243,
+        606,
+        510,
+        915
+      ],
+      "answer": "<ref>Loc purple hex purple hexagon</ref><box><242><606><512><917></box><|im_end|>",
+      "pred_box_norm": [
+        242,
+        606,
+        512,
+        917
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6264681816101074,
+      "iou": 0.982529474812433,
+      "center_l1": 1.5
+    },
+    {
+      "id": 14,
+      "kind": "shape",
+      "object": "yellow square",
+      "prompt": "Locate the yellow square.",
+      "gt_box_norm": [
+        73,
+        461,
+        272,
+        660
+      ],
+      "answer": "<ref>yellow yellow square</ref><box><71><460><275><662></box><|im_end|>",
+      "pred_box_norm": [
+        71,
+        460,
+        275,
+        662
+      ],
+      "valid": true,
+      "elapsed_sec": 2.5675554275512695,
+      "iou": 0.9610027179188507,
+      "center_l1": 1.0
+    },
+    {
+      "id": 15,
+      "kind": "shape",
+      "object": "purple square",
+      "prompt": "Locate the purple square.",
+      "gt_box_norm": [
+        525,
+        562,
+        881,
+        918
+      ],
+      "answer": "<ref>purple purple</ref><box><525><562><882><919></box><|im_end|>",
+      "pred_box_norm": [
+        525,
+        562,
+        882,
+        919
+      ],
+      "valid": true,
+      "elapsed_sec": 2.572068214416504,
+      "iou": 0.9944056053794067,
+      "center_l1": 1.0
+    },
+    {
+      "id": 16,
+      "kind": "shape",
+      "object": "green triangle",
+      "prompt": "Locate the green triangle.",
+      "gt_box_norm": [
+        388,
+        578,
+        659,
+        812
+      ],
+      "answer": "<ref>Loc triangle</ref><box><385><575><666><822></box><|im_end|>",
+      "pred_box_norm": [
+        385,
+        575,
+        666,
+        822
+      ],
+      "valid": true,
+      "elapsed_sec": 2.5615198612213135,
+      "iou": 0.9136542423674845,
+      "center_l1": 5.5
+    },
+    {
+      "id": 17,
+      "kind": "shape",
+      "object": "green hexagon",
+      "prompt": "Locate the green hexagon.",
+      "gt_box_norm": [
+        145,
+        392,
+        304,
+        575
+      ],
+      "answer": "<ref>Loc the hex hex hex</ref><box><143><391><305><578></box><|im_end|>",
+      "pred_box_norm": [
+        143,
+        391,
+        305,
+        578
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6266040802001953,
+      "iou": 0.9604872251931076,
+      "center_l1": 1.5
+    },
+    {
+      "id": 18,
+      "kind": "shape",
+      "object": "green hexagon",
+      "prompt": "Locate the green hexagon.",
+      "gt_box_norm": [
+        159,
+        259,
+        430,
+        571
+      ],
+      "answer": "<ref>Loc hex hex hex hex</ref><box><159><258><432><574></box><|im_end|>",
+      "pred_box_norm": [
+        159,
+        258,
+        432,
+        574
+      ],
+      "valid": true,
+      "elapsed_sec": 2.606282949447632,
+      "iou": 0.9801084990958409,
+      "center_l1": 2.0
+    },
+    {
+      "id": 19,
+      "kind": "shape",
+      "object": "crimson square",
+      "prompt": "Locate the crimson square.",
+      "gt_box_norm": [
+        140,
+        279,
+        329,
+        469
+      ],
+      "answer": "<ref>cr the square</ref><box><137><278><331><472></box><|im_end|>",
+      "pred_box_norm": [
+        137,
+        278,
+        331,
+        472
+      ],
+      "valid": true,
+      "elapsed_sec": 2.5877766609191895,
+      "iou": 0.9541396535232225,
+      "center_l1": 1.5
+    },
+    {
+      "id": 20,
+      "kind": "shape",
+      "object": "red square",
+      "prompt": "Locate the red square.",
+      "gt_box_norm": [
+        444,
+        621,
+        696,
+        873
+      ],
+      "answer": "<ref>red square</ref><box><443><620><700><876></box><|im_end|>",
+      "pred_box_norm": [
+        443,
+        620,
+        700,
+        876
+      ],
+      "valid": true,
+      "elapsed_sec": 2.584327459335327,
+      "iou": 0.9652237354085603,
+      "center_l1": 2.5
+    },
+    {
+      "id": 21,
+      "kind": "shape",
+      "object": "yellow circle",
+      "prompt": "Locate the yellow circle.",
+      "gt_box_norm": [
+        291,
+        573,
+        656,
+        938
+      ],
+      "answer": "<ref>Locate yellow circle</ref><box><289><570><659><941></box><|im_end|>",
+      "pred_box_norm": [
+        289,
+        570,
+        659,
+        941
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6067168712615967,
+      "iou": 0.9705325271363007,
+      "center_l1": 0.5
+    },
+    {
+      "id": 22,
+      "kind": "shape",
+      "object": "green circle",
+      "prompt": "Locate the green circle.",
+      "gt_box_norm": [
+        399,
+        125,
+        769,
+        494
+      ],
+      "answer": "<ref>Loc the green green</ref><box><397><122><771><498></box><|im_end|>",
+      "pred_box_norm": [
+        397,
+        122,
+        771,
+        498
+      ],
+      "valid": true,
+      "elapsed_sec": 2.582242488861084,
+      "iou": 0.9708869040846513,
+      "center_l1": 0.5
+    },
+    {
+      "id": 23,
+      "kind": "shape",
+      "object": "pink hexagon",
+      "prompt": "Locate the pink hexagon.",
+      "gt_box_norm": [
+        181,
+        461,
+        402,
+        717
+      ],
+      "answer": "<ref>Loc the hex hexagon</ref><box><173><458><411><724></box><|im_end|>",
+      "pred_box_norm": [
+        173,
+        458,
+        411,
+        724
+      ],
+      "valid": true,
+      "elapsed_sec": 2.646030902862549,
+      "iou": 0.8936627282491945,
+      "center_l1": 2.5
+    },
+    {
+      "id": 24,
+      "kind": "shape",
+      "object": "pink square",
+      "prompt": "Locate the pink square.",
+      "gt_box_norm": [
+        428,
+        361,
+        775,
+        709
+      ],
+      "answer": "<ref>pink the pink pink</ref><box><427><361><777><711></box><|im_end|>",
+      "pred_box_norm": [
+        427,
+        361,
+        777,
+        711
+      ],
+      "valid": true,
+      "elapsed_sec": 2.614718198776245,
+      "iou": 0.9857632653061225,
+      "center_l1": 1.5
+    },
+    {
+      "id": 25,
+      "kind": "letter",
+      "object": "letter O",
+      "prompt": "Locate the letter O.",
+      "gt_box_norm": [
+        513,
+        312,
+        838,
+        603
+      ],
+      "answer": "<ref>letter the O</ref><box><516><371><838><697></box><|im_end|>",
+      "pred_box_norm": [
+        516,
+        371,
+        838,
+        697
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6110918521881104,
+      "iou": 0.5983835697636231,
+      "center_l1": 78.0
+    },
+    {
+      "id": 26,
+      "kind": "letter",
+      "object": "letter S",
+      "prompt": "Locate the letter S.",
+      "gt_box_norm": [
+        401,
+        110,
+        672,
+        395
+      ],
+      "answer": "<ref>letter S S</ref><box><400><151><680><478></box><|im_end|>",
+      "pred_box_norm": [
+        400,
+        151,
+        680,
+        478
+      ],
+      "valid": true,
+      "elapsed_sec": 2.620600938796997,
+      "iou": 0.6440377516533393,
+      "center_l1": 65.5
+    },
+    {
+      "id": 27,
+      "kind": "letter",
+      "object": "letter X",
+      "prompt": "Locate the letter X.",
+      "gt_box_norm": [
+        539,
+        382,
+        825,
+        652
+      ],
+      "answer": "<ref>letter</ref><box><541><437><838><756></box><|im_end|>",
+      "pred_box_norm": [
+        541,
+        437,
+        838,
+        756
+      ],
+      "valid": true,
+      "elapsed_sec": 2.598883628845215,
+      "iou": 0.5505712198948631,
+      "center_l1": 87.0
+    },
+    {
+      "id": 28,
+      "kind": "letter",
+      "object": "letter D",
+      "prompt": "Locate the letter D.",
+      "gt_box_norm": [
+        317,
+        279,
+        773,
+        680
+      ],
+      "answer": "<ref>letter the</ref><box><350><375><753><813></box><|im_end|>",
+      "pred_box_norm": [
+        350,
+        375,
+        753,
+        813
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6107256412506104,
+      "iou": 0.5198240680044829,
+      "center_l1": 121.0
+    },
+    {
+      "id": 29,
+      "kind": "letter",
+      "object": "letter Q",
+      "prompt": "Locate the letter Q.",
+      "gt_box_norm": [
+        641,
+        265,
+        957,
+        596
+      ],
+      "answer": "<ref>letter the</ref><box><641><287><1000><704></box><|im_end|>",
+      "pred_box_norm": [
+        641,
+        287,
+        1000,
+        704
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6167960166931152,
+      "iou": 0.6233059908716606,
+      "center_l1": 86.5
+    },
+    {
+      "id": 30,
+      "kind": "letter",
+      "object": "letter O",
+      "prompt": "Locate the letter O.",
+      "gt_box_norm": [
+        115,
+        545,
+        434,
+        827
+      ],
+      "answer": "<ref>letter</ref><box><106><585><437><922></box><|im_end|>",
+      "pred_box_norm": [
+        106,
+        585,
+        437,
+        922
+      ],
+      "valid": true,
+      "elapsed_sec": 2.61545991897583,
+      "iou": 0.6210269735413131,
+      "center_l1": 70.5
+    },
+    {
+      "id": 31,
+      "kind": "letter",
+      "object": "letter R",
+      "prompt": "Locate the letter R.",
+      "gt_box_norm": [
+        109,
+        110,
+        471,
+        452
+      ],
+      "answer": "<ref>letter R</ref><box><137><183><495><556></box><|im_end|>",
+      "pred_box_norm": [
+        137,
+        183,
+        495,
+        556
+      ],
+      "valid": true,
+      "elapsed_sec": 2.5976812839508057,
+      "iou": 0.5364196498937263,
+      "center_l1": 114.5
+    },
+    {
+      "id": 32,
+      "kind": "letter",
+      "object": "letter G",
+      "prompt": "Locate the letter G.",
+      "gt_box_norm": [
+        369,
+        434,
+        832,
+        860
+      ],
+      "answer": "<ref>letter G</ref><box><388><536><812><1000></box><|im_end|>",
+      "pred_box_norm": [
+        388,
+        536,
+        812,
+        1000
+      ],
+      "valid": true,
+      "elapsed_sec": 2.62091064453125,
+      "iou": 0.5353743988651509,
+      "center_l1": 121.5
+    },
+    {
+      "id": 33,
+      "kind": "letter",
+      "object": "letter E",
+      "prompt": "Locate the letter E.",
+      "gt_box_norm": [
+        424,
+        168,
+        771,
+        537
+      ],
+      "answer": "<ref>letter</ref><box><453><237><750><660></box><|im_end|>",
+      "pred_box_norm": [
+        453,
+        237,
+        750,
+        660
+      ],
+      "valid": true,
+      "elapsed_sec": 2.5991032123565674,
+      "iou": 0.541397790659521,
+      "center_l1": 100.0
+    },
+    {
+      "id": 34,
+      "kind": "letter",
+      "object": "letter I",
+      "prompt": "Locate the letter I.",
+      "gt_box_norm": [
+        698,
+        218,
+        895,
+        603
+      ],
+      "answer": "<ref>letter I</ref><box><741><324><846><710></box><|im_end|>",
+      "pred_box_norm": [
+        741,
+        324,
+        846,
+        710
+      ],
+      "valid": true,
+      "elapsed_sec": 2.617623805999756,
+      "iou": 0.33641479099678456,
+      "center_l1": 109.5
+    },
+    {
+      "id": 35,
+      "kind": "letter",
+      "object": "letter E",
+      "prompt": "Locate the letter E.",
+      "gt_box_norm": [
+        492,
+        287,
+        828,
+        646
+      ],
+      "answer": "<ref>letter</ref><box><513><375><816><757></box><|im_end|>",
+      "pred_box_norm": [
+        513,
+        375,
+        816,
+        757
+      ],
+      "valid": true,
+      "elapsed_sec": 2.649630308151245,
+      "iou": 0.5323129582450067,
+      "center_l1": 104.0
+    },
+    {
+      "id": 36,
+      "kind": "letter",
+      "object": "letter Q",
+      "prompt": "Locate the letter Q.",
+      "gt_box_norm": [
+        493,
+        371,
+        923,
+        820
+      ],
+      "answer": "<ref>letter the</ref><box><500><462><912><926></box><|im_end|>",
+      "pred_box_norm": [
+        500,
+        462,
+        912,
+        926
+      ],
+      "valid": true,
+      "elapsed_sec": 2.7534232139587402,
+      "iou": 0.6230242204594031,
+      "center_l1": 100.5
+    },
+    {
+      "id": 37,
+      "kind": "letter",
+      "object": "letter D",
+      "prompt": "Locate the letter D.",
+      "gt_box_norm": [
+        403,
+        253,
+        810,
+        609
+      ],
+      "answer": "<ref>letter the</ref></ref><box><434><350><788><724></box><|im_end|>",
+      "pred_box_norm": [
+        434,
+        350,
+        788,
+        724
+      ],
+      "valid": true,
+      "elapsed_sec": 2.61975359916687,
+      "iou": 0.49399252163231,
+      "center_l1": 110.5
+    },
+    {
+      "id": 38,
+      "kind": "letter",
+      "object": "letter N",
+      "prompt": "Locate the letter N.",
+      "gt_box_norm": [
+        440,
+        397,
+        762,
+        678
+      ],
+      "answer": "<ref>letter</ref></ref><box><459><454><746><775></box><|im_end|>",
+      "pred_box_norm": [
+        459,
+        454,
+        746,
+        775
+      ],
+      "valid": true,
+      "elapsed_sec": 2.633452892303467,
+      "iou": 0.5433355025735077,
+      "center_l1": 78.5
+    },
+    {
+      "id": 39,
+      "kind": "letter",
+      "object": "letter K",
+      "prompt": "Locate the letter K.",
+      "gt_box_norm": [
+        438,
+        247,
+        854,
+        624
+      ],
+      "answer": "<ref>letter K</ref><box><466><349><856><733></box><|im_end|>",
+      "pred_box_norm": [
+        466,
+        349,
+        856,
+        733
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6402177810668945,
+      "iou": 0.5337882456526525,
+      "center_l1": 120.5
+    },
+    {
+      "id": 40,
+      "kind": "letter",
+      "object": "letter X",
+      "prompt": "Locate the letter X.",
+      "gt_box_norm": [
+        79,
+        188,
+        380,
+        473
+      ],
+      "answer": "<ref>letter</ref><box><70><244><391><578></box><|im_end|>",
+      "pred_box_norm": [
+        70,
+        244,
+        391,
+        578
+      ],
+      "valid": true,
+      "elapsed_sec": 2.625417947769165,
+      "iou": 0.5555654066252922,
+      "center_l1": 81.5
+    },
+    {
+      "id": 41,
+      "kind": "letter",
+      "object": "letter X",
+      "prompt": "Locate the letter X.",
+      "gt_box_norm": [
+        295,
+        140,
+        667,
+        491
+      ],
+      "answer": "<ref>letter X</ref><box><293><224><678><596></box><|im_end|>",
+      "pred_box_norm": [
+        293,
+        224,
+        678,
+        596
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6305019855499268,
+      "iou": 0.5692963752665245,
+      "center_l1": 99.0
+    },
+    {
+      "id": 42,
+      "kind": "letter",
+      "object": "letter G",
+      "prompt": "Locate the letter G.",
+      "gt_box_norm": [
+        382,
+        379,
+        777,
+        743
+      ],
+      "answer": "<ref>letter</ref><box><395><440><782><844></box><|im_end|>",
+      "pred_box_norm": [
+        395,
+        440,
+        782,
+        844
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6416428089141846,
+      "iou": 0.6277510819928193,
+      "center_l1": 90.0
+    },
+    {
+      "id": 43,
+      "kind": "letter",
+      "object": "letter R",
+      "prompt": "Locate the letter R.",
+      "gt_box_norm": [
+        66,
+        462,
+        376,
+        755
+      ],
+      "answer": "<ref>letter R</ref><box><83><523><407><857></box><|im_end|>",
+      "pred_box_norm": [
+        83,
+        523,
+        407,
+        857
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6298985481262207,
+      "iou": 0.518623636224918,
+      "center_l1": 105.5
+    },
+    {
+      "id": 44,
+      "kind": "letter",
+      "object": "letter E",
+      "prompt": "Locate the letter E.",
+      "gt_box_norm": [
+        536,
+        219,
+        831,
+        533
+      ],
+      "answer": "<ref>letter</ref><box><553><281><815><637></box><|im_end|>",
+      "pred_box_norm": [
+        553,
+        281,
+        815,
+        637
+      ],
+      "valid": true,
+      "elapsed_sec": 2.649198293685913,
+      "iou": 0.5507599392715928,
+      "center_l1": 83.5
+    },
+    {
+      "id": 45,
+      "kind": "letter",
+      "object": "letter T",
+      "prompt": "Locate the letter T.",
+      "gt_box_norm": [
+        213,
+        520,
+        571,
+        902
+      ],
+      "answer": "<ref>letter T</ref><box><203><607><569><1000></box><|im_end|>",
+      "pred_box_norm": [
+        203,
+        607,
+        569,
+        1000
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6320745944976807,
+      "iou": 0.5981523460193423,
+      "center_l1": 98.5
+    },
+    {
+      "id": 46,
+      "kind": "letter",
+      "object": "letter M",
+      "prompt": "Locate the letter M.",
+      "gt_box_norm": [
+        311,
+        335,
+        836,
+        720
+      ],
+      "answer": "<ref>letter M</ref><box><344><429><811><846></box><|im_end|>",
+      "pred_box_norm": [
+        344,
+        429,
+        811,
+        846
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6421539783477783,
+      "iou": 0.52074400211521,
+      "center_l1": 114.0
+    },
+    {
+      "id": 47,
+      "kind": "letter",
+      "object": "letter R",
+      "prompt": "Locate the letter R.",
+      "gt_box_norm": [
+        481,
+        604,
+        822,
+        926
+      ],
+      "answer": "<ref>letter R</ref><box><500><672><837><1000></box><|im_end|>",
+      "pred_box_norm": [
+        500,
+        672,
+        837,
+        1000
+      ],
+      "valid": true,
+      "elapsed_sec": 2.666004180908203,
+      "iou": 0.5903139660772284,
+      "center_l1": 88.0
+    },
+    {
+      "id": 48,
+      "kind": "letter",
+      "object": "letter M",
+      "prompt": "Locate the letter M.",
+      "gt_box_norm": [
+        262,
+        447,
+        805,
+        846
+      ],
+      "answer": "<ref>letter</ref><box><295><537><812><1000></box><|im_end|>",
+      "pred_box_norm": [
+        295,
+        537,
+        812,
+        1000
+      ],
+      "valid": true,
+      "elapsed_sec": 2.6482160091400146,
+      "iou": 0.5280493770900488,
+      "center_l1": 142.0
+    },
+    {
+      "id": 49,
+      "kind": "letter",
+      "object": "letter P",
+      "prompt": "Locate the letter P.",
+      "gt_box_norm": [
+        617,
+        362,
+        922,
+        666
+      ],
+      "answer": "<ref>letter P</ref><box><635><422><917><772></box><|im_end|>",
+      "pred_box_norm": [
+        635,
+        422,
+        917,
+        772
+      ],
+      "valid": true,
+      "elapsed_sec": 2.659090518951416,
+      "iou": 0.5611848758685936,
+      "center_l1": 89.5
+    }
+  ],
+  "ts": "2026-06-09T09:24:52.307271Z"
+}
