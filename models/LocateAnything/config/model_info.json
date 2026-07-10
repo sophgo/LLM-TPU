@@ -1,0 +1,55 @@
+{
+  "model": "groxaxo/LocateAnything-3B-AutoRound-W4A16",
+  "base_model": "nvidia/LocateAnything-3B",
+  "quant_method": "AutoRound",
+  "quant_scheme": "W4A16 (per-channel symmetric 4-bit weights, BF16 activations, group_size=128)",
+  "quant_format": "AutoRound packing (qweight, scales, qzeros per QuantLinear)",
+  "pytorch_total_params": 3658_000_000,
+  "tensors_total": 1274,
+  "tensors_quantized": 756,
+  "tensors_bf16": 518,
+  "module_breakdown": {
+    "language_model.model": 938,
+    "language_model.lm_head": 1,
+    "vision_model.encoder": 326,
+    "vision_model.patch_embed": 3,
+    "mlp1.*": 6
+  },
+  "vram_allocated_gb_runtime_bf16": 7.64,
+  "vram_allocated_gb_runtime_int4": 3.54,
+  "disk_size_gb": 3.55,
+  "size_reduction_pct": 51.4,
+  "vram_reduction_pct": 53.7,
+  "block_name_to_quantize": "language_model.model.layers",
+  "quantization_config": {
+    "bits": 4,
+    "group_size": 128,
+    "sym": true,
+    "data_type": "int",
+    "quant_method": "auto-round",
+    "packing_format": "auto-round"
+  },
+  "torch_dtype_at_load": "bfloat16 (vision + projector + lm_head); int4 (Qwen2 decoder linears)",
+  "trust_remote_code": true,
+  "attn_implementation_required": "sdpa (magi backend is Ampere/Hopper-only and not used here)",
+  "calibration_data": "internal Pile/Pile-CC 128 samples, 200 iters, seqlen 2048",
+  "calibration_layers_kept_bf16": [
+    "language_model.lm_head",
+    "language_model.model.embed_tokens",
+    "language_model.model.norm",
+    "vision_model.*",
+    "mlp1.*"
+  ],
+  "layers_quantized": [
+    "language_model.model.layers.{0..35}.self_attn.{q,k,v,o}_proj",
+    "language_model.model.layers.{0..35}.mlp.{gate,up,down}_proj"
+  ],
+  "tested_with": {
+    "transformers": "4.57.1",
+    "auto_round": "0.13.0",
+    "triton": "3.2.0",
+    "tokenizers": "0.22.0",
+    "accelerate": "1.5.2",
+    "python": "3.11"
+  }
+}

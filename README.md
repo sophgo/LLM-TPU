@@ -31,7 +31,8 @@
 
 | 日期 | 更新内容 |
 | :--- | :--- |
-| 🔥 **2026.06.30** | **MiniCPM-V-4.6** 已支持 BM1684X / BM1688，Python Demo，支持图片与视频 → [查看](./models/MiniCPMV4_6/) |
+| 🔥 **2026.07.09** | **LocateAnything-3B** 已支持 BM1684X / BM1688，Python Demo，视觉定位（box / point） → [查看](./models/LocateAnything/) |
+| **2026.06.30** | **MiniCPM-V-4.6** 已支持 BM1684X / BM1688，Python Demo，支持图片与视频 → [查看](./models/MiniCPMV4_6/) |
 | **2026.05.21** | **Gemma4** 已支持 BM1684X / BM1688，Python Demo，支持图片 / 视频 / 音频 → [查看](./models/Gemma4/) |
 | **2026.04.15** | **Qwen3.5** 已支持 BM1684X / BM1688，提供 Python 与 C++ Demo，支持图片与视频 → [查看](./models/Qwen3_5/) |
 | **2025.10.15** | **Qwen3-VL** 已支持 BM1684X / BM1688，Python / C++ Demo，支持图片与视频 → [查看](./models/Qwen3_VL/) |
@@ -98,6 +99,7 @@ cd LLM-TPU
 
 | 模型 | 支持芯片 | 一键编译 | 备注 |
 | :--- | :---: | :---: | :--- |
+| [LocateAnything-3B](https://huggingface.co/NVIDIA/LocateAnything-3B) | BM1684X / 1688 | — | Python，视觉定位 box / point |
 | [Qwen3.5](https://www.modelscope.cn/collections/Qwen/Qwen35) | BM1684X / 1688 | ✅ | Python + C++，图片 / 视频 |
 | [Qwen3-VL](https://www.modelscope.cn/models/Qwen/Qwen3-VL-4B-Instruct) | BM1684X / 1688 | ✅ | Python + C++，图片 / 视频 |
 | [Qwen2.5-VL](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct-AWQ) | BM1684X / 1688 | ✅ | Python + C++ |
@@ -158,6 +160,7 @@ cd LLM-TPU
 [InternVL3](./models/InternVL3) ·
 [Janus-Pro](./models/Janus-Pro) ·
 [Llama3_2-Vision](./models/Llama3_2-Vision) ·
+[LocateAnything](./models/LocateAnything) ·
 [MiniCPM-V-2_6](./models/MiniCPM-V-2_6) ·
 [MiniCPMV4](./models/MiniCPMV4) ·
 [MiniCPMV4_6](./models/MiniCPMV4_6) ·

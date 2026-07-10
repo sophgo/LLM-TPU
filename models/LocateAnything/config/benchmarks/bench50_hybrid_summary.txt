@@ -1,0 +1,10 @@
+=== LocateAnything accuracy drop: BF16 vs INT4 (n=50) ===
+  mode=hybrid   total_wall=138.0s (parallel across 2 GPUs)
+  BF16     | n= 50 | valid=100.0% | mean_iou=0.753 | iou@0.5= 92.0% | iou@0.75= 50.0% | mean_center_l1=  56.7 (0..2000) | latency=2.75s
+  INT4     | n= 50 | valid=100.0% | mean_iou=0.754 | iou@0.5= 96.0% | iou@0.75= 50.0% | mean_center_l1=  50.2 (0..2000) | latency=2.61s
+
+  delta mean_iou : +0.002
+  delta iou@0.5  : +4.0%
+  delta iou@0.75 : +0.0%
+  delta centerL1 : -6.5 (norm 0..2000)
+  delta latency  : -0.14s
