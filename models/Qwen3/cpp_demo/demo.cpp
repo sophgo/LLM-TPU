@@ -120,7 +120,7 @@ public:
   void clear_kv();
   std::string build_prompt(std::string input_str);
   std::mt19937 sgen;
-  Qwen() : sgen(std::random_device()()){};
+  Qwen() : sgen(std::random_device()()) {};
 
 private:
   int forward_first_with_kv(std::vector<int> &tokens);
@@ -129,7 +129,9 @@ private:
                       int stage_idx = 0);
   void net_launch_decode(int block_idx, int kv_offset,
                          bm_device_mem_t &input_mem, const int *position_id,
-                         std::vector<uint16_t> &attention_mask);
+                         std::vector<uint16_t> &attention_mask,
+                         int stage_idx = 0);
+  int select_decode_stage();
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset = 0,
                   int size = 0);
   void init_by_names();
@@ -169,6 +171,7 @@ private:
   void *p_bmrt;
   std::vector<const bm_net_info_t *> net_blocks;
   std::vector<const bm_net_info_t *> net_blocks_cache;
+  std::vector<int> decode_stage_len;
   const bm_net_info_t *net_embed;
   const bm_net_info_t *net_embed_cache;
   const bm_net_info_t *net_lm, *net_greedy_head, *net_sample_head;
@@ -218,6 +221,7 @@ void Qwen::init_by_names() {
 
   NUM_LAYERS = num_blocks / 2; // 2 nets for each block, one for cache
   // net blocks
+  int decode_stage_num = 1;
   for (int i = 0; i < num_blocks / 2; i++) {
     auto block_name = "block_" + std::to_string(i);
     auto cache_name = "block_cache_" + std::to_string(i);
@@ -229,8 +233,21 @@ void Qwen::init_by_names() {
       break;
     }
     net_blocks.emplace_back(bmrt_get_network_info(p_bmrt, block_name.c_str()));
-    net_blocks_cache.emplace_back(
-        bmrt_get_network_info(p_bmrt, cache_name.c_str()));
+    auto cache_net = bmrt_get_network_info(p_bmrt, cache_name.c_str());
+    net_blocks_cache.emplace_back(cache_net);
+    if (i == 0) {
+      decode_stage_num = cache_net->stage_num;
+      for (int j = 0; j < decode_stage_num; j++) {
+        decode_stage_len.push_back(
+            cache_net->stages[j].input_shapes[3].dims[1]);
+      }
+    } else {
+      assert(decode_stage_num == cache_net->stage_num);
+      for (int j = 0; j < decode_stage_num; j++) {
+        assert(cache_net->stages[j].input_shapes[3].dims[1] ==
+               decode_stage_len[j]);
+      }
+    }
   }
   free(net_names);
   if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
@@ -407,49 +424,50 @@ void Qwen::net_launch_dyn(const bm_net_info_t *net, int real_len,
 
 void Qwen::net_launch_decode(int idx, int kv_offset, bm_device_mem_t &input_mem,
                              const int *position_id,
-                             std::vector<uint16_t> &attention_mask) {
+                             std::vector<uint16_t> &attention_mask,
+                             int stage_idx) {
   auto &net = net_blocks_cache[idx];
   std::vector<bm_tensor_t> in_tensors(5);
   std::vector<bm_tensor_t> out_tensors(3);
-  // auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
-  auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
-  auto &in2_mem = net_blocks_cache[idx]->stages[0].input_mems[2];
-  auto &in3_mem = net_blocks_cache[idx]->stages[0].input_mems[3];
-  auto &in4_mem = net_blocks_cache[idx]->stages[0].input_mems[4];
-  auto &out0_mem = net_blocks_cache[idx]->stages[0].output_mems[0];
+  // auto &in0_mem = net_blocks_cache[idx]->stages[stage_idx].input_mems[0];
+  auto &in1_mem = net_blocks_cache[idx]->stages[stage_idx].input_mems[1];
+  auto &in2_mem = net_blocks_cache[idx]->stages[stage_idx].input_mems[2];
+  auto &in3_mem = net_blocks_cache[idx]->stages[stage_idx].input_mems[3];
+  auto &in4_mem = net_blocks_cache[idx]->stages[stage_idx].input_mems[4];
+  auto &out0_mem = net_blocks_cache[idx]->stages[stage_idx].output_mems[0];
   // ===== prepare input tensors =====
   bmrt_tensor_with_device(&in_tensors[0], input_mem, net->input_dtypes[0],
-                          net->stages[0].input_shapes[0]);
+                          net->stages[stage_idx].input_shapes[0]);
   if (idx == 0) {
     bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id);
     bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     bmrt_tensor_with_device(&in_tensors[1], in1_mem, net->input_dtypes[1],
-                            net->stages[0].input_shapes[1]);
+                            net->stages[stage_idx].input_shapes[1]);
     bmrt_tensor_with_device(&in_tensors[2], in2_mem, net->input_dtypes[2],
-                            net->stages[0].input_shapes[2]);
+                            net->stages[stage_idx].input_shapes[2]);
   } else {
     bmrt_tensor_with_device(
-        &in_tensors[1], net_blocks_cache[0]->stages[0].input_mems[1],
-        net->input_dtypes[1], net->stages[0].input_shapes[1]);
+        &in_tensors[1], net_blocks_cache[0]->stages[stage_idx].input_mems[1],
+        net->input_dtypes[1], net->stages[stage_idx].input_shapes[1]);
     bmrt_tensor_with_device(
-        &in_tensors[2], net_blocks_cache[0]->stages[0].input_mems[2],
-        net->input_dtypes[2], net->stages[0].input_shapes[2]);
+        &in_tensors[2], net_blocks_cache[0]->stages[stage_idx].input_mems[2],
+        net->input_dtypes[2], net->stages[stage_idx].input_shapes[2]);
   }
   bmrt_tensor_with_device(&in_tensors[3], in3_mem, net->input_dtypes[3],
-                          net->stages[0].input_shapes[3]);
+                          net->stages[stage_idx].input_shapes[3]);
   bmrt_tensor_with_device(&in_tensors[4], in4_mem, net->input_dtypes[4],
-                          net->stages[0].input_shapes[4]);
+                          net->stages[stage_idx].input_shapes[4]);
   // ===== prepare output tensors =====
   bmrt_tensor_with_device(&out_tensors[0], out0_mem, net->output_dtypes[0],
-                          net->stages[0].output_shapes[0]);
+                          net->stages[stage_idx].output_shapes[0]);
   auto k_mem = bm_mem_from_device(
       past_key[idx].u.device.device_addr + kv_offset, kv_bytes);
   auto v_mem = bm_mem_from_device(
       past_value[idx].u.device.device_addr + kv_offset, kv_bytes);
   bmrt_tensor_with_device(&out_tensors[1], k_mem, net->output_dtypes[1],
-                          net->stages[0].output_shapes[1]);
+                          net->stages[stage_idx].output_shapes[1]);
   bmrt_tensor_with_device(&out_tensors[2], v_mem, net->output_dtypes[2],
-                          net->stages[0].output_shapes[2]);
+                          net->stages[stage_idx].output_shapes[2]);
   // ===== launch =====
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    in_tensors.size(), out_tensors.data(),
@@ -557,7 +575,7 @@ int Qwen::forward_first(std::vector<int> &tokens) {
       bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
       if (prefill_mask) {
         bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-      } 
+      }
     }
     if (is_dynamic) {
       net_launch_dyn(net_blocks[idx], token_length);
@@ -676,11 +694,30 @@ int Qwen::forward_first_with_kv(std::vector<int> &inputs) {
   return token;
 }
 
+int Qwen::select_decode_stage() {
+  if (decode_stage_len.empty()) {
+    return 0;
+  }
+  int stage_idx = 0;
+  for (auto &len : decode_stage_len) {
+    if (history_length > len) {
+      break;
+    }
+    stage_idx++;
+  }
+  if (stage_idx > 0) {
+    stage_idx--;
+  }
+  return stage_idx;
+}
+
 int Qwen::forward_next() {
   int cur_token = visited_tokens[token_length - 1];
+  int stage = select_decode_stage();
+  int real_len = decode_stage_len[stage];
 
-  std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
-  for (int i = history_length - 1; i < SEQLEN; i++) {
+  std::vector<uint16_t> attention_mask(real_len + 1, 0);
+  for (int i = history_length - 1; i < real_len; i++) {
     attention_mask[i] = mask_value;
   }
   int32_t position_id = history_length - 1;
@@ -693,8 +730,9 @@ int Qwen::forward_next() {
   // blocks
   int token_offset = (token_length - 1) * kv_bytes;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
-    net_launch_decode(idx, token_offset, out_mem, &position_id, attention_mask);
-    out_mem = net_blocks_cache[idx]->stages[0].output_mems[0];
+    net_launch_decode(idx, token_offset, out_mem, &position_id, attention_mask,
+                      stage);
+    out_mem = net_blocks_cache[idx]->stages[stage].output_mems[0];
   }
 
   // forward lmhead

@@ -49,10 +49,12 @@ private:
                   std::vector<bm_tensor_t> &out_tensors);
   void net_launch_decode(int block_idx, int kv_offset,
                          bm_device_mem_t &input_mem, const int *position_id,
-                         std::vector<uint16_t> &attention_mask);
+                         std::vector<uint16_t> &attention_mask,
+                         int stage_idx = 0);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset = 0,
                   int size = 0);
   void init_by_names();
+  int select_decode_stage();
   int forward_first_with_kv(ArrayInt const &position_ids);
   int generate(bm_device_mem_t &logits_mem);
   int greedy_search(bm_device_mem_t &logits_mem);
@@ -96,6 +98,7 @@ private:
   void *p_bmrt;
   std::vector<const bm_net_info_t *> net_blocks;
   std::vector<const bm_net_info_t *> net_blocks_cache;
+  std::vector<int> decode_stage_len;
   std::vector<const bm_net_info_t *>
       net_blocks_prompt; // first time for full attention
   const bm_net_info_t *net_embed;

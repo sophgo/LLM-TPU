@@ -21,11 +21,12 @@ static void print_devmem_info(bm_handle_t &bm_handle) {
 }
 
 void Block::net_launch_decode(int local_idx, int kv_offset, const int *pos_id,
-                              std::vector<uint16_t> &attention_mask) {
+                              std::vector<uint16_t> &attention_mask,
+                              int stage_idx) {
   auto &net = net_blocks_cache[local_idx];
   std::vector<bm_tensor_t> in_tensors;
   std::vector<bm_tensor_t> out_tensors;
-  init_tensors(net, in_tensors, out_tensors);
+  init_tensors(net, in_tensors, out_tensors, stage_idx);
   bm_memcpy_s2d(bm_handle, in_tensors[1].device_mem, (void *)pos_id);
   bm_memcpy_s2d(bm_handle, in_tensors[2].device_mem,
                 (void *)attention_mask.data());
@@ -85,8 +86,23 @@ void Block::init_by_names() {
     auto block_name = "block_" + std::to_string(i);
     auto cache_name = "block_cache_" + std::to_string(i);
     net_blocks.emplace_back(bmrt_get_network_info(p_bmrt, block_name.c_str()));
-    net_blocks_cache.emplace_back(
-        bmrt_get_network_info(p_bmrt, cache_name.c_str()));
+    auto cache_net = bmrt_get_network_info(p_bmrt, cache_name.c_str());
+    net_blocks_cache.emplace_back(cache_net);
+    if (is_FA(i)) {
+      auto decode_stage_num = cache_net->stage_num;
+      if (decode_stage_len.empty()) {
+        for (int j = 0; j < decode_stage_num; j++) {
+          decode_stage_len.push_back(
+              cache_net->stages[j].input_shapes[3].dims[1]);
+        }
+      } else {
+        assert(decode_stage_num == (int)decode_stage_len.size());
+        for (int j = 0; j < decode_stage_num; j++) {
+          assert(cache_net->stages[j].input_shapes[3].dims[1] ==
+                 decode_stage_len[j]);
+        }
+      }
+    }
   }
 
   if (net_blocks[0]->output_dtypes[0] == BM_FLOAT16) {
@@ -386,8 +402,11 @@ ArrayUint16 Block::forward_first_with_kv(ArrayInt const &position_ids,
 
 ArrayUint16 Block::forward_next(ArrayInt const &position_ids,
                                 ArrayUint16 &hidden_states) {
-  std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
-  for (int i = history_length - 1; i < SEQLEN; i++) {
+  int stage = select_decode_stage();
+  int real_len = decode_stage_len.empty() ? SEQLEN : decode_stage_len[stage];
+
+  std::vector<uint16_t> attention_mask(real_len + 1, 0);
+  for (int i = history_length - 1; i < real_len; i++) {
     attention_mask[i] = mask_value;
   }
   assert(position_ids.size() == 3);
@@ -400,24 +419,42 @@ ArrayUint16 Block::forward_next(ArrayInt const &position_ids,
   for (int idx = 0; idx < num_blocks; idx++) {
     int global_idx = start_idx + idx;
     bool fa = is_FA(global_idx);
+    int s = fa ? stage : 0;
     if (idx == 0) {
       bm_memcpy_s2d_partial(
-          bm_handle, net_blocks_cache[idx]->stages[0].input_mems[0],
+          bm_handle, net_blocks_cache[idx]->stages[s].input_mems[0],
           hidden_states.data(), hidden_states.size() * sizeof(uint16_t));
     } else {
-      d2d(bm_handle, net_blocks_cache[idx]->stages[0].input_mems[0], out_mem);
+      d2d(bm_handle, net_blocks_cache[idx]->stages[s].input_mems[0], out_mem);
     }
     if (fa) {
-      net_launch_decode(idx, token_offset, p_ids, attention_mask);
+      net_launch_decode(idx, token_offset, p_ids, attention_mask, stage);
     } else {
       init_tensors(net_blocks_cache[idx], in_tensors, out_tensors);
       net_launch(p_bmrt, net_blocks_cache[idx], in_tensors, out_tensors);
     }
-    out_mem = net_blocks_cache[idx]->stages[0].output_mems[0];
+    out_mem = net_blocks_cache[idx]->stages[s].output_mems[0];
   }
   bm_thread_sync(bm_handle);
   int out_bytes = HIDDEN_SIZE * sizeof(uint16_t);
   ArrayUint16 results(HIDDEN_SIZE);
   bm_memcpy_d2s_partial(bm_handle, results.data(), out_mem, out_bytes);
   return results;
+}
+
+int Block::select_decode_stage() {
+  if (decode_stage_len.empty()) {
+    return 0;
+  }
+  int stage_idx = 0;
+  for (auto &len : decode_stage_len) {
+    if (history_length > len) {
+      break;
+    }
+    stage_idx++;
+  }
+  if (stage_idx > 0) {
+    stage_idx--;
+  }
+  return stage_idx;
 }

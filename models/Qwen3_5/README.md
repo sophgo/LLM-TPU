@@ -113,12 +113,23 @@ cd build && cmake .. && make && cp pipeline .. && cd ..
 如下：
 ``` shell
 # 如果有提示transformers/torch版本问题，pip3 install transformers torchvision -U
-llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-2B-int4-AutoRound -s 8192 -c bm1684x --out_dir qwen3.5_kv --use_block_with_kv --prefill_chunk_length 1024
+llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-4B-int4-AutoRound -s 8192 -c bm1684x --out_dir qwen3.5_kv --use_block_with_kv --prefill_chunk_length 1024
 ```
 使用cpp_demo或者python_demo都支持。历史记录输入clear清理。
 如下：
 ```
 ./pipeline -m qwen3.5_xxxx.bmodel -c config --prompt_file story.txt --prompt "what is it talking about ?"
+```
+
+### 2. 支持decode分段
+
+当seqlen很长，比如>4K，可以做decode分段，使decode阶段按长度运行不同的指令。如下：
+``` shell
+llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-4B-int4-AutoRound -s 8192 -c bm1684x --out_dir qwen3.5_kv --decode_chunk_length 1024
+```
+可以与历史上下文的支持一起使用，如下：
+``` shell
+llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-4B-int4-AutoRound -s 8192 -c bm1684x --out_dir qwen3.5_kv --use_block_with_kv --prefill_chunk_length 1024 --decode_chunk_length 1024
 ```
 
 

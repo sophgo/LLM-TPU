@@ -125,11 +125,12 @@ void Qwen3_5::net_launch(const bm_net_info_t *net,
 
 void Qwen3_5::net_launch_decode(int idx, int kv_offset,
                                 bm_device_mem_t &input_mem, const int *pos_id,
-                                std::vector<uint16_t> &attention_mask) {
+                                std::vector<uint16_t> &attention_mask,
+                                int stage_idx) {
   auto &net = net_blocks_cache[idx];
   std::vector<bm_tensor_t> in_tensors;
   std::vector<bm_tensor_t> out_tensors;
-  init_tensors(net, in_tensors, out_tensors);
+  init_tensors(net, in_tensors, out_tensors, stage_idx);
 
   // ===== prepare input tensors =====
   in_tensors[0].device_mem = input_mem;
@@ -215,8 +216,23 @@ void Qwen3_5::init_by_names() {
       break;
     }
     net_blocks.emplace_back(bmrt_get_network_info(p_bmrt, block_name.c_str()));
-    net_blocks_cache.emplace_back(
-        bmrt_get_network_info(p_bmrt, cache_name.c_str()));
+    auto cache_net = bmrt_get_network_info(p_bmrt, cache_name.c_str());
+    net_blocks_cache.emplace_back(cache_net);
+    if (is_FA(i)) {
+      auto decode_stage_num = cache_net->stage_num;
+      if (decode_stage_len.empty()) {
+        for (int j = 0; j < decode_stage_num; j++) {
+          decode_stage_len.push_back(
+              cache_net->stages[j].input_shapes[3].dims[1]);
+        }
+      } else {
+        assert(decode_stage_num == (int)decode_stage_len.size());
+        for (int j = 0; j < decode_stage_num; j++) {
+          assert(cache_net->stages[j].input_shapes[3].dims[1] ==
+                 decode_stage_len[j]);
+        }
+      }
+    }
     if (is_FA(i) && support_history) {
       auto prompt_name = "block_prompt_" + std::to_string(i);
       net_blocks_prompt.emplace_back(
@@ -653,9 +669,29 @@ int Qwen3_5::forward_first_with_kv(ArrayInt const &position_ids) {
   return token;
 }
 
+int Qwen3_5::select_decode_stage() {
+  if (decode_stage_len.empty()) {
+    return 0;
+  }
+  int stage_idx = 0;
+  for (auto &len : decode_stage_len) {
+    if (history_length > len) {
+      break;
+    }
+    stage_idx++;
+  }
+  if (stage_idx > 0) {
+    stage_idx--;
+  }
+  return stage_idx;
+}
+
 int Qwen3_5::forward_next(ArrayInt const &position_ids) {
-  std::vector<uint16_t> attention_mask(SEQLEN + 1, 0);
-  for (int i = history_length - 1; i < SEQLEN; i++) {
+  int stage = select_decode_stage();
+  int real_len = decode_stage_len.empty() ? SEQLEN : decode_stage_len[stage];
+
+  std::vector<uint16_t> attention_mask(real_len + 1, 0);
+  for (int i = history_length - 1; i < real_len; i++) {
     attention_mask[i] = mask_value;
   }
   assert(position_ids.size() == 3);
@@ -675,13 +711,15 @@ int Qwen3_5::forward_next(ArrayInt const &position_ids) {
   int token_offset = (history_length - 1) * fa_bytes;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     if (is_FA(idx)) {
-      net_launch_decode(idx, token_offset, out_mem, p_ids, attention_mask);
+      net_launch_decode(idx, token_offset, out_mem, p_ids, attention_mask,
+                        stage);
+      out_mem = net_blocks_cache[idx]->stages[stage].output_mems[0];
     } else {
       init_tensors(net_blocks_cache[idx], in_tensors, out_tensors);
       in_tensors[0].device_mem = out_mem;
       net_launch(net_blocks_cache[idx], in_tensors, out_tensors);
+      out_mem = net_blocks_cache[idx]->stages[0].output_mems[0];
     }
-    out_mem = net_blocks_cache[idx]->stages[0].output_mems[0];
   }
 
   // forward lmhead

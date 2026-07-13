@@ -32,9 +32,11 @@ public:
 private:
   void init_by_names();
   void net_launch_decode(int local_idx, int kv_offset, const int *position_id,
-                         std::vector<uint16_t> &attention_mask);
+                         std::vector<uint16_t> &attention_mask,
+                         int stage_idx = 0);
   ArrayUint16 forward_first_with_kv(ArrayInt const &position_ids,
                                     ArrayUint16 &hidden_states);
+  int select_decode_stage();
 
 public:
   int token_length;
@@ -56,6 +58,7 @@ private:
   void *p_bmrt;
   std::vector<const bm_net_info_t *> net_blocks;
   std::vector<const bm_net_info_t *> net_blocks_cache;
+  std::vector<int> decode_stage_len;
   // prompt net used for the first FA layer prefill when no history (optional,
   // present only when support_history == true). Indexed by local idx, nullptr
   // for non-FA layers.
