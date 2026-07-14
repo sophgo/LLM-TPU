@@ -323,13 +323,15 @@ class Qwen3_VL():
 
         inputs = self.process(messages, media_type)
         token_len = inputs.input_ids.numel()
-        if token_len > self.model.MAX_INPUT_LENGTH:
+        max_input_tokens = self.model.SEQLEN if self.model.support_history \
+            else self.model.MAX_INPUT_LENGTH
+        if token_len > max_input_tokens:
             if media_type in ["image", "video"]:
                 print("grid_thw:{}".format(inputs.image_grid_thw if media_type ==
                                            "image" else inputs.video_grid_thw))
             print(
                 "Error: The maximum question length should be shorter than {} but we get {} instead."
-                .format(self.model.MAX_INPUT_LENGTH, token_len))
+                .format(max_input_tokens, token_len))
             return None
         if self.support_history:
             if (token_len + self.model.history_length > self.model.SEQLEN - 128) or \

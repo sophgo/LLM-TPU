@@ -63,14 +63,14 @@ If --do_sample was enabled during compilation, you can also add --do_sample at r
 
 ### 1. Support for history context
 
-By default, the model does not support history context; you need to add the `--use_block_with_kv` parameter;
-you need to specify the maximum input length `--max_input_length`; if not specified, it defaults to 1/4 of seq_length;
-you need to specify the maximum input kv length `--max_prefill_kv_length`; if not specified, it defaults to seq_length.
+By default, the model does not support history context; you need to add the `--use_history_kv` parameter;
+you need to specify the prefill chunk length `--chunk_length`; if not specified, it defaults to 1/4 of seq_length;
+the history KV length is fixed at seq_length.
 
 As follows:
 ``` shell
 # If you are prompted about a transformers version issue, run pip3 install transformers -U
-llm_convert.py -m /workspace/InternVL3-2B-AWQ -s 8192 -q w4bf16 -c bm1684x --out_dir internvl3_2b_kv --use_block_with_kv --max_input_length 2048
+llm_convert.py -m /workspace/InternVL3-2B-AWQ -s 8192 -q w4bf16 -c bm1684x --out_dir internvl3_2b_kv --use_history_kv --chunk_length 2048
 ```
 
 

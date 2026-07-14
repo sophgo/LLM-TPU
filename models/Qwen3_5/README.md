@@ -106,14 +106,14 @@ cd build && cmake .. && make && cp pipeline .. && cd ..
 
 ### 1. Support for historical context
 
-By default, the model does not support historical context; the `--use_block_with_kv` parameter is required;
-specify the maximum length processed per prefill with `--prefill_chunk_length`; if not specified, it defaults to 1/4 of seq_length. When the actual input exceeds it, multiple prefill runs are performed;
-specify the maximum input KV length with `--max_prefill_kv_length`; if not specified, it defaults to seq_length.
+By default, the model does not support historical context; the `--use_history_kv` parameter is required;
+specify the maximum length processed per prefill with `--chunk_length`; if not specified, it defaults to 1/4 of seq_length. When the actual input exceeds it, multiple prefill runs are performed;
+the history KV length is fixed at seq_length.
 
 As follows:
 ``` shell
 # If you get transformers/torch version issues, run pip3 install transformers torchvision -U
-llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-4B-int4-AutoRound -s 8192 -c bm1684x --out_dir qwen3.5_kv --use_block_with_kv --prefill_chunk_length 1024
+llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-4B-int4-AutoRound -s 8192 -c bm1684x --out_dir qwen3.5_kv --use_history_kv --chunk_length 1024
 ```
 Both cpp_demo and python_demo support it. Type clear to clear the history.
 As follows:
@@ -125,11 +125,11 @@ As follows:
 
 When seqlen is very long, for example > 4K, decode can be split into stages so that the decode phase runs different instructions by length. As follows:
 ``` shell
-llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-4B-int4-AutoRound -s 8192 -c bm1684x --out_dir qwen3.5_kv --decode_chunk_length 1024
+llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-4B-int4-AutoRound -s 8192 -c bm1684x --out_dir qwen3.5_kv --chunk_length 1024
 ```
 It can be used together with historical context support, as follows:
 ``` shell
-llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-4B-int4-AutoRound -s 8192 -c bm1684x --out_dir qwen3.5_kv --use_block_with_kv --prefill_chunk_length 1024 --decode_chunk_length 1024
+llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-4B-int4-AutoRound -s 8192 -c bm1684x --out_dir qwen3.5_kv --use_history_kv --chunk_length 1024
 ```
 
 

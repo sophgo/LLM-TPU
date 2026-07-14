@@ -132,25 +132,24 @@ void Block::init_by_names() {
         std::to_string(FA_INTERVAL) + "-th layer)");
   }
 
-  // support_history is enabled by the bmodel when
-  // block_prompt_<first_fa_global> exists. The prompt net is the first-time
-  // full-attention prefill path that allocates a fresh KV cache (no history
-  // input).
-  std::string prompt_name =
-      "block_prompt_" + std::to_string(start_idx + first_fa_local);
-  support_history = is_exist(prompt_name);
+  // support_history is enabled by the bmodel when block_kv_<first_fa_global>
+  // exists. The kv net is the full-attention prefill that concatenates history
+  // K/V; the fresh first-time prefill uses block_ (no history input).
+  std::string kv_name =
+      "block_kv_" + std::to_string(start_idx + first_fa_local);
+  support_history = is_exist(kv_name);
 
-  // Load prompt nets for FA layers (nullptr for non-FA layers).
-  net_blocks_prompt.assign(num_blocks, nullptr);
+  // Load kv nets for FA layers (nullptr for non-FA layers).
+  net_blocks_kv.assign(num_blocks, nullptr);
   if (support_history) {
     for (int i = 0; i < num_blocks; i++) {
       int global_idx = start_idx + i;
       if (!is_FA(global_idx)) {
         continue;
       }
-      auto name = "block_prompt_" + std::to_string(global_idx);
+      auto name = "block_kv_" + std::to_string(global_idx);
       if (is_exist(name)) {
-        net_blocks_prompt[i] = bmrt_get_network_info(p_bmrt, name.c_str());
+        net_blocks_kv[i] = bmrt_get_network_info(p_bmrt, name.c_str());
       }
     }
   }
@@ -165,8 +164,9 @@ void Block::init_by_names() {
   KV_BYTES = bm_mem_get_device_size(fa_cache->stages[0].output_mems[1]);
   PREFILL_KV_LENGTH = 0;
   if (support_history) {
-    PREFILL_KV_LENGTH = fa_block->stages[0].input_shapes[3].dims[1];
-    printf("History Support: True (block_prompt detected)\n");
+    PREFILL_KV_LENGTH =
+        net_blocks_kv[first_fa_local]->stages[0].input_shapes[3].dims[1];
+    printf("History Support: True (block_kv detected)\n");
   } else {
     printf("History Support: False\n");
   }
@@ -332,9 +332,9 @@ ArrayUint16 Block::forward_first_with_kv(ArrayInt const &position_ids,
     for (int idx = 0; idx < num_blocks; idx++) {
       int global_idx = start_idx + idx;
       bool fa = is_FA(global_idx);
-      bool use_prompt =
-          fa && old_length == 0 && t == 0 && net_blocks_prompt[idx] != nullptr;
-      auto &net = use_prompt ? net_blocks_prompt[idx] : net_blocks[idx];
+      // Fresh first-time prefill uses block_ (no history); subsequent chunks
+      // concatenate history K/V via block_kv_.
+      auto &net = (old_kvlen > 0 && fa) ? net_blocks_kv[idx] : net_blocks[idx];
       init_tensors(net, in_tensors, out_tensors);
       out_tensors[0].device_mem = out_mem;
 

@@ -59,10 +59,11 @@ private:
   std::vector<const bm_net_info_t *> net_blocks;
   std::vector<const bm_net_info_t *> net_blocks_cache;
   std::vector<int> decode_stage_len;
-  // prompt net used for the first FA layer prefill when no history (optional,
-  // present only when support_history == true). Indexed by local idx, nullptr
-  // for non-FA layers.
-  std::vector<const bm_net_info_t *> net_blocks_prompt;
+  // kv net used for the full-attention prefill that concatenates history K/V
+  // (block_kv_, optional, present only when support_history == true). The
+  // fresh first-time prefill reuses block_ (net_blocks). Indexed by local idx,
+  // nullptr for non-FA layers.
+  std::vector<const bm_net_info_t *> net_blocks_kv;
   // KV cache (or conv/recurrent state for non-FA layers); indexed by local idx.
   bm_device_mem_t dev_buffer;
   std::vector<bm_device_mem_t> past_key;

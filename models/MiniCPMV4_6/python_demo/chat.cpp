@@ -250,9 +250,9 @@ void MiniCPMV4_6::init_by_names() {
     num_extra++;
   }
 
-  // Detect history support via block_prompt networks
-  std::string prompt_name = "block_prompt_" + std::to_string(FA_INTERVAL - 1);
-  if (is_exist(prompt_name.c_str(), net_names, num_nets)) {
+  // Detect history support via block_kv networks
+  std::string kv_name = "block_kv_" + std::to_string(FA_INTERVAL - 1);
+  if (is_exist(kv_name.c_str(), net_names, num_nets)) {
     support_history = true;
   } else {
     support_history = false;
@@ -268,7 +268,12 @@ void MiniCPMV4_6::init_by_names() {
 
   // net blocks
   for (int i = 0; i < NUM_LAYERS; i++) {
-    auto block_name = "block_" + std::to_string(i);
+    // With history, full-attention layers use the history block (block_kv_);
+    // linear-attention layers always use block_. Without history, all layers
+    // use block_.
+    std::string block_name = (is_FA(i) && support_history)
+                                 ? ("block_kv_" + std::to_string(i))
+                                 : ("block_" + std::to_string(i));
     auto cache_name = "block_cache_" + std::to_string(i);
     if ((!is_exist(block_name.c_str(), net_names, num_nets)) ||
         (!is_exist(cache_name.c_str(), net_names, num_nets))) {
@@ -281,7 +286,8 @@ void MiniCPMV4_6::init_by_names() {
     net_blocks_cache.emplace_back(
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
     if (is_FA(i) && support_history) {
-      auto prompt_name = "block_prompt_" + std::to_string(i);
+      // The full-attention prompt block is the normal prefill block (block_).
+      auto prompt_name = "block_" + std::to_string(i);
       net_blocks_prompt.emplace_back(
           bmrt_get_network_info(p_bmrt, prompt_name.c_str()));
     }

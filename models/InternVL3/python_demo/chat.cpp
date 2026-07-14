@@ -77,6 +77,7 @@ public:
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
   void net_launch_block_dyn(const bm_net_info_t *net, int real_len);
+  void net_launch_kv_dyn(const bm_net_info_t *net, int real_len, int kv_len);
   void net_launch_decode(int block_idx, int kv_offset,
                          bm_device_mem_t &input_mem, const int *position_id,
                          std::vector<uint16_t> &attention_mask);
@@ -116,6 +117,7 @@ private:
   void *p_bmrt;
   std::vector<const bm_net_info_t *> net_blocks;
   std::vector<const bm_net_info_t *> net_blocks_cache;
+  std::vector<const bm_net_info_t *> net_blocks_kv;
   const bm_net_info_t *net_vit;
   const bm_net_info_t *net_embed, *net_embed_cache;
   const bm_net_info_t *net_lm, *net_greedy_head, *net_sample_head;
@@ -165,6 +167,36 @@ void InternVL3::net_launch_block_dyn(const bm_net_info_t *net, int real_len) {
     in_tensors[2].shape.dims[2] = real_len;
     in_tensors[2].shape.dims[3] = real_len;
   }
+
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
+                                   net->input_num, out_tensors.data(),
+                                   net->output_num, true, false);
+  assert(ret);
+  // bm_thread_sync(bm_handle);
+}
+
+void InternVL3::net_launch_kv_dyn(const bm_net_info_t *net, int real_len,
+                                  int kv_len) {
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  for (int i = 0; i < net->input_num; i++) {
+    bmrt_tensor_with_device(&in_tensors[i], net->stages[0].input_mems[i],
+                            net->input_dtypes[i],
+                            net->stages[0].input_shapes[i]);
+  }
+  for (int i = 0; i < net->output_num; i++) {
+    bmrt_tensor_with_device(&out_tensors[i], net->stages[0].output_mems[i],
+                            net->output_dtypes[i],
+                            net->stages[0].output_shapes[i]);
+  }
+
+  // block_kv_ inputs: [hidden, position_ids, history_k, history_v]; the
+  // causal mask over history + chunk is baked into the net (--dynamic)
+  in_tensors[0].shape.dims[1] = real_len;
+  in_tensors[1].shape.dims[1] = real_len;
+  in_tensors[2].shape.dims[1] = kv_len;
+  in_tensors[3].shape.dims[1] = kv_len;
 
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
@@ -332,6 +364,10 @@ void InternVL3::init_by_names() {
     net_blocks.emplace_back(bmrt_get_network_info(p_bmrt, block_name.c_str()));
     net_blocks_cache.emplace_back(
         bmrt_get_network_info(p_bmrt, cache_name.c_str()));
+    auto kv_name = "block_kv_" + std::to_string(i);
+    if (is_exist(kv_name.c_str(), net_names, num_nets)) {
+      net_blocks_kv.emplace_back(bmrt_get_network_info(p_bmrt, kv_name.c_str()));
+    }
   }
   free(net_names);
   KV_BYTES =
@@ -343,12 +379,12 @@ void InternVL3::init_by_names() {
   SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[3].dims[1];
   is_dynamic = net_blocks[0]->is_dynamic;
   prefill_mask = net_blocks[0]->input_num > 2; // with prefill attention mask
-  support_history = net_blocks[0]->input_num == 5; // with kv cache
+  support_history = !net_blocks_kv.empty(); // with kv cache
   history_length = 0;
   printf("Num Layers:%d\n", NUM_LAYERS);
   PREFILL_KV_LENGTH = 0;
   if (support_history) {
-    PREFILL_KV_LENGTH = net_blocks[0]->stages[0].input_shapes[3].dims[1];
+    PREFILL_KV_LENGTH = net_blocks_kv[0]->stages[0].input_shapes[3].dims[1];
     printf("History Support: True\n");
   } else {
     printf("History Support: False\n");
@@ -546,7 +582,6 @@ int InternVL3::forward_first() {
 }
 
 int InternVL3::forward_first_with_kv() {
-  int max_kv_length = MAX_INPUT_LENGTH + PREFILL_KV_LENGTH;
   auto old_length = history_length;
   history_length += token_length;
   assert(history_length < SEQLEN);
@@ -555,44 +590,35 @@ int InternVL3::forward_first_with_kv() {
   for (int i = 0; i < token_length; i++) {
     position_id[i] = i + old_length;
   }
-  std::vector<uint16_t> attention_mask(MAX_INPUT_LENGTH * max_kv_length,
-                                       mask_value);
-  for (int i = 0; i < token_length; i++) {
-    for (int j = 0; j < old_length; j++) {
-      attention_mask[i * max_kv_length + j] = 0;
-    }
-    for (int j = 0; j <= i; j++) {
-      attention_mask[i * max_kv_length + j + PREFILL_KV_LENGTH] = 0;
-    }
-  }
 
   int bytes = HIDDEN_SIZE * sizeof(uint16_t);
   // forward blocks
   auto out_mem = dev_buffer;
-  empty_net(bm_handle, net_blocks[0]);
+  empty_net(bm_handle, net_blocks_kv[0]);
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
-    auto &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
-    auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
-    auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
-    auto &in3_mem = net_blocks[idx]->stages[0].input_mems[3];
-    auto &in4_mem = net_blocks[idx]->stages[0].input_mems[4];
+    // with history, prefill goes through block_kv_ (history K/V inputs at
+    // index 2/3, mask baked into the net); the first turn uses the fresh
+    // block_ which has no history inputs
+    auto &net = old_length > 0 ? net_blocks_kv[idx] : net_blocks[idx];
+    auto &in0_mem = net->stages[0].input_mems[0];
+    auto &in1_mem = net->stages[0].input_mems[1];
 
     d2d(in0_mem, out_mem);
     bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
-    bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
     if (old_length > 0) {
-      bm_memcpy_d2d_byte(bm_handle, in3_mem, 0, past_key[idx], 0,
+      auto &in2_mem = net->stages[0].input_mems[2];
+      auto &in3_mem = net->stages[0].input_mems[3];
+      bm_memcpy_d2d_byte(bm_handle, in2_mem, 0, past_key[idx], 0,
                          KV_BYTES * old_length);
-      bm_memcpy_d2d_byte(bm_handle, in4_mem, 0, past_value[idx], 0,
+      bm_memcpy_d2d_byte(bm_handle, in3_mem, 0, past_value[idx], 0,
                          KV_BYTES * old_length);
-    } else if (idx == 0) {
-      empty(bm_handle, in3_mem);
-      empty(bm_handle, in4_mem);
+      net_launch_kv_dyn(net, token_length, old_length);
+    } else {
+      net_launch_block_dyn(net, token_length);
     }
-    net_launch(net_blocks[idx]);
-    out_mem = net_blocks[idx]->stages[0].output_mems[0];
-    auto &out1_mem = net_blocks[idx]->stages[0].output_mems[1];
-    auto &out2_mem = net_blocks[idx]->stages[0].output_mems[2];
+    out_mem = net->stages[0].output_mems[0];
+    auto &out1_mem = net->stages[0].output_mems[1];
+    auto &out2_mem = net->stages[0].output_mems[2];
     bm_memcpy_d2d_byte(bm_handle, past_key[idx], old_length * KV_BYTES,
                        out1_mem, 0, KV_BYTES * token_length);
     bm_memcpy_d2d_byte(bm_handle, past_value[idx], old_length * KV_BYTES,

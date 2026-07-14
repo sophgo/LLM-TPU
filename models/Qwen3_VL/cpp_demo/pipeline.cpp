@@ -745,9 +745,11 @@ void ChatPipe::run_once(const std::string &input_str_in,
     }
     std::string sentence_input = build_image_prompt(input_str, grid_thws);
     std::vector<int> tokens = encode_input(sentence_input);
-    if ((int)(tokens.size()) > model.MAX_INPUT_LENGTH) {
-      std::cerr << "Input tokens exceed maximum length: "
-                << model.MAX_INPUT_LENGTH << std::endl;
+    int max_input_tokens =
+        model.support_history ? model.SEQLEN : model.MAX_INPUT_LENGTH;
+    if ((int)(tokens.size()) > max_input_tokens) {
+      std::cerr << "Input tokens exceed maximum length: " << max_input_tokens
+                << std::endl;
       return;
     }
     input_token_num = tokens.size();
@@ -795,9 +797,11 @@ void ChatPipe::run_once(const std::string &input_str_in,
     std::string sentence_input =
         build_video_prompt(input_str, config.grid_thw, timestamps);
     std::vector<int> tokens = encode_input(sentence_input);
-    if ((int)(tokens.size()) > model.MAX_INPUT_LENGTH) {
-      std::cerr << "Input tokens exceed maximum length: "
-                << model.MAX_INPUT_LENGTH << std::endl;
+    int max_input_tokens =
+        model.support_history ? model.SEQLEN : model.MAX_INPUT_LENGTH;
+    if ((int)(tokens.size()) > max_input_tokens) {
+      std::cerr << "Input tokens exceed maximum length: " << max_input_tokens
+                << std::endl;
       return;
     }
     input_token_num = tokens.size();
@@ -831,9 +835,11 @@ void ChatPipe::run_once(const std::string &input_str_in,
   case TEXT: {
     std::string sentence_input = build_text_prompt(input_str);
     std::vector<int> tokens = encode_input(sentence_input);
-    if ((int)(tokens.size()) > model.MAX_INPUT_LENGTH) {
-      std::cerr << "Input tokens exceed maximum length: "
-                << model.MAX_INPUT_LENGTH << std::endl;
+    int max_input_tokens =
+        model.support_history ? model.SEQLEN : model.MAX_INPUT_LENGTH;
+    if ((int)(tokens.size()) > max_input_tokens) {
+      std::cerr << "Input tokens exceed maximum length: " << max_input_tokens
+                << std::endl;
       return;
     }
     input_token_num = tokens.size();

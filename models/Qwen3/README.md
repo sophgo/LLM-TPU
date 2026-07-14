@@ -80,12 +80,12 @@ In addition, if the specified seqlen is relatively long, e.g. 8K, you can compil
 llm_convert.py -m /workspace/Qwen3-4B-AWQ -s 8192 --quantize w4f16 -c bm1684x --dynamic --out_dir qwen3_4b
 ```
 
-History can be saved with KV Cache (the original approach uses tokens for history) by specifying `--use_block_with_kv`; also specify `--max_input_length`, e.g. 512.
-When max_input_length is not long, the first-token latency of every conversation turn stays low, unaffected by the history length.
+History can be saved with KV Cache (the original approach uses tokens for history) by specifying `--use_history_kv`; also specify `--chunk_length`, e.g. 512.
+When chunk_length is not long, the first-token latency of every conversation turn stays low, unaffected by the history length.
 As follows:
 ``` shell
 # If prompted about a transformers version issue, run: pip3 install transformers -U
-llm_convert.py -m /workspace/Qwen3-4B-AWQ -s 8192 --quantize w4f16 -c bm1684x --use_block_with_kv --max_input_length 512 --out_dir qwen3_4b_kv
+llm_convert.py -m /workspace/Qwen3-4B-AWQ -s 8192 --quantize w4f16 -c bm1684x --use_history_kv --chunk_length 512 --out_dir qwen3_4b_kv
 ```
 
 ## Build and run the program

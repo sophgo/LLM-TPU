@@ -193,9 +193,11 @@ void Qwen3_5::init_by_names() {
     net_sample_head = bmrt_get_network_info(p_bmrt, "sample_head");
     num_blocks--; // sample_head is not a block
   }
-  std::string prompt_name = "block_prompt_" + std::to_string(FA_INTERVAL - 1);
-  if (is_exist(prompt_name.c_str(), net_names, num_nets)) {
+  std::string kv_name = "block_kv_" + std::to_string(FA_INTERVAL - 1);
+  if (is_exist(kv_name.c_str(), net_names, num_nets)) {
     support_history = true;
+  } else {
+    support_history = false;
   }
   // 2 nets for each block, one for cache
   if (support_history) {
@@ -206,13 +208,15 @@ void Qwen3_5::init_by_names() {
 
   // net blocks
   for (int i = 0; i < NUM_LAYERS; i++) {
-    auto block_name = "block_" + std::to_string(i);
+    // net_blocks always holds the fresh prefill net (block_); the history
+    // variant (block_kv_) is collected into net_blocks_kv below.
+    std::string block_name = "block_" + std::to_string(i);
     auto cache_name = "block_cache_" + std::to_string(i);
     if ((!is_exist(block_name.c_str(), net_names, num_nets)) ||
         (!is_exist(cache_name.c_str(), net_names, num_nets))) {
       NUM_LAYERS = i;
-      printf("Warning: Only %d blocks found, expected %d blocks.\n", NUM_LAYERS,
-             num_blocks / 2);
+      printf("Warning: Only %d blocks found, total %d blocks.\n", NUM_LAYERS,
+             num_blocks);
       break;
     }
     net_blocks.emplace_back(bmrt_get_network_info(p_bmrt, block_name.c_str()));
@@ -233,10 +237,14 @@ void Qwen3_5::init_by_names() {
         }
       }
     }
-    if (is_FA(i) && support_history) {
-      auto prompt_name = "block_prompt_" + std::to_string(i);
-      net_blocks_prompt.emplace_back(
-          bmrt_get_network_info(p_bmrt, prompt_name.c_str()));
+    if (support_history) {
+      auto kv_name = "block_kv_" + std::to_string(i);
+      if (is_FA(i)) {
+        net_blocks_kv.emplace_back(
+            bmrt_get_network_info(p_bmrt, kv_name.c_str()));
+      } else {
+        net_blocks_kv.emplace_back(nullptr);
+      }
     }
   }
   free(net_names);
@@ -267,7 +275,7 @@ void Qwen3_5::init_by_names() {
   PREFILL_KV_LENGTH = 0;
   if (support_history) {
     PREFILL_KV_LENGTH =
-        net_blocks[FA_INTERVAL - 1]->stages[0].input_shapes[3].dims[1];
+        net_blocks_kv[FA_INTERVAL - 1]->stages[0].input_shapes[3].dims[1];
     printf("History Support: True\n");
   } else {
     printf("History Support: False\n");
@@ -590,9 +598,8 @@ int Qwen3_5::forward_first_with_kv(ArrayInt const &position_ids) {
 
     assert(old_length <= PREFILL_KV_LENGTH);
     for (int idx = 0; idx < NUM_LAYERS; idx++) {
-      auto &net = (is_FA(idx) && old_length == 0 && t == 0)
-                      ? net_blocks_prompt[idx / FA_INTERVAL]
-                      : net_blocks[idx];
+      auto fa = is_FA(idx);
+      auto &net = (old_kvlen > 0 && fa) ? net_blocks_kv[idx] : net_blocks[idx];
       init_tensors(net, in_tensors, out_tensors);
       out_tensors[0].device_mem = out_mem;
 
@@ -606,7 +613,7 @@ int Qwen3_5::forward_first_with_kv(ArrayInt const &position_ids) {
         d2d(in_tensors[0].device_mem, out_mem, 0,
             cur_len * HIDDEN_SIZE * sizeof(uint16_t));
       }
-      if (is_FA(idx)) {
+      if (fa) {
         bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
                               (void *)(pos_ids.data()),
                               cur_len * 3 * sizeof(int));
@@ -635,7 +642,7 @@ int Qwen3_5::forward_first_with_kv(ArrayInt const &position_ids) {
       }
 
       net_launch(net, in_tensors, out_tensors);
-      if (is_FA(idx)) {
+      if (fa) {
         size_t offset = old_kvlen * KV_BYTES;
         bm_memcpy_d2d_byte(bm_handle, past_key[idx], offset,
                            net->stages[0].output_mems[1], 0,

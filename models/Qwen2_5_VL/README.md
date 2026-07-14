@@ -108,14 +108,14 @@ cd build && cmake .. && make && cp pipeline .. && cd ..
 
 ### 1. Support for historical context
 
-By default, the model does not support historical context; the `--use_block_with_kv` parameter is required;
-you need to specify the maximum input length `--max_input_length`; if not specified, it defaults to 1/4 of seq_length;
-you need to specify the maximum input KV length `--max_prefill_kv_length`; if not specified, it defaults to seq_length.
+By default, the model does not support historical context; the `--use_history_kv` parameter is required;
+you need to specify the prefill chunk length `--chunk_length`; if not specified, it defaults to 1/4 of seq_length;
+the history KV length is fixed at seq_length.
 
 As follows:
 ``` shell
 # If you get transformers version issues, run pip3 install transformers -U
-llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 4096 --quantize w4f16  -c bm1684x --out_dir qwen2.5vl_3b --max_pixels 672,896 --use_block_with_kv --max_input_length 1024
+llm_convert.py -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ -s 4096 --quantize w4f16  -c bm1684x --out_dir qwen2.5vl_3b --max_pixels 672,896 --use_history_kv --chunk_length 1024
 ```
 Both cpp_demo and python_demo support it. Type clear to clear the history. The result is as follows:
 

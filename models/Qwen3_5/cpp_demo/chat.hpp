@@ -97,10 +97,9 @@ private:
   bm_handle_t bm_handle;
   void *p_bmrt;
   std::vector<const bm_net_info_t *> net_blocks;
+  std::vector<const bm_net_info_t *> net_blocks_kv;
   std::vector<const bm_net_info_t *> net_blocks_cache;
   std::vector<int> decode_stage_len;
-  std::vector<const bm_net_info_t *>
-      net_blocks_prompt; // first time for full attention
   const bm_net_info_t *net_embed;
   const bm_net_info_t *net_embed_cache;
   const bm_net_info_t *net_lm;

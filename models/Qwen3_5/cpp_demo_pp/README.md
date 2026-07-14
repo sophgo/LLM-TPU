@@ -146,12 +146,12 @@ in `cpp_demo/pipeline.cpp`.
 
 ### Long Text / Chunk Prefill
 
-When the bmodel is exported with `--use_block_with_kv` (i.e. with history support),
+When the bmodel is exported with `--use_history_kv` (i.e. with history support),
 `cpp_demo_pp` supports **chunk prefill**: when the input exceeds the length of a single prefill chunk
-(`prefill_chunk_length`, defaulting to `seq_length / 4`), it is automatically processed in segments,
+(`chunk_length`, defaulting to `seq_length / 4`), it is automatically processed in segments,
 thus supporting long-text input far beyond `MAX_INPUT_LENGTH`.
 
-If a `block_prompt_<idx>` network is detected at startup, `History Support: True` is printed.
+If a `block_kv_<idx>` network is detected at startup, `History Support: True` is printed.
 
 | Parameter | Description |
 | --- | --- |
@@ -209,6 +209,6 @@ Each Block bmodel must contain at least one FA layer, otherwise `Block` cannot i
 | `bmodel not found for component …` | The filename lacks the `embed_vit` / `block` / `lmhead` substring; regenerate with the latest `_pp_combine` |
 | `bmrt_load_bmodel ... NOT_INITIALIZED` | The card specified by `-d` is occupied or in Fault state; check with `bm-smi` |
 | `History Support: False` (informational message) | The current `_pp_combine` output does not include history-with-kv, which is normal; long text requires a bmodel with KV |
-| Long-text input reports `exceed maximum length` | Only bmodels exported with `--use_block_with_kv` + `--prefill_chunk_length` support chunk prefill |
+| Long-text input reports `exceed maximum length` | Only bmodels exported with `--use_history_kv` + `--chunk_length` support chunk prefill |
 | Cannot find `libbmrt.so` / `libbmlib.so` | `export LD_LIBRARY_PATH=/opt/sophon/libsophon-current/lib:$LD_LIBRARY_PATH` |
 | Stuck during the loading phase | The card is in Fault state; switch to another set of device ids or restart the driver |
