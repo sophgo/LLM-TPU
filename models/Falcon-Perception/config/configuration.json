@@ -1,0 +1,1 @@
+{"framework": "pytorch", "task": "mask-generation", "allow_remote": true}

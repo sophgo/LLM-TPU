@@ -31,6 +31,7 @@
 
 | 日期 | 更新内容 |
 | :--- | :--- |
+| 🔥 **2026.07.16** | **Falcon-Perception** 已支持 BM1684X，Python Demo，referring segmentation（box + mask） → [查看](./models/Falcon-Perception/) |
 | 🔥 **2026.07.09** | **LocateAnything-3B** 已支持 BM1684X / BM1688，Python Demo，视觉定位（box / point） → [查看](./models/LocateAnything/) |
 | **2026.06.30** | **MiniCPM-V-4.6** 已支持 BM1684X / BM1688，Python Demo，支持图片与视频 → [查看](./models/MiniCPMV4_6/) |
 | **2026.05.21** | **Gemma4** 已支持 BM1684X / BM1688，Python Demo，支持图片 / 视频 / 音频 → [查看](./models/Gemma4/) |
@@ -99,6 +100,7 @@ cd LLM-TPU
 
 | 模型 | 支持芯片 | 一键编译 | 备注 |
 | :--- | :---: | :---: | :--- |
+| [Falcon-Perception](https://huggingface.co/tiiuae/falcon-perception) | BM1684X | — | Python，referring segmentation box + mask |
 | [LocateAnything-3B](https://huggingface.co/NVIDIA/LocateAnything-3B) | BM1684X / 1688 | — | Python，视觉定位 box / point |
 | [Qwen3.5](https://www.modelscope.cn/collections/Qwen/Qwen35) | BM1684X / 1688 | ✅ | Python + C++，图片 / 视频 |
 | [Qwen3-VL](https://www.modelscope.cn/models/Qwen/Qwen3-VL-4B-Instruct) | BM1684X / 1688 | ✅ | Python + C++，图片 / 视频 |
@@ -153,6 +155,7 @@ cd LLM-TPU
 
 **多模态 (Vision / Video / Audio)**：
 [DriveMM](./models/DriveMM) ·
+[Falcon-Perception](./models/Falcon-Perception) ·
 [Gemma3](./models/Gemma3) ·
 [Gemma4](./models/Gemma4) ·
 [GLM4V](./models/GLM4V) ·
