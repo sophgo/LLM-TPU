@@ -1,10 +1,10 @@
 # Qwen3_5
 
-本工程实现BM1684X/BM1688部署多模态大模型[Qwen3.5](https://www.modelscope.cn/collections/Qwen/Qwen35)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并将其部署到PCIE环境，或者SoC环境。
+This project demonstrates deploying the multimodal large model [Qwen3.5](https://www.modelscope.cn/collections/Qwen/Qwen35) on BM1684X/BM1688. The model is converted into a bmodel using the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) compiler and deployed to a PCIE environment or an SoC environment.
 
-该模型可以用于图片或者视频的识别，有python和cpp两个版本的demo。
+This model can be used for image or video recognition, and demos are provided in both python and cpp versions.
 
-本文包括如何编译bmodel，和如何在BM1684X/BM1688环境运行bmodel。如何编译bmodel环节可以省去，直接用以下链接下载：
+This document covers how to compile the bmodel and how to run the bmodel in BM1684X/BM1688 environments. The bmodel compilation step can be skipped by downloading directly from the following links:
 
 ``` shell
 # =============== 1684x =====================
@@ -12,7 +12,7 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-4b-int4-autoround_w4bf16_seq2048_bm1684x_1dev_dynamic_20260416_144422.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-9b-int4-autoround_w4bf16_seq2048_bm1684x_1dev_dynamic_20260416_150658.bmodel
 
-# 支持8K，支持历史上下文
+# Supports 8K and historical context
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-4b-int4-autoround_w4bf16_seq8192_bm1684x_1dev_dynamic_20260622_175403.bmodel
 
 # =============== 1688 ======================
@@ -22,20 +22,20 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5
 ```
 
 
-## 编译LLM模型
+## Compile the LLM model
 
-此处介绍如何将LLM编译成bmodel。
+This section describes how to compile the LLM into a bmodel.
 
-#### 1. 从ModelScope下载`Qwen3.5-2B`
+#### 1. Download `Qwen3.5-2B` from ModelScope
 
-(比较大，会花费较长时间. 请下载awq或者gptq量化的版本，或者自行量化)
+(The file is large and will take a long time. Please download an AWQ or GPTQ quantized version, or quantize it yourself.)
 
 ``` shell
-# 下载2B模型
+# Download the 2B model
 git clone https://huggingface.co/Intel/Qwen3.5-2B-int4-AutoRound
 ```
 
-#### 2. 下载docker，启动容器
+#### 2. Download docker and start the container
 
 ``` shell
 docker pull sophgo/tpuc_dev:latest
@@ -43,39 +43,39 @@ docker pull sophgo/tpuc_dev:latest
 # myname1234 is just an example, you can set your own name
 docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev:latest
 ```
-后文假定环境都在docker的`/workspace`目录。
+The following assumes that the environment is in the docker `/workspace` directory.
 
-#### 2. 下载`TPU-MLIR`代码并编译
+#### 2. Download the `TPU-MLIR` code and compile it
 
-(也可以直接下载编译好的release包解压)
+(You can also directly download and extract a prebuilt release package.)
 
 ``` shell
 cd /workspace
 git clone git@github.com:sophgo/tpu-mlir.git
 cd tpu-mlir
-source ./envsetup.sh  #激活环境变量
-./build.sh #编译mlir
+source ./envsetup.sh  # activate environment variables
+./build.sh # compile mlir
 ```
 
-#### 3. 编译模型生成bmodel
+#### 3. Compile the model to generate the bmodel
 
 ``` shell
-# 如果有提示transformers/torch版本问题，pip3 install transformers torchvision -U
-# 这里max_input_length指定最大输入长度，如果不指定则为-s指定的长度
+# If you get transformers/torch version issues, run pip3 install transformers torchvision -U
+# Here max_input_length specifies the maximum input length; if not specified, it defaults to the length specified by -s
 llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-2B-int4-AutoRound --max_input_length 1024  -s 2048  -c bm1684x --out_dir qwen3.5  --max_pixels 768,768
 ```
-编译完成后，在指定目录`qwen3.5`生成`qwen3.5-2b-xxx.bmodel`和`config`
+After compilation, `qwen3.5-2b-xxx.bmodel` and `config` are generated in the specified directory `qwen3.5`.
 
-## 编译与运行程序(python)
+## Compile and run the program (python)
 
-* 环境准备
-> （python_demo运行之前都需要执行这个）
+* Environment preparation
+> (This must be done before running python_demo.)
 ``` shell
-# 如果不是python3.10，参考"常见问题"配置环境
+# If it is not python3.10, refer to "FAQ" to configure the environment
 pip3 install torchvision transformers qwen_vl_utils
 ```
 
-编译库文件，生成`chat.cpython*.so`文件，将该文件拷贝到`pipeline.py`文件目录
+Compile the library files to generate the `chat.cpython*.so` file, then copy it to the `pipeline.py` directory.
 
 ``` shell
 cd python_demo
@@ -85,13 +85,13 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 # run demo
 python3 pipeline.py -m xxxx.bmodel -c config 
 ```
-model为实际的model储存路径；config_path为配置文件路径。
+model is the actual model storage path; config_path is the configuration file path.
 
-运行效果如下：
+The running result is as follows:
 
 ![](../../assets/qwen3.5.png)
 
-## 编译和运行程序(cpp)
+## Compile and run the program (cpp)
 
 ``` shell
 cd cpp_demo
@@ -102,42 +102,42 @@ cd build && cmake .. && make && cp pipeline .. && cd ..
 ./pipeline -m xxx.bmodel -c config
 ```
 
-## 进阶应用
+## Advanced usage
 
-### 1. 支持历史上下文
+### 1. Support for historical context
 
-默认情况下模型是不支持历史上下文，需要加上`--use_block_with_kv`参数；
-指定prefill每次处理的最大长度`--prefill_chunk_length`，不指定时默认是seq_length的1/4，当实际输入大于它时会进行多段prefill运行；
-指定输入最大kv长度`--max_prefill_kv_length`, 不指定时默认是seq_length.
+By default, the model does not support historical context; the `--use_block_with_kv` parameter is required;
+specify the maximum length processed per prefill with `--prefill_chunk_length`; if not specified, it defaults to 1/4 of seq_length. When the actual input exceeds it, multiple prefill runs are performed;
+specify the maximum input KV length with `--max_prefill_kv_length`; if not specified, it defaults to seq_length.
 
-如下：
+As follows:
 ``` shell
-# 如果有提示transformers/torch版本问题，pip3 install transformers torchvision -U
+# If you get transformers/torch version issues, run pip3 install transformers torchvision -U
 llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-4B-int4-AutoRound -s 8192 -c bm1684x --out_dir qwen3.5_kv --use_block_with_kv --prefill_chunk_length 1024
 ```
-使用cpp_demo或者python_demo都支持。历史记录输入clear清理。
-如下：
+Both cpp_demo and python_demo support it. Type clear to clear the history.
+As follows:
 ```
 ./pipeline -m qwen3.5_xxxx.bmodel -c config --prompt_file story.txt --prompt "what is it talking about ?"
 ```
 
-### 2. 支持decode分段
+### 2. Support for multi-stage decode
 
-当seqlen很长，比如>4K，可以做decode分段，使decode阶段按长度运行不同的指令。如下：
+When seqlen is very long, for example > 4K, decode can be split into stages so that the decode phase runs different instructions by length. As follows:
 ``` shell
 llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-4B-int4-AutoRound -s 8192 -c bm1684x --out_dir qwen3.5_kv --decode_chunk_length 1024
 ```
-可以与历史上下文的支持一起使用，如下：
+It can be used together with historical context support, as follows:
 ``` shell
 llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-4B-int4-AutoRound -s 8192 -c bm1684x --out_dir qwen3.5_kv --use_block_with_kv --prefill_chunk_length 1024 --decode_chunk_length 1024
 ```
 
 
-## 常见问题
+## FAQ
 
-#### SoC如何配置python3.10环境 ?
+#### How to configure a python3.10 environment on SoC?
 
-安装过程如下：
+The installation process is as follows:
 
 ``` shell
 sudo add-apt-repository ppa:deadsnakes/ppa
@@ -145,48 +145,48 @@ sudo apt update
 sudo apt install python3.10 python3.10-dev
 ```
 
-python虚拟环境配置：
+Python virtual environment configuration:
 
 ``` shell
 cd /data
-# 创建虚拟环境（不包含 pip）
+# Create a virtual environment (without pip)
 python3.10 -m venv --without-pip myenv
 
-# 进入虚拟环境
+# Enter the virtual environment
 source myenv/bin/activate
 
-# 手动安装 pip
+# Install pip manually
 curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
 python get-pip.py
 rm get-pip.py
 
-# 安装依赖库
+# Install dependency libraries
 pip3 install torchvision pillow  transformers qwen_vl_utils -U
 
 ```
 
-#### 一张图片占多少Token ?
+#### How many tokens does one image occupy?
 
-计算公式 $ token数 = 长 × 宽 ÷ 32 ÷ 32 $
-比如768x768尺寸图片占token数为576 token
+Formula: $ tokens = height × width ÷ 32 ÷ 32 $
+For example, a 768x768 image occupies 576 tokens.
 
-#### 视频占多少Token ?
+#### How many tokens does a video occupy?
 
-本例中视频尺寸默认为图片的1/4，比如768x768情况下取尺寸384x384，也就是每两帧(`temporal_patch_size`)占144个token。
+In this example, the video size defaults to 1/4 of the image size. For example, in the 768x768 case, the size 384x384 is used, which means every two frames (`temporal_patch_size`) occupy 144 tokens.
 
-默认每秒1帧。
+The default is 1 frame per second.
 
-20秒视频取20帧，总token数为 $ 144 × 20 ÷ 2 = 1440 $
+A 20-second video takes 20 frames, for a total of $ 144 × 20 ÷ 2 = 1440 $ tokens.
 
-#### 如何量化模型 ？
+#### How to quantize the model?
 
-可以使用Huggingface官方量化工具：
+You can use HuggingFace official quantization tools:
 
 * [AutoAWQ](https://huggingface.co/docs/transformers/main/en/quantization/awq)
 
 * [AutoGPTQ](https://huggingface.co/docs/transformers/main/en/quantization/gptq)
 
-也可以找网上量化好的模型，比如：
+You can also find pre-quantized models online, for example:
 
 * https://huggingface.co/Intel/Qwen3.5-2B-int4-AutoRound
 

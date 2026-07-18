@@ -1,11 +1,11 @@
 # Qwen2.5
 
-本工程实现BM1684X/BM1688部署大模型[Qwen2.5](https://huggingface.co/Qwen/Qwen2.5-3B-Instruct)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到PCIE环境，或者SoC环境。
+This project implements the deployment of the large model [Qwen2.5](https://huggingface.co/Qwen/Qwen2.5-3B-Instruct) on BM1684X/BM1688. The model is converted into a bmodel via the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) compiler, and deployed to a PCIE environment or a SoC environment using C++ code.
 
 
-本文包括如何编译bmodel，和如何在BM1684X/BM1688环境运行bmodel。编译LLM环节可以省去，直接用以下链接下载：
+This document covers how to compile the bmodel and how to run the bmodel in the BM1684X/BM1688 environment. The LLM compilation step can be skipped; download directly using the following links:
 
-### Qwen2.5系列
+### Qwen2.5 series
 
 ``` shell
 # qwen2.5-1.5b 2k
@@ -31,7 +31,7 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwq-32b
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwq-32b-awq_w4bf16_seq16384_bm1684x_4dev_20250430_163346.bmodel
 ```
 
-### deepseek-r1-distill-qwen系列
+### deepseek-r1-distill-qwen series
 
 ``` shell
 # deepseek-r1-distill-qwen-1.5b
@@ -46,35 +46,35 @@ unzip deepseek-r1-distill-qwen-7b.zip
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-distill-qwen-14b-seq512.zip
 unzip deepseek-r1-distill-qwen-14b-seq512.zip
 
-# deepseek-r1-distill-qwen-32b 多芯
+# deepseek-r1-distill-qwen-32b multi-chip
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-distill-qwen-32b-seq2048-4dev.zip
 unzip deepseek-r1-distill-qwen-32b-seq2048-4dev.zip
 
-# deepseek-r1-distill-qwen-32b 多芯
+# deepseek-r1-distill-qwen-32b multi-chip
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/deepseek-r1-distill-qwen-32b-seq4096-4dev.zip
 unzip deepseek-r1-distill-qwen-32b-seq4096-4dev.zip
 
 ```
 
-## 编译LLM模型
+## Compile the LLM Model
 
 ``` shell
 llm_convert.py -m /workspace/Qwen2.5-3B-Instruct -s 512 --quantize w4bf16 -c bm1684x --out_dir qwen2.5_3b
 ```
-编译完成后，在指定目录`qwen2.5_3b`生成`qwen2.5-3b_xxx.bmodel`和`config`，其中config包含原始配置文件以及分词器等等
+After compilation, `qwen2.5-3b_xxx.bmodel` and `config` are generated in the specified directory `qwen2.5_3b`, where config contains the original configuration files, the tokenizer, and so on.
 
-另外如果指定的seqlen比较长的话，比如8K，可以指定`--dynamic`编译，首token延时会根据实际长度变化，如下：
+In addition, if the specified seqlen is relatively long, such as 8K, you can specify `--dynamic` compilation; the first-token latency will then vary with the actual length, as follows:
 ``` shell
 llm_convert.py -m /workspace/Qwen2.5-3B-Instruct -s 8192 --quantize w4bf16 -c bm1684x --dynamic --out_dir qwen2.5_3b
 ```
 
-## 编译与运行程序
+## Compile and Run the Program
 
-请将程序拷贝到PCIE环境或者SoC环境后再编译。然后把`bmodel`和`config`文件拷贝过去。
+Please copy the program to the PCIE environment or SoC environment before compiling. Then copy the `bmodel` and `config` files over.
 
 #### python demo
 
-编译库文件，生成`chat.cpython*.so`文件，将该文件拷贝到`pipeline.py`文件目录
+Compile the library files to generate the `chat.cpython*.so` file, and copy this file to the directory containing `pipeline.py`
 
 ``` shell
 cd python_demo
@@ -87,9 +87,9 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 ``` shell
 python3 pipeline.py -m qwen_xxx.bmodel -c config 
 ```
-model为实际的bmodel储存路径；config为编译模型时生成的配置文件，demo中存放了qwen2.5的config。
-* 如果更换其他系列模型，如deepseek-r1-distill-qwen，需要指定新的config
+model is the actual storage path of the bmodel; config is the configuration file generated when compiling the model. The demo includes the config for qwen2.5.
+* If you switch to another model series, such as deepseek-r1-distill-qwen, you need to specify the new config
 
 #### python demo parallel
 
-多芯模型使用该demo，使用方式与单芯一致
+This demo is for multi-chip models; the usage is the same as for a single chip

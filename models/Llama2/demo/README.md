@@ -1,14 +1,14 @@
-# 环境准备
+# Environment Setup
 ```
 pip3 install dfss
 ```
 
-如果不打算自己编译模型，可以直接用下载好的模型
+If you do not plan to compile the model yourself, you can directly use the downloaded model
 ```
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/llama2-7b_int4_1dev.bmodel
 ```
 
-编译库文件
+Compile the library files
 ```
 mkdir build
 cd build && cmake .. && make && cp llama2 .. && cd ..

@@ -13,7 +13,7 @@ python export_onnx.py --model CodeFuse-DevOps-Model-7B-Chat/ --seq_length 2048
 
 ## Compile bmodel
 
-这里需要提前下载好tpu-mlir
+You need to download tpu-mlir in advance here.
 ```shell
 pushd /path_to/tpu-mlir
 source envsetup.sh
@@ -26,23 +26,23 @@ popd
 ```
 
 
-## 对`modeling_qwen.py`文件代码做调整
+## Adjust the Code in the `modeling_qwen.py` File
 
-1) 第一点修改如下（为了进行常量折叠，防止rotary_emb更新）：
+1) The first modification is as follows (to enable constant folding and prevent rotary_emb from being updated):
 
     ```python
     rotary_pos_emb = self.rotary_emb(kv_seq_len, ntk_alpha=ntk_alpha).to(
         hidden_states.device
     )
     ```
-    修改为
+    Change to
     ```python
     # rotary_pos_emb = self.rotary_emb(kv_seq_len, ntk_alpha=ntk_alpha).to(
     #     hidden_states.device
     # )
     ```
 
-2) 第二点修改如下（为了进行常量折叠）：
+2) The second modification is as follows (to enable constant folding):
     ```python
     if rotary_pos_emb is not None:
         q_pos_emb, k_pos_emb = rotary_pos_emb
@@ -53,7 +53,7 @@ popd
         query = apply_rotary_pos_emb(query, q_pos_emb)
         key = apply_rotary_pos_emb(key, k_pos_emb)
     ```
-    修改为
+    Change to
     ```python
     if rotary_pos_emb is not None:
         # breakpoint()
@@ -68,7 +68,7 @@ popd
         key = apply_rotary_pos_emb(key, rotary_pos_emb)
     ```
 
-3) 第三点修改如下（为了进行常量折叠，tpu-mlir自带的cos和sin会造成精度损失）：
+3) The third modification is as follows (to enable constant folding; the cos and sin built into tpu-mlir will cause accuracy loss):
     ```python
     # def apply_rotary_pos_emb(t, freqs):
     #     if apply_rotary_emb_func is not None:
@@ -86,7 +86,7 @@ popd
     #         t_ = (t_ * freqs.cos()) + (_rotate_half(t_) * freqs.sin())
     #         return torch.cat((t_, t_pass_), dim=-1).type_as(t)
     ```
-    修改为
+    Change to
     ```python
     def apply_rotary_pos_emb(t, freqs):
         cos, sin = freqs
@@ -107,7 +107,7 @@ popd
     ```
 
 
-4) 第四点修改如下（加快推理速度，避免kvcache复用）：
+4) The fourth modification is as follows (to speed up inference and avoid kvcache reuse):
     ```python
     if layer_past is not None:
         past_key, past_value = layer_past[0], layer_past[1]
@@ -119,7 +119,7 @@ popd
     else:
         present = None
     ```
-    修改为
+    Change to
     ```python
     if use_cache:
         present = (key, value)
@@ -132,7 +132,7 @@ popd
         value = torch.cat((past_value, value), dim=1)
     ```
 
-4) 第五点修改如下（避免softmax溢出）：
+4) The fifth modification is as follows (to avoid softmax overflow):
     ```python
     query_length, key_length = query.size(-2), key.size(-2)
     causal_mask = self.bias[
@@ -150,7 +150,7 @@ popd
         # Apply the attention mask
         attn_weights = attn_weights + attention_mask
     ```
-    修改为
+    Change to
     ```python
     # query_length, key_length = query.size(-2), key.size(-2)
     # causal_mask = self.bias[

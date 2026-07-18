@@ -1,9 +1,9 @@
-# 序列共享demo
+# Sequence sharing demo
 
-## 1. 编译模型
-your_torch_model是你模型的路径
+## 1. Compile the model
+your_torch_model is the path to your model
 
-在编译的时候需要注意：**max_pos_len需要设置为所有模型中最大的total_seq**
+Note when compiling: **max_pos_len needs to be set to the largest total_seq among all models**
 ```shell
 pip3 install transformers_stream_generator einops tiktoken accelerate transformers==4.32.0
 
@@ -11,13 +11,13 @@ cp files/Qwen-7B-Chat/* your_torch_model
 
 ./t.sh
 ```
-如果你不想编译模型，也可以直接下载
+If you don't want to compile the model, you can also download it directly
 ```shell
 pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen-7b_int4_shareseq6016_unshare1536_seq7552_1dev_dyn.bmodel
 ```
 
-## 2. 编译库文件
+## 2. Build the library files
 ```shell
 sudo apt-get install libcrypto++-dev libcrypto++-doc libcrypto++-utils
 
@@ -25,30 +25,30 @@ mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..
 ```
 
-## 3. 运行python demo
+## 3. Run the python demo
 ```shell
 python3 pipeline.py --model_path encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 23 --generation_mode penalty_sample --lib_path ../../Qwen2/share_cache_demo/build/libcipher.so --embedding_path embedding.bin
 ```
-* **必须将total_seq比较大的模型放到model_path_list的前面**,也就是seq最大的那个先跑
-* model_path_list：当使用多个模型时，用逗号隔开
-* 权重复用的流程为：self.model = chat.Qwen() --> self.load_model(model_0) --> self.free_device --> self.load_model(model_1) --> self.model.deinit()
+* **The model with the larger total_seq must be placed first in model_path_list**, i.e. the one with the largest seq runs first
+* model_path_list: when using multiple models, separate them with commas
+* The weight reuse flow is: self.model = chat.Qwen() --> self.load_model(model_0) --> self.free_device --> self.load_model(model_1) --> self.model.deinit()
 
-## 运行c-eval数据集
+## Run the c-eval dataset
 ```shell
 python3 pipeline.py --model_path encrypted.bmodel  --tokenizer_path ../support/token_config/ --devid 61 --generation_mode penalty_sample --lib_path ../../Qwen2/share_cache_demo/build/libcipher.so --max_new_tokens 50 --embedding_path embedding.bin
 ```
 
-## 4. 注意事项
+## 4. Notes
 
-### 内存设置
+### Memory settings
 
-使用如下方式来设定内存，目前内存占用为10483MB，设定的内存为10512MB
+Use the following to set the memory. The current memory usage is 10483MB, and the configured memory is 10512MB.
 ```shell
 ./memory_edit.sh -c -npu 6462 -vpu 0 -vpp 4050
 ```
 
-### 权重复用
-* 如果使用权重复用的方案，在compile.sh完成后，可以使用以下指令来检查weight空间是否一致
+### Weight reuse
+* If you use the weight reuse scheme, after compile.sh completes, you can use the following commands to check whether the weight space is consistent
 
 ```shell
 model_tool --info qwen1.5-4b_int4_share6144_unshare2560_seq8704_1dev_dyn.bmodel | grep "weight"
@@ -58,60 +58,59 @@ model_tool --info qwen1.5-4b_int4_share6144_unshare2816_seq8960_1dev_dyn.bmodel 
 >
 > device mem size: 1679614228 (weight: 1050832896, instruct: 5902612, runtime: 622878720)
 >
-> 他们的weight是一致的，都是1050832896，一点偏差也不能有，如果不一致，可能是下面这步没做
+> Their weights are identical, both 1050832896, without the slightest deviation. If they are inconsistent, the following step was probably missed
 ```shell
 cp files/Qwen-7B-Chat/* your_torch_model
 ```
 
-### 模型加解密
-* 记得使用sudo apt-get install libcrypto++-dev libcrypto++-doc libcrypto++-utils
-* 如果使用模型解密的方案，**建议提前备份好原始模型**，因为会直接原地改写原始模型的flatbuffer
-* 模型加解密的实例如下所示，只需要传入bmodel路径即可，具体请参考pipeline.py
+### Model encryption/decryption
+* Remember to run sudo apt-get install libcrypto++-dev libcrypto++-doc libcrypto++-utils
+* If you use the model decryption scheme, **it is recommended to back up the original model in advance**, because the flatbuffer of the original model will be rewritten in place
+* An example of model encryption/decryption is shown below; you only need to pass in the bmodel path. For details, refer to pipeline.py
 ```python
 self.model.encrypt_bmodel(self.model_list[1])
 ```
 
-# 如何导出logits
-如果您想查看每层输出的logits，您可以按照如下步骤来导出
+# How to export logits
+If you want to view the logits output by each layer, you can export them by following the steps below
 
-## 1. clone cnpy库
+## 1. Clone the cnpy library
 ```
 mkdir third_party
 cd third_party && git clone https://github.com/rogersce/cnpy.git
 ```
 
-## 2. CMake编译时添加-DCMAKE_TYPE=DUMP
+## 2. Add -DCMAKE_TYPE=DUMP when building with CMake
 ```shell
 cd build && cmake -DCMAKE_TYPE=DUMP .. && make && cp *cpython* .. && cd ..
 ```
 
-### 3. 修改chat.cpp文件
-根据你需要查看的logits来写正确的代码，可以参考以下代码
+### 3. Modify the chat.cpp file
+Write the correct code according to the logits you want to view; you can refer to the following code
 ```cpp
 dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[0],{1,6016,4096},"output_" + std::to_string(idx) + ".npz","hidden_states");
 dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[1],{1,6016,32,128},"output_" + std::to_string(idx) + ".npz","present_key");
 dump_tensor_to_file<uint16_t>(bm_handle,net_blocks[idx]->stages[0].output_mems[2],{1,6016,32,128},"output_" + std::to_string(idx) + ".npz","present_value");
 ```
-注意
-* shape一定要设置正确，可以通过model_tool --info xxx.bmodel来查看shape
-* 如果compile.sh转的是bf16类型，那么dump_tensor_to_file需要使用bf16_to_fp32_value；compile.sh转的是fp16类型，那么dump_tensor_to_file需要使用fp16_ieee_to_fp32_value
+Note
+* The shape must be set correctly; you can check the shape with model_tool --info xxx.bmodel
+* If compile.sh converted to the bf16 type, then dump_tensor_to_file needs to use bf16_to_fp32_value; if compile.sh converted to the fp16 type, then dump_tensor_to_file needs to use fp16_ieee_to_fp32_value
 
-### 4. 导出npz文件
-运行以下命令
+### 4. Export the npz files
+Run the following command
 ```shell
 rm *.npz *.onnx -f
 python3 pipeline.py --model_path_list qwen-7b_int4_shareseq6016_1dev_dyn.bmodel --tokenizer_path ../support/token_config/ --devid 0 --generation_mode penalty_sample --mode debug
 ```
 
-* 如果之前目录下有output_x.npz文件，记得提前删掉，不然会有问题
-* 开启--mode debug模式来导出
+* If there are output_x.npz files in the directory from before, remember to delete them in advance, otherwise problems will occur
+* Enable --mode debug to export
 
-### 5. 如何使用
+### 5. How to use
 ```python
 import numpy as np
 x = np.load("output_0.npz")
 print(x.files)
 print(x["hidden_states"])
 ```
-
 

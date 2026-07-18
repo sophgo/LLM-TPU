@@ -2,48 +2,48 @@
 
 # ChatGLM4
 
-本项目实现BM1684X部署语言大模型[glm-4-9b-chat](https://huggingface.co/THUDM/glm-4-9b-chat)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X的PCIE环境，或者SoC环境。
+This project deploys the large language model [glm-4-9b-chat](https://huggingface.co/THUDM/glm-4-9b-chat) on BM1684X. The model is converted to bmodel using the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) compiler, and deployed to the BM1684X in a PCIE environment or an SoC environment using C++ code.
 
-下文中默认是PCIE环境；如果是SoC环境，按提示操作即可。
+The following text assumes a PCIE environment by default; if you are in an SoC environment, just follow the prompts.
 
-# 目录说明
+# Directory Structure
 ```
 .
 ├── README.md
 ├── compile
-│   ├── compile.sh                          #用来编译TPU模型的脚本
-│   ├── export_onnx.py                      #用来导出onnx的脚本
-│   └── files                               #用于替换原模型的文件
+│   ├── compile.sh                          # script used to compile the TPU model
+│   ├── export_onnx.py                      # script used to export onnx
+│   └── files                               # files used to replace those in the original model
 ├── python_demo
-│   ├── chat.cpp                            #主程序文件
-│   ├── pipeline.py                         #ChatGLM4 python demo的执行脚本
-│   └── web_demo.py                         #ChatGLM4 web demo的执行脚本
-├── requirements.txt                        #环境配置所需安装的wheel包
-├── run_demo.sh                             #自动测试脚本
-└── token_config                            #分词器
+│   ├── chat.cpp                            # main program file
+│   ├── pipeline.py                         # execution script for the ChatGLM4 python demo
+│   └── web_demo.py                         # execution script for the ChatGLM4 web demo
+├── requirements.txt                        # wheel packages required for environment setup
+├── run_demo.sh                             # automated test script
+└── token_config                            # tokenizer
     ├── tokenization_chatglm.py
     ├── tokenizer_config.json
     └── tokenizer.model
 ```
 ----------------------------
 
-#  自动化推理脚本
+#  Automated Inference Script
 
 
 
-# 【阶段一】模型编译
+# [Phase 1] Model Compilation
 
-如果不打算自己编译模型，可以直接下载编译好的模型：
+If you do not plan to compile the model yourself, you can directly download the pre-compiled model:
 ```bash
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/glm4-9b_int4_seq2048_1dev.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/glm4-9b_int4_seq8192_1dev.bmodel
 ```
-## 注意点
-* 模型编译必须要在docker内完成，无法在docker外操作。
+## Notes
+* Model compilation must be done inside docker; it cannot be done outside docker.
 
-### 步骤一：下载docker
+### Step 1: Download docker
 
-下载docker，启动容器，如下：
+Download docker and start the container as follows:
 
 ```bash
 docker pull sophgo/tpuc_dev:latest
@@ -51,9 +51,9 @@ docker pull sophgo/tpuc_dev:latest
 # myname1234 is just an example, you can set your own name
 docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev:latest
 ```
-* PS：本repo `LLM-TPU`需在当前目录内
+* PS: This repo `LLM-TPU` needs to be in the current directory.
 
-### 步骤二：下载TPU-MLIR代码并安装
+### Step 2: Download the TPU-MLIR code and install it
 
 ``` shell
 pip3 install dfss  --upgrade -i https://pypi.tuna.tsinghua.edu.cn/simple
@@ -63,22 +63,22 @@ cd tpu-mlir_v1.8.beta.0-134-g859a6f517-20240801
 source ./envsetup.sh
 cd ..
 ```
-* PS：重新进入docker环境并且需要编译模型时，必须在此路径下执行上述`source ./envsetup.sh`才能完成后续模型编译。
+* PS: When you re-enter the docker environment and need to compile the model, you must run the above `source ./envsetup.sh` under this path before you can proceed with subsequent model compilation.
 
-### 步骤三：模型下载
-ChatGLM4模型允许商业开源，可以通过Huggingface官网下载[glm-4-9b-chat](https://huggingface.co/THUDM/glm-4-9b-chat)。
-如果无法从官网下载，这里也提供一个下载好的压缩包。
+### Step 3: Model download
+The ChatGLM4 model is open source for commercial use and can be downloaded from the HuggingFace official website: [glm-4-9b-chat](https://huggingface.co/THUDM/glm-4-9b-chat).
+If you cannot download it from the official website, a pre-downloaded archive is also provided here.
 ```bash
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/glm-4-9b-chat-torch.zip
 unzip glm-4-9b-chat-torch.zip
 ```
 
-下载完`glm-4-9b-chat`官方库后，您还需要设置`ChatGLM4_PATH`环境变量，模型导出时会使用到。
+After downloading the official `glm-4-9b-chat` repository, you also need to set the `ChatGLM4_PATH` environment variable, which is used when exporting the model.
 ```bash
 export ChatGLM4_PATH=$PWD/glm-4-9b-chat
 ```
 
-### 步骤四：对齐模型环境
+### Step 4: Align the model environment
 
 ```bash
 sudo apt-get update
@@ -88,47 +88,47 @@ cp ./compile/files/glm-4-9b-chat/modeling_chatglm.py $ChatGLM4_PATH
 cp ./compile/files/glm-4-9b-chat/config.json $ChatGLM4_PATH
 ```
 
-### 步骤五：生成onnx文件
+### Step 5: Generate the onnx files
 
 ```bash
 cd compile
 python export_onnx.py --model_path $ChatGLM4_PATH --seq_length 512
 ```
-* PS：默认导出sequence length为512的模型。导出其它长度的模型，还需同步修改`$ChatGLM4_PATH/config.json`中的`seq_length`参数。
+* PS: By default, a model with a sequence length of 512 is exported. To export models of other lengths, you also need to modify the `seq_length` parameter in `$ChatGLM4_PATH/config.json` accordingly.
 
-### 步骤六：生成bmodel文件
+### Step 6: Generate the bmodel file
 
-生成单芯模型
+Generate a single-chip model
 
 ```bash
 ./compile.sh --mode int4 --name glm4-9b --seq_length 512 --addr_mode io_alone
 ```
-生成W8A16量化的模型
+Generate a W8A16 quantized model
 ```bash
 ./compile.sh --mode int8 --name glm4-9b --seq_length 512 --addr_mode io_alone
 ```
-生成8192长度的模型
+Generate a model with length 8192
 ```bash
 ./compile.sh --mode int8 --name glm4-9b --seq_length 8192 --addr_mode io_alone
 ```
 
 
-<!-- 生成双芯模型
+<!-- Generate a dual-chip model
 
 ```bash
 ./compile.sh --mode int4 --num_device 2 --name glm4-9b --seq_length 512 # same as int8
 ``` -->
 
-* PS1：生成bmodel耗时大概3小时以上，建议64G内存以及200G以上硬盘空间，不然很可能OOM或者no space left；
-* PS2：如果想要编译glm4-9b，则--name必须为glm4-9b。
-<!-- * PS3：目前给定的lib_pcie和lib_soc部分仅包含单芯的动态库，多芯部分会在后续更新。 -->
+* PS1: Generating the bmodel takes roughly 3 hours or more; 64 GB of memory and more than 200 GB of disk space are recommended, otherwise OOM or "no space left" is very likely;
+* PS2: If you want to compile glm4-9b, --name must be glm4-9b.
+<!-- * PS3: The currently provided lib_pcie and lib_soc only contain single-chip dynamic libraries; the multi-chip part will be updated later. -->
 
 ----------------------------
 
-# 阶段二：可执行文件生成
+# Phase 2: Executable Generation
 
-## 编译程序(Python Demo版本)
-执行如下编译，(PCIE版本与SoC版本相同)：
+## Compile the program (Python Demo version)
+Run the following compilation (the PCIE version is the same as the SoC version):
 
 ```bash
 cd python_demo
@@ -138,12 +138,12 @@ make
 cp *chat* ..
 ```
 
-## 模型推理(Python Demo版本)
+## Model inference (Python Demo version)
 ```bash
 cd ./python_demo
 python3 pipeline.py --model_path glm4-9b_int4_1dev.bmodel --tokenizer_path ../token_config --devid your_devid
 ```
-其它可用参数可以通过`pipeline.py`或者执行如下命令进行查看。
+Other available parameters can be viewed through `pipeline.py` or by running the following command.
 ```bash
 python3 pipeline.py --help
 ```
@@ -153,10 +153,10 @@ python3 pipeline.py --help
 python3 web_demo.py --model_path glm4-9b_int4_1dev.bmodel --tokenizer_path ../token_config --devid 0
 ```
 
-### modeling_chatglm.py代码修改
+### modeling_chatglm.py code modifications
 
-#### 第一处：修改旋转位置编码
-原代码：
+#### Modification 1: Modify the rotary position embedding
+Original code:
 ```python
 @torch.jit.script
 def apply_rotary_pos_emb(x: torch.Tensor, rope_cache: torch.Tensor) -> torch.Tensor:
@@ -179,7 +179,7 @@ def apply_rotary_pos_emb(x: torch.Tensor, rope_cache: torch.Tensor) -> torch.Ten
     return torch.cat((x_out2, x_pass), dim=-1)
 ```
 
-修改后代码：
+Modified code:
 ```python
 # @torch.jit.script
 def apply_rotary_pos_emb(x: torch.Tensor, rope_cache: torch.Tensor) -> torch.Tensor:
@@ -201,27 +201,27 @@ def apply_rotary_pos_emb(x: torch.Tensor, rope_cache: torch.Tensor) -> torch.Ten
     return torch.cat((x_out2, x_pass), dim=-1)
 ```
 
-* `@torch.jit.script`注释掉是为了方便打断点
-* 修改为`b, sq, nq, hn = x.size(0), x.size(1), x.size(2), x.size(3)`是因为在前面将维度变为[batch_size, seq_length, head_num, head_dim]，这里需要适应前面的修改
-* 其他修改原因等同上一点
+* `@torch.jit.script` is commented out to make it easier to set breakpoints
+* The change to `b, sq, nq, hn = x.size(0), x.size(1), x.size(2), x.size(3)` is because the dimensions were changed to [batch_size, seq_length, head_num, head_dim] earlier; this needs to adapt to the earlier modification
+* The reasons for the other modifications are the same as the previous point
 
-#### 第二处：pytorch_major_version
+#### Modification 2: pytorch_major_version
 
-原代码：
+Original code:
 ```python
 if pytorch_major_version >= 2:
 ```
 
-修改后
+Modified code:
 ```python
 if False:
 ```
 
-* 避免走flash_attention，flash_attention之后在tpu-mlir中会进行图匹配，最后匹配为FAttentionOP，但是这里不能走FAttention
+* This avoids going through flash_attention; flash_attention would later undergo graph matching in tpu-mlir and finally be matched to FAttentionOP, but FAttention cannot be used here
 
-#### 第三处：softmax部分
+#### Modification 3: softmax part
 
-原代码：
+Original code:
 ```python
 # [b, np, sq, sk]
 output_size = (query_layer.size(0), query_layer.size(1), query_layer.size(2), key_layer.size(2))
@@ -250,36 +250,36 @@ matmul_result = torch.baddbmm(
 attention_scores = matmul_result.view(*output_size)
 ```
 
-修改后
+Modified code:
 ```python
 matmul_result = torch.matmul(query_layer.transpose(1,2), key_layer.transpose(1, 2).transpose(2,3))
 attention_scores = matmul_result * (1.0 / self.norm_factor)
 
 ```
 
-* 这里的修改非常重要
-* 去掉`matmul_input_buffer = torch.empty`是因为这会导致转onnx的时候报`>2G`的bug
-* 其他修改点是因为输入变成了[batch_size, seq_length, head_num, head_dim]，所以要修改为匹配这种shape的计算
+* The modification here is very important
+* `matmul_input_buffer = torch.empty` is removed because it causes a `>2G` bug when converting to onnx
+* The other modifications are because the input becomes [batch_size, seq_length, head_num, head_dim], so the computation must be modified to match this shape
 
-#### 第四处：attention_mask取极值部分
+#### Modification 4: The extreme-value part of attention_mask
 
-原代码：
+Original code:
 ```python
 attention_scores = attention_scores.masked_fill(attention_mask, float("-inf"))
 ```
 
-修改后
+Modified code:
 ```python
-直接注释掉
+Comment it out directly
 ```
 
-* 用求和来代替masked_fill，这是因为芯片后端对masked_fill支持不太好
+* Summation is used instead of masked_fill, because the chip backend does not support masked_fill well
 
 
 
-#### 第五处：（QK）*K
+#### Modification 5: (QK)*K
 
-原代码：
+Original code:
 ```python
 output_size = (value_layer.size(0), value_layer.size(1), query_layer.size(1), value_layer.size(3))
 # change view [b * np, sk, hn]
@@ -292,16 +292,16 @@ context_layer = torch.bmm(attention_probs, value_layer)
 context_layer = context_layer.view(*output_size)
 ```
 
-修改后
+Modified code:
 ```python
 context_layer = torch.matmul(attention_probs, value_layer.transpose(1, 2))
 ```
 
-* 因为输入变成了[batch_size, seq_length, head_num, head_dim]，所以要修改为匹配这种shape的计算
+* Because the input becomes [batch_size, seq_length, head_num, head_dim], the computation must be modified to match this shape
 
-#### 第六处：QKV输入的处理，输出的处理
+#### Modification 6: Processing of the QKV input and the output
 
-原代码位于369~411行
+The original code is located at lines 369~411
 ```python
 # [b, sq, np, hn] -> [b, np, sq, hn]
 query_layer, key_layer, value_layer = [k.transpose(1, 2) for k in [query_layer, key_layer, value_layer]]
@@ -348,7 +348,7 @@ if self.multi_query_attention:
     )
 ```
 
-修改后位于394~444行
+The modified code is located at lines 394~444
 ```python
 # [b, sq, np, hn] -> [b, np, sq, hn]
 # query_layer, key_layer, value_layer = [k.transposes(1, 2) for k in [query_layer, key_layer, value_layer]]
@@ -405,6 +405,6 @@ if self.multi_query_attention:
 
 ```
 
-* 因为输入变成了[batch_size, seq_length, head_num, head_dim]，所以要修改为匹配这种shape的计算
-* 之前的结构是QKV proj前后会有一个permute算子，一共三个permute，但是这样与Qwen系列的结构不同，Qwen系列是FAttention前后会有三个permute。由于这种不同，导致lowering的时候无法匹配为FAttentionOp，因此需要将QKV proj的permute下沉，使其结构和Qwen系列结构保持一致
-* 在decode阶段，输出shape从[batch_size, seq_length, head_num, head_dim]改为[batch_size, 1, head_num, head_dim]，避免ConcatOp和搬运
+* Because the input becomes [batch_size, seq_length, head_num, head_dim], the computation must be modified to match this shape
+* In the previous structure, there was a permute operator before and after the QKV proj, three permutes in total, but this differs from the Qwen series structure, where the three permutes are before and after FAttention. Due to this difference, it cannot be matched to FAttentionOp during lowering, so the permute of the QKV proj needs to be sunk down so that its structure stays consistent with the Qwen series structure
+* In the decode stage, the output shape is changed from [batch_size, seq_length, head_num, head_dim] to [batch_size, 1, head_num, head_dim] to avoid ConcatOp and data movement

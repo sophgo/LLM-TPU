@@ -1,4 +1,4 @@
-# 编译
+# Compilation
 
 ``` shell
 cd compile
@@ -9,17 +9,17 @@ python export_onnx.py -m $model_path -i $image_path
 
 ./compile.sh
 ```
-* llm_convert.py暂时不支持vit部分直接导出
+* llm_convert.py currently does not support directly exporting the vit part
 
-先通过llm_convert.py直接编译llm部分bmodel，再通过export_onnx.py导出vit部分的onnx，最后通过compile.sh编译vit部分的bmodel，并combine到一起。
-
-
-export_onnx.py 添加-i参数指定image, 可以编译该image shape下的静态bmodel, 可以提升相同shape下的推理性能
+First use llm_convert.py to directly compile the llm part of the bmodel, then use export_onnx.py to export the onnx of the vit part, and finally use compile.sh to compile the vit part of the bmodel and combine them together.
 
 
-# 运行
+Adding the -i parameter to export_onnx.py to specify the image allows compiling a static bmodel for that image shape, which can improve inference performance at the same shape
+
+
+# Run
 ``` shell
-# 下载编译好的模型
+# Download the pre-compiled model
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/nvila-8b_seq4096_w4f16_bm1684x.bmodel
 
 

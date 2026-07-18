@@ -1,10 +1,10 @@
 # Command
 
 ### export onnx + combine bmodel
-请见Qwen1_5/compile/README.md
+Please see Qwen1_5/compile/README.md
 
-### 下载迁移好的模型
-也可以直接下载编译好的模型，不用自己编译
+### Download the migrated model
+You can also directly download the pre-compiled model instead of compiling it yourself
 ```shell
 pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen1.5-1.8b_int4_1dev_seq512.bmodel

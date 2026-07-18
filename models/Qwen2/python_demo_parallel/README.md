@@ -1,7 +1,7 @@
-# 多芯demo
+# Multi-chip demo
 
-## 1. 安装驱动
-按如下命令下载并安装驱动，**注意使用0611版本的驱动**：
+## 1. Install the driver
+Download and install the driver with the following commands. **Note: use the 0611 version of the driver**:
 ```shell
 pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/drivers/libsophon-0611deb.tar.gz
@@ -10,11 +10,11 @@ cd libsophon-0611deb
 sudo apt remove sophon-driver sophon-libsophon
 sudo dpkg -i *.deb
 ```
-驱动安装好后，便可以在直接执行`./run_demo_parallel.sh`来运行本demo。
+After the driver is installed, you can directly run `./run_demo_parallel.sh` to run this demo.
 
 
-## 2. 编译
-编译模型需要在docker中进行，按如下命令进入docker中：
+## 2. Compile
+Compiling the model needs to be done in docker. Enter docker with the following commands:
 ```shell
 docker pull sophgo/tpuc_dev:latest
 # myname1234 is just an example, you can set your own name
@@ -23,38 +23,38 @@ docker run --privileged --name myname1234 -v /dev:/dev -v /opt/sophon:/opt/sopho
 docker exec -it myname1234 bash
 ```
 
-按如下操作编译72b模型：
+Compile the 72b model as follows:
 ```shell
 cd ../Qwen2/compile/
 pushd files/Qwen2-72B-Instruct/
 ./replace_file.sh
 popd
 python3 ./export_onnx_parallel.py -m path_to/Qwen2-72B-Instruct/ --num_threads 72 --lmhead_with_topk 1
-# 静态编译
+# static compilation
 ./compile_onnx_parallel.sh --mode int4 --num_device 8 --name qwen2-72b --addr_mode io_alone --seq_length 8192 --dynamic 0
 ```
 
-按如下操作编译7b模型：
+Compile the 7b model as follows:
 ```shell
 cd ../Qwen2/compile/
 pushd files/Qwen2-7B-Instruct/
 ./replace_file.sh
 popd
 python3 ./export_onnx_parallel.py -m path_to/Qwen2-7B-Instruct/ --num_threads 72 --lmhead_with_topk 1
-# 静态编译
+# static compilation
 ./compile_onnx_parallel.sh --mode int4 --num_device 8 --name qwen2-7b --addr_mode io_alone --seq_length 8192 --dynamic 0
 ```
 
-如果不打算编译模型，可以通过以下命令下载已编译好的模型，目前有如下模型已经预编译好，**注意最新版本的驱动需要重新下载下方的模型**：
+If you do not plan to compile the model, you can download the precompiled models with the following commands. The following models are currently precompiled. **Note that the latest driver version requires re-downloading the models below**:
 ```shell
 pip3 install dfss
-# 72b 静态
+# 72b static
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels/qwen2-72b_int4_seq8192_8dev_static.bmodel
-# 7b 静态
+# 7b static
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/bmodels/qwen2-7b_int4_seq8192_8dev_static.bmodel
 ```
 
-## 3. 运行
+## 3. Run
 ```shell
 git submodule update --init
 
@@ -64,31 +64,31 @@ cd build && cmake .. && make -j8 && cp *cpython* .. && cd ..
 python3 pipeline.py --model_path ./qwen2-7b_int4_seq8192_8dev_static.bmodel --tokenizer_path ../support/token_config/ --devid 0,1,2,3,4,5,6,7
 ```
 
-运行web demo
+Run the web demo
 ```shell
 pip3 install gradio==3.39.0 mdtex2html==1.2.0 dfss
 python3 web_demo.py --model_path ./qwen2-7b_int4_seq8192_8dev_static.bmodel --tokenizer_path ../support/token_config/ --devid 0,1,2,3,4,5,6,7
 ```
 
-## 4. 常见问题
+## 4. FAQ
 
-1) 模型加载过程中无缘无故突然中断，可以运行`ulimit -HSn 65536`增加系统资源
+1) If the model loading process suddenly interrupts for no apparent reason, you can run `ulimit -HSn 65536` to increase system resources.
 
-2) 模型性能比预期的差很多或者运行期间hang死，运行`test_cdma_p2p 0x130000000 0 0x140000000 1 0x100000`测试p2p性能，若带宽只有1500MB/s左右，可能是p2p不可用，按如下步骤开启：
-    - iommu没有关闭，按如下过程关闭：
+2) If the model performance is much worse than expected or it hangs during runtime, run `test_cdma_p2p 0x130000000 0 0x140000000 1 0x100000` to test p2p performance. If the bandwidth is only around 1500MB/s, p2p may be unavailable; enable it with the following steps:
+    - IOMMU is not disabled; disable it as follows:
       ```bash
       sudo vi /etc/default/grub
-      # 根据CPU类型选择添加intel_iommu=off/amd_iommu=off
+      # Choose to add intel_iommu=off or amd_iommu=off according to the CPU type
       # GRUB_CMDLINE_LINUX="crashkernel=auto rhgb quiet intel_iommu=off"
       # GRUB_CMDLINE_LINUX="crashkernel=auto rhgb quiet amd_iommu=off"
       sudo update-grub
       sudo reboot
       ```
-    - iommu关闭后速度依然上不来，可能还需要配置一下PCIE链路，运行如下命令，之后再重新安装驱动：
-        - 运行如下命令，确定卡的编号：
+    - If the speed still does not improve after disabling IOMMU, you may also need to configure the PCIE link. Run the following commands, and then reinstall the driver:
+        - Run the following command to determine the card number:
         ```bash
         lspci | grep 4052
-        # 如果只有一张卡，显示可能如下，82便是卡的编号。多张卡会显示多个
+        # If there is only one card, the output may look like the following, where 82 is the card number. Multiple cards will show multiple entries
         # 81:00.0 PCI bridge: PMC-Sierra Inc. Device 4052
         # 82:00.0 PCI bridge: PMC-Sierra Inc. Device 4052
         # 82:01.0 PCI bridge: PMC-Sierra Inc. Device 4052
@@ -99,7 +99,7 @@ python3 web_demo.py --model_path ./qwen2-7b_int4_seq8192_8dev_static.bmodel --to
         # 82:06.0 PCI bridge: PMC-Sierra Inc. Device 4052
         # 82:07.0 PCI bridge: PMC-Sierra Inc. Device 4052
         ```
-        - 配置PCIE链路，每张卡都需要运行如下命令：
+        - Configure the PCIE link; run the following command for each card:
         ```bash
         sudo setpci -v -s 82:*.0 ecap_acs+6.w=0
         ```

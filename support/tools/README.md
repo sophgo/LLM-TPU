@@ -1,35 +1,35 @@
 # Upload Tool
 
-一个安全的SFTP目录上传工具，支持压缩传输和进度显示。
+A secure SFTP directory upload tool that supports compressed transfer and progress display.
 
-### 使用方式
+### Usage
 ```bash
 pip install paramiko
 ```
 ```bash
 python upload.py \
-    --host <SFTP服务器地址> \
-    --port <端口号> \
-    --username <用户名> \
-    --password <密码> \
-    --remote_dir <远程目录> \
-    --local_dir <本地目录>
+    --host <SFTP server address> \
+    --port <port number> \
+    --username <username> \
+    --password <password> \
+    --remote_dir <remote directory> \
+    --local_dir <local directory>
 ```
-### 参数说明
+### Parameter Description
 
-| 参数        | 必须 | 默认值 | 说明                      |
-|-------------|------|--------|-------------------------|
-| --host      | 是   | 无     | SFTP服务器域名/IP地址    |
-| --port      | 否   | 22     | SFTP服务端口号          |
-| --username  | 是   | 无     | 认证用户名              |
-| --password  | 是   | 无     | 认证密码                |
-| --remote_dir| 是   | 无     | 远程目标目录路径        |
-| --local_dir | 是   | 无     | 要上传的本地目录路径    |
+| Parameter    | Required | Default | Description                 |
+|--------------|----------|---------|-----------------------------|
+| --host       | Yes      | None    | SFTP server domain name/IP address |
+| --port       | No       | 22      | SFTP server port number     |
+| --username   | Yes      | None    | Authentication username     |
+| --password   | Yes      | None    | Authentication password     |
+| --remote_dir | Yes      | None    | Remote target directory path |
+| --local_dir  | Yes      | None    | Local directory path to upload |
 
-### 注意事项
+### Notes
 
-1. ⚠️ **目录限制**：禁止上传包含以下子目录的目录：
+1. ⚠️ **Directory restriction**: Do not upload directories containing the following subdirectories:
    - `onnx`
    - `bmodel`
 
-2. 🗑️ **临时文件**：生成的压缩包会在上传完成后自动删除
+2. 🗑️ **Temporary files**: The generated compressed package will be automatically deleted after the upload completes

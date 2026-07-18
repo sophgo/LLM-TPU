@@ -1,15 +1,15 @@
 # support
 
-包含一些特殊情况下会用到的代码和库
+Contains code and libraries used in certain special cases
 
-* [debug](./debug)：当对比不过时可以用参考该目录方法进行定位调试
+* [debug](./debug): when the comparison fails, you can refer to the method in this directory for locating and debugging
 
-* [lib_pcie](./lib_pcie/): pcie下的bmrt库，如果系统自带库如何过旧，可以用该库；但是慎用
+* [lib_pcie](./lib_pcie/): the bmrt library for PCIE. If the library bundled with the system is too old, you can use this library; but use it with caution
 
-* [lib_soc](./lib_soc/): pcie下的bmrt库，如果系统自带库如何过旧，可以用该库；但是慎用
+* [lib_soc](./lib_soc/): the bmrt library for PCIE. If the library bundled with the system is too old, you can use this library; but use it with caution
 
-* [include](./include): bmrt库头文件，用于写代码时做参考。但不要在demo中使用
+* [include](./include): bmrt library header files, for reference when writing code. But do not use them in the demo
 
-* [include_v7](./include_v7): tpuv7 runtime库头文件，用于写代码时做参考。但不要在demo中用
+* [include_v7](./include_v7): tpuv7 runtime library header files, for reference when writing code. But do not use them in the demo
 
-* [tools](./tools): 一些方便工具
+* [tools](./tools): some convenient tools

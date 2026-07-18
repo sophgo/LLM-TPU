@@ -1,31 +1,31 @@
 # Qwen2.5-Omni
 
-本工程实现BM1684X/BM1688部署多模态大模型[Qwen2.5-Omni](https://huggingface.co/Qwen/Qwen2.5-Omni-7B-AWQ)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到PCIE环境，或者SoC环境。
+This project deploys the multimodal large model [Qwen2.5-Omni](https://huggingface.co/Qwen/Qwen2.5-Omni-7B-AWQ) on BM1684X/BM1688. The model is converted into a bmodel using the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) compiler, and deployed to a PCIE or SoC environment using C++ code.
 
-该模型可以用于图片或者视频，视频中可以带有音频。
+This model can be used with images or videos, and videos may contain audio.
 
-如何编译bmodel环节可以省去，直接用以下链接下载：
+The bmodel compilation step can be skipped by downloading directly from the following link:
 
 ``` shell
-# 不包括talker
+# Does not include the talker
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2.5-omni-7b-awq_w4bf16_seq4096_bm1684x_1dev_no_talker.bmodel 
 ```
 
-## 编译LLM模型
+## Compiling the LLM
 
-此处介绍如何将LLM编译成bmodel。
+This section describes how to compile the LLM into a bmodel.
 
-#### 1. 从Huggingface下载`Qwen2.5-Omni-7B-AWQ`
+#### 1. Download `Qwen2.5-Omni-7B-AWQ` from HuggingFace
 
-(比较大，会花费较长时间)
+(The model is quite large and will take a long time)
 
 ``` shell
-# 下载模型
+# Download the model
 git lfs install
 git clone git@hf.co:Qwen/Qwen2.5-Omni-7B-AWQ
 ```
 
-#### 2. 下载docker，启动容器
+#### 2. Download docker and start the container
 
 ``` shell
 docker pull sophgo/tpuc_dev:latest
@@ -33,37 +33,37 @@ docker pull sophgo/tpuc_dev:latest
 # myname1234 is just an example, you can set your own name
 docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev:latest
 ```
-后文假定环境都在docker的`/workspace`目录。
+The following sections assume the environment is in the `/workspace` directory inside docker.
 
-#### 2. 下载`TPU-MLIR`代码并编译
+#### 2. Download the `TPU-MLIR` code and compile it
 
-(也可以直接下载编译好的release包解压)
+(You can also directly download and extract the precompiled release package)
 
 ``` shell
 cd /workspace
 git clone git@github.com:sophgo/tpu-mlir.git
 cd tpu-mlir
-source ./envsetup.sh  #激活环境变量
-./build.sh #编译mlir
+source ./envsetup.sh  # activate environment variables
+./build.sh # compile mlir
 ```
 
-#### 3. 编译模型生成bmodel
+#### 3. Compile the model to generate the bmodel
 
 ``` shell
-# 如果有提示transformers版本问题，pip3 install transformers -U
+# If you are prompted about a transformers version issue, run pip3 install transformers -U
 llm_convert.py -m /workspace/Qwen2.5-Omni-7B-AWQ  -s 2048 --quantize w4f16  -c bm1684x --out_dir qwen2.5o --max_pixels 672,896
 ```
 
-## 编译与运行程序(python)
+## Compiling and running the program (python)
 
-* 环境准备
-> （python_demo运行之前都需要执行这个）
+* Environment setup
+> (This must be done before running any python_demo)
 ``` shell
-# 如果不是python3.10，参考"常见问题"配置环境
+# If your python is not 3.10, refer to "FAQ" to configure the environment
 pip3 install torchvision pillow qwen_vl_utils transformers ffmpeg-python -U
 ```
 
-编译库文件，生成`chat.cpython*.so`文件，将该文件拷贝到`pipeline.py`文件目录
+Compile the library to generate the `chat.cpython*.so` file, then copy it to the directory containing `pipeline.py`
 
 ``` shell
 cd python_demo
@@ -73,18 +73,18 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 # run demo
 python3 pipeline.py -m xxxx.bmodel -c config 
 ```
-model为实际的model储存路径；config_path为配置文件路径
+`model` is the actual path where the model is stored; `config_path` is the path of the configuration file.
 
 
 
-### 出现"draw.mp4"识别错误？
+### Getting a "draw.mp4" recognition error?
 
-错误如下：
+The error is as follows:
 ```shell
 LibsndfileError: Error opening 'draw.mp4': Format not recognised.
 ```
 
-解决方法：
+Solution:
 ```shell
 sudo apt-get update
 sudo apt-get install libsndfile1 ffmpeg --upgrade

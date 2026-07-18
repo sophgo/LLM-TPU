@@ -1,18 +1,18 @@
-# 环境准备
-下载所需依赖
+# Environment Setup
+Download the required dependencies
 ```
 sudo apt-get update
 sudo apt-get install pybind11-dev
 ```
 
-编译库文件
+Compile the library files
 ```
 mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..
 ```
 
 
-## 常见问题
+## FAQ
 ### Could not create share link. Missing file: /usr/local/lib/python3.10/dist-packages/gradio/frpc_linux_amd64_v0.2.
 
 AMD / PCIE

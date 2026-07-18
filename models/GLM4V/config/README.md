@@ -8,47 +8,42 @@ license: mit
 <img src=https://raw.githubusercontent.com/THUDM/GLM-4.1V-Thinking/99c5eb6563236f0ff43605d91d107544da9863b2/resources/logo.svg width="40%"/>
 </div>
 <p align="center">
-    📖 查看 GLM-4.1V-9B-Thinking <a href="https://arxiv.org/abs/2507.01006" target="_blank">论文</a> 。
+    📖 Read the GLM-4.1V-9B-Thinking <a href="https://arxiv.org/abs/2507.01006" target="_blank">paper</a>.
     <br>
-    💡 立即在线体验 <a href="https://huggingface.co/spaces/THUDM/GLM-4.1V-9B-Thinking-Demo" target="_blank">Hugging Face</a> 或 <a href="https://modelscope.cn/studios/ZhipuAI/GLM-4.1V-9B-Thinking-Demo" target="_blank">ModelScope</a> 上的 GLM-4.1V-9B-Thinking。
+    💡 Try GLM-4.1V-9B-Thinking online now on <a href="https://huggingface.co/spaces/THUDM/GLM-4.1V-9B-Thinking-Demo" target="_blank">Hugging Face</a> or <a href="https://modelscope.cn/studios/ZhipuAI/GLM-4.1V-9B-Thinking-Demo" target="_blank">ModelScope</a>.
     <br>
-    📍 在 <a href="https://www.bigmodel.cn/dev/api/visual-reasoning-model/GLM-4.1V-Thinking">智谱大模型开放平台</a> 使用 GLM-4.1V-9B-Thinking 的API服务。
+    📍 Use the GLM-4.1V-9B-Thinking API service on the <a href="https://www.bigmodel.cn/dev/api/visual-reasoning-model/GLM-4.1V-Thinking">Zhipu BigModel Open Platform</a>.
 </p>
 
-## 模型介绍
+## Model Introduction
 
-视觉语言大模型（VLM）已经成为智能系统的关键基石。随着真实世界的智能任务越来越复杂，VLM模型也亟需在基本的多模态感知之外，
-逐渐增强复杂任务中的推理能力，提升自身的准确性、全面性和智能化程度，使得复杂问题解决、长上下文理解、多模态智能体等智能任务成为可能。
+Vision-language models (VLMs) have become a key cornerstone of intelligent systems. As real-world intelligent tasks become increasingly complex, VLMs urgently need to go beyond basic multimodal perception and gradually strengthen their reasoning capabilities in complex tasks, improving their accuracy, comprehensiveness, and intelligence, thereby enabling intelligent tasks such as complex problem solving, long-context understanding, and multimodal agents.
 
-基于 [GLM-4-9B-0414](https://github.com/THUDM/GLM-4) 基座模型，我们推出新版VLM开源模型 **GLM-4.1V-9B-Thinking**
-，引入思考范式，通过课程采样强化学习 RLCS（Reinforcement Learning with Curriculum Sampling）全面提升模型能力，
-达到 10B 参数级别的视觉语言模型的最强性能，在18个榜单任务中持平甚至超过8倍参数量的 Qwen-2.5-VL-72B。
-我们同步开源基座模型 **GLM-4.1V-9B-Base**，希望能够帮助更多研究者探索视觉语言模型的能力边界。
+Based on the [GLM-4-9B-0414](https://github.com/THUDM/GLM-4) base model, we introduce the new open-source VLM **GLM-4.1V-9B-Thinking**, which incorporates a thinking paradigm and comprehensively improves model capabilities through Reinforcement Learning with Curriculum Sampling (RLCS), achieving the strongest performance among vision-language models at the 10B parameter level, and matching or even surpassing Qwen-2.5-VL-72B, which has 8x the parameters, on 18 benchmark tasks. We also open-source the base model **GLM-4.1V-9B-Base**, hoping to help more researchers explore the capability boundaries of vision-language models.
 
 ![rl](https://raw.githubusercontent.com/THUDM/GLM-4.1V-Thinking/refs/heads/main/resources/rl.jpeg)
 
-与上一代的 CogVLM2 及 GLM-4V 系列模型相比，**GLM-4.1V-Thinking** 有如下改进：
+Compared with the previous-generation CogVLM2 and GLM-4V series models, **GLM-4.1V-Thinking** has the following improvements:
 
-1. 系列中首个推理模型，不仅仅停留在数学领域，在多个子领域均达到世界前列的水平。
-2. 支持 **64k** 上下长度。
-3. 支持**任意长宽比**和高达 **4k** 的图像分辨率。
-4. 提供支持**中英文双语**的开源模型版本。
+1. The first reasoning model in the series, achieving world-leading levels not only in mathematics but also across multiple sub-domains.
+2. Supports **64k** context length.
+3. Supports **arbitrary aspect ratios** and image resolutions up to **4k**.
+4. Provides an open-source model version supporting **both Chinese and English**.
 
-## 榜单信息
+## Benchmark Information
 
-GLM-4.1V-9B-Thinking 通过引入「思维链」（Chain-of-Thought）推理机制，在回答准确性、内容丰富度与可解释性方面，
-全面超越传统的非推理式视觉模型。在28项评测任务中有23项达到10B级别模型最佳，甚至有18项任务超过8倍参数量的Qwen-2.5-VL-72B。
+By introducing the Chain-of-Thought reasoning mechanism, GLM-4.1V-9B-Thinking comprehensively surpasses traditional non-reasoning vision models in answer accuracy, content richness, and interpretability. It achieves the best results among 10B-level models on 23 of 28 evaluation tasks, and even surpasses Qwen-2.5-VL-72B, which has 8x the parameters, on 18 tasks.
 
 ![bench](https://raw.githubusercontent.com/THUDM/GLM-4.1V-Thinking/refs/heads/main/resources/bench.jpeg)
 
-## 快速推理
+## Quick Inference
 
-这里展现了一个使用`transformers`进行单张图片推理的代码。首先，从源代码安装`transformers`库。
+Here is an example of single-image inference using `transformers`. First, install the `transformers` library from source.
 ```
 pip install git+https://github.com/huggingface/transformers.git
 ```
 
-接着按照以下代码运行:
+Then run the following code:
 
 ```python
 from transformers import AutoProcessor, Glm4vForConditionalGeneration
@@ -89,5 +84,4 @@ print(output_text)
 ```
 
 
-视频推理，网页端Demo部署等更代码请查看我们的 [github](https://github.com/THUDM/GLM-4.1V-Thinking)。
-
+For more code, such as video inference and web demo deployment, please check our [github](https://github.com/THUDM/GLM-4.1V-Thinking).

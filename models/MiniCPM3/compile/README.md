@@ -6,24 +6,24 @@
 pip install -r requirements.txt
 cp files/MiniCPM3-4B/modeling_minicpm.py ${your_torch_model}/modeling_minicpm.py
 ```
-your_torch_model是你模型下载的位置，比如 MiniCPM3-4B/
+your_torch_model is where your model is downloaded, e.g. MiniCPM3-4B/
 
 ```shell
 python3 export_onnx.py --model_path your_torch_model --seq_length 8192 --device cpu
 ```
 
 ## Compile bmodel
-使用io_alone, int4精度
+Use io_alone, int4 precision
 ```shell
 ./compile.sh --mode int4 --name minicpm3-4b --addr_mode io_alone --seq_length 8192
 ```
-使用io_alone, int8精度
+Use io_alone, int8 precision
 ```shell
 ./compile.sh --mode int8 --name minicpm3-4b --addr_mode io_alone --seq_length 8192
 ```
 
-### 下载迁移好的模型
-也可以直接下载编译好的模型，不用自己编译
+### Download the Ported Model
+You can also directly download the compiled model instead of compiling it yourself
 ```shell
 pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpm3-4b_int4_seq512_1dev.bmodel
@@ -31,20 +31,20 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpm
 
 ## python demo
 
-请见python_demo里面的README
+See the README in python_demo
 
-### modeling_minicpm.py代码修改
+### modeling_minicpm.py Code Modifications
 
-#### 第一处：MiniCPM3Model
+#### First: MiniCPM3Model
 
-* 在初始化中添加
+* Add the following during initialization
 ```python
 config._attn_implementation = "eager"
 ```
-目的是不使用torch的flash attention或者sdpa attenion，导出原始的attention结构便于在mlir编译时匹配优化pattern。
+The purpose is to avoid using torch's flash attention or sdpa attention, and to export the original attention structure so that optimization patterns can be matched during mlir compilation.
 
-#### 第二处：修改旋转位置编码
-原代码：
+#### Second: Modify the Rotary Position Embedding
+Original code:
 ```python
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     orig_dtype = k.dtype
@@ -56,7 +56,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     k_embed = (k_fp32 * cos) + (rotate_half(k_fp32) * sin)
     return q_embed.to(dtype=orig_dtype), k_embed.to(dtype=orig_dtype)
 ```
-修改后
+After modification
 ```python
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=2):
     orig_dtype = k.dtype
@@ -69,10 +69,10 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=2):
     return q_embed.to(dtype=orig_dtype), k_embed.to(dtype=orig_dtype)
 ```
 
-#### 第三处：MiniCPMAttention
+#### Third: MiniCPMAttention
 
-* 主要修改了past_key_value和position_embedding的输入方式，将position_embedding进行常量折叠，导出onnx结构。 
+* Mainly modified the input method of past_key_value and position_embedding, performing constant folding on position_embedding to export the onnx structure.
 
-* 其次修改了attention计算时的一些permute和concat操作，用于后续mlir编译模型时的pattern匹配和简化模型
+* Also modified some permute and concat operations in the attention computation, for pattern matching during subsequent mlir compilation and to simplify the model
 
-* 具体修改可对比原始模型文件
+* For details, compare with the original model file

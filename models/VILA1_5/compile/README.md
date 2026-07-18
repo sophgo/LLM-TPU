@@ -7,15 +7,15 @@ pip install qwen-vl-utils accelerate torch==2.5.0 transformers==4.45.1
 pip show transformers
 cp files/Qwen2-VL-2B-Instruct/modeling_qwen2_vl.py /usr/local/lib/python3.10/dist-packages/transformers/models/qwen2_vl/modeling_qwen2_vl.py
 ```
-* 不一定是`/usr/local/lib/python3.10/dist-packages/transformers/models/qwen2_vl/modeling_qwen2_vl.py`这个路径，可以用pip show transformers查看
+* It is not necessarily the path `/usr/local/lib/python3.10/dist-packages/transformers/models/qwen2_vl/modeling_qwen2_vl.py`; you can use pip show transformers to check
 
 
 ### export onnx
 ```shell
 python export_onnx.py --model_path your_torch_path --seq_length 512
 ```
-PS：
-1. your_torch_path：从官网下载的或者自己训练的模型的路径，例如./Qwen2-VL-7B-Instruct
+PS:
+1. your_torch_path: the path of the model downloaded from the official website or trained by yourself, e.g. ./Qwen2-VL-7B-Instruct
 
 ## Compile bmodel
 

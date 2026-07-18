@@ -1,24 +1,24 @@
 ## Qwen2-Audio
-本工程实现BM1684X上的Qwen2-Audio部署多模态大模型Qwen2-Audio。通过TPU-MLIR将模型转换为BM1684X上的bmodel，实现高效的推理。并采用c++代码将其部署到BM1684X上，提供python接口调用。目前仅实现了SoC环境。
+This project implements the deployment of the multimodal large model Qwen2-Audio on BM1684X. The model is converted to bmodel on BM1684X through TPU-MLIR to achieve efficient inference. It is deployed to BM1684X using c++ code, with a python interface provided for invocation. Currently only the SoC environment is implemented.
 
-## 开发环境准备
-从Huggingface或者modelscope上下载Qwen2-Audio模型Qwen2-Audio-7B-Instruct文件。
+## Development environment preparation
+Download the Qwen2-Audio model Qwen2-Audio-7B-Instruct files from HuggingFace or ModelScope.
 
-## 编译模型
+## Compile the model
 
-此处介绍如何将onnx模型编译成bmodel。可以直接下载编译好的模型。
+This section describes how to compile the onnx model into bmodel. You can directly download the pre-compiled model.
 ```
 # 1684X
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen2-audio-7b_w8f16_seq599_1dev.bmodel
 
 ```
-### 下载docker，启动容器
+### Download docker and start the container
 ```
 docker pull sophgo/tpuc_dev:latest
 docker run -it --rm --privileged --net=host --ipc=host -v $(pwd):/workspace sophgo/tpuc_dev:latest
 docker exec -it $(docker ps -lq) /bin/bash
 ```
-### 下载TPU-MLIR代码并编译
+### Download TPU-MLIR code and compile
 ```
 git clone https://github.com/sophgo/tpu-mlir.git
 cd tpu-mlir
@@ -27,19 +27,19 @@ mkdir build && cd build
 cmake .. -DLLVM_TARGETS_TO_BUILD="BPF;X86" -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
 ```
-### 导出onnx模型
-将tools/文件里面的model_qwen2.py替换transformers里面的有关qwen2的相关文件。然后使用运行：
+### Export the onnx model
+Replace the qwen2-related files in transformers with the model_qwen2.py in the tools/ directory. Then run:
 ```
 python3 export_onnx.py
 ```
-导出模型，有些模型不适合导出onnx，仅需要导出pt文件，详情件export_onnx.py文件。
-### 编译生成bmodel
-将模型放置在合适的目录下，然后运行compile.sh脚本。
+to export the model. Some models are not suitable for exporting to onnx and only need to be exported as pt files. See the export_onnx.py file for details.
+### Compile to generate bmodel
+Place the model in an appropriate directory, then run the compile.sh script.
 ```
 ./compile.sh
 ```
-## 编译与运行程序
-编译库文件，生成chat.cpython*.so文件，将该文件拷贝到pipeline.py文件目录; 并将bmodel文件和config目录拷贝过去
+## Compile and run the program
+Compile the library file to generate the chat.cpython*.so file, and copy this file to the directory where pipeline.py is located; also copy the bmodel file and the config directory over
 ```
 cd python_demo
 mkdir build 

@@ -8,7 +8,7 @@ pip3 install pybind11[global]
 
 ### Compile chat.cpp
 
-可以直接下载编译好的模型，不用自己编译
+You can also directly download the compiled model instead of compiling it yourself
 ```bash
 pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpm3-4b_int4_seq512_1dev.bmodel

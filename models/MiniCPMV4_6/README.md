@@ -1,10 +1,10 @@
 # MiniCPM-V-4.6
 
-本工程实现BM1684X/BM1688部署多模态大模型[MiniCPM-V-4.6](https://huggingface.co/openbmb/MiniCPM-V-4.6)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并将其部署到PCIE环境，或者SoC环境。
+This project deploys the multimodal large model [MiniCPM-V-4.6](https://huggingface.co/openbmb/MiniCPM-V-4.6) on BM1684X/BM1688. The model is converted into a bmodel through the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) compiler and deployed to the PCIE environment or SoC environment.
 
-该模型支持图片和视频的识别，有python版本的demo。
+The model supports image and video recognition, and a Python version demo is provided.
 
-本文包括如何编译bmodel，和如何在BM1684X/BM1688环境运行bmodel。如何编译bmodel环节可以省去，直接用以下链接下载：
+This document covers how to compile the bmodel and how to run the bmodel in the BM1684X/BM1688 environment. The bmodel compilation step can be skipped; just download it directly from the following links:
 
 ``` shell
 # =============== 1684x =====================
@@ -12,26 +12,26 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpm
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpm-v-4.6_bf16_seq2048_bm1688_2core_dynamic_20260630_155028.bmodel
 ```
 
-## 模型架构
+## Model Architecture
 
-MiniCPM-V-4.6 参数量 1.3B，由视觉编码器和文本模型两部分组成：
+MiniCPM-V-4.6 has 1.3B parameters and consists of two parts: a vision encoder and a text model:
 
-- **文本模型**：与 Qwen3.5 相同架构
-- **视觉编码器**：SigLIP ViT + Merger 降采样，支持两种模式：
-  - `16x`（默认）：两级 2×2 合并，共 16 倍降采样，token 数少，推理快
-  - `4x`：一级 2×2 合并，4 倍降采样，保留更多视觉细节
+- **Text model**: Same architecture as Qwen3.5
+- **Vision encoder**: SigLIP ViT + Merger downsampling, supporting two modes:
+  - `16x` (default): two stages of 2×2 merging, 16x downsampling in total, fewer tokens and faster inference
+  - `4x`: one stage of 2×2 merging, 4x downsampling, retaining more visual details
 
-## 编译bmodel
+## Compile the bmodel
 
-此处介绍如何将模型编译成bmodel。
+This section describes how to compile the model into a bmodel.
 
-#### 1. 下载模型
+#### 1. Download the Model
 
 ``` shell
 git clone https://huggingface.co/openbmb/MiniCPM-V-4.6
 ```
 
-#### 2. 下载docker，启动容器
+#### 2. Download docker and Start the Container
 
 ``` shell
 docker pull sophgo/tpuc_dev:latest
@@ -39,31 +39,31 @@ docker pull sophgo/tpuc_dev:latest
 # myname1234 is just an example, you can set your own name
 docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev:latest
 ```
-后文假定环境都在docker的`/workspace`目录。
+The following assumes that the environment is in the `/workspace` directory of docker.
 
-#### 3. 下载`TPU-MLIR`代码并编译
+#### 3. Download the `TPU-MLIR` Code and Compile It
 
 ``` shell
 cd /workspace
 git clone git@github.com:sophgo/tpu-mlir.git
 cd tpu-mlir
-source ./envsetup.sh  #激活环境变量
-./build.sh #编译mlir
+source ./envsetup.sh  #activate environment variables
+./build.sh #compile mlir
 ```
 
-#### 4. 编译模型生成bmodel
+#### 4. Compile the Model to Generate the bmodel
 
 ``` shell
-# 这里max_input_length指定最大输入长度，如果不指定则为-s指定的长度
+# max_input_length specifies the maximum input length; if not specified, the length specified by -s is used
 llm_convert.py -m /workspace/MiniCPM-V-4.6 -s 2048 --max_input_length 1024 -q bf16 -c bm1684x -o minicpm_v4_6 --max_pixels 448,448
 ```
-编译完成后，在指定目录生成`minicpm-v-4.6-xxx.bmodel`和`config`。
+After compilation, `minicpm-v-4.6-xxx.bmodel` and `config` are generated in the specified directory.
 
-## 编译与运行程序(python)
+## Compile and Run the Program (python)
 
-### 1. 环境准备
+### 1. Environment Preparation
 
-需要 python3.10 环境。如果不满足，参考[此文档](https://github.com/sophgo/sophon-demo/blob/release/docs/FAQ.md#13-se7%E5%AE%89%E8%A3%85python310)安装。
+A python3.10 environment is required. If it is not available, refer to [this document](https://github.com/sophgo/sophon-demo/blob/release/docs/FAQ.md#13-se7%E5%AE%89%E8%A3%85python310) to install it.
 
 ``` shell
 sudo apt-get update
@@ -72,9 +72,9 @@ sudo apt-get install pybind11-dev
 pip3 install torch==2.6.0 torchvision==0.21.0 transformers==5.7.0
 ```
 
-### 2. 编译库文件
+### 2. Compile the Library Files
 
-编译C++库文件，生成`chat.cpython*.so`：
+Compile the C++ library files to generate `chat.cpython*.so`:
 
 ``` shell
 cd python_demo
@@ -82,67 +82,67 @@ mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..
 ```
 
-### 3. 运行
+### 3. Run
 
 ``` shell
-# 交互模式
+# Interactive mode
 python3 pipeline.py -m minicpm-v-4.6.bmodel -c ../config
 
-# 单次推理模式（图片）
+# Single inference mode (image)
 python3 pipeline.py -m minicpm-v-4.6.bmodel -c ../config \
-    --prompt "描述这张图片" --media_path test.jpg
+    --prompt "Describe this image" --media_path test.jpg
 
-# 单次推理模式（视频）
+# Single inference mode (video)
 python3 pipeline.py -m minicpm-v-4.6.bmodel -c ../config \
-    --prompt "描述视频中发生了什么" --media_path test.mp4
+    --prompt "Describe what happened in the video" --media_path test.mp4
 ```
 
-### CLI 参数
+### CLI Parameters
 
-| 参数 | 默认值 | 说明 |
+| Parameter | Default | Description |
 |------|--------|------|
-| `-m, --model_path` | 必填 | bmodel 文件路径 |
-| `-c, --config_path` | `../config` | processor 配置文件目录 |
-| `-d, --devid` | `0` | 设备 ID |
-| `--downsample_mode` | `16x` | ViT 降采样模式，可选 `4x` / `16x` |
-| `--max_slice_nums` | None | 图片最大切片数。不指定时图片默认36，视频默认1；指定后统一使用 |
-| `--max_num_frames` | `16` | 视频最大采样帧数 |
-| `-p, --prompt` | None | 指定后进入单次推理模式 |
-| `-t, --prompt_file` | None | 从文件加载 prompt |
-| `--media_path` | 空 | 图片或视频路径，配合 `--prompt` 使用 |
+| `-m, --model_path` | Required | Path to the bmodel file |
+| `-c, --config_path` | `../config` | Directory of the processor config files |
+| `-d, --devid` | `0` | Device ID |
+| `--downsample_mode` | `16x` | ViT downsampling mode, either `4x` or `16x` |
+| `--max_slice_nums` | None | Maximum number of image slices. If not specified, the default is 36 for images and 1 for videos; if specified, it applies uniformly |
+| `--max_num_frames` | `16` | Maximum number of sampled video frames |
+| `-p, --prompt` | None | Enter single inference mode when specified |
+| `-t, --prompt_file` | None | Load the prompt from a file |
+| `--media_path` | Empty | Image or video path, used together with `--prompt` |
 
-## 进阶应用
+## Advanced Applications
 
-参考[Qwen3.5 README](../Qwen3_5/README.md)。
+Refer to [Qwen3.5 README](../Qwen3_5/README.md).
 
-## 常见问题
+## FAQ
 
-#### 一张图片占多少 Token ?
+#### How many tokens does one image occupy?
 
-计算公式：$token数 = \frac{h_{patches} \times w_{patches}}{merge\_size^2}$
+Formula: $tokens = \frac{h_{patches} \times w_{patches}}{merge\_size^2}$
 
-其中 $h_{patches} = \frac{height}{14}$，$w_{patches} = \frac{width}{14}$。
+Where $h_{patches} = \frac{height}{14}$, $w_{patches} = \frac{width}{14}$.
 
-以 448×448 图片为例：
+Taking a 448×448 image as an example:
 - patches = 32 × 32 = 1024
-- 16x 模式：1024 / 16 = **64 tokens**
-- 4x 模式：1024 / 4 = **256 tokens**
+- 16x mode: 1024 / 16 = **64 tokens**
+- 4x mode: 1024 / 4 = **256 tokens**
 
-高分辨率图片会被切片处理，`max_slice_nums` 控制最大切片数。
+High-resolution images are processed by slicing, and `max_slice_nums` controls the maximum number of slices.
 
-#### 视频占多少 Token ?
+#### How many tokens does a video occupy?
 
-视频每帧独立处理，`max_slice_nums=1`（不切片）。
+Each video frame is processed independently, with `max_slice_nums=1` (no slicing).
 
-以 16x 模式、448×448 每帧为例，每帧 64 tokens。
+Taking the 16x mode with 448×448 per frame as an example, each frame occupies 64 tokens.
 
-16 帧视频：$64 × 16 = 1024$ tokens
+A 16-frame video: $64 × 16 = 1024$ tokens
 
-#### 视频最多支持多少帧 ?
+#### What is the maximum number of frames supported for a video?
 
-| 降采样模式 | 每帧 Token | 最大帧数 (SEQLEN=2048) |
+| Downsampling mode | Tokens per frame | Maximum frames (SEQLEN=2048) |
 |-----------|-----------|----------------------|
 | 16x | ~64 | ~25 |
 | 4x | ~256 | ~6 |
 
-实际可用帧数还需减去 prompt 和输出占用的 tokens。
+The actual available number of frames also needs to subtract the tokens occupied by the prompt and the output.

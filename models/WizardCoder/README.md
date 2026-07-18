@@ -2,26 +2,26 @@
 
 # Wizardcoder-TPU
 
-本项目实现BM1684X部署语言大模型[Wizardcoder-15B](https://huggingface.co/WizardLM/WizardCoder-15B-V1.0)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X的PCIE环境，或者SoC环境。
+This project deploys the large language model [Wizardcoder-15B](https://huggingface.co/WizardLM/WizardCoder-15B-V1.0) on BM1684X. The model is converted to bmodel using the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) compiler, and deployed to the BM1684X in a PCIE environment or an SoC environment using C++ code.
 
-## 目录结构
+## Directory Structure
 
 ```
 .
 ├── assets
 │   ├── sophgo_chip.png
 │   └── wizardcoder.png
-├── compile                                                ## 模型导出和转换所需脚本
+├── compile                                                ## scripts required for model export and conversion
 │   ├── compile.sh
 │   ├── export_to_onnx.py
 │   └── modeling_gpt_bigcode.py
-├── demo                                                   ## 模型运行代码
+├── demo                                                   ## model runtime code
 │   ├── CMakeLists.txt
 │   ├── demo.cpp
 │   ├── gpt2tokenizer.cc
 │   ├── include
 │   │   └── tokenizer.h
-│   ├── lib_pcie                                            ## PCIE环境所需运行时
+│   ├── lib_pcie                                            ## runtime required for the PCIE environment
 │   │   ├── include
 │   │   │   ├── bmdef.h
 │   │   │   ├── bmlib_runtime.h
@@ -30,7 +30,7 @@
 │   │       ├── libbmlib.so
 │   │       ├── libbmrt.so
 │   │       └── libbmrt.so.1.0
-│   └── lib_soc                                             ## SOC环境所需运行时
+│   └── lib_soc                                             ## runtime required for the SOC environment
 │       ├── include
 │       │   ├── bmdef.h
 │       │   ├── bmlib_runtime.h
@@ -52,24 +52,24 @@
 
 ### Requirements
 
-- 支持C++17标准的gcc或clang编译器
-- 如果不使用```demo/libsophon_pcie```的libsophon或者需要特定版本的libsophon，需要在下面编译时指定```LIBSOPHON_DIR```
-- 转换好的Wizardcoder-15B.bmodel文件
+- A gcc or clang compiler supporting the C++17 standard
+- If you do not use the libsophon in ```demo/libsophon_pcie``` or need a specific version of libsophon, you need to specify ```LIBSOPHON_DIR``` when compiling below
+- The converted Wizardcoder-15B.bmodel file
 
-## 开发环境准备
+## Development Environment Preparation
 
-### 1. 下载模型(以`Wizardcoder-15B-V1.0`为例)
+### 1. Download the model (taking `Wizardcoder-15B-V1.0` as an example)
 
 ``` shell
 git lfs install
 git clone https://huggingface.co/WizardLM/WizardCoder-15B-V1.0
 ```
 
-该工程比较大，会花较长时间。
+This repository is quite large and will take a long time.
 
 
 
-### 2. 下载docker，启动容器
+### 2. Download docker and start the container
 
 ``` shell
 docker pull sophgo/tpuc_dev:latest
@@ -77,46 +77,46 @@ docker pull sophgo/tpuc_dev:latest
 # myname1234 is just an example, you can set your own name
 docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev:latest
 ```
-后文假定环境都在docker下进行
+The following text assumes that everything is done inside docker
 
 
-### 3. 下载本项目`Wizardcoder-TPU`
+### 3. Download this project `Wizardcoder-TPU`
 
-下载本项目，并导出所有的ONNX（其中需要将本项目`compile`路径下的`modeling_gpt_bigcode.py`文件替换到`transformers`的文件夹下，具体步骤如下：
+Download this project and export all the ONNX files (you need to replace the corresponding file under the `transformers` folder with the `modeling_gpt_bigcode.py` file under the `compile` path of this project; detailed steps are as follows:
 
-#### clone本工程
+#### Clone this project
 ``` shell
 git clone https://github.com/enigma9981/Wizardcoder-TPU
 cd Wizardcoder-TPU
 ```
 
-#### 修改模型文件
-- 安装所需依赖：使用`pip install -r requirements.txt`安装所需依赖
-- 使用```pip show transformers```找到```transformers```的位置，例如：`/usr/local/lib/python3.10/dist-packages`（不同的Python版本和系统可能不同）
-- 使用提供的```compile/modeling_gpt_bigcode.py```替换上文中找到的位置：```/usr/local/lib/python3.10/dist-packages/transformers/models/gpt_bigcode/```下的同名文件
+#### Modify the model files
+- Install the required dependencies: use `pip install -r requirements.txt` to install the required dependencies
+- Use ```pip show transformers``` to find the location of ```transformers```, e.g. `/usr/local/lib/python3.10/dist-packages` (this may differ across Python versions and systems)
+- Use the provided ```compile/modeling_gpt_bigcode.py``` to replace the file with the same name under the location found above: ```/usr/local/lib/python3.10/dist-packages/transformers/models/gpt_bigcode/```
 
-示例：
+Example:
 
 ```shell
 cd Wizardcoder-TPU
 pip show transformers
 cp compile/modeling_gpt_bigcode.py /usr/local/lib/python3.10/dist-packages/transformers/models/gpt_bigcode/
 ```
-- PS：**不一定是/usr/local/lib/python3.10/dist-packages/transformers/models/gpt_bigcode/modeling_gpt_bigcode.py这个路径，建议替换前先pip show transformers查看一下**
-- 在完成模型文件修改后，验证环境是否搭建完成，可以参考后文：常见问题-转换模型时需要调试
+- PS: **The path is not necessarily /usr/local/lib/python3.10/dist-packages/transformers/models/gpt_bigcode/modeling_gpt_bigcode.py; it is recommended to run pip show transformers to check before replacing**
+- After finishing the model file modification, to verify whether the environment is set up correctly, you can refer to the later section: FAQ - Debugging is needed when converting the model
 
-#### 导出ONNX格式模型
+#### Export the ONNX format model
 ```shell
 python export_to_onnx.py --model_path your_model_path
 ```
-- your_model_path 指的是原模型下载后的地址, 如:"../../WizardCoder-15B-V1.0/"
-- 默认长度MAX_LEN为512，如果需要修改，可以使用`--max_length length_you_want`参数进行修改
-- 脚本运行完毕后会在```./tmp/```下生成大量ONNX模型，用于后续在TPU上进行转换
+- your_model_path refers to the path where the original model was downloaded, e.g. "../../WizardCoder-15B-V1.0/"
+- The default length MAX_LEN is 512; if you need to change it, use the `--max_length length_you_want` parameter
+- After the script finishes, a large number of ONNX models will be generated under ```./tmp/``` for subsequent conversion on the TPU
 
 
-### 4. 下载`TPU-MLIR`代码并编译
+### 4. Download the `TPU-MLIR` code and compile it
 
-(也可以直接下载编译好的release包解压)
+(You can also directly download the pre-compiled release package and extract it)
 
 ``` shell
 git clone git@github.com:sophgo/tpu-mlir.git
@@ -125,29 +125,29 @@ source ./envsetup.sh
 ./build.sh
 ```
 
-## 编译模型
+## Compile the Model
 
-注意此时在Docker环境workspace目录。
+Note that you should now be in the workspace directory of the Docker environment.
 
-### 注册所需的环境变量
-- 找到并进入编译完成后，或者解压完成后的`tpu-mlir`安装目录
-- 执行`source ./envsetup.sh`
-注册所需的环境变量
-### 开始模型转换
+### Register the required environment variables
+- Find and enter the `tpu-mlir` installation directory after compilation or extraction is complete
+- Run `source ./envsetup.sh`
+This registers the required environment variables
+### Start model conversion
 
-在`Wizardcoder-TPU/compile`目录下，执行：
+Under the `Wizardcoder-TPU/compile` directory, run:
 ```shell
 ./compile.sh --mode int4
 ```
-稍等片刻即可导出int4量化后的bmodel文件
+Wait a moment and the INT4-quantized bmodel file will be exported
 
-- 受TPU内存的限制```./compile.sh```目前仅支持在单芯上进行INT4量化，执行```./compile.sh --mode int4```后会在目录下生成```wizardcoder-15B_int4.bmodel```文件
-- 生成bmodel耗时大概3小时以上，建议64G内存以及300G以上磁盘空间，不然很可能OOM或者no space left
+- Due to TPU memory limitations, ```./compile.sh``` currently only supports INT4 quantization on a single chip; after running ```./compile.sh --mode int4```, the ```wizardcoder-15B_int4.bmodel``` file will be generated in the directory
+- Generating the bmodel takes roughly 3 hours or more; 64 GB of memory and more than 300 GB of disk space are recommended, otherwise OOM or "no space left" is very likely
 
-## 编译程序(C++)
+## Compile the Program (C++)
 
-### PCIE 版本
-执行如下编译 (注意如果是SoC版本，需要把demo目录拷贝到SoC环境编译)：
+### PCIE version
+Run the following compilation (note that for the SoC version, you need to copy the demo directory to the SoC environment to compile):
 
 ```shell
 cd Wizardcoder-TPU/demo
@@ -157,7 +157,7 @@ cmake ..
 make
 ```
 
-### SOC版本（在SOC设备上编译）
+### SOC version (compile on the SOC device)
 ```shell
 cd Wizardcoder-TPU/demo
 mkdir build
@@ -165,54 +165,54 @@ cd build
 cmake ..
 make
 ```
-- 程序会自动探测编译环境的体系结构，自动链接相关运行时，所以编译代码是相同的
-- 编译生成`wizardcoder`可执行程序。
-- 为了保证模型可以正常运行，在编译后请不要挪动目录`vocab`以及之下的内容
+- The program automatically detects the architecture of the compilation environment and automatically links the relevant runtime, so the compilation code is the same
+- The compilation generates the `wizardcoder` executable.
+- To ensure the model runs properly, do not move the `vocab` directory or its contents after compilation
 
-完成上文的编译过程后，生成```demo/build/wizardcoder```可执行文件，它可以完成加载bmodel并在```BM1684X```设备上进行推理。示例：
+After completing the compilation process above, the ```demo/build/wizardcoder``` executable is generated, which can load the bmodel and perform inference on a ```BM1684X``` device. Example:
 
 ```shell
 demo/build/wizardcoder -m /path/to/bmodel -d 0
 ```
 
-- -m 指定bmodel的位置
-- -d 指定推理使用的芯片，默认id是0，如果需要在多芯片上推理，请使用逗号分割，如：-d 0,1,2,3
+- -m specifies the location of the bmodel
+- -d specifies the chip used for inference; the default id is 0. If you need to run inference on multiple chips, separate them with commas, e.g. -d 0,1,2,3
 
-示例：
+Example:
 ```shell
 ./wizardcoder -m ../../../models/WizardCoder-15B-V1.0/test/wizardcoder-15B-int4_rc1.bmodel -v ../vocab/vocab.json -d 0
 ```
-实际路径请以本地情况为准。
+The actual paths should match your local situation.
 
-## 运行效果
+## Running Results
 
-以下为单芯片下INT4量化模式的运行效果：
+The following shows the running results in INT4 quantization mode on a single chip:
 
 ![](./assets/wizardcoder.png)
 
-## 常见问题
+## FAQ
 
-### demo程序无法正常运行
+### The demo program cannot run properly
 
-如果demo程序拷贝到运行环境提示无法运行，比如接口找不到等等错误。
-原因是运行环境的库有所不同，将demo中的`lib_pcie`（PCIE）或者 `lib_soc`(SoC)里面的so文件拷贝到运行环境，链接到里面的so即可。
-### 转换模型时需要调试
-- 想要验证python环境是否可以正常运行，可以使用`export_to_onnx.py`中的`net_test_fixed_length`函数进行测试
-- 如果你想要debug，而不是一下子生成完成全部的onnx模型，可以将`export_to_onnx.py`中36行的num_layers改成1, 结合144行的函数对比单个block情况下是否可以和pytroch版本对齐
-
-
-### 在多颗芯片上进行推理
-
-后续会支持多芯上的推理，请使用```./compile.sh --mode [F16/int8/int4] --num_device [2/4/8]```进行转换，编译完成后最终会在compile路径下生成名为wizardcoder-15B_{X}_{Y}dev.bmodel的模型文件，其中X代表量化方式，其值有F16/int8/int4等，Y代表使用的芯片个数，其值可能有1/2/4/8等。
-
-### Wizardcoder-TPU做了哪些修改
-
-只对`modeling_gpt_bigcode.py`做了部分调整。
+If the demo program fails to run after being copied to the runtime environment, e.g. errors such as missing interfaces.
+The reason is that the libraries in the runtime environment differ. Copy the .so files from `lib_pcie` (PCIE) or `lib_soc` (SoC) in the demo to the runtime environment and link against those .so files.
+### Debugging is needed when converting the model
+- To verify whether the python environment works properly, you can use the `net_test_fixed_length` function in `export_to_onnx.py` for testing
+- If you want to debug instead of generating all the onnx models at once, you can change num_layers on line 36 of `export_to_onnx.py` to 1, and use the function on line 144 to compare whether a single block aligns with the pytorch version
 
 
-#### 1. 对`modeling_gpt_bigcode.py`文件代码做调整
+### Running inference on multiple chips
 
-1) 修改如下（这是因为TORCH2的算子转ONNX会失败）：
+Multi-chip inference will be supported later. Please use ```./compile.sh --mode [F16/int8/int4] --num_device [2/4/8]``` for conversion; after compilation, a model file named wizardcoder-15B_{X}_{Y}dev.bmodel will be generated under the compile path, where X represents the quantization method (F16/int8/int4, etc.) and Y represents the number of chips used (1/2/4/8, etc.).
+
+### What modifications did Wizardcoder-TPU make
+
+Only partial adjustments were made to `modeling_gpt_bigcode.py`.
+
+
+#### 1. Adjustments to the code in `modeling_gpt_bigcode.py`
+
+1) The modification is as follows (this is because converting TORCH2 operators to ONNX fails):
 
     ``` python
     sdpa_result = _scaled_dot_product_attention(
@@ -226,7 +226,7 @@ demo/build/wizardcoder -m /path/to/bmodel -d 0
             scale=scale,
         )
     ```
-    大概在560行左右，将`F.scaled_dot_product_attention`替换成了自己的实现:
+    Around line 560, `F.scaled_dot_product_attention` is replaced with a custom implementation:
     ```python
     def _scaled_dot_product_attention(query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False, scale=None) -> torch.Tensor:
         L, S = query.size(-2), key.size(-2)
@@ -247,9 +247,9 @@ demo/build/wizardcoder -m /path/to/bmodel -d 0
         return attn_weight @ value
     
     ```
-2) 修改如下
+2) The modification is as follows
     ```python
     # self.attn = GPTBIGCODE_ATTENTION_CLASSES[config._attn_implementation](config, layer_idx=layer_idx)
     self.attn = GPTBigCodeSdpaAttention(config, layer_idx=layer_idx)
     ```
-    大概在673左右，强制使用GPTBigCodeSdpaAttention，便于计算
+    Around line 673, GPTBigCodeSdpaAttention is forcibly used to simplify the computation

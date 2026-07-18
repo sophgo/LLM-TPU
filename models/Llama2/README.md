@@ -2,42 +2,42 @@
 
 # Llama2
 
-本项目实现BM1684X部署语言大模型[Llama2-7B](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X的PCIE环境，或者SoC环境。
+This project demonstrates deploying the large language model [Llama2-7B](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf) on BM1684X. The model is converted into a bmodel using the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) compiler and deployed to a BM1684X PCIE environment or SoC environment using C++ code.
 
-下文中默认是PCIE环境；如果是SoC环境，按提示操作即可。
+The following assumes a PCIE environment by default; for an SoC environment, just follow the prompts.
 
-# 目录说明
+# Directory description
 ```
 .
-├── README.md                            #使用说明
-├── requirements.txt                     #需要使用的python wheel包
-├── demo                                 #Llama2 c++代码文件
+├── README.md                            # usage instructions
+├── requirements.txt                     # required python wheel packages
+├── demo                                 # Llama2 c++ code files
 │   ├── CMakeLists.txt
-│   └── demo.cpp                         #主程序
-├── web_demo                             #Llama2 web demo代码文件
+│   └── demo.cpp                         # main program
+├── web_demo                             # Llama2 web demo code files
 │   ├── CMakeLists.txt
-│   ├── chat.cpp                         #cpp主程序
-│   ├── chat.py                          #pybind 后的python主程序
-│   └── web_demo.py                      #gradio python界面代码
+│   ├── chat.cpp                         # cpp main program
+│   ├── chat.py                          # python main program after pybind
+│   └── web_demo.py                      # gradio python interface code
 ├── compile
-│   ├── compile.sh                       #用来编译TPU模型的脚本
-│   └── export_onnx.py                   #用来导出onnx的脚本
-│       └── files                        #用于替换原模型的文件
+│   ├── compile.sh                       # script for compiling the TPU model
+│   └── export_onnx.py                   # script for exporting onnx
+│       └── files                        # files used to replace the original model files
 └── support
-    ├── include                          #编译所需的库文件
-    ├── lib_pcie                         #编译PCIE版本所需头文件
-    ├── lib_soc                          #编译SOC版本所需头文件
-    └── tokenizer.model                  #分词模型
+    ├── include                          # library files required for compilation
+    ├── lib_pcie                         # header files required for compiling the PCIE version
+    ├── lib_soc                          # header files required for compiling the SOC version
+    └── tokenizer.model                  # tokenizer model
 ```
 ----------------------------
 
-# 【阶段一】模型编译
+# [Stage 1] Model compilation
 
-## 注意点
-* 模型编译必须要在docker内完成，无法在docker外操作
+## Notes
+* Model compilation must be done inside docker; it cannot be done outside docker
 
-### 步骤一：模型下载
-虽然Llama2模型允许商业开源，但是模型下载需要想Meta提交使用申请，因此测试模型时可以使用我们已经下载好的模型
+### Step 1: Download the model
+Although the Llama2 model is open source for commercial use, downloading the model requires submitting a usage application to Meta, so when testing the model you can use the model we have already downloaded
 ```bash
 pip3 install dfss
 # llama2-7B
@@ -49,9 +49,9 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/llama2-13b-torc
 unzip llama2-13b-torch.zip
 ```
 
-### 步骤二：下载docker
+### Step 2: Download docker
 
-下载docker，启动容器，如下：
+Download docker and start the container, as follows:
 
 ``` shell
 docker pull sophgo/tpuc_dev:latest
@@ -60,7 +60,7 @@ docker pull sophgo/tpuc_dev:latest
 docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev:latest
 ```
 
-### 步骤三：下载TPU-MLIR代码并编译
+### Step 3: Download the TPU-MLIR code and compile it
 
 ``` shell
 git clone git@github.com:sophgo/tpu-mlir.git
@@ -68,54 +68,54 @@ cd tpu-mlir
 source ./envsetup.sh
 ./build.sh
 ```
-* PS：重新进入docker环境并且需要编译模型时，必须在此路径下执行上述`source ./envsetup.sh` 和 `./build.sh`才能完成后续模型编译。
+* PS: When re-entering the docker environment and needing to compile the model, you must run the above `source ./envsetup.sh` and `./build.sh` in this path before proceeding with subsequent model compilation.
 
-### 步骤四：对齐模型环境
+### Step 4: Align the model environment
 
 ``` shell
 pip install -r requirements.txt
 cp ./compile/files/llama-2-7b-chat-hf/modeling_llama.py /usr/local/lib/python3.10/dist-packages/transformers/models/llama/modeling_llama.py
 ```
 
-* PS：不一定是/usr/local/lib/python3.10/dist-packages/transformers/models/llama/modeling_llama.py这个路径，建议替换前先pip show transformers查看一下
+* PS: The path is not necessarily /usr/local/lib/python3.10/dist-packages/transformers/models/llama/modeling_llama.py; it is recommended to run pip show transformers to check before replacing.
 
-### 步骤五：生成onnx文件
+### Step 5: Generate the onnx files
 
 ``` shell
 cd compile
 python export_onnx.py --model_path your_model_path --seq_length 512
 ```
 
-* PS1：your_model_path 指的是原模型下载后的地址, 如:"../../torch2onnx/llama-2-7b-chat-hf", 可以根据需要选择使用7b模型还是13b模型。
-* PS2：如果你想要debug，而不是一下子生成完成全部的onnx模型，可以将240行的num_layers改成1, 结合233行的函数对比单个block情况下是否可以和
-* PS3：默认导出sequence length为512的模型
+* PS1: your_model_path refers to the path of the downloaded original model, e.g. "../../torch2onnx/llama-2-7b-chat-hf". You can choose to use the 7b model or the 13b model as needed.
+* PS2: If you want to debug instead of generating all the onnx models at once, you can change num_layers on line 240 to 1, and use the function on line 233 to compare whether a single block matches.
+* PS3: By default, a model with a sequence length of 512 is exported.
 
-### 步骤六：生成bmodel文件
+### Step 6: Generate the bmodel file
 
-生成单芯模型
+Generate a single-chip model
 
 ``` shell
 ./compile.sh --mode int8 --name llama2-7b # same as int4
 ```
 
-生成双芯模型
+Generate a dual-chip model
 
 ``` shell
 ./compile.sh --mode int8 --num_device 2 --name llama2-7b # same as int4
 ```
 
-* PS1：编译完成后最终会在compile路径下生成名为llama2-{X}b_{Y}_{Z}dev.bmodel,其中X为7或13，Y为`compile.sh`时选择的`mode`的数据类型,Z为推理的芯片数量(如果不指定num_device, 会省略{Z}dev的部分)
-* PS2：生成bmodel耗时大概3小时以上，建议64G内存以及200G以上硬盘空间，不然很可能OOM或者no space left
-* PS3：如果想要编译llama2-7b，则--name必须为llama2-7b，想要编译llama2-13b，则必须--name为llama2-13b
-* PS4：目前给定的lib_pcie和lib_soc部分仅包含单芯的动态库，多芯部分会在后续更新
+* PS1: After compilation, a file named llama2-{X}b_{Y}_{Z}dev.bmodel will be generated in the compile path, where X is 7 or 13, Y is the data type of the `mode` selected in `compile.sh`, and Z is the number of chips used for inference (if num_device is not specified, the {Z}dev part is omitted).
+* PS2: Generating the bmodel takes more than about 3 hours; 64G of memory and more than 200G of disk space are recommended, otherwise OOM or no space left errors are very likely.
+* PS3: If you want to compile llama2-7b, --name must be llama2-7b; if you want to compile llama2-13b, --name must be llama2-13b.
+* PS4: The currently provided lib_pcie and lib_soc only contain single-chip dynamic libraries; the multi-chip part will be updated later.
 
 ----------------------------
 
-# 阶段二：可执行文件生成
+# Stage 2: Executable generation
 
-## 编译程序(C++版本)
+## Compile the program (C++ version)
 
-执行如下编译，(PCIE版本与SoC版本相同)：
+Run the following compilation (the PCIE version is the same as the SoC version):
 
 ```shell
 cd demo
@@ -125,18 +125,18 @@ cmake ..
 make
 ```
 
-编译生成llama2可执行程序，将`llama2`放到demo目录下，同时按照下列方式指定芯片编号（默认只使用0号芯片）和bmodel路径。运行`llama2`:
+Compilation generates the llama2 executable. Put `llama2` in the demo directory, and specify the chip number (only chip 0 is used by default) and the bmodel path as follows. Run `llama2`:
 ```shell
 ./llama2 --model your_llama2_bmodel_path --tokenizer ../support/tokenizer.model --dev dev_id
 ```
 
-如果是双芯分布式推理，使用如下命令(比如指定在2号和3号芯片上运行, 用`source /etc/profiel`后使用`bm-smi`查询芯片id号,查看需要在之前安装过libsophon驱动)：
+For dual-chip distributed inference, use the following command (for example, to run on chips 2 and 3; use `bm-smi` after `source /etc/profiel` to query the chip IDs; the libsophon driver must have been installed beforehand):
 ```shell
 ./llama2 --model your_llama2_bmodel_path --tokenizer ../support/tokenizer.mode --devid 2,3
 ```
-* PS：请勿将编译好的单芯模型用多颗芯片进行推理。可以在编译好的bmodel名称中了解它是否是多芯模型，如`llama2-7b_int8_2dev.bmodel`是可以跑双芯的模型。双芯模型可以用单芯运行。
+* PS: Do not use multiple chips to run inference on a compiled single-chip model. You can tell whether it is a multi-chip model from the compiled bmodel name; for example, `llama2-7b_int8_2dev.bmodel` is a model that can run on dual chips. A dual-chip model can run on a single chip.
 
-## 编译程序(Python Web版本)【单芯】
+## Compile the program (Python Web version) [single chip]
 
 ```shell
 pip install gradio==3.39.0
@@ -147,22 +147,22 @@ cmake ..
 make -j
 ```
 
-编译成功会在`build`文件夹下生成`libtpuchat.so*`, 此时可以在web_demo.py中指定bmodel\_path token\_path device\_id, lib_path(编译生产的`libtpuchat.so*`文件, 默认路径是`./build`下), 以及dev_id。
+After successful compilation, `libtpuchat.so*` will be generated in the `build` folder. At this point, you can specify bmodel\_path, token\_path, device\_id, lib_path (the compiled `libtpuchat.so*` file, default path is under `./build`), and dev_id in web_demo.py.
 ```python
 python web_demo.py --dev 0 --bmodel_path your_bmodel_path
 ```
-即可成功运行web的demo。
-* PS：在用户不修改上述token\_path的lib\_path的存放路径前提下只需指定bmodel\_path即可运行程序。
+The web demo will then run successfully.
+* PS: As long as the user does not modify the storage paths of the above token\_path and lib\_path, only bmodel\_path needs to be specified to run the program.
 
-如果是SoC环境，参考C++版本
+For an SoC environment, refer to the C++ version.
 
-* PS：尽量下载gradio==3.39.0版本，不然会出现各种问题！！
+* PS: Try to download gradio==3.39.0, otherwise various problems will occur!!
 
-# 常见问题
+# FAQ
 
-### 如何跑通Llama2-13B 6芯模型
+### How to run the Llama2-13B 6-chip model
 
-首先按照[这个链接](https://github.com/sophgo/LLM-TPU/tree/main)中的版本检查，检查sophon-driver版本是否是0.5.0，如果是0.4.9的话会挂死
+First, follow the version check in [this link](https://github.com/sophgo/LLM-TPU/tree/main) to check whether the sophon-driver version is 0.5.0; if it is 0.4.9, it will hang.
 
 ```shell
 cd /workspace/LLM-TPU/models/Llama2/demo
@@ -178,5 +178,4 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/llama2-
 
 ./llama2 --model llama2-13b_int8_6dev.bmodel --tokenizer ../support/token_config/tokenizer.model  --devid 0,1,2,3,4,5
 ```
-
 

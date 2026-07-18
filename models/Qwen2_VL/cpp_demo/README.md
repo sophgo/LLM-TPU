@@ -1,12 +1,12 @@
 ``` shell
-# 安装opencv依赖
+# Install opencv dependencies
 sudo apt update
 sudo apt install libopencv-dev
 
-# 编译
+# Compile
 mkdir build && cd build 
 cmake .. && make
 
-# 运行
+# Run
 ./pipeline -m bmodel_path -c config
 ```

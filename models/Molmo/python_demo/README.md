@@ -1,16 +1,16 @@
-# 环境准备
-> （python demo运行之前需要执行这个）
+# Environment setup
+> (This must be done before running the python demo)
 ```
 sudo apt-get update
 sudo apt-get install pybind11-dev
 ```
 
-如果不打算自己编译模型，可以直接用下载好的模型
+If you don't plan to compile the model yourself, you can use the pre-downloaded model directly
 ```
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/molmo-7b_int4_seq1024_384x384.bmodel
 ```
 
-编译库文件
+Build the library files
 ```
 mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..

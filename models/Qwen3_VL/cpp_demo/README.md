@@ -1,29 +1,28 @@
-## 编译方法 (没有自带sophon-opencv)
+## Compilation method (without the bundled sophon-opencv)
 
 ``` shell
-# 安装opencv依赖
+# Install opencv dependencies
 sudo apt update
 sudo apt install libopencv-dev
 
-# 编译
+# Compile
 mkdir build && cd build 
 cmake .. && make
 ```
 
 
-## 编译方法 (自带/opt/sophon/sophon-opencv-latest)
+## Compilation method (with the bundled /opt/sophon/sophon-opencv-latest)
 
-需要修改CMakeLists.txt中的这一行如下：
+You need to modify this line in CMakeLists.txt as follows:
 ```cmake
 set(SOPHON_OPENCV TRUE)
 ```
 
-然后编译
+Then compile
 ``` shell
 mkdir build && cd build 
 cmake .. && make
 ```
 
-## 运行
+## Run
 ./pipeline -m bmodel_path -c config
-

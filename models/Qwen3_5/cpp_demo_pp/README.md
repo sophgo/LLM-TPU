@@ -1,24 +1,26 @@
 # Qwen3_5 cpp_demo_pp (Pipeline Parallel)
 
-本目录提供 Qwen3.5 在 BM1684X / BM1688 上的 **Pipeline Parallel (PP)** C++ 部署 demo。
-相较于 `cpp_demo`（整模型 → 单 bmodel → 单 device），`cpp_demo_pp` 将模型按组件
-拆分为若干 bmodel，分别加载到不同 device，实现多卡流水并行，从而支持单卡放不下的大模型。
+This directory provides a **Pipeline Parallel (PP)** C++ deployment demo for Qwen3.5 on BM1684X / BM1688.
+Compared with `cpp_demo` (whole model → single bmodel → single device), `cpp_demo_pp` splits the model
+by component into several bmodels and loads them onto different devices, achieving multi-card pipeline
+parallelism and thus supporting large models that cannot fit on a single card.
 
-| 组件 | bmodel 文件名子串 | 内容 |
+| Component | bmodel filename substring | Contents |
 | --- | --- | --- |
 | EmbedVit | `embed_vit` | ViT + token embedding + embedding_cache |
-| Blocks | `block_NN` (零填充) | 一段连续的 transformer 层 (block + block_cache) |
+| Blocks | `block_NN` (zero-padded) | A contiguous segment of transformer layers (block + block_cache) |
 | LmHead | `lmhead` | lm_head + greedy / sample / penalty heads |
 
-C++ 端通过文件名子串自动识别组件：优先级 `embed_vit` → `lmhead` → `block`，
-block 文件按字典序排序，因此 `_pp_combine` 输出使用零填充编号 (`block_00`、`block_01` …)。
-每个 block bmodel 内部沿用原始全局层号 (`block_0`、`block_cache_0`、…)，
-`Block` 类自动从 network names 解析其承载的层范围 `[start_idx, end_idx]`。
+The C++ side automatically identifies components by filename substring, with the priority
+`embed_vit` → `lmhead` → `block`. Block files are sorted lexicographically, so the `_pp_combine`
+output uses zero-padded numbering (`block_00`, `block_01` …). Inside each block bmodel, the original
+global layer numbers are retained (`block_0`, `block_cache_0`, …), and the `Block` class automatically
+parses the layer range `[start_idx, end_idx]` it carries from the network names.
 
-## 已模型
+## Pre-compiled Models
 
 ``` shell
-# Qwen3.5-4B 六芯
+# Qwen3.5-4B, six chips
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-4b-int4-autoround_w4bf16_seq2048_bm1684x_6dev_dynamic_20260429_153532_block_00.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-4b-int4-autoround_w4bf16_seq2048_bm1684x_6dev_dynamic_20260429_153532_block_01.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-4b-int4-autoround_w4bf16_seq2048_bm1684x_6dev_dynamic_20260429_153532_block_02.bmodel
@@ -26,7 +28,7 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-4b-int4-autoround_w4bf16_seq2048_bm1684x_6dev_dynamic_20260429_153532_embed_vit.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-4b-int4-autoround_w4bf16_seq2048_bm1684x_6dev_dynamic_20260429_153532_lmhead.bmodel
 
-# Qwen3.5-9B 六芯
+# Qwen3.5-9B, six chips
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-9b-int4-autoround_w4bf16_seq2048_bm1684x_6dev_dynamic_20260429_152927_block_00.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-9b-int4-autoround_w4bf16_seq2048_bm1684x_6dev_dynamic_20260429_152927_block_01.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-9b-int4-autoround_w4bf16_seq2048_bm1684x_6dev_dynamic_20260429_152927_block_02.bmodel
@@ -34,7 +36,7 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-9b-int4-autoround_w4bf16_seq2048_bm1684x_6dev_dynamic_20260429_152927_embed_vit.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-9b-int4-autoround_w4bf16_seq2048_bm1684x_6dev_dynamic_20260429_152927_lmhead.bmodel
 
-# Qwen3.5-35B-A3B 七芯(2K)
+# Qwen3.5-35B-A3B, seven chips (2K)
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_7dev/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq2048_bm1684x_7dev_dynamic_20260611_174448_block_00.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_7dev/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq2048_bm1684x_7dev_dynamic_20260611_174448_block_01.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_7dev/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq2048_bm1684x_7dev_dynamic_20260611_174448_block_02.bmodel
@@ -43,30 +45,30 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_7dev/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq2048_bm1684x_7dev_dynamic_20260611_174448_embed_vit.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_7dev/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq2048_bm1684x_7dev_dynamic_20260611_174448_lmhead.bmodel
 
-# Qwen3.5-35B-A3B 七芯(10K)
+# Qwen3.5-35B-A3B, seven chips (10K)
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_int4_10k_7dev.tar
 ```
 
-## 目录结构
+## Directory Structure
 
 ```
 cpp_demo_pp/
 ├── CMakeLists.txt
-├── pipeline.cpp           # CLI 入口（与 cpp_demo/pipeline.cpp 接口一致，新增多卡 -d）
-├── chat.{hpp,cpp}         # Qwen3_5 顶层封装：扫描 bmodel 目录、分配 device、串联流水
-├── embed_vit.{hpp,cpp}    # ViT + 词嵌入
-├── block.{hpp,cpp}        # 连续若干 transformer 层；FA_INTERVAL=4 的 FA / 非 FA 二分
-├── lmhead.{hpp,cpp}       # LM Head + 采样头
-├── support.{hpp,cpp}      # 公共工具 (empty / init_tensors / net_launch / d2d ...)
-├── include/               # tokenizers-cpp、图像/视频处理头文件
-├── lib_pcie/  lib_soc/    # libsophon 静态库 (PCIe / SoC)
+├── pipeline.cpp           # CLI entry (same interface as cpp_demo/pipeline.cpp, with multi-card -d added)
+├── chat.{hpp,cpp}         # Qwen3_5 top-level wrapper: scans the bmodel directory, assigns devices, chains the pipeline
+├── embed_vit.{hpp,cpp}    # ViT + word embedding
+├── block.{hpp,cpp}        # A contiguous segment of transformer layers; FA / non-FA split at FA_INTERVAL=4
+├── lmhead.{hpp,cpp}       # LM Head + sampling heads
+├── support.{hpp,cpp}      # common utilities (empty / init_tensors / net_launch / d2d ...)
+├── include/               # tokenizers-cpp, image/video processing headers
+├── lib_pcie/  lib_soc/    # libsophon static libraries (PCIe / SoC)
 └── test.jpg test.mp4 gettysburg.jpg
 ```
 
-## 1. 生成 PP bmodel
+## 1. Generate the PP bmodels
 
-使用 `tpu-mlir` 的 `llm_convert.py`，加 `--distribute_strategy pp --num_device N`。
-`--num_device` 即 PP 的总 device 数（= EmbedVit 1 + Blocks K + LmHead 1）。
+Use `llm_convert.py` from `tpu-mlir` with `--distribute_strategy pp --num_device N`.
+`--num_device` is the total number of devices for PP (= EmbedVit 1 + Blocks K + LmHead 1).
 
 ```bash
 source /path/to/tpu-mlir/envsetup.sh
@@ -80,7 +82,7 @@ llm_convert.py \
     -o qwen3.5_pp_test
 ```
 
-生成的 4 个 bmodel（4 device 示例）：
+The 4 generated bmodels (4-device example):
 
 ```
 qwen3.5_pp_test/
@@ -90,87 +92,88 @@ qwen3.5_pp_test/
 └── qwen3.5-9b-int4-autoround_..._4dev_dynamic_<ts>_lmhead.bmodel
 ```
 
-> ⚠️ `llm_convert.py` 在 `_pp_combine` 之前还会输出未拆分的整体 bmodel
-> (`..._<ts>.bmodel`)，**不要**把它放进 `-m` 指定的目录，否则会被忽略但白占磁盘。
+> ⚠️ Before `_pp_combine`, `llm_convert.py` also outputs the unsplit whole bmodel
+> (`..._<ts>.bmodel`); do **not** put it in the directory specified by `-m`, otherwise it will be
+> ignored but still waste disk space.
 
-约束：
-- 每个 block bmodel 至少包含一层 Full-Attention 层（Qwen3.5 每 4 层一次），
-  即要求 `K ≤ NUM_LAYERS / FA_INTERVAL`（9B 共 32 层，PP block 数最多 8）。
-- 各组件 bmodel 必须由同一次 `llm_convert.py` 生成，时间戳一致。
+Constraints:
+- Each block bmodel must contain at least one Full-Attention layer (Qwen3.5 has one every 4 layers),
+  i.e. `K ≤ NUM_LAYERS / FA_INTERVAL` is required (the 9B model has 32 layers in total, so at most 8 PP blocks).
+- The component bmodels must be generated by the same run of `llm_convert.py`, with identical timestamps.
 
-## 2. 编译 demo
+## 2. Compile the demo
 
-依赖：`cmake`、`g++`、OpenCV 4.x、libsophon。
+Dependencies: `cmake`, `g++`, OpenCV 4.x, libsophon.
 
 ```bash
-# 系统 opencv (apt)
+# system opencv (apt)
 sudo apt update && sudo apt install -y libopencv-dev
 
 cd cpp_demo_pp
 mkdir -p build && cd build
-cmake -DTARGET_ARCH=pcie ..   # SoC 端：-DTARGET_ARCH=soc
+cmake -DTARGET_ARCH=pcie ..   # SoC side: -DTARGET_ARCH=soc
 make -j8
 ```
 
-如使用 `/opt/sophon/sophon-opencv-latest`，按 `cpp_demo/README.md` 所述将
-`CMakeLists.txt` 中 `set(SOPHON_OPENCV FALSE)` 改为 `TRUE` 后再 cmake。
+If you use `/opt/sophon/sophon-opencv-latest`, change `set(SOPHON_OPENCV FALSE)` to `TRUE` in
+`CMakeLists.txt` as described in `cpp_demo/README.md` before running cmake.
 
-## 3. 运行
+## 3. Run
 
 ```bash
 export LD_LIBRARY_PATH=/opt/sophon/libsophon-current/lib:$LD_LIBRARY_PATH
 
-# 单卡（仅用于调试，9B 模型实际放不下）
+# single card (for debugging only; the 9B model does not actually fit)
 ./pipeline -m /path/to/qwen3.5_pp_test -c /path/to/Qwen3_5/config
 
-# 多卡：按 EmbedVit, Block_0, ..., Block_{K-1}, LmHead 顺序分配
+# multi-card: assign in the order EmbedVit, Block_0, ..., Block_{K-1}, LmHead
 ./pipeline -m /path/to/qwen3.5_pp_test -c /path/to/Qwen3_5/config -d 8,9,10,11
 ```
 
-`-c` 指向包含 `tokenizer.json`、`preprocessor_config.json` 等的目录
-（参见 `models/Qwen3_5/config/`）。
+`-c` points to the directory containing `tokenizer.json`, `preprocessor_config.json`, etc.
+(see `models/Qwen3_5/config/`).
 
-`-d` 接受逗号分隔的 device id 列表：
+`-d` accepts a comma-separated list of device ids:
 
-| ID 数量 | 行为 |
+| Number of IDs | Behavior |
 | --- | --- |
-| 1 | 全部组件加载到该 device |
-| = 组件总数 (1+K+1) | 按顺序一一对应 |
-| 其它 | round-robin |
+| 1 | All components are loaded onto that device |
+| = total number of components (1+K+1) | One-to-one mapping in order |
+| Other | round-robin |
 
-其余 CLI 参数 (`-s` 采样、`-r` 视频比例、`-f` 视频 fps 等) 与
-`cpp_demo/pipeline.cpp` 一致。
+The remaining CLI parameters (`-s` sampling, `-r` video ratio, `-f` video fps, etc.) are the same as
+in `cpp_demo/pipeline.cpp`.
 
-### 长文本 / Chunk Prefill
+### Long Text / Chunk Prefill
 
-当 bmodel 使用 `--use_block_with_kv` 导出（即带 history 支持）时，
-`cpp_demo_pp` 支持 **chunk prefill**：输入超过单次 prefill chunk 长度
-（`prefill_chunk_length`，默认为 `seq_length / 4`）时会自动分段处理，
-从而支持远超 `MAX_INPUT_LENGTH` 的长文本输入。
+When the bmodel is exported with `--use_block_with_kv` (i.e. with history support),
+`cpp_demo_pp` supports **chunk prefill**: when the input exceeds the length of a single prefill chunk
+(`prefill_chunk_length`, defaulting to `seq_length / 4`), it is automatically processed in segments,
+thus supporting long-text input far beyond `MAX_INPUT_LENGTH`.
 
-启动时若检测到 `block_prompt_<idx>` 网络，会打印 `History Support: True`。
+If a `block_prompt_<idx>` network is detected at startup, `History Support: True` is printed.
 
-| 参数 | 说明 |
+| Parameter | Description |
 | --- | --- |
-| `-p, --prompt` | 以程序化模式运行单次推理，传入提示文本 |
-| `-t, --prompt_file` | 从文本文件读取内容作为提示；与 `-p` 同时使用时拼接 |
-| `-i, --media_path` | 指定图片/视频路径（逗号分隔多个） |
+| `-p, --prompt` | Run a single inference in programmatic mode with the given prompt text |
+| `-t, --prompt_file` | Read content from a text file as the prompt; concatenated when used together with `-p` |
+| `-i, --media_path` | Specify image/video paths (comma-separated for multiple) |
 
-示例：
+Example:
 
 ```bash
-# 从文件读取长文本并提问
+# read long text from a file and ask a question
 ./pipeline -m /path/to/qwen3.5_kv -c config -d 8,9,10,11 \
     -t novel.txt -p "what is it talking about ?"
 
-# 仅传入提示文本
+# pass in only the prompt text
 ./pipeline -m /path/to/qwen3.5_kv -c config -d 8,9,10,11 \
     -p "请介绍一下杭州"
 ```
 
-程序化模式下会打印 `Total Tokens: <n>` 表示输入 token 数。
+In programmatic mode, `Total Tokens: <n>` is printed to indicate the number of input tokens.
 
-启动时会打印组件 → device 映射，例如：
+At startup, the component → device mapping is printed, for example:
 
 ```
 === Multi-Device Configuration ===
@@ -181,30 +184,31 @@ LmHead    -> Device 11 [..._lmhead.bmodel]
 ==================================
 ```
 
-## 4. 性能参考
+## 4. Performance Reference
 
-Qwen3.5-9B int4 (`w4bf16, seq2048`)，4 张 BM1684X PCIe，4-device PP：
+Qwen3.5-9B int4 (`w4bf16, seq2048`), 4 BM1684X PCIe cards, 4-device PP:
 
-| 指标 | 数值 |
+| Metric | Value |
 | --- | --- |
 | First-Token Latency (FTL) | ≈ 0.25 s |
 | Tokens / s (TPS) | ≈ 7.7 tok/s |
 
-## 5. FA / 非 FA 层说明
+## 5. FA / Non-FA Layer Notes
 
-Qwen3.5 每 `FA_INTERVAL=4` 层插入一层 Full-Attention（带 KV cache），
-其余层为 linear / recurrent 结构（在 cache 网络中复用 `input_mems[1]/[2]`
-作为 conv state / recurrent state）。`Block::is_FA(global_idx)` 用全局
-层号判断层类型，因此 PP 拆分时务必保留每层原始的全局编号。
-每个 Block bmodel 至少需包含一层 FA 层，否则 `Block` 无法推断 KV 形状。
+Qwen3.5 inserts one Full-Attention layer (with KV cache) every `FA_INTERVAL=4` layers;
+the remaining layers use linear / recurrent structures (reusing `input_mems[1]/[2]`
+as conv state / recurrent state in the cache networks). `Block::is_FA(global_idx)` determines the
+layer type using the global layer number, so the original global numbering of each layer must be
+preserved when splitting for PP.
+Each Block bmodel must contain at least one FA layer, otherwise `Block` cannot infer the KV shape.
 
-## 6. 常见问题
+## 6. FAQ
 
-| 现象 | 排查 |
+| Symptom | Troubleshooting |
 | --- | --- |
-| `bmodel not found for component …` | 文件名缺少 `embed_vit` / `block` / `lmhead` 子串；用最新版 `_pp_combine` 重新生成 |
-| `bmrt_load_bmodel ... NOT_INITIALIZED` | `-d` 指定的卡被占用或处于 Fault；`bm-smi` 检查 |
-| `History Support: False`（信息提示） | 当前 `_pp_combine` 输出不带 history-with-kv，正常；长文本需要使用带 KV 的 bmodel |
-| 长文本输入报 `exceed maximum length` | 使用 `--use_block_with_kv` + `--prefill_chunk_length` 导出的 bmodel 才支持 chunk prefill |
-| 找不到 `libbmrt.so` / `libbmlib.so` | `export LD_LIBRARY_PATH=/opt/sophon/libsophon-current/lib:$LD_LIBRARY_PATH` |
-| 加载阶段卡住 | 卡处于 Fault；换一组 device id 或重启驱动 |
+| `bmodel not found for component …` | The filename lacks the `embed_vit` / `block` / `lmhead` substring; regenerate with the latest `_pp_combine` |
+| `bmrt_load_bmodel ... NOT_INITIALIZED` | The card specified by `-d` is occupied or in Fault state; check with `bm-smi` |
+| `History Support: False` (informational message) | The current `_pp_combine` output does not include history-with-kv, which is normal; long text requires a bmodel with KV |
+| Long-text input reports `exceed maximum length` | Only bmodels exported with `--use_block_with_kv` + `--prefill_chunk_length` support chunk prefill |
+| Cannot find `libbmrt.so` / `libbmlib.so` | `export LD_LIBRARY_PATH=/opt/sophon/libsophon-current/lib:$LD_LIBRARY_PATH` |
+| Stuck during the loading phase | The card is in Fault state; switch to another set of device ids or restart the driver |

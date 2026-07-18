@@ -1,10 +1,10 @@
-推理命令在run.sh里面
+The inference command is in run.sh
 
 ```bash
 mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..
 ```
-记得替换下面的bmodel地址
+Remember to replace the bmodel path below
 
 ```bash
 cd models/RWKV6/python_demo/

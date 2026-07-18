@@ -7,7 +7,7 @@ pip install transformers_stream_generator einops tiktoken accelerate transformer
 ```
 
 ### export onnx
-../compile/Qwen-7B-Chat/是你模型的位置
+../compile/Qwen-7B-Chat/ is the location of your model
 ```shell
 cp ../compile/files/Qwen-7B-Chat/modeling_qwen.py ../compile/Qwen-7B-Chat/modeling_qwen.py
 
@@ -27,8 +27,8 @@ popd
 ./compile.sh --mode int4 --name qwen-7b --seq_length 8192
 ```
 
-### 下载迁移好的模型
-也可以直接下载编译好的模型，不用自己编译
+### Download the migrated model
+You can also directly download the pre-compiled model instead of compiling it yourself
 ```shell
 pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen-7b_int4_1dev_8192_slide.bmodel
@@ -36,7 +36,7 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen-7b
 
 ### python demo
 
-对于python demo，一定要在LLM-TPU里面source envsetup.sh（与tpu-mlir里面的envsetup.sh有区别）
+For the python demo, you must source envsetup.sh inside LLM-TPU (which is different from the envsetup.sh inside tpu-mlir)
 ```shell
 cd /workspace/LLM-TPU
 source envsetup.sh

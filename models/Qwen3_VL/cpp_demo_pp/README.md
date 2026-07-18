@@ -1,8 +1,8 @@
-# Qwen3-VL C++ 多设备推理 Demo
+# Qwen3-VL C++ Multi-Device Inference Demo
 
-本工程为 Qwen3-VL 多模态大模型的 C++ 多设备推理 Demo，支持将模型分布到多个 TPU 设备上进行推理，支持图片、视频和纯文本交互。
+This project is a C++ multi-device inference demo for the Qwen3-VL multimodal large model. It supports distributing the model across multiple TPU devices for inference, and supports image, video, and pure-text interaction.
 
-## 模型
+## Models
 
 ``` shell
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3vl_multi/qwen3-vl-4b-instruct-awq-4bit_w4bf16_seq2048_bm1684x_6dev_dynamic_a_block.bmodel
@@ -13,9 +13,9 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3vl
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3vl_multi/qwen3-vl-4b-instruct-awq-4bit_w4bf16_seq2048_bm1684x_6dev_dynamic_lmhead.bmodel
 ```
 
-## 编译
+## Build
 
-### 方式一：使用系统 OpenCV
+### Option 1: Use System OpenCV
 
 ``` shell
 sudo apt update
@@ -25,52 +25,51 @@ mkdir build && cd build
 cmake .. && make
 ```
 
-### 方式二：使用 Sophon OpenCV（/opt/sophon/sophon-opencv-latest）
+### Option 2: Use Sophon OpenCV (/opt/sophon/sophon-opencv-latest)
 
-修改 `CMakeLists.txt`，取消以下行的注释：
+Edit `CMakeLists.txt` and uncomment the following line:
 ```cmake
 set(SOPHON_OPENCV TRUE)
 ```
 
-然后编译：
+Then build:
 ``` shell
 mkdir build && cd build
 cmake .. && make
 ```
 
-## 运行
+## Run
 
 ```shell
 ./pipeline -m <model_path> -c <config_path> [options]
 ```
 
-### 参数说明
+### Parameter Description
 
-| 参数 | 说明 | 默认值 |
+| Parameter | Description | Default |
 |------|------|--------|
-| `-m`, `--model` | bmodel 文件所在目录（必填） | — |
-| `-c`, `--config` | 配置文件目录，需包含 `tokenizer.json`（必填） | — |
-| `-d`, `--devid` | TPU 设备 ID，多设备用逗号分隔 | `0` |
-| `-r`, `--video_ratio` | 视频采样比例 | `0.25` |
-| `-f`, `--video_fps` | 视频采样帧率 | `1.0` |
-| `-s`, `--do_sample` | 启用采样生成（默认贪心解码） | `false` |
+| `-m`, `--model` | Directory containing the bmodel files (required) | — |
+| `-c`, `--config` | Configuration directory; must contain `tokenizer.json` (required) | — |
+| `-d`, `--devid` | TPU device IDs; separate multiple devices with commas | `0` |
+| `-r`, `--video_ratio` | Video sampling ratio | `0.25` |
+| `-f`, `--video_fps` | Video sampling frame rate | `1.0` |
+| `-s`, `--do_sample` | Enable sampling generation (greedy decoding by default) | `false` |
 
-### 示例
+### Examples
 
 ```shell
-# 单设备运行
+# Run on a single device
 ./pipeline -m /path/to/bmodel -c /path/to/config
 
-# 多设备运行（使用设备0和设备1）
+# Run on multiple devices (using device 0 and device 1)
 ./pipeline -m /path/to/bmodel -c /path/to/config -d 0,1
 
-# 启用采样
+# Enable sampling
 ./pipeline -m /path/to/bmodel -c /path/to/config -s
 ```
 
-### 交互命令
+### Interactive Commands
 
-运行后进入交互式对话，依次输入问题和媒体文件路径（留空则为纯文本对话）：
-- 输入 `q` / `quit` / `exit`：退出程序
-- 输入 `clear` / `new` / `c`：清除历史，开始新对话
-
+After running, an interactive conversation starts. Enter your question and media file path in turn (leave empty for pure-text conversation):
+- Enter `q` / `quit` / `exit`: exit the program
+- Enter `clear` / `new` / `c`: clear history and start a new conversation

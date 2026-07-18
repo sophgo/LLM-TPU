@@ -1,28 +1,28 @@
-# 目录说明
+# Directory description
 ```
 .
 ├── README.md
 ├── compile
-│   ├── compile.sh                          #用来编译TPU模型的脚本
-│   ├── export_onnx.py                      #用来导出onnx的脚本
-│   └── files                               #用于替换原模型的文件
+│   ├── compile.sh                          #Script used to compile the TPU model
+│   ├── export_onnx.py                      #Script used to export onnx
+│   └── files                               #Files used to replace the original model
 ├── python_demo
-│   ├── chat.cpp                            #主程序文件
-└── └──pipeline.py                         #python demo的执行脚本
+│   ├── chat.cpp                            #Main program file
+└── └──pipeline.py                         #Execution script of the python demo
 ```
 ----------------------------
 
-# 编译与运行
-如果你不想从头编译模型，前三步可以直接省略，直接进入第四步
+# Compile and run
+If you do not want to compile the model from scratch, you can skip the first three steps and go directly to step 4
 
-### 一：环境安装
+### 1: Environment installation
 
 ```bash
 sudo apt-get update
 pip3 install transformers==4.45.1
 ```
 
-### 二：生成onnx
+### 2: Generate onnx
 
 ```bash
 cd compile
@@ -30,21 +30,21 @@ cp files/DriveMM/modeling_llama.py /usr/local/lib/python3.10/dist-packages/trans
 python export_onnx.py
 ```
 
-### 三：生成bmodel
+### 3: Generate bmodel
 
-生成2048长度默写
+Generate a 2048-length model
 ```bash
 ./compile.sh --seq_length 2048 --name drivemm
 ```
 
-### 四：运行模型
+### 4: Run the model
 [python_demo](./python_demo/README.md)
 
-## 模型推理(Python Demo版本)
-参考
+## Model inference (Python Demo version)
+Reference
 
-## 性能测试
+## Performance test
 
-|   测试平台   |           测试模型              | 量化方式 | 模型长度 | first token latency(s) | token per second(tokens/s) |
+|   Test platform   |           Test model              | Quantization method | Model length | first token latency(s) | token per second(tokens/s) |
 | ----------- | ------------------------------ | -------- | -------- | --------------------- | -------------------------- |
 | SE7-32      | drivemm                        | INT4     | 2048     | 3.484                 | 8.247                      |

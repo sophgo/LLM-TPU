@@ -1,20 +1,20 @@
-# 环境准备
-> （python demo运行之前需要执行这个）
+# Environment preparation
+> (This needs to be executed before running the python demo)
 ```
 sudo apt-get update
 sudo apt-get install pybind11-dev
 pip3 install sentencepiece transformers==4.45.2
 ```
 
-如果不打算自己编译模型，可以直接用下载好的模型
+If you do not plan to compile the model yourself, you can directly use the downloaded model
 ```
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/llama3.2-11b-vision_int4_512seq.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/llama3.2-11b-vision_int4_2048seq.bmodel
-<!-- 下载新方法编译的模型 -->
+<!-- Download the model compiled with the new method -->
 python3 -m dfss --url=open@sophgo.com:/share/hengyang/llama-3.2-11b-vision-instruct_w4bf16_seq512_bm1684x_1dev_20250909_173910.bmodel
 ```
 
-编译库文件
+Compile the library file
 ```
 mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..
@@ -26,7 +26,7 @@ python3 pipeline.py --model_path llama3.2-***.bmodel --image_path ./test.jpg --t
 ```
 
 
-## 常见问题
+## FAQ
 ### Could not create share link. Missing file: /usr/local/lib/python3.10/dist-packages/gradio/frpc_linux_amd64_v0.2.
 
 AMD / PCIE

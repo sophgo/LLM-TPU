@@ -2,18 +2,18 @@
 
 # ChatGLM3
 
-本项目实现BM1684X部署语言大模型[ChatGLM3-6B](https://huggingface.co/THUDM/chatglm3-6b)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X的PCIE环境，或者SoC环境。
+This project deploys the large language model [ChatGLM3-6B](https://huggingface.co/THUDM/chatglm3-6b) on BM1684X. The model is converted into a bmodel through the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) compiler and deployed to the BM1684X PCIE environment or SoC environment using C++ code.
 
 
-在知乎上写了关于`ChatGLM`的解读，方便大家理解源码：
+We wrote an interpretation of `ChatGLM` on Zhihu to help everyone understand the source code:
 
-[ChatGLM2流程解析与TPU-MLIR部署](https://zhuanlan.zhihu.com/p/641975976)
-
-
-## 开发环境
+[ChatGLM2 Flow Analysis and TPU-MLIR Deployment](https://zhuanlan.zhihu.com/p/641975976)
 
 
-1. 下载docker，启动容器，如下：
+## Development Environment
+
+
+1. Download docker and start the container as follows:
 
 ``` shell
 docker pull sophgo/tpuc_dev:latest
@@ -21,17 +21,17 @@ docker pull sophgo/tpuc_dev:latest
 # myname1234 is just an example, you can set your own name
 docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev:latest
 ```
-后文假定环境都在docker的`/workspace`目录。
+The following assumes that the environment is in the `/workspace` directory of docker.
 
 
-2. 从Huggingface下载`ChatGLM3-6B`，比较大，会花较长时间
+2. Download `ChatGLM3-6B` from HuggingFace. It is quite large and will take a long time.
 
 ``` shell
 git lfs install
 git clone git@hf.co:THUDM/chatglm3-6b
 ```
 
-3. 下载`TPU-MLIR`代码并编译，(也可以直接下载编译好的release包解压)
+3. Download the `TPU-MLIR` code and compile it (you can also directly download and extract the compiled release package).
 
 ``` shell
 git clone git@github.com:sophgo/tpu-mlir.git
@@ -40,34 +40,34 @@ source ./envsetup.sh
 ./build.sh
 ```
 
-## 编译模型
+## Compile the Model
 
-编译时采用一键编译指令即可，生成的编译文件保存在 ./chatglm3 目录中
+Just use the one-click compilation command when compiling; the generated compilation files are saved in the ./chatglm3 directory.
 
 ```shell
 llm_convert.py -m /workspace/Chatglm3-6 -s 384 -q w4f16 -g 128 --num_device 1  -c bm1684x  -o chatglm3
 ```
 
-若想进行INT8或INT4量化，则执行以下命令，最终生成`chatglm3-6b_int8_1dev.bmodel`或`chatglm3-6b_int4_1dev.bmodel`文件，如下命令：
+If you want to perform INT8 or INT4 quantization, run the following command, which finally generates the `chatglm3-6b_int8_1dev.bmodel` or `chatglm3-6b_int4_1dev.bmodel` file, as follows:
 
 ```shell
 llm_convert.py -m /workspace/Chatglm3-6 -s 384 -q int8 -g 128 --num_device 1  -c bm1684x  -o chatglm3 # or int4
 ```
 
-若想进行2芯推理，则执行以下命令，最终生成`chatglm3-6b_w4f16_2dev.bmodel`文件，4芯8芯同理（python_demo目前仅支持单芯）：
+If you want to perform 2-chip inference, run the following command, which finally generates the `chatglm3-6b_w4f16_2dev.bmodel` file. The same applies to 4-chip and 8-chip configurations (python_demo currently only supports single-chip):
 
 ```shell
 llm_convert.py -m /workspace/Chatglm3-6 -s 384 -q w4f16 -g 128 --num_device 2  -c bm1688  -o chatglm3
 ```
 
-如果编译不方便，也可以直接下载编译好的模型：
+If compilation is inconvenient, you can also directly download the compiled model:
 ```shell
 python3 -m dfss --url=open@sophgo.com:/share/hengyang/chatglm3-6b_w4f16_seq512_bm1684x_1dev_20250630_190644.bmodel
 ```
 
-## 编译程序(python_demo版本)
+## Compile the Program (python_demo Version)
 
-执行如下编译，(PCIE版本与SoC版本相同)：
+Run the following compilation (the same for the PCIE version and the SoC version):
 
 ```shell
 cd python_demo
@@ -79,15 +79,15 @@ mv chat.cpython-310-x86_64-linux-gnu.so ..
 cd ..
 ```
 
-运行`pipeline.py`:
+Run `pipeline.py`:
 ```shell
 source ../../../envsetup.sh
 python3 pipeline.py --model_path $PATH_TO_BMODEL --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy
 ```
 
-## 编译程序(C++版本)
+## Compile the Program (C++ Version)
 
-执行如下编译，(PCIE版本与SoC版本相同)：
+Run the following compilation (the same for the PCIE version and the SoC version):
 
 ```shell
 cd demo
@@ -97,18 +97,18 @@ cmake ..
 make
 ```
 
-编译生成chatglm可执行程序，将`chatglm`放到demo目录下，同时按照下列方式指定芯片数量和bmodel路径。
-运行`chatglm`，默认单芯运行`chatglm3-xxx.bmodel`:
+This compiles and generates the chatglm executable. Put `chatglm` into the demo directory, and specify the number of chips and the bmodel path as follows.
+Run `chatglm`, which runs `chatglm3-xxx.bmodel` on a single chip by default:
 ```shell
 ./chatglm --model chatglm3-xxx.bmodel --tokenizer ../support/tokenizer.model
 ```
 
-如果是2芯分布式推理，使用如下命令(比如指定在2号和3号芯片上运行, 用`source /etc/profiel`后使用`bm-smi`查询芯片id号)：
+For 2-chip distributed inference, use the following command (for example, to run on chips 2 and 3; use `bm-smi` to query the chip IDs after running `source /etc/profiel`):
 ```shell
 ./chatglm --model chatglm3-xxx.bmodel --devid 2,3 --tokenizer ../support/tokenizer.model
 ```
 
-## 编译程序(Python Web版本)
+## Compile the Program (Python Web Version)
 
 ```shell
 pip install gradio==3.39.0
@@ -119,23 +119,23 @@ cmake ..
 make -j
 ```
 
-编译成功会生成`libtpuchat.so*`, 在web_demo.py中指定bmodel\_path token\_path device\_id, lib_path(编译生产的.so文件), 以及dev_id。
+After a successful compilation, `libtpuchat.so*` will be generated. Specify bmodel\_path, token\_path, device\_id, lib_path (the compiled .so file), and dev_id in web_demo.py.
 ```python
 python web_demo.py --dev 0 --bmodel_path your_bmodel_path
 ```
-即可成功运行web的demo。
+Then the web demo will run successfully.
 
-如果是SoC环境，参考C++版本
+For the SoC environment, refer to the C++ version.
 
-PS：尽量下载gradio==3.39.0版本，不然会出现各种问题！！
+PS: Please use gradio==3.39.0 as much as possible, otherwise various problems will occur!!
 
-## 常见问题
+## FAQ
 
-#### sentencepiece是怎么来的
+#### Where does sentencepiece come from?
 
-工程中已经有编译好的，所以不需要编译，如果好奇的话，参考如下步骤。
+The project already contains the compiled version, so there is no need to compile it. If you are curious, refer to the following steps.
 
-下载[sentencepiece](https://github.com/google/sentencepiece)，并编译得到`libsentencepiece.a`
+Download [sentencepiece](https://github.com/google/sentencepiece) and compile it to get `libsentencepiece.a`.
 
 ```shell
 git clone git@github.com:google/sentencepiece.git
@@ -146,13 +146,13 @@ cmake ..
 make -j
 ```
 
-如果要编译SoC环境，则参考demo的编译方式，在makefile中指定交叉编译器
+If you want to compile for the SoC environment, refer to the demo's compilation method and specify the cross-compiler in the makefile.
 
-#### demo程序无法正常运行
+#### The demo program cannot run properly
 
-如果demo程序拷贝到运行环境提示无法运行，比如接口找不到等等错误。
-原因是运行环境的库有所不同，将demo中的`./support/lib_pcie`（PCIE）或者 `./support/lib_soc`(SoC)里面的so文件拷贝到运行环境，链接到里面的so即可。
+If the demo program cannot run after being copied to the runtime environment, e.g. errors such as interfaces not being found.
+The reason is that the libraries in the runtime environment are different. Copy the so files from `./support/lib_pcie` (PCIE) or `./support/lib_soc` (SoC) in the demo to the runtime environment and link against those so files.
 
 
-## 工具调用
-参考：[工具调用](./tools_using/README.md)
+## Tool Calling
+Reference: [Tool Calling](./tools_using/README.md)

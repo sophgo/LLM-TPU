@@ -13,7 +13,7 @@ python3 export_onnx.py --model_path your_torch_model --seq_length 512 --device c
 ```
 
 ## Compile bmodel
-使用io_alone
+Use io_alone
 ```
 ./compile.sh --mode int4 --name megrez --seq_length 512
 ```

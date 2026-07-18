@@ -1,6 +1,6 @@
 ### python demo
 
-对于python demo，一定要在LLM-TPU里面source envsetup.sh（与tpu-mlir里面的envsetup.sh有区别）
+For the python demo, be sure to source envsetup.sh inside LLM-TPU (it is different from the envsetup.sh in tpu-mlir).
 ```shell
 cd /workspace/LLM-TPU
 source envsetup.sh
@@ -10,7 +10,7 @@ source envsetup.sh
 pip3 install pybind11[global] transformers_stream_generator einops tiktoken accelerate transformers==4.32.0
 ```
 
-下载迁移好的模型
+Download the migrated models:
 ```shell
 pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/codefuse-7b_int4_1dev_2048.bmodel
@@ -18,7 +18,7 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/codefus
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/codefuse-7b_int4_1dev_4096.bmodel
 ```
 
-跑演示demo
+Run the demo:
 ```shell
 cd /workspace/LLM-TPU/models/CodeFuse/python_demo
 mkdir build

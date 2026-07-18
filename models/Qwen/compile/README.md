@@ -2,14 +2,14 @@
 
 ## Modify sequence length
 
-切换到Qwen/compile/目录下后，手动将files/Qwen-7B-Chat/config.json中的`"seq_length": 512,`修改为你需要的长度
+After switching to the Qwen/compile/ directory, manually change `"seq_length": 512,` in files/Qwen-7B-Chat/config.json to the length you need.
 ```shell
 cd /workspace/LLM-TPU/models/Qwen/compile
 vi files/Qwen-7B-Chat/config.json
 ```
 
-PS：
-1. 由于导出的是静态onnx模型，所以必须手动修改为你所需要的长度
+PS:
+1. Since a static ONNX model is exported, you must manually modify it to the length you need.
 
 ## Export onnx
 
@@ -29,10 +29,10 @@ python export_onnx.py --model_path your_torch_path --device cuda --seq_length 81
 python export_onnx.py --model_path your_torch_path --device cuda --lmhead_with_topk 1
 ```
 
-PS：
-1. 最好使用cuda导出，cpu导出block的时候，会卡在第一个block，只能kill
-2. your_torch_path：从官网下载的或者自己训练的模型的路径，例如./Qwen-7B-Chat
-3. 对于长回答，可以使用export_onnx_jacobi.py来导出加速（refs：https://github.com/hao-ai-lab/LookaheadDecoding）
+PS:
+1. It is recommended to export with CUDA; when exporting blocks on CPU, the process gets stuck at the first block and can only be killed.
+2. your_torch_path: the path of the model downloaded from the official website or trained by yourself, e.g. ./Qwen-7B-Chat
+3. For long answers, you can use export_onnx_jacobi.py to export for acceleration (refs: https://github.com/hao-ai-lab/LookaheadDecoding)
 
 ## Compile bmodel
 
@@ -57,17 +57,17 @@ popd
 ./compile.sh --mode int4 --name qwen-7b --addr_mode io_alone --seq_length 8192 --num_device 8
 ```
 
-PS：
-1. mode：量化方式，目前支持fp16/bf16/int8/int4
-2. name：模型名称，目前Qwen系列支持 Qwen-1.8B/Qwen-7B/Qwen-14B
-3. addr_mode：地址分配方式，可以使用io_alone方式来加速
-4. generation_mode：token采样模式，为空时，使用greedy search；为sample时，使用topk+topp；为all时使用topk + topp + temperature + repeat_penalty + max_new_tokens，并且可以作为参数传入
-5. decode_mode：编码模式，为空时，使用正常编码；为jacobi时，使用jacobi编码，只有前面使用export_onnx_jacobi.py时，用jacobi才有意义
-6. seq_length：模型支持的最大token长度
+PS:
+1. mode: quantization method; currently supports fp16/bf16/int8/int4
+2. name: model name; the Qwen series currently supports Qwen-1.8B/Qwen-7B/Qwen-14B
+3. addr_mode: address allocation mode; you can use io_alone for acceleration
+4. generation_mode: token sampling mode; when empty, greedy search is used; when set to sample, topk+topp is used; when set to all, topk + topp + temperature + repeat_penalty + max_new_tokens are used and can be passed in as parameters
+5. decode_mode: decoding mode; when empty, normal decoding is used; when set to jacobi, jacobi decoding is used, which is only meaningful if export_onnx_jacobi.py was used for export earlier
+6. seq_length: the maximum token length supported by the model
 
 ## Run Demo
 
-如果是pcie，建议新建一个docker，与编译bmodel的docker分离，以清除一下环境，不然可能会报错
+For PCIE, it is recommended to create a new docker container, separate from the docker used to compile the bmodel, to clear the environment; otherwise errors may occur.
 ```
 docker run --privileged --name your_docker_name -v $PWD:/workspace -it sophgo/tpuc_dev:latest bash
 docker exec -it your_docker_name bash
@@ -75,7 +75,7 @@ docker exec -it your_docker_name bash
 
 ### python demo
 
-对于python demo，一定要在LLM-TPU里面source envsetup.sh（与tpu-mlir里面的envsetup.sh有区别）
+For the python demo, be sure to source envsetup.sh inside LLM-TPU (it is different from the envsetup.sh in tpu-mlir).
 ```shell
 cd /workspace/LLM-TPU
 source envsetup.sh
@@ -111,7 +111,7 @@ topk + topp + temperature + max_new_tokens + repeat_penalty
 ./qwen --model ../compile/qwen-7b_int4_1dev.bmodel --tokenizer ../support/qwen.tiktoken --devid 10 --top_p 0.8 --repeat_penalty 1.1 --repeat_last_n 32 --generation_mode sample --input_mode prompted
 ```
 
-PS：
-1. 目前测试下来，python demo和cpp demo在速度上基本一致
-2. generation_mode：当传入basic，表示export_onnx.py导出只使用greedy的LmHead；当传入为greedy时，表示export_onnx.py导出可以使用sample的模型，但是使用greedy search；当传入为sample时，表示export_onnx.py导出可以使用sample的模型，并且使用sample采样
-3. input_mode：当传入prompted，表示自动使用提示；当传入为prompted，表示使用原始输入，不使用提示（只有当genneration!=basic时生效）
+PS:
+1. Based on current tests, the python demo and the cpp demo are basically the same in speed.
+2. generation_mode: when set to basic, it means the model exported by export_onnx.py only uses a greedy LmHead; when set to greedy, it means the model exported by export_onnx.py supports sampling but greedy search is used; when set to sample, it means the model exported by export_onnx.py supports sampling and sampling is used.
+3. input_mode: when set to prompted, prompts are applied automatically; when set to unprompted, the raw input is used without prompts (only effective when generation != basic).

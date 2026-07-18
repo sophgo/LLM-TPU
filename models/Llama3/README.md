@@ -1,9 +1,9 @@
 # Llama3
 
-本工程实现BM1684X/BM1688部署大模型[Llama3](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到PCIE环境，或者SoC环境。
+This project deploys the large model [Llama3](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct) on BM1684X/BM1688. The model is converted into a bmodel using the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) compiler, and deployed to a PCIE or SoC environment using C++ code.
 
 
-本文包括如何编译bmodel，和如何在BM1684X/BM1688环境运行bmodel。编译LLM环节可以省去，直接用以下链接下载：
+This document covers how to compile the bmodel and how to run the bmodel in the BM1684X/BM1688 environment. The LLM compilation step can be skipped by downloading directly from the following links:
 
 ``` shell
 # 1684x 512
@@ -12,21 +12,21 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/llama-3
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU_Lite/llama-3.2-3b-instruct_w4f16_seq512_bm1688_2core_20250526_161500.bmodel
 ```
 
-## 编译LLM模型
+## Compiling the LLM
 
-此处介绍如何将LLM编译成bmodel。
+This section describes how to compile the LLM into a bmodel.
 
-#### 1. 从Huggingface下载`Llama3-3B`
+#### 1. Download `Llama3-3B` from HuggingFace
 
-(比较大，会花费较长时间)
+(The model is quite large and will take a long time)
 
 ``` shell
-# 下载模型
+# Download the model
 git lfs install
 git clone git@hf.co:meta-llama/Llama-3.2-3B-Instruct
 ```
 
-#### 2. 下载docker，启动容器
+#### 2. Download docker and start the container
 
 ``` shell
 docker pull sophgo/tpuc_dev:latest
@@ -34,36 +34,36 @@ docker pull sophgo/tpuc_dev:latest
 # myname1234 is just an example, you can set your own name
 docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev:latest
 ```
-后文假定环境都在docker的`/workspace`目录。
+The following sections assume the environment is in the `/workspace` directory inside docker.
 
-#### 2. 下载`TPU-MLIR`代码并编译
+#### 2. Download the `TPU-MLIR` code and compile it
 
-(也可以直接下载编译好的release包解压)
+(You can also directly download and extract the precompiled release package)
 
 ``` shell
 cd /workspace
 git clone git@github.com:sophgo/tpu-mlir.git
 cd tpu-mlir
-source ./envsetup.sh  #激活环境变量
-./build.sh #编译mlir
+source ./envsetup.sh  # activate environment variables
+./build.sh # compile mlir
 ```
 
-#### 3. 编译模型生成bmodel
+#### 3. Compile the model to generate the bmodel
 
 ``` shell
-# 如果有提示transformers版本问题，pip3 install transformers -U
-# 如果要编译bm1688，只需要-c bm1688即可
+# If you are prompted about a transformers version issue, run pip3 install transformers -U
+# To compile for bm1688, simply use -c bm1688
 llm_convert.py -m /workspace/Llama-3.2-3B-Instruct -s 512 -q w4f16 -g 128 -c bm1684x -o llama3.2_3b
 ```
-编译完成后，在指定目录`llama3.2_3b`生成`llama-3.2-3bxxxx.bmodel`和`config`
+After compilation completes, `llama-3.2-3bxxxx.bmodel` and `config` are generated in the specified directory `llama3.2_3b`
 
-## 编译与运行程序
+## Compiling and running the program
 
-请将程序拷贝到PCIE环境或者SoC环境后再编译。然后把`llama-3.2-3bxxxx.bmodel`和`config`拷贝过去。
+Please copy the program to the PCIE or SoC environment before compiling. Then copy `llama-3.2-3bxxxx.bmodel` and `config` over as well.
 
 #### python demo
 
-编译库文件，生成`chat.cpython*.so`文件，将该文件拷贝到`pipeline.py`文件目录
+Compile the library to generate the `chat.cpython*.so` file, then copy it to the directory containing `pipeline.py`
 
 ``` shell
 cd python_demo
@@ -76,4 +76,4 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 ``` shell
 python3 pipeline.py -m llama3_xxx.bmodel -c config 
 ```
-model为实际的model储存路径；config为配置文件路径
+`model` is the actual path where the model is stored; `config` is the path of the configuration file

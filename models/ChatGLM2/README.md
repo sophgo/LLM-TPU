@@ -2,18 +2,18 @@
 
 # ChatGLM2
 
-本项目实现BM1684X部署语言大模型[ChatGLM2-6B](https://huggingface.co/THUDM/chatglm2-6b)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X的PCIE环境，或者SoC环境。
+This project deploys the large language model [ChatGLM2-6B](https://huggingface.co/THUDM/chatglm2-6b) on BM1684X. The model is converted into a bmodel through the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) compiler and deployed to the BM1684X PCIE environment or SoC environment using C++ code.
 
 
-在知乎上写了关于`ChatGLM`的解读，方便大家理解源码：
+We wrote an interpretation of `ChatGLM` on Zhihu to help everyone understand the source code:
 
-[ChatGLM2流程解析与TPU-MLIR部署](https://zhuanlan.zhihu.com/p/641975976)
-
-
-## 开发环境
+[ChatGLM2 Flow Analysis and TPU-MLIR Deployment](https://zhuanlan.zhihu.com/p/641975976)
 
 
-1. 下载docker，启动容器，如下：
+## Development Environment
+
+
+1. Download docker and start the container as follows:
 
 ``` shell
 docker pull sophgo/tpuc_dev:latest
@@ -21,20 +21,20 @@ docker pull sophgo/tpuc_dev:latest
 # myname1234 is just an example, you can set your own name
 docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev:latest
 ```
-后文假定环境都在docker的`/workspace`目录。
+The following assumes that the environment is in the `/workspace` directory of docker.
 
 
-2. 从Huggingface下载`ChatGLM2-6B`，比较大，会花较长时间
+2. Download `ChatGLM2-6B` from HuggingFace. It is quite large and will take a long time.
 
 ``` shell
 git lfs install
 git clone git@hf.co:THUDM/chatglm2-6b
 ```
-并将本项目中./models/ChatGLM2/compile/files/chatglm2-6b中config.json与modeling_chatglm.py替换至上述下载后的文件夹中，并替换同名文件（其中需要采用其它sequence length的用户请参考[常见问题](#常见问题),默认sequence length = 512）
+Then copy config.json and modeling_chatglm.py from ./models/ChatGLM2/compile/files/chatglm2-6b in this project into the downloaded folder above, replacing the files with the same names (users who need a different sequence length, please refer to [FAQ](#faq); the default sequence length = 512).
 
-3. 下载`TPU-MLIR`代码并编译，(也可以直接下载编译好的release包解压)
+3. Download the `TPU-MLIR` code and compile it (you can also directly download and extract the compiled release package).
 
-目前由于mlir还在维护中，编译GLM系列模型的用户请下载
+Since mlir is currently still under maintenance, users compiling the GLM series models please download:
 ``` shell
 pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/mlir_club/glm_mlir.tar.gz
@@ -42,7 +42,7 @@ tar -xf glm_mlir.tar.gz
 source source tpu-mlir_v1.6.45-gdc3e9f6b-20231220/envsetup.sh 
 ```
 
-后续mlir维护完成后可以使用如下方式
+After mlir maintenance is completed, you can use the following method:
 ``` shell
 git clone git@github.com:sophgo/tpu-mlir.git
 cd tpu-mlir
@@ -50,32 +50,32 @@ source ./envsetup.sh
 ./build.sh
 ```
 
-## 编译模型
+## Compile the Model
 
-1. 导出所有onnx模型，如果过程中提示缺少某些组件，直接`pip3 install 组件`即可
+1. Export all onnx models. If you are prompted that certain components are missing during the process, just run `pip3 install component`.
 
 ``` shell
 cd compile
 python3 export_onnx.py --model_path your_chatglm2-6b_path
 ```
-此时有大量onnx模型被导出到tmp目录。
+At this point, a large number of onnx models are exported to the tmp directory.
 
-2. 对onnx模型进行编译
+2. Compile the onnx models.
 
-目前TPU-MLIR支持对ChatGLM2进行F16、INT8和INT4量化，且支持多芯分布式推理，默认情况下会进行F16量化和单芯推理，最终生成`chatglm2-6b_f16_1dev.bmodel`文件
+TPU-MLIR currently supports F16, INT8, and INT4 quantization for ChatGLM2, and supports multi-chip distributed inference. By default, F16 quantization and single-chip inference are performed, finally generating the `chatglm2-6b_f16_1dev.bmodel` file.
 
 ```shell
 ./compile.sh --name chatglm2-6b --mode inference_mode --num_device device_number
 ```
 
-其中：
-`--name` 为模型名称，在此指定为`chatglm2-6b`；
-`--mode` 为推理所使用的数据类型，可以选择`f16, int8, int4`中任意一种，默认为`f16`；
-`--num_device` 为推理所使用的芯片数量，请根据实际所使用的设备指定，默认`--num_device 1`。
+Where:
+`--name` is the model name, specified here as `chatglm2-6b`;
+`--mode` is the data type used for inference. You can choose any of `f16, int8, int4`; the default is `f16`;
+`--num_device` is the number of chips used for inference. Please specify it according to the actual devices used; the default is `--num_device 1`.
 
-## 编译程序(C++版本)
+## Compile the Program (C++ Version)
 
-执行如下编译，（PCIE与SOC相同）：
+Run the following compilation (the same for PCIE and SOC):
 
 ```shell
 cd demo
@@ -85,26 +85,26 @@ cmake ..
 make
 ```
 
-编译生成chatglm可执行程序，将`chatglm`放到demo目录下，同时按照下列方式指定芯片数量和bmodel路径。
-运行`chatglm`，默认单芯运行`chatglm2-6b_f16_1dev.bmodel`:
+This compiles and generates the chatglm executable. Put `chatglm` into the demo directory, and specify the number of chips and the bmodel path as follows.
+Run `chatglm`, which runs `chatglm2-6b_f16_1dev.bmodel` on a single chip by default:
 ```shell
 ./chatglm --model chatglm2-6b_f16_1dev.bmodel --tokenizer ../support/tokenizer/tokenizer.model --devid  your_devid
 ```
-其中`--devid`为用来推理的TPU编号，默认为0，如果使用多芯推理（需要保证编译的bmodel也是多芯）可以使用`,`来增加芯片，如`--devid 2,3` 表示使用TPU2 和 TPU3来进行推理。
+Here `--devid` is the ID of the TPU used for inference, which defaults to 0. If you use multi-chip inference (make sure the compiled bmodel is also multi-chip), you can use `,` to add chips, e.g. `--devid 2,3` means using TPU2 and TPU3 for inference.
 
-## 运行效果
+## Running Result
 
-以下为单芯片下INT8量化模式的运行效果：
+The following is the running result of INT8 quantization mode on a single chip:
 
 ![](./assets/chatglm.jpg)
 
-## 常见问题
+## FAQ
 
-#### sentencepiece是怎么来的
+#### Where does sentencepiece come from?
 
-工程中已经有编译好的，所以不需要编译，如果好奇的话，参考如下步骤。
+The project already contains the compiled version, so there is no need to compile it. If you are curious, refer to the following steps.
 
-下载[sentencepiece](https://github.com/google/sentencepiece)，并编译得到`libsentencepiece.a`
+Download [sentencepiece](https://github.com/google/sentencepiece) and compile it to get `libsentencepiece.a`.
 
 ```shell
 git clone git@github.com:google/sentencepiece.git
@@ -115,46 +115,46 @@ cmake ..
 make -j
 ```
 
-如果要编译SoC环境，则参考demo的编译方式，在makefile中指定交叉编译器
+If you want to compile for the SoC environment, refer to the demo's compilation method and specify the cross-compiler in the makefile.
 
-#### demo程序无法正常运行
+#### The demo program cannot run properly
 
-如果demo程序拷贝到运行环境提示无法运行，比如接口找不到等等错误。
-原因是运行环境的库有所不同，将demo中的`./support/lib_pcie`（PCIE）或者 `./support/lib_soc`(SoC)里面的so文件拷贝到运行环境，链接到里面的so即可。
+If the demo program cannot run after being copied to the runtime environment, e.g. errors such as interfaces not being found.
+The reason is that the libraries in the runtime environment are different. Copy the so files from `./support/lib_pcie` (PCIE) or `./support/lib_soc` (SoC) in the demo to the runtime environment and link against those so files.
 
 
-#### 对源码做了哪些修改：
+#### What modifications were made to the source code:
 
-一共做了三点修改：
-- 将`config.json`文件中`seq_length`配置为512；
-- 将`modeling_chatglm.py`文件中的如下代码：
+Three modifications were made in total:
+- Set `seq_length` in the `config.json` file to 512;
+- Change the following code in the `modeling_chatglm.py` file:
 
 ```python
 if attention_mask is not None:
     attention_scores = attention_scores.masked_fill(attention_mask, float("-inf"))
 ```
 
-修改为：
+to:
 
 ```python
 if attention_mask is not None:
     attention_scores = attention_scores + (attention_mask * -10000.0)
 ```
 
-这样修改可以提升效率，使用`masked_fill`效率低下；另一方面`masked_fill`转ONNX存在些bug。
+This modification improves efficiency, since using `masked_fill` is inefficient; on the other hand, there are some bugs when converting `masked_fill` to ONNX.
 
-- 将`modeling_chatglm.py`文件中的如下代码：
+- Change the following code in the `modeling_chatglm.py` file:
 
 ```python
 pytorch_major_version = int(torch.__version__.split('.')[0])
 if pytorch_major_version >= 2:
 ```
 
-修改为：
+to:
 
 ```python
 pytorch_major_version = int(torch.__version__.split('.')[0])
 if False:
 ```
 
-这是因为ONNX无法支持`torch.nn.functional.scaled_dot_product_attention`算子的转换。
+This is because ONNX cannot support the conversion of the `torch.nn.functional.scaled_dot_product_attention` operator.

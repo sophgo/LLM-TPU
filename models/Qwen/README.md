@@ -1,13 +1,13 @@
 # Qwen
 
-本工程实现BM1684X部署语言大模型[Qwen-7B-Chat](https://huggingface.co/Qwen/Qwen-7B-Chat)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X的PCIE环境，或者SoC环境。
+This project implements the deployment of the large language model [Qwen-7B-Chat](https://huggingface.co/Qwen/Qwen-7B-Chat) on BM1684X. The model is converted into a bmodel using the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) compiler, and deployed with C++ code to the BM1684X PCIE environment or SoC environment.
 
-* 本工程也支持[Qwen-14-Chat](https://huggingface.co/Qwen/Qwen-14B-Chat)，操作方法与`Qwen-7B-Chat`一致。
-* 本工程也支持[Qwen-1_8-Chat](https://huggingface.co/Qwen/Qwen-1_8B-Chat)，操作方法与`Qwen-7B-Chat`一致。
+* This project also supports [Qwen-14-Chat](https://huggingface.co/Qwen/Qwen-14B-Chat); the operation method is the same as for `Qwen-7B-Chat`.
+* This project also supports [Qwen-1_8-Chat](https://huggingface.co/Qwen/Qwen-1_8B-Chat); the operation method is the same as for `Qwen-7B-Chat`.
 
-## 开发环境准备
+## Development Environment Setup
 
-### 1. 下载docker，启动容器
+### 1. Download docker and start the container
 
 ``` shell
 docker pull sophgo/tpuc_dev:latest
@@ -17,43 +17,43 @@ docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev
 
 docker exec -it myname1234 bash
 ```
-后文假定环境都在docker的`/workspace`目录。
+The following assumes the environment is in the `/workspace` directory of the docker container.
 
-### 2. 下载`TPU-MLIR`代码并编译
+### 2. Download the `TPU-MLIR` code and compile it
 
-(也可以直接下载编译好的release包解压)
+(You can also directly download and extract the prebuilt release package.)
 
 ``` shell
 cd /workspace
 git clone git@github.com:sophgo/tpu-mlir.git
 cd tpu-mlir
-source ./envsetup.sh  #激活环境变量
-./build.sh #编译mlir
+source ./envsetup.sh  # activate environment variables
+./build.sh # compile mlir
 ```
 
-### 3. 导出onnx模型
+### 3. Export the ONNX model
 
-参考[compile](./compile) 与 [compile](./compile) 下面的README.md
+Refer to the README.md under [compile](./compile) and [compile](./compile).
 
-### 4. 编译模型
+### 4. Compile the model
 
-参考[compile](./compile) 与 [compile](./compile) 下面的README.md
+Refer to the README.md under [compile](./compile) and [compile](./compile).
 
-### 5. 编译与运行程序
+### 5. Compile and run the program
 
-参考[python_demo](./python_demo) 与 [demo](./demo) 下面的README.md
+Refer to the README.md under [python_demo](./python_demo) and [demo](./demo).
 
 
-# 对`modeling_qwen.py`文件代码做调整
+# Adjustments to the `modeling_qwen.py` file code
 
-1) 第一点修改如下（这是因为TORCH2的算子转ONNX会失败）：
+1) The first modification is as follows (this is because TORCH2 operators fail to convert to ONNX):
 
     ``` python
     # SUPPORT_TORCH2 = hasattr(torch, '__version__') and int(torch.__version__.split(".")[0]) >= 2
     SUPPORT_TORCH2 = False
     ```
 
-2) 第二点修改如下（这是因为转ONNX，提示Shape推导失败）：
+2) The second modification is as follows (this is because converting to ONNX reports a shape inference failure):
 
     ```python
     # attn_weights = attn_weights / torch.full(
@@ -65,7 +65,7 @@ source ./envsetup.sh  #激活环境变量
     attn_weights = attn_weights / (size_temp ** 0.5)
     ```
 
-3) 第三点修改如下（这段代码全部注释掉，是因为可以直接采用`attention_mask`，避免复杂逻辑，提升性能）：
+3) The third modification is as follows (this entire code block is commented out because `attention_mask` can be used directly, avoiding complex logic and improving performance):
 
     ```python
     # if self.use_cache_quantization:
@@ -84,7 +84,7 @@ source ./envsetup.sh  #激活环境变量
     # )
     ```
 
-4) 第四点修改如下（同上原因）：
+4) The fourth modification is as follows (same reason as above):
 
     ``` python
     # query_length, key_length = query.size(-2), key.size(-2)
@@ -98,7 +98,7 @@ source ./envsetup.sh  #激活环境变量
     # attn_weights = torch.where(causal_mask, attn_weights, mask_value)
     ```
 
-5) 第五点修改，将如下代码移至`if layer_past is not None:`之前：
+5) The fifth modification: move the following code before `if layer_past is not None:`:
 
     ``` python
     if use_cache:
@@ -107,4 +107,4 @@ source ./envsetup.sh  #激活环境变量
         present = None
     ```
 
-    这是因为kv cache只用输出1个单位就可以了，不用全部输出。提升效率。
+    This is because the KV Cache only needs to output 1 unit instead of all outputs, which improves efficiency.

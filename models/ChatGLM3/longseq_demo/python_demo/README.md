@@ -1,5 +1,5 @@
-# 环境准备
-> （python demo和web demo运行之前都需要执行这个）
+# Environment Setup
+> (This must be executed before running either the python demo or the web demo)
 ```
 sudo apt-get update
 sudo apt-get install pybind11-dev
@@ -7,12 +7,12 @@ pip3 install sentencepiece transformers==4.30.2
 pip3 install gradio==3.39.0 mdtex2html==1.2.0 dfss
 ```
 
-如果不打算自己编译模型，可以直接用下载好的模型
+If you do not plan to compile the model yourself, you can directly use the downloaded model
 ```
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/chatglm3-6b_int4_1dev_16k.bmodel
 ```
 
-编译库文件
+Compile the library files
 ```
 mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..
@@ -23,7 +23,7 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 python3 pipeline.py --model_path chatglm3-6b_int4_1dev_16k.bmodel --tokenizer_path ../support/token_config/ --devid 0 --generation_mode greedy
 ```
 
-## 常见问题
+## FAQ
 ### Could not create share link. Missing file: /usr/local/lib/python3.10/dist-packages/gradio/frpc_linux_amd64_v0.2.
 
 AMD / PCIE

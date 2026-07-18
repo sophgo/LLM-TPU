@@ -2,12 +2,12 @@
 
 # Yi
 
-本工程实现BM1684X部署语言大模型[Yi-34B-Chat](https://huggingface.co/01-ai/Yi-34B-Chat)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X的多芯PCIE环境。
+This project implements the deployment of the large language model [Yi-34B-Chat](https://huggingface.co/01-ai/Yi-34B-Chat) on BM1684X. The model is converted into a bmodel via the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) compiler, and deployed to the multi-chip PCIE environment of BM1684X using C++ code.
 
 
-## 开发环境准备
+## Development Environment Setup
 
-### 1. 下载docker，启动容器
+### 1. Download docker and start the container
 
 ``` shell
 docker pull sophgo/tpuc_dev:latest
@@ -17,27 +17,27 @@ docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev
 
 docker exec -it myname1234 bash
 ```
-后文假定环境都在docker的`/workspace`目录。
+The following assumes that the environment is in the `/workspace` directory of the docker container.
 
-### 2. 下载`TPU-MLIR`代码并编译
+### 2. Download the `TPU-MLIR` code and compile it
 
-(也可以直接下载编译好的release包解压)
+(You can also directly download and extract the pre-compiled release package)
 
 ``` shell
 cd /workspace
 git clone git@github.com:sophgo/tpu-mlir.git
 cd tpu-mlir
-source ./envsetup.sh  #激活环境变量
-./build.sh #编译mlir
+source ./envsetup.sh  # activate the environment variables
+./build.sh # compile mlir
 ```
 
-### 3. 更新第三方库
+### 3. Update third-party libraries
 
-下载本项目：
+Download this project:
 ``` shell
 git clone git@github.com:sophgo/LLM-TPU.git
 ```
-第三方库环境要求
+Third-party library environment requirements
 ``` shell
 pip3 install transformers==4.39.1
 pip3 install torch==2.0.1
@@ -47,7 +47,7 @@ sudo apt-get install pybind11-dev
 ```
 ```
 
-### 4. 下载pytorch.bin模型
+### 4. Download the pytorch.bin model
 
 ``` shell
 cd LLM-TPU/models/Yi34B/
@@ -60,24 +60,24 @@ cd compile
 python3 export_onnx.py --model_path ../Yi-34B-Chat
 ```
 
-该工程比较大，会花较长时间。
-在导出onnx前，请确保`files/Yi-34B-Chat`中的文件已经替换了运行时实际使用的`transformers`下的对应文件。（默认sequence length为512）
+This project is relatively large and will take a long time.
+Before exporting onnx, make sure the files in `files/Yi-34B-Chat` have replaced the corresponding files under the `transformers` package actually used at runtime. (The default sequence length is 512)
 
-## 5. 编译模型
+## 5. Compile the Model
 
-注意此时在Docker环境workspace目录。
+Make sure you are in the workspace directory of the Docker environment at this point.
 
-目前TPU-MLIR支持对`Yi-34B-Chat`进行INT8和INT4量化，仅支持多芯分布式推理，默认情况下会进行INT4量化和双芯推理，最终生成`yi-34b_int4_2dev.bmodel`文件。（请先确保之前执行了[mlir的编译与环境的激活](#2-下载tpu-mlir代码并编译)).
+Currently TPU-MLIR supports INT8 and INT4 quantization of `Yi-34B-Chat`, and only supports multi-chip distributed inference. By default, INT4 quantization and dual-chip inference are performed, ultimately generating the `yi-34b_int4_2dev.bmodel` file. (Please make sure you have already performed the [mlir compilation and environment activation](#2-download-the-tpu-mlir-code-and-compile-it) first).
 
-若想进行2芯推理，则执行以下命令，最终生成`yi-34b_int4_2dev.bmodel`文件，4芯8芯同理：
+To perform 2-chip inference, run the following command, which ultimately generates the `yi-34b_int4_2dev.bmodel` file. The same applies to 4-chip and 8-chip:
 
 ```shell
 ./compile.sh --num_device 2 --name yi-34b --mode int4
 ```
 
-## 6. 使用Sophgo提供的模型
-*以下模型最大上下文长度为512
-您也可以使用Sophgo已经编译好的模型进行后续推理，其使用方式为
+## 6. Use the Models Provided by Sophgo
+*The following models have a maximum context length of 512
+You can also use the models already compiled by Sophgo for subsequent inference, as follows:
 ```shell
 pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/yi-34b_int4_2dev.bmodel
@@ -85,10 +85,10 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/yi-34b_
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/yi-34b_int4_8dev.bmodel
 ```
 
-## 7. python_demo运行
+## 7. Running python_demo
 
-详细命令请参考python_demo/README.md
+For detailed commands, please refer to python_demo/README.md
 
-## 8. demo_parallel运行
+## 8. Running demo_parallel
 
-详细命令请参考demo_parallel/README.md (当前由于官方sentencepiece/tokenizer.model存在异常，该C++例程暂时不支持正常推理)
+For detailed commands, please refer to demo_parallel/README.md (Currently, due to an issue with the official sentencepiece/tokenizer.model, this C++ demo temporarily does not support normal inference)

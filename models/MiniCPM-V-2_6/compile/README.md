@@ -9,21 +9,21 @@ cp files/MiniCPM-V-2_6/modeling_qwen2.py /usr/local/lib/python3.10/dist-packages
 cp files/MiniCPM-V-2_6/resampler.py your_torch_model
 cp files/MiniCPM-V-2_6/modeling_navit_siglip.py your_torch_model
 ```
-your_torch_model是你模型的位置
+`your_torch_model` is the location of your model.
 ```shell
 python3 export_onnx.py --model_path your_torch_model --seq_length 1024 --device cpu --image_file ../python_demo/test0.jpg
 ```
-* image_file：image_file为真实图片的路径，导出模型时，输入size会固定为该图片的size。`image_file请输入你实际的图片`
-* 目前不支持图片size可变
+* image_file: `image_file` is the path of a real image. When exporting the model, the input size will be fixed to the size of this image. `Please enter your actual image for image_file`
+* Variable image sizes are not currently supported
 
 ## Compile bmodel
-使用io_alone
+Use io_alone
 ```
 ./compile.sh --mode int4 --name minicpmv26 --seq_length 1024
 ```
 
-### 下载迁移好的模型
-也可以直接下载编译好的模型，不用自己编译
+### Download the migrated model
+You can also directly download the precompiled model instead of compiling it yourself
 ```shell
 pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpmv26_bm1684x_int4_seq1024_imsize448.bmodel
@@ -31,19 +31,19 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpm
 
 ### python demo
 
-请见python_demo里面的README
+See the README inside python_demo
 
-### modeling_qwen2.py代码修改
+### Modifications to modeling_qwen2.py
 
-#### 第一处：修改旋转位置编码
-原代码：
+#### First change: modify the rotary position embedding
+Original code:
 ```python
 cos = cos[position_ids].unsqueeze(unsqueeze_dim)
 sin = sin[position_ids].unsqueeze(unsqueeze_dim)
 q_embed = (q * cos) + (rotate_half(q) * sin)
 k_embed = (k * cos) + (rotate_half(k) * sin)
 ```
-修改后
+After modification
 ```python
 # The first two dimensions of cos and sin are always 1, so we can `squeeze` them.
 cos = cos.squeeze(1).squeeze(0)  # [seq_len, dim]
@@ -56,9 +56,9 @@ q_embed = (q * cos) + (rotate_half(q) * sin)
 k_embed = (k * cos) + (rotate_half(k) * sin)
 ```
 
-#### 第二处：修改repeat_kv
+#### Second change: modify repeat_kv
 
-原代码：
+Original code:
 ```python
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     """
@@ -72,7 +72,7 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
 ```
 
-修改后
+After modification
 ```python
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     """
@@ -86,4 +86,4 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     return hidden_states.reshape(batch, slen, num_key_value_heads * n_rep, head_dim)
 ```
 
-* 其他修改位置与Qwen1_5相同
+* The other modifications are the same as those for Qwen1_5

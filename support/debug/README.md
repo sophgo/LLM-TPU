@@ -1,18 +1,18 @@
-## LLM调试代码
+## LLM debugging code
 
-当LLM输出不正确时可以使用这里的代码做调试
+When the LLM output is incorrect, you can use the code here for debugging
 
-## 方法
+## Method
 
-将本目录的代码拷贝到demo代码中，CMakeLists.txt中链接库需要加上libz.so，如下：
+Copy the code in this directory into the demo code. The linked libraries in CMakeLists.txt need to include libz.so, as follows:
 
 ```CMake
 pybind11_add_module(chat chat.cpp cnpy.cpp)
 target_link_libraries(chat PUBLIC bmrt bmlib z)
 ```
 
-dump_net_input_to_file 可以把网络的输入导出到npz文件
+dump_net_input_to_file can export the network inputs to an npz file
 
-dump_net_output_to_file 可以把网络的输出导出到npz文件
+dump_net_output_to_file can export the network outputs to an npz file
 
-dump_net_to_file 可以把网络的输入输出导出到npz文件
+dump_net_to_file can export both the network inputs and outputs to an npz file

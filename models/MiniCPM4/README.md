@@ -1,14 +1,14 @@
 # MiniCPM4
 
-本工程实现BM1684X/BM1688部署大模型[MiniCPM4](https://huggingface.co/openbmb/MiniCPM4-0.5B-QAT-Int4-GPTQ-format)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到PCIE环境，或者SoC环境。
+This project implements the deployment of the large model [MiniCPM4](https://huggingface.co/openbmb/MiniCPM4-0.5B-QAT-Int4-GPTQ-format) on BM1684X/BM1688. The model is converted into a bmodel via the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) compiler, and deployed to a PCIE environment or a SoC environment using C++ code.
 
 
-本文包括如何编译bmodel，和如何在BM1684X/BM1688环境运行bmodel。编译LLM环节可以省去，直接用以下链接下载：
+This document covers how to compile the bmodel and how to run the bmodel in the BM1684X/BM1688 environment. The LLM compilation step can be skipped; download directly using the following links:
 
 ``` shell
 # minicpm4-8b 1684x 512
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpm4-8b_w4bf16_seq512_bm1684x_1dev_20250613_175044.bmodel
-# minicpm4-8b 1684x 8k, 动态模型
+# minicpm4-8b 1684x 8k, dynamic model
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpm4-8b_w4bf16_seq8192_bm1684x_1dev_20250613_182940.bmodel
 
 # minicpm4-0.5b bm1688 512
@@ -18,23 +18,23 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU_Lite/mi
 
 ```
 
-## 编译LLM模型
+## Compile the LLM Model
 
-此处介绍如何将LLM编译成bmodel。
+This section describes how to compile an LLM into a bmodel.
 
-#### 1. 从Huggingface下载MiniCPM4
+#### 1. Download MiniCPM4 from HuggingFace
 
-(比较大，会花费较长时间)
+(Relatively large; will take a long time)
 
 ``` shell
-# 下载模型
+# Download the model
 git lfs install
 git clone git@hf.co:openbmb/MiniCPM4-0.5B-QAT-Int4-GPTQ-format
-# 如果是8B，则如下：
+# For 8B, use the following:
 git clone git@hf.co:openbmb/MiniCPM4-8B
 ```
 
-#### 2. 下载docker，启动容器
+#### 2. Download docker and start the container
 
 ``` shell
 docker pull sophgo/tpuc_dev:latest
@@ -42,41 +42,41 @@ docker pull sophgo/tpuc_dev:latest
 # myname1234 is just an example, you can set your own name
 docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev:latest
 ```
-后文假定环境都在docker的`/workspace`目录。
+The following assumes that the environment is in the `/workspace` directory of the docker container.
 
-#### 2. 下载`TPU-MLIR`代码并编译
+#### 2. Download the `TPU-MLIR` code and compile it
 
-(也可以直接下载编译好的release包解压)
+(You can also directly download and extract the pre-compiled release package)
 
 ``` shell
 cd /workspace
 git clone git@github.com:sophgo/tpu-mlir.git
 cd tpu-mlir
-source ./envsetup.sh  #激活环境变量
-./build.sh #编译mlir
+source ./envsetup.sh  # activate the environment variables
+./build.sh # compile mlir
 ```
 
-#### 3. 编译模型生成bmodel
+#### 3. Compile the model to generate the bmodel
 
 ``` shell
-# 如果有提示transformers版本问题，pip3 install transformers -U
+# If you are prompted about a transformers version issue, run pip3 install transformers -U
 llm_convert.py -m /workspace/MiniCPM4-0.5B-QAT-Int4-GPTQ-format -s 512 --quantize w4bf16 -c bm1684x --out_dir minicpm4_0.5b
 ```
-编译完成后，在指定目录`minicpm4_0.5b`生成`minicpm4-xxx.bmodel`和`config`
+After compilation, `minicpm4-xxx.bmodel` and `config` are generated in the specified directory `minicpm4_0.5b`
 
-另外如果指定的seqlen比较长的话，比如8K，可以指定`--dynamic`编译，首token延时会根据实际长度变化，如下：
+In addition, if the specified seqlen is relatively long, such as 8K, you can specify `--dynamic` compilation; the first-token latency will then vary with the actual length, as follows:
 ``` shell
-# 如果有提示transformers版本问题，pip3 install transformers -U
+# If you are prompted about a transformers version issue, run pip3 install transformers -U
 llm_convert.py -m /workspace/MiniCPM4-0.5B-QAT-Int4-GPTQ-format -s 8192 --quantize w4bf16 -c bm1684x --dynamic --out_dir minicpm4_0.5b
 ```
 
-## 编译与运行程序
+## Compile and Run the Program
 
-请将程序拷贝到PCIE环境或者SoC环境后再编译。然后把`minicpm4-xxx.bmodel`和`config`拷贝过去。
+Please copy the program to the PCIE environment or SoC environment before compiling. Then copy `minicpm4-xxx.bmodel` and `config` over.
 
 #### python demo
 
-编译库文件，生成`chat.cpython*.so`文件，将该文件拷贝到`pipeline.py`文件目录
+Compile the library files to generate the `chat.cpython*.so` file, and copy this file to the directory containing `pipeline.py`
 
 ``` shell
 cd python_demo
@@ -89,4 +89,4 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 ``` shell
 python3 pipeline.py -m minicpm4_xxx.bmodel -c config 
 ```
-model为实际的model储存路径；config为配置文件路径
+model is the actual model storage path; config is the configuration file path

@@ -4,7 +4,7 @@
 
 # LLM-TPU
 
-**在算能 SOPHGO TPU 上一键部署主流大语言模型与多模态模型**
+**One-click deployment of mainstream LLMs and multimodal models on SOPHGO TPU**
 
 *Deploy LLMs & VLMs on SOPHGO BM1684X / BM1688 / CV186X with a single command*
 
@@ -16,60 +16,62 @@
 [![Issues](https://img.shields.io/github/issues/sophgo/LLM-TPU?color=9cc)](https://github.com/sophgo/LLM-TPU/issues)
 [![Stars](https://img.shields.io/github/stars/sophgo/LLM-TPU?style=social)](https://github.com/sophgo/LLM-TPU/stargazers)
 
-[快速开始](#-快速开始) ·
-[模型支持](#-模型支持) ·
-[编译流程](#-llm-编译流程) ·
-[进阶应用](#-进阶应用) ·
+**English** · [简体中文](./README_cn.md)
+
+[Quick Start](#-quick-start) ·
+[Supported Models](#-supported-models) ·
+[Compilation Flow](#-llm-compilation-flow) ·
+[Advanced Features](#-advanced-features) ·
 [FAQ](./docs/FAQ.md) ·
-[官网](https://www.sophgo.com/)
+[Website](https://www.sophgo.com/)
 
 </div>
 
 ---
 
-## 📰 最新动态
+## 📰 Latest News
 
-| 日期 | 更新内容 |
+| Date | Updates |
 | :--- | :--- |
-| 🔥 **2026.07.16** | **Falcon-Perception** 已支持 BM1684X，Python Demo，referring segmentation（box + mask） → [查看](./models/Falcon-Perception/) |
-| 🔥 **2026.07.09** | **LocateAnything-3B** 已支持 BM1684X / BM1688，Python Demo，视觉定位（box / point） → [查看](./models/LocateAnything/) |
-| **2026.06.30** | **MiniCPM-V-4.6** 已支持 BM1684X / BM1688，Python Demo，支持图片与视频 → [查看](./models/MiniCPMV4_6/) |
-| **2026.05.21** | **Gemma4** 已支持 BM1684X / BM1688，Python Demo，支持图片 / 视频 / 音频 → [查看](./models/Gemma4/) |
-| **2026.04.15** | **Qwen3.5** 已支持 BM1684X / BM1688，提供 Python 与 C++ Demo，支持图片与视频 → [查看](./models/Qwen3_5/) |
-| **2025.10.15** | **Qwen3-VL** 已支持 BM1684X / BM1688，Python / C++ Demo，支持图片与视频 → [查看](./models/Qwen3_VL/) |
-| **2025.05.22** | **InternVL3** 已支持 BM1684X / BM1688，支持图片与视频 → [查看](./models/InternVL3/) |
-| **2025.04.30** | **Qwen2.5-VL** 已支持 BM1684X / BM1688，Python / C++ Demo → [查看](./models/Qwen2_5_VL/) |
-| **2025.04.29** | 推理模型 **Qwen3** 已支持 BM1684X / BM1688 → [查看](./models/Qwen3/) |
-| **2025.03.07** | **QwQ-32B** 与 **DeepSeek-R1-Distill-Qwen-32B** 多芯 Demo 已适配 → [查看](./models/Qwen2_5/) |
-| **2025.02.05** | 适配 **DeepSeek-R1-Distill-Qwen** 系列 (1.5B / 7B / 14B) → [查看](./models/Qwen2_5/) |
+| 🔥 **2026.07.16** | **Falcon-Perception** now supports BM1684X, Python demo, referring segmentation (box + mask) → [Details](./models/Falcon-Perception/) |
+| 🔥 **2026.07.09** | **LocateAnything-3B** now supports BM1684X / BM1688, Python demo, visual grounding (box / point) → [Details](./models/LocateAnything/) |
+| **2026.06.30** | **MiniCPM-V-4.6** now supports BM1684X / BM1688, Python demo, image & video support → [Details](./models/MiniCPMV4_6/) |
+| **2026.05.21** | **Gemma4** now supports BM1684X / BM1688, Python demo, image / video / audio support → [Details](./models/Gemma4/) |
+| **2026.04.15** | **Qwen3.5** now supports BM1684X / BM1688, Python & C++ demos, image & video support → [Details](./models/Qwen3_5/) |
+| **2025.10.15** | **Qwen3-VL** now supports BM1684X / BM1688, Python / C++ demos, image & video support → [Details](./models/Qwen3_VL/) |
+| **2025.05.22** | **InternVL3** now supports BM1684X / BM1688, image & video support → [Details](./models/InternVL3/) |
+| **2025.04.30** | **Qwen2.5-VL** now supports BM1684X / BM1688, Python / C++ demos → [Details](./models/Qwen2_5_VL/) |
+| **2025.04.29** | Reasoning model **Qwen3** now supports BM1684X / BM1688 → [Details](./models/Qwen3/) |
+| **2025.03.07** | **QwQ-32B** and **DeepSeek-R1-Distill-Qwen-32B** multi-chip demos adapted → [Details](./models/Qwen2_5/) |
+| **2025.02.05** | Adapted **DeepSeek-R1-Distill-Qwen** series (1.5B / 7B / 14B) → [Details](./models/Qwen2_5/) |
 
 ---
 
-## 📖 项目介绍
+## 📖 Introduction
 
-**LLM-TPU** 是 [SOPHGO](https://www.sophgo.com/) 官方维护的开源项目，致力于在算能 **BM1684X / BM1688 / CV186X** 系列 TPU 芯片上部署主流的 **生成式 AI 模型**（LLM / VLM）。
+**LLM-TPU** is an open-source project officially maintained by [SOPHGO](https://www.sophgo.com/), dedicated to deploying mainstream **generative AI models** (LLM / VLM) on SOPHGO **BM1684X / BM1688 / CV186X** series TPU chips.
 
 ```
    ┌──────────────┐    tpu-mlir    ┌──────────────┐    tpu-runtime   ┌──────────────────┐
-   │  HuggingFace │ ─────────────► │   bmodel     │ ───────────────► │  PCIE / SoC 部署  │
-   │   原始权重    │   llm_convert  │  (量化模型)  │    Python / C++  │  BM1684X / 1688  │
+   │  HuggingFace │ ─────────────► │   bmodel     │ ───────────────► │  PCIE / SoC       │
+   │   weights    │   llm_convert  │ (quantized)  │    Python / C++  │  BM1684X / 1688  │
    └──────────────┘                └──────────────┘                  └──────────────────┘
 ```
 
-- 🚀 **一键编译**：`llm_convert.py` 直接将 HuggingFace 权重导出为 bmodel
-- 🧩 **模型丰富**：覆盖 Qwen / Llama / DeepSeek / InternVL / MiniCPM / Phi / ChatGLM 等数十种模型
-- 🎯 **多模态**：支持文本、图像、视频、音频等多模态推理
-- ⚡ **高效推理**：支持 AWQ/GPTQ等 量化模型、动态编译、KV Cache、多芯并行
-- 🛠️ **双语言 Demo**：常用模型会提供 Python 与 C++ 参考实现
-- 📦 **开箱即用**：可直接下载预编译 bmodel，无需自行编译
+- 🚀 **One-click compilation**: `llm_convert.py` exports HuggingFace weights directly to bmodel
+- 🧩 **Rich model coverage**: Dozens of models including Qwen / Llama / DeepSeek / InternVL / MiniCPM / Phi / ChatGLM
+- 🎯 **Multimodal**: Inference across text, image, video, and audio
+- ⚡ **Efficient inference**: AWQ/GPTQ quantized models, dynamic compilation, KV Cache, multi-chip parallelism
+- 🛠️ **Dual-language demos**: Popular models ship with both Python and C++ reference implementations
+- 📦 **Ready to use**: Pre-compiled bmodels available for download — no compilation required
 
-> 编译模型需要配置 [TPU-MLIR](https://github.com/sophgo/tpu-mlir) 环境（Docker 或源码均可），亦可直接使用各 Demo 中预编译的 bmodel。完整模型列表见 [`models/`](./models)。
+> Compiling models requires the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) environment (Docker or source build both work). Alternatively, use the pre-compiled bmodels provided in each demo. See [`models/`](./models) for the full model list.
 
 ---
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-只需两步即可在 TPU 设备上跑通一个 LLM：
+Get an LLM running on your TPU device in just two steps:
 
 ```bash
 git clone https://github.com/sophgo/LLM-TPU.git
@@ -77,15 +79,15 @@ cd LLM-TPU
 ./run.sh --model qwen2.5vl
 ```
 
-### 一键运行的 Demo 模型
+### One-command demo models
 
-| 模型           | 命令                              |
+| Model          | Command                           |
 | :------------- | :-------------------------------- |
 | Qwen3-4B       | `./run.sh --model qwen3`          |
 | Qwen2.5-VL-3B  | `./run.sh --model qwen2.5vl`      |
 | InternVL3-2B   | `./run.sh --model internvl3`      |
 
-📘 详细步骤请参考 **[Quick Start](./docs/Quick_Start.md)**。
+📘 For detailed steps, see **[Quick Start](./docs/Quick_Start.md)**.
 
 <div align="center">
   <img src="./assets/test.jpg" width="45%"/>
@@ -94,26 +96,26 @@ cd LLM-TPU
 
 ---
 
-## 🧠 模型支持
+## 🧠 Supported Models
 
-### 多模态模型 (VLM / Audio / Vision)
+### Multimodal Models (VLM / Audio / Vision)
 
-| 模型 | 支持芯片 | 一键编译 | 备注 |
+| Model | Supported Chips | One-click Compile | Notes |
 | :--- | :---: | :---: | :--- |
-| [Falcon-Perception](https://huggingface.co/tiiuae/falcon-perception) | BM1684X | — | Python，referring segmentation box + mask |
-| [LocateAnything-3B](https://huggingface.co/NVIDIA/LocateAnything-3B) | BM1684X / 1688 | — | Python，视觉定位 box / point |
-| [Qwen3.5](https://www.modelscope.cn/collections/Qwen/Qwen35) | BM1684X / 1688 | ✅ | Python + C++，图片 / 视频 |
-| [Qwen3-VL](https://www.modelscope.cn/models/Qwen/Qwen3-VL-4B-Instruct) | BM1684X / 1688 | ✅ | Python + C++，图片 / 视频 |
+| [Falcon-Perception](https://huggingface.co/tiiuae/falcon-perception) | BM1684X | — | Python, referring segmentation box + mask |
+| [LocateAnything-3B](https://huggingface.co/NVIDIA/LocateAnything-3B) | BM1684X / 1688 | — | Python, visual grounding box / point |
+| [Qwen3.5](https://www.modelscope.cn/collections/Qwen/Qwen35) | BM1684X / 1688 | ✅ | Python + C++, image / video |
+| [Qwen3-VL](https://www.modelscope.cn/models/Qwen/Qwen3-VL-4B-Instruct) | BM1684X / 1688 | ✅ | Python + C++, image / video |
 | [Qwen2.5-VL](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct-AWQ) | BM1684X / 1688 | ✅ | Python + C++ |
 | [Qwen2-VL](https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct-AWQ) | BM1684X / 1688 | ✅ | — |
-| [InternVL3](https://huggingface.co/OpenGVLab/InternVL3-2B-AWQ) | BM1684X / 1688 | ✅ | 支持视频 |
-| [Gemma4](https://huggingface.co/google/gemma-4-E2B-it) | BM1684X / 1688 | ✅ | Python，图片 / 视频 / 音频 |
+| [InternVL3](https://huggingface.co/OpenGVLab/InternVL3-2B-AWQ) | BM1684X / 1688 | ✅ | Video supported |
+| [Gemma4](https://huggingface.co/google/gemma-4-E2B-it) | BM1684X / 1688 | ✅ | Python, image / video / audio |
 | [Gemma3](https://huggingface.co/google/gemma-3-4b-it) | BM1684X / 1688 | ✅ | — |
-| Qwen-VL / InternVL2 / MiniCPM-V-2.6 / Llama3.2-Vision | BM1684X / 1688 | — | 已部署 |
+| Qwen-VL / InternVL2 / MiniCPM-V-2.6 / Llama3.2-Vision | BM1684X / 1688 | — | Deployed |
 
-### LLM 模型
+### LLM Models
 
-| 系列 | 代表模型 | 一键编译 |
+| Family | Representative Models | One-click Compile |
 | :--- | :--- | :---: |
 | **Qwen** | Qwen1.5 / Qwen2 / Qwen2.5 / [Qwen3](https://huggingface.co/Qwen/Qwen3-4B-AWQ) / [QwQ-32B](https://huggingface.co/Qwen/QwQ-32B-AWQ) | ✅ |
 | **DeepSeek** | [DeepSeek-R1-Distill-Qwen](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B) (1.5B / 7B / 14B / 32B) | ✅ |
@@ -121,13 +123,13 @@ cd LLM-TPU
 | **MiniCPM** | [MiniCPM4](https://huggingface.co/openbmb/MiniCPM4-0.5B-QAT-Int4-GPTQ-format) | ✅ |
 | **Phi** | [Phi-3](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct) / [Phi-4](https://huggingface.co/microsoft/Phi-4-mini-instruct) | ✅ |
 | **ChatGLM** | [ChatGLM3](https://huggingface.co/THUDM/chatglm3-6b) / ChatGLM4 | ✅ |
-| **其他** | Baichuan2 · CodeFuse · Falcon · Gemma / Gemma2 · Mistral · WizardCoder · Yi · Yi34B · LWM-Text-Chat · Megrez · MiniCPM3 · DeepSeek-V2 | — |
+| **Others** | Baichuan2 · CodeFuse · Falcon · Gemma / Gemma2 · Mistral · WizardCoder · Yi · Yi34B · LWM-Text-Chat · Megrez · MiniCPM3 · DeepSeek-V2 | — |
 
-### 完整目录索引
+### Full Directory Index
 
-仓库 [`models/`](./models) 下当前包含以下模型实现：
+The [`models/`](./models) directory currently contains the following model implementations:
 
-**LLM**：
+**LLM**:
 [Baichuan2](./models/Baichuan2) ·
 [ChatGLM2](./models/ChatGLM2) ·
 [ChatGLM3](./models/ChatGLM3) ·
@@ -153,7 +155,7 @@ cd LLM-TPU
 [Yi](./models/Yi) ·
 [Yi34B](./models/Yi34B)
 
-**多模态 (Vision / Video / Audio)**：
+**Multimodal (Vision / Video / Audio)**:
 [DriveMM](./models/DriveMM) ·
 [Falcon-Perception](./models/Falcon-Perception) ·
 [Gemma3](./models/Gemma3) ·
@@ -178,28 +180,28 @@ cd LLM-TPU
 [Qwen3_VL](./models/Qwen3_VL) ·
 [VILA1_5](./models/VILA1_5)
 
-完整源码与转换细节请见各子目录。
+See each subdirectory for complete source code and conversion details.
 
 ---
 
-## 🧩 LLM 编译流程
+## 🧩 LLM Compilation Flow
 
-以 `Qwen2.5-VL` 为例：
+Using `Qwen2.5-VL` as an example:
 
-### 1. 下载权重
+### 1. Download Weights
 
-> 优先选择 **AWQ** 或 **GPTQ** 量化版本，精度更优。
+> Prefer **AWQ** or **GPTQ** quantized versions for better accuracy.
 
 ```bash
 git lfs install
 git clone git@hf.co:Qwen/Qwen2.5-VL-3B-Instruct-AWQ
 ```
 
-### 2. 配置 TPU-MLIR
+### 2. Set Up TPU-MLIR
 
-参考 [TPU-MLIR](https://github.com/sophgo/tpu-mlir)
+Refer to [TPU-MLIR](https://github.com/sophgo/tpu-mlir)
 
-### 3. 一键编译为 bmodel
+### 3. One-click Compilation to bmodel
 
 ```bash
 llm_convert.py \
@@ -210,39 +212,39 @@ llm_convert.py \
     -o qwen2.5vl_3b
 ```
 
-#### `llm_convert.py` 主要参数
+#### Key `llm_convert.py` Arguments
 
-| 参数 | 简写 | 必选 | 说明 |
+| Argument | Short | Required | Description |
 | :--- | :---: | :---: | :--- |
-| `--model_path`         | `-m` | ✅ | 权重路径 |
-| `--seq_length`         | `-s` | ✅ | 最大序列长度 |
-| `--max_input_length`   |  —   |    | 单次最大输入长度，默认等于 `seq_length` |
-| `--quantize`           | `-q` |    | 量化类型：`w4bf16` / `w4f16` / `bf16` / `f16` … |
-| `--chip`               | `-c` | ✅ | 目标平台：`bm1684x` / `bm1688` / `cv186x` |
-| `--q_group_size`       | `-g` |    | 量化组大小，默认 `64` |
-| `--max_pixels`         |  —   |    | VLM 专用，最大像素，如 `672,896` 或 `602112` |
-| `--do_sample`          |  —   |    | 输出包含采样模型，默认关闭 |
-| `--out_dir`            | `-o` | ✅ | 输出目录 |
+| `--model_path`         | `-m` | ✅ | Path to model weights |
+| `--seq_length`         | `-s` | ✅ | Maximum sequence length |
+| `--max_input_length`   |  —   |    | Maximum single-input length; defaults to `seq_length` |
+| `--quantize`           | `-q` |    | Quantization type: `w4bf16` / `w4f16` / `bf16` / `f16` … |
+| `--chip`               | `-c` | ✅ | Target platform: `bm1684x` / `bm1688` / `cv186x` |
+| `--q_group_size`       | `-g` |    | Quantization group size, default `64` |
+| `--max_pixels`         |  —   |    | VLM only, max pixels, e.g. `672,896` or `602112` |
+| `--do_sample`          |  —   |    | Include sampling model in output; off by default |
+| `--out_dir`            | `-o` | ✅ | Output directory |
 
-> 💡 量化类型选择：如果是已经量化的模型，不需要指定quantize；未量化模型需要指定。
+> 💡 Choosing quantization: if the model is already quantized, you do NOT need to specify `quantize`; unquantized models require it.
 >
-> 更多高级参数见 [进阶应用](#-进阶应用)。
+> For more advanced options, see [Advanced Features](#-advanced-features).
 
-执行完成后，输出目录会生成对应的 **bmodel** 与 **config** 配置目录，可直接加载推理。
+Once finished, the output directory will contain the corresponding **bmodel** and **config** directory, ready to load for inference.
 
 ---
 
-## ⚙️ 进阶应用
+## ⚙️ Advanced Features
 
 <table>
 <thead>
-<tr><th>能力</th><th>说明</th><th>启用方式</th><th>样例</th></tr>
+<tr><th>Capability</th><th>Description</th><th>How to Enable</th><th>Examples</th></tr>
 </thead>
 <tbody>
 
 <tr>
-<td><b>动态编译</b></td>
-<td>根据真实输入长度推理，减少短输入延时；多模态变尺寸图像也建议启用</td>
+<td><b>Dynamic Compilation</b></td>
+<td>Runs inference based on actual input length, reducing latency for short inputs; also recommended for variable-size multimodal images</td>
 <td><code>--dynamic</code></td>
 <td>
 <a href="./models/Qwen3">Qwen3</a> · <a href="./models/Qwen2_5_VL">Qwen2.5-VL</a> · <a href="./models/MiniCPM4">MiniCPM4</a> · <a href="./models/InternVL3">InternVL3</a> · <a href="./models/Qwen3_VL">Qwen3-VL</a>
@@ -251,7 +253,7 @@ llm_convert.py \
 
 <tr>
 <td><b>Prefill with KV Cache</b></td>
-<td>历史上下文以 KV Cache 形式保留，显著降低多轮对话延时</td>
+<td>Keeps historical context as KV Cache, significantly reducing multi-turn conversation latency</td>
 <td><code>--use_block_with_kv</code><br/><code>--max_input_length</code><br/><code>--max_prefill_kv_length</code></td>
 <td>
 <a href="./models/Qwen3_VL">Qwen3-VL</a> · <a href="./models/Qwen2_5_VL">Qwen2.5-VL</a> · <a href="./models/Qwen3">Qwen3</a> · <a href="./models/InternVL3">InternVL3</a>
@@ -259,17 +261,17 @@ llm_convert.py \
 </tr>
 
 <tr>
-<td><b>多芯并行</b></td>
-<td>跨多颗 TPU 并行推理，支持更大模型与更高吞吐</td>
+<td><b>Multi-chip Parallelism</b></td>
+<td>Parallel inference across multiple TPUs, enabling larger models and higher throughput</td>
 <td><code>--num_device N</code></td>
 <td>
-<a href="./models/Qwen2_5/python_demo_parallel">Qwen2.5 / 2-8 芯</a>
+<a href="./models/Qwen2_5/python_demo_parallel">Qwen2.5 / 2-8 chips</a>
 </td>
 </tr>
 
 <tr>
-<td><b>随机采样</b></td>
-<td>使用 <code>generation.json</code> 配置进行采样（默认 greedy）</td>
+<td><b>Random Sampling</b></td>
+<td>Sampling with <code>generation.json</code> configuration (greedy by default)</td>
 <td><code>--do_sample</code></td>
 <td>
 <a href="./models/Qwen3">Qwen3</a> · <a href="./models/InternVL3">InternVL3</a> · <a href="./models/MiniCPM4">MiniCPM4</a>
@@ -277,8 +279,8 @@ llm_convert.py \
 </tr>
 
 <tr>
-<td><b>多任务复用</b></td>
-<td>同一模型加载多次支持多任务，单芯片权重仅加载一次</td>
+<td><b>Multi-task Reuse</b></td>
+<td>Load the same model multiple times for multiple tasks; weights are loaded only once per chip</td>
 <td>—</td>
 <td>
 <a href="./models/Qwen2_5_VL/cpp_demo_multiuser/">Qwen2.5-VL multiuser</a>
@@ -286,8 +288,8 @@ llm_convert.py \
 </tr>
 
 <tr>
-<td><b>Prefill 共享复用</b></td>
-<td>长 prompt 仅 prefill 一次，后续对话共享其 KV Cache</td>
+<td><b>Shared Prefill Reuse</b></td>
+<td>Prefill a long prompt only once; subsequent conversations share its KV Cache</td>
 <td><code>--share_prompt</code><br/><code>--max_prefill_kv_length</code></td>
 <td>
 <a href="./models/Qwen2_5/python_demo_share_prompt">Qwen2.5</a> · <a href="./models/Qwen3/python_demo_share_prompt">Qwen3</a>
@@ -295,8 +297,8 @@ llm_convert.py \
 </tr>
 
 <tr>
-<td><b>模型加密</b></td>
-<td>支持第三方库加密 bmodel，推理时调用解密接口</td>
+<td><b>Model Encryption</b></td>
+<td>Encrypt bmodel with a third-party library; call the decryption API at inference time</td>
 <td>—</td>
 <td>
 <a href="./models/Qwen/share_cache_demo">Qwen</a> · <a href="./models/Qwen1_5/share_cache_demo">Qwen1.5</a>
@@ -308,40 +310,40 @@ llm_convert.py \
 
 ---
 
-## 🎯 精度优化建议
+## 🎯 Accuracy Optimization Tips
 
-1. **优先使用 AWQ / GPTQ 量化模型** 转 bmodel，精度损失最小。
-2. 若仅有浮点权重，建议先用 [AutoAWQ](https://huggingface.co/docs/transformers/main/en/quantization/awq#awq) 或 [AutoGPTQ](https://huggingface.co/docs/transformers/main/en/quantization/gptq) 进行 W4A16 量化，再编译为 bmodel。
-
----
-
-## ❓ 常见问题
-
-请参考 **[LLM-TPU FAQ](./docs/FAQ.md)**。
+1. **Prefer AWQ / GPTQ quantized models** when converting to bmodel — they incur the least accuracy loss.
+2. If only floating-point weights are available, first apply W4A16 quantization with [AutoAWQ](https://huggingface.co/docs/transformers/main/en/quantization/awq#awq) or [AutoGPTQ](https://huggingface.co/docs/transformers/main/en/quantization/gptq), then compile to bmodel.
 
 ---
 
-## 🔗 资料链接
+## ❓ FAQ
 
-- 📘 [TPU-MLIR](https://github.com/sophgo/tpu-mlir) — 编译器主仓库
-- 📗 [TPU-MLIR 快速入门手册](https://doc.sophgo.com/sdk-docs/v23.09.01-lts-sp4/docs_latest_release/docs/tpu-mlir/quick_start/html/index.html)
-- 🎬 [TPU-MLIR 论文 / 整体工程讲解 (Bilibili)](https://www.bilibili.com/video/BV1My4y1o73Q)
-- ✍️ [ChatGLM2 流程解析与 TPU-MLIR 部署](https://zhuanlan.zhihu.com/p/641975976)
-- 🌐 [SOPHGO 官网](https://www.sophgo.com/)
+Please refer to the **[LLM-TPU FAQ](./docs/FAQ.md)**.
 
 ---
 
-## 🤝 贡献与反馈
+## 🔗 Resources
 
-欢迎通过 [Issues](https://github.com/sophgo/LLM-TPU/issues) 提交问题或建议，亦欢迎 Pull Request 共建生态。
-若您对算能芯片或商业合作感兴趣，可通过 [SOPHGO 官网](https://www.sophgo.com/) 与我们联系。
+- 📘 [TPU-MLIR](https://github.com/sophgo/tpu-mlir) — Main compiler repository
+- 📗 [TPU-MLIR Quick Start Guide](https://doc.sophgo.com/sdk-docs/v23.09.01-lts-sp4/docs_latest_release/docs/tpu-mlir/quick_start/html/index.html)
+- 🎬 [TPU-MLIR Paper / Full Project Walkthrough (Bilibili)](https://www.bilibili.com/video/BV1My4y1o73Q)
+- ✍️ [ChatGLM2 Pipeline Analysis & TPU-MLIR Deployment (Zhihu)](https://zhuanlan.zhihu.com/p/641975976)
+- 🌐 [SOPHGO Official Website](https://www.sophgo.com/)
+
+---
+
+## 🤝 Contributing & Feedback
+
+Issues and suggestions are welcome via [GitHub Issues](https://github.com/sophgo/LLM-TPU/issues), and Pull Requests are appreciated to help grow the ecosystem.
+If you are interested in SOPHGO chips or business cooperation, feel free to reach out through the [SOPHGO website](https://www.sophgo.com/).
 
 ## 📄 License
 
-本项目基于 [Apache 2.0](./LICENSE) 协议开源。第三方组件协议详见 [`third-party-licenses/`](./third-party-licenses)。
+This project is open-sourced under the [Apache 2.0](./LICENSE) license. See [`third-party-licenses/`](./third-party-licenses) for third-party component licenses.
 
 <div align="center">
 
-**⭐ 如果本项目对你有帮助，欢迎 Star 支持！⭐**
+**⭐ If this project helps you, please give it a Star! ⭐**
 
 </div>

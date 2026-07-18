@@ -1,22 +1,22 @@
 # Janus-Pro
 
-本项目实现BM1684X部署语言大模型[Deepseek-Janus-Pro-7b](https://huggingface.co/deepseek-ai/Janus-Pro-7B)或[Deepseek-Janus-Pro-7b](https://www.modelscope.cn/models/deepseek-ai/Janus-Pro-1B)。通过[TPU-MLIR](https://github.com/sophgo/tpu-mlir)编译器将模型转换成bmodel，并采用c++代码将其部署到BM1684X的PCIE环境，或者SoC环境。
+This project implements the deployment of the large language model [Deepseek-Janus-Pro-7b](https://huggingface.co/deepseek-ai/Janus-Pro-7B) or [Deepseek-Janus-Pro-7b](https://www.modelscope.cn/models/deepseek-ai/Janus-Pro-1B) on BM1684X. The model is converted into a bmodel using the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) compiler, and deployed with C++ code to the BM1684X PCIE environment or SoC environment.
 
-下文中默认是PCIE环境；如果是SoC环境，按提示操作即可。
+The following assumes a PCIE environment by default; if you are using a SoC environment, just follow the prompts.
 
-# 目录说明
+# Directory Structure
 ```
 .
 ├── README.md
 ├── compile
-│   ├── compile.sh                          #用来编译TPU模型的脚本
-│   ├── export_onnx.py                      #用来导出onnx的脚本
-│   └── files                               #用于替换原模型的文件
+│   ├── compile.sh                          # script used to compile the TPU model
+│   ├── export_onnx.py                      # script used to export onnx
+│   └── files                               # files used to replace those in the original model
 ├── python_demo
-│   ├── chat.cpp                            #主程序文件
-│   └── pipeline.py                         #python_demo的执行脚本
-├── requirements.txt                        #环境配置所需安装的wheel包
-└── processor_config                        #分词器和预处理等配置
+│   ├── chat.cpp                            # main program file
+│   └── pipeline.py                         # execution script for python_demo
+├── requirements.txt                        # wheel packages required for environment setup
+└── processor_config                        # tokenizer and preprocessing configurations
     ├── special_tokens_map.json
     ├── tokenizer.json
     ├── tokenizer_config.json
@@ -24,21 +24,21 @@
 ```
 ----------------------------
 
-#  自动化推理脚本
+#  Automated Inference Script
 
-# 【阶段一】模型编译
+# [Phase 1] Model Compilation
 
-## 注意点
-* 模型编译必须要在docker内完成，无法在docker外操作, 如果不打算编译模型，也可以使用我们编译好的模型，直接跳转至[编译程序](##-编译程序)
+## Notes
+* Model compilation must be done inside docker and cannot be performed outside docker. If you do not plan to compile the model, you can also use our precompiled model and jump directly to [Compile the program](#compile-the-program).
 
-### 步骤一：模型下载
-可以通过huggingface或ModelScope官方下载
+### Step 1: Download the model
+You can download it from the official HuggingFace or ModelScope sites.
 [huggingface](https://huggingface.co/deepseek-ai/Janus-Pro-7B)
 
 
-### 步骤二：下载docker
+### Step 2: Download docker
 
-下载docker，启动容器，如下：
+Download docker and start the container as follows:
 
 ``` shell
 docker pull sophgo/tpuc_dev:latest
@@ -47,7 +47,7 @@ docker pull sophgo/tpuc_dev:latest
 docker run --privileged --name myname1234 -v $PWD:/workspace -it sophgo/tpuc_dev:latest
 ```
 
-### 步骤三：下载TPU-MLIR代码并编译
+### Step 3: Download the TPU-MLIR code and compile it
 
 ``` shell
 git clone git@github.com:sophgo/tpu-mlir.git
@@ -55,17 +55,17 @@ cd tpu-mlir
 source ./envsetup.sh
 ./build.sh
 ```
-* PS：重新进入docker环境并且需要编译模型时，必须在此路径下执行上述`source ./envsetup.sh` 和 `./build.sh`才能完成后续模型编译。
+* PS: When you re-enter the docker environment and need to compile the model, you must run the above `source ./envsetup.sh` and `./build.sh` in this path before proceeding with subsequent model compilation.
 
-### 步骤四：对齐模型环境
+### Step 4: Align the model environment
 
 ``` shell
 pip install -r requirements.txt
 ```
 
-### 步骤五：生成bmodel文件
+### Step 5: Generate the bmodel file
 
-生成单芯模型
+Generate the single-chip model
 
 ``` shell
 llm_convert.py -m /path/to/Janus-Pro-1B/ -s 710 -q bf16 -g 128 --num_device 1  -c bm1684x  -o janus/ # same as int8
@@ -73,18 +73,18 @@ llm_convert.py -m /path/to/Janus-Pro-1B/ -s 710 -q bf16 -g 128 --num_device 1  -
 
 ----------------------------
 
-# 【阶段二】可执行文件生成
+# [Phase 2] Executable File Generation
 
-## 编译程序
-如果不打算自己编译模型，可以直接用下载好的模型
+## Compile the program
+If you do not plan to compile the model yourself, you can directly use the downloaded model.
 ```
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/janus-pro-7b_int4_seq2048.bmodel
 ```
 ```
-python3 -m dfss --url=open@sophgo.com:/share/hengyang/janus-pro-1b_bf16_seq710_bm1684x_1dev_20251021_154608.bmodel(1b模型)
+python3 -m dfss --url=open@sophgo.com:/share/hengyang/janus-pro-1b_bf16_seq710_bm1684x_1dev_20251021_154608.bmodel(1b model)
 ```
 
-执行如下编译，(PCIE版本与SoC版本相同)：
+Run the following compilation (the PCIE version and the SoC version are the same):
 
 ```shell
 cd python_demo
@@ -93,13 +93,13 @@ cmake .. && make
 cp *chat* ..
 ```
 
-## 模型推理
+## Model inference
 ```shell
 cd ./python_demo
 python3 pipeline.py -m bmodel_path -i image_path -t ../support/processor_config --devid your_devid
 ```
 
-* 其它可用参数可以通过`pipeline.py` 或者执行如下命令进行查看 
+* Other available parameters can be viewed via `pipeline.py` or by running the following command:
 ```shell
 python3 pipeline.py --help
 ```

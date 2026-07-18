@@ -1,52 +1,52 @@
-# 功能
-本demo用于在C-Eval数据集上测试ChatGLM模型性能
+# Features
+This demo is used to test ChatGLM model performance on the C-Eval dataset
 
-# 运行指南
-## 1. 项目编译
-请参考 [ChatGLM3模型编译](../../models/ChatGLM3/eval_demo/README.md) 将模型编译为bmodel类型文件  
-🚗 如果已有可测试的模型文件，可跳过此步  
+# Usage Guide
+## 1. Project Compilation
+Please refer to [ChatGLM3 Model Compilation](../../models/ChatGLM3/eval_demo/README.md) to compile the model into a bmodel file  
+🚗 If you already have a testable model file, you can skip this step  
 
-## 2. 搭建数据环境
+## 2. Set Up the Data Environment
 
-数据集：C-Eval  
-🌐[官网](https://cevalbenchmark.com/) • 🤗[Hugging Face](https://huggingface.co/datasets/ceval/ceval-exam") • 💻[GitHub](https://github.com/hkust-nlp/ceval/tree/main)
+Dataset: C-Eval  
+🌐[Official Website](https://cevalbenchmark.com/) • 🤗[Hugging Face](https://huggingface.co/datasets/ceval/ceval-exam") • 💻[GitHub](https://github.com/hkust-nlp/ceval/tree/main)
 
-#### 创建数据集文件夹
+#### Create the dataset folder
 ```
 mkdir ceval-exam 
 cd ceval-exam
 ```
 
-#### 下载C-Eval数据集
-此处采用wget下载方式，其他下载方式可参考 [GitHub](https://github.com/hkust-nlp/ceval/tree/main)
+#### Download the C-Eval dataset
+The wget download method is used here; for other download methods, refer to [GitHub](https://github.com/hkust-nlp/ceval/tree/main)
 ```
 wget https://huggingface.co/datasets/ceval/ceval-exam/resolve/main/ceval-exam.zip
 unzip ceval-exam
 ```
 
 
-## 3. 运行评测例程
-### 运行命令
+## 3. Run the Evaluation Demo
+### Run Command
 ```
 python evaluate_chatglm3.py --devid [DEVICE ID] --model_path [PATH_TO_MODEL] --tokenizer_path [PATH_TO_TOKENIZER] --eval_mode fast
 ```
- ### 参数说明
+ ### Parameter Description
 
-| 参数           | 说明                       |
+| Parameter           | Description                       |
 |:--------------:|:---------------------------:|
-| `--devid`      | 可用设备 ID                    |
-| `--model_path` | 模型路径，即步骤1中编译的模型文件                   |
-| `--tokenizer_path` | 分词器路径               |
-| `--eval_mode`  | 评估模式，有`fast`和`default`两种类型   |
+| `--devid`      | Available device ID                    |
+| `--model_path` | Model path, i.e. the model file compiled in step 1                   |
+| `--tokenizer_path` | Tokenizer path               |
+| `--eval_mode`  | Evaluation mode; two types available: `fast` and `default`   |
 
-📌 本项目提供分词器，路径为`LLM-TPU/models/ChatGLM3/support/token_config/ `
+📌 This project provides a tokenizer at the path `LLM-TPU/models/ChatGLM3/support/token_config/ `
 
-### 运行结果
+### Run Results
 
-运行结束后将得到一个测试结果文件，命名方式为`submission_{}.json`
+After the run finishes, you will get a test result file named `submission_{}.json`
 
-### 示例
-当文件路径如下所示时
+### Example
+When the file paths are as shown below
 ```
 LLM-TPU
 |_ harness
@@ -61,14 +61,14 @@ LLM-TPU
     |_ support
         |_ token_config
 ```
-运行命令为
+The run command is
 ```
 export PYTHONPATH=../../
 python evaluate_chatglm3.py --devid 10 --model_path ../../models/ChatGLM3/compile/chatglm3-6b_int4_1dev_1024.bmodel --tokenizer_path ../../models/ChatGLM3/support/token_config/ --eval_mode fast
 ```
 
-## 效果验证
+## Result Verification
 
-C-Eval数据集不提供测试集标签。为了验证效果，需要将结果文件提交到官方网站⬇
+The C-Eval dataset does not provide test set labels. To verify the results, you need to submit the result file to the official website ⬇
 
-[📎结果提交页](https://cevalbenchmark.com/static/user_interface.html)
+[📎Result Submission Page](https://cevalbenchmark.com/static/user_interface.html)

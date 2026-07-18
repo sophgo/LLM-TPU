@@ -1,54 +1,54 @@
-# 快速开始
+# Quick Start
 
-如果您手上有1684X芯片的SoC板卡或者PCIE板卡，例如Airbox（SoC），那么可以参考以下步骤跑通大语言模型，这里以Qwen3-4B为例。
+If you have an SoC board or a PCIE board with the 1684X chip, such as Airbox (SoC), you can refer to the following steps to run a large language model. Here we take Qwen3-4B as an example.
 
-另外SoC的执行步骤和PCIE的有些区别，PCIE建议安装docker后运行，这里将其分开说明。
+In addition, the execution steps for SoC are somewhat different from those for PCIE. For PCIE, it is recommended to install docker before running. They are explained separately here.
 
-## 跑通Demo
+## Run the Demo
 
-### SoC如何跑通Demo
+### How to run the Demo on SoC
 
-#### 1. 克隆LLM-TPU项目，并执行run.sh脚本
+#### 1. Clone the LLM-TPU project and execute the run.sh script
 ```
 git clone https://github.com/sophgo/LLM-TPU.git
 ./run.sh --model qwen3
 ```
-如果提示有python库缺失，直接pip3 install或者pip3 install xxx --upgrade
+If prompted that python libraries are missing, just pip3 install or pip3 install xxx --upgrade
 
-### PCIE如何跑通Demo
+### How to run the Demo on PCIE
 
-#### 1. 安装docker，并进入docker
+#### 1. Install docker and enter docker
 ```
 docker pull sophgo/tpuc_dev:latest
 docker run --privileged --name mlir -v /dev:/dev -v $PWD:/workspace -it sophgo/tpuc_dev:latest bash
 docker exec -it mlir bash
 ```
 
-#### 2. 克隆LLM-TPU项目，并执行run.sh脚本
+#### 2. Clone the LLM-TPU project and execute the run.sh script
 ```
 git clone https://github.com/sophgo/LLM-TPU.git
 ./run.sh --model qwen3
 ```
 
-## 版本检查
+## Version check
 
-在开始之前，首先要检查sophon-driver的版本是否符合条件
+Before starting, first check whether the sophon-driver version meets the requirements
 
-### SoC如何执行版本检查
+### How to perform the version check on SoC
 ```
 uname -v
 ```
-之后，会显示类似这样的一个时间`#2 SMP Sat Nov 18 10:07:36 HKT 2023`，如果你的日期>=20240110，也就是比较新，那么跳过这一步，如果日期<20240110，也就是版本比较老，那么参考[这个链接](https://doc.sophgo.com/sdk-docs/v23.09.01-lts/docs_latest_release/docs/SophonSDK_doc/zh/html/sdk_intro/5_update.html#soc)重新安装sdk，刷机包则用以下命令获取
+Afterwards, a time similar to `#2 SMP Sat Nov 18 10:07:36 HKT 2023` will be displayed. If your date >= 20240110, i.e. relatively new, then skip this step. If the date < 20240110, i.e. the version is relatively old, then refer to [this link](https://doc.sophgo.com/sdk-docs/v23.09.01-lts/docs_latest_release/docs/SophonSDK_doc/zh/html/sdk_intro/5_update.html#soc) to reinstall the sdk, and obtain the flash image package with the following command
 ```
 pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/sdcard.tgz
 ```
 
-### PCIE如何执行版本检查
+### How to perform the version check on PCIE
 ```
 cat /proc/bmsophon/driver_version
 ```
-之后，会显示类似这样的一个release date`release version:0.5.1   release date: 20240717-103602`，如果你的日期>=20240717，也就是比较新，那么跳过这一步，如果日期<20240717，也就是版本比较老，那么按照如下步骤重新安装driver
+Afterwards, a release date similar to `release version:0.5.1   release date: 20240717-103602` will be displayed. If your date >= 20240717, i.e. relatively new, then skip this step. If the date < 20240717, i.e. the version is relatively old, then reinstall the driver following the steps below
 ```
 pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/libsophon_club/20240717/sophon-driver_0.5.1_amd64.deb

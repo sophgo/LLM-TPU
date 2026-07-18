@@ -7,7 +7,7 @@ pip install sentencepiece transformers==4.30.2
 ```
 
 ### export onnx
-../compile/chatglm3-6b是你torch模型的位置
+../compile/chatglm3-6b is the location of your torch model
 ```shell
 cp files/chatglm3-6b/modeling_chatglm.py ../compile/chatglm3-6b
 
@@ -27,7 +27,7 @@ popd
 ./compile.sh --mode int4 --name chatglm3-6b --num_device 2
 ```
 
-也可以直接下载编译好的模型，不用自己编译
+You can also directly download the pre-compiled model instead of compiling it yourself
 ```shell
 pip3 install dfss
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/chatglm3-6b_int4_2dev_512.bmodel
@@ -35,11 +35,11 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/chatglm
 ```
 
 ## python demo
-首先准备环境
+First prepare the environment
 ```shell
 sudo pip3 install pybind11[global] sentencepiece
 ```
-之后编译库文件，并运行
+Then compile the library files and run
 ```shell
 mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..
