@@ -4,17 +4,23 @@ This project deploys the vision segmentation large model [Falcon-Perception](htt
 
 The model supports referring segmentation in images: given a natural language description plus an image, it outputs the target's normalized bounding box (`xy` center point, `hw` width and height) and a binary segmentation mask. This document covers how to compile the bmodel and how to run it in a BM1684X (PCIe / SoC) environment.
 
-You can directly download the pre-compiled bmodel from the link below (F32, seq512, max_input_length 384, static, 256×256 images, works on both PCIe and SoC):
+You can directly download the pre-compiled bmodel from the links below (seq512, max_input_length 384, static, 256×256 images, works on both PCIe and SoC):
 
 ``` shell
 pip install dfss
-# BM1684X (PCIe / SoC, 1 dev) — approx. 2.5GB
+
+# BF16 (recommended, approx. 1.6GB) — FAttentionLseOp + FlexAttentionOp fused kernels
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/falcon-perception_bf16_seq512_bm1684x_1dev_static_20260721_093418.bmodel
+
+# F32 full precision (approx. 2.5GB)
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/falcon-perception_f32_seq512_bm1684x_1dev_static_20260716_185805.bmodel
 ```
 
+BF16 vs F32: model size ↓43%, device memory ↓39%, prefill 3.9× faster, decode 1.86× faster, accuracy loss <1% (coord/size bit-identical, mask ~0.4% difference).
+
 ## Model architecture
 
-Falcon-Perception is a referring-segmentation model based on a Falcon backbone (28 layers, dim 1024, 16 heads, 8 KV heads, GQA), deployed in full F32 precision:
+Falcon-Perception is a referring-segmentation model based on a Falcon backbone (28 layers, dim 1024, 16 heads, 8 KV heads, GQA), supporting both BF16 and F32 precision:
 
 - **Backbone LLM**: Falcon-style decoder (unweighted RMSNorm, squared-ReLU-gate FFN, 2D golden RoPE, attention sink). Compiled in two stages: prefill + decode (block_cache).
 - **Vision upsampling (anyup)**: takes the input image, the backbone's image-token hidden states, and a window mask; aggregates them through a Fourier encoder / key encoder / LFU / resblock, and outputs 256×256×256 hr_features.
@@ -49,13 +55,20 @@ source ./envsetup.sh
 #### 4. Compile the model to generate the bmodel
 
 ``` shell
+# BF16 (recommended, fused kernels, smaller and faster)
+llm_convert.py -m /workspace/falcon-perception \
+  -s 512 --max_input_length 384 -q bf16 -c bm1684x --max_pixels 256,256 \
+  -o /workspace/falcon-perception_bmodel
+
+# F32 full precision
 llm_convert.py -m /workspace/falcon-perception \
   -s 512 --max_input_length 384 -q f32 -c bm1684x --max_pixels 256,256 \
   -o /workspace/falcon-perception_bmodel
 ```
 
 Compilation parameter description:
-- `-q f32`: F32 full precision (no quantization).
+- `-q bf16`: BF16 precision (recommended, FAttentionLseOp fused self-attention + FlexAttentionOp fused cross-attention).
+- `-q f32`: F32 full precision (no quantization, hand-written attention decomposition).
 - `-s 512`: total KV cache length (SEQLEN).
 - `--max_input_length 384`: prefill input limit.
 - `--max_pixels 256,256`: maximum image size of 256×256 pixels.
@@ -100,18 +113,18 @@ python3 pipeline.py -m falcon-perception.bmodel -c ../config \
 ### Example run
 
 ``` shell
-python3 pipeline.py -m ../falcon-perception.bmodel -c ../config -q "the bed" --media_path test.jpg
-# [info] tokens=209  img_tokens=192
+python3 pipeline.py -m ../falcon-perception_bf16_flex.bmodel -c ../config -q "the bed" --media_path test.jpg
+# [info] tokens=210  img_tokens=192
 # Answer:
 # <|presence|>
 # [coord] x=0.3128 y=0.7928
-# [size] h=0.4089 w=0.6266
-# [seg] mask_pos=8525
+# [size] h=0.4034 w=0.6266
+# [seg] mask_pos=8639
 #
 # [emission] coord=1 size=1 seg=1  [detections] 1 (NMS kept 1/1)
-#   #0 xy=(0.313,0.793) hw=(0.409,0.627) mask_px=53804/309120
-#   visualization: ./test_the_bed_vis.jpg
-# FTL: 1.33 s   decode: 1.47 s   tokens: 4   TPS: 2.70
+#   #0 xy=(0.313,0.793) hw=(0.403,0.627) mask_px=54333/309120
+#   visualization: ./test_detect_the_bed_vis.jpg
+# FTL: 0.356 s   decode: 0.789 s   tokens: 4   TPS: 5.07
 ```
 
 The pipeline performs full post-processing on the raw 256×256 mask logits (aligned with HF `_postprocess_aux`):
@@ -133,14 +146,23 @@ The pipeline performs full post-processing on the raw 256×256 mask logits (alig
 
 ## Technical notes
 
-- **Quantization scheme**: F32 full precision, no quantization. The backbone, anyup, and all heads are F32.
+- **Quantization scheme**: BF16 (recommended) or F32. Under BF16, the backbone self-attention uses the FAttentionLseOp fused kernel (with fp32 lse + attention sink), and the AnyUp cross-attention uses the FlexAttentionOp fused kernel (non-square qk_d=32/v_d=64). F32 retains the hand-written attention decomposition path.
 - **Sampling**: fixed greedy (temperature=0); top-k / sampling / seed are not supported (HF `generate` has them, but this demo does not expose them).
 - **Batch**: batch inference is not supported; single image with a single query, processed serially.
 - **Context length**: seq512/max_input384 covers most scenarios at 256×256 (query ≤ ~700 characters, ≤ ~18 detections). Extreme scenarios require the user to recompile with larger settings.
 - **History**: multi-turn history is not supported (single image, single query).
 
+## Performance (BM1684X PCIe, 256×256, "the bed")
+
+| Metric | F32 | BF16 |
+|--------|-----|------|
+| bmodel size | 2.61 GB | 1.50 GB |
+| Device memory | 3363 MB | 2041 MB |
+| FTL (prefill) | 1.39 s | 0.356 s (3.9×↑) |
+| Decode | 1.47 s | 0.789 s (1.86×↑) |
+
 ## FAQ
 
 - **Supported resolutions**: up to 256×256 (`--max_pixels 256,256`). Changing the resolution requires recompiling the bmodel.
 - **Number of image tokens**: the image is resized to ≤256×256 while preserving the aspect ratio, with each side rounded to a multiple of 16 (patch_size=16, merge=1); `image_tokens = (H_res/16) × (W_res/16)`. Example: 640×483 → 256×192 → 16×12 = 192 tokens; a square 256×256 image hits the upper limit of 256 tokens. Adding template tokens plus the query gives the prefill length.
-- **Device memory**: approx. 3.3GB (DevMem 3363/14678 MB on BM1684X).
+- **Device memory**: BF16 approx. 2.0GB (DevMem 2041/14678 MB); F32 approx. 3.3GB (DevMem 3363/14678 MB).
