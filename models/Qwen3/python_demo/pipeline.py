@@ -35,7 +35,7 @@ class Qwen3():
         self.model = chat.Qwen()
         self.init_params(args)
         self.load_model(args.model_path)
-        if self.model.support_prefill_kv:
+        if self.model.support_history:
             print("Model supports prefill kv, using prefill mode.")
             self.enable_history = True
 
@@ -65,7 +65,7 @@ class Qwen3():
                 self.stop_strings = gen_config.stop_strings
 
     def clear(self):
-        if self.model.support_prefill_kv:
+        if self.model.support_history:
             self.model.clear_kv()
         self.history = [{"role": "system", "content": self.system_prompt}]
 
@@ -73,7 +73,7 @@ class Qwen3():
         if self.model.history_length >= self.model.SEQLEN:
             print("... (reach the maximal length)", flush=True, end="")
             self.clear()
-        elif self.model.support_prefill_kv:
+        elif self.model.support_history:
             self.history.clear()
         else:
             self.history.append({"role": "assistant", "content": self.answer_cur})

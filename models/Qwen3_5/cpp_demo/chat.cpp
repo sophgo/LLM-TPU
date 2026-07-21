@@ -314,8 +314,6 @@ void Qwen3_5::init(int dev_id, std::string model_path, std::string config_path,
       // only init kv cache for layers with kv
       past_key[i] = net_blocks_cache[i]->stages[0].input_mems[3];
       past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
-      empty(bm_handle, past_key[i]);
-      empty(bm_handle, past_value[i]);
     } else {
       // reuse key as conv state
       past_key[i] = net_blocks_cache[i]->stages[0].input_mems[1];
@@ -395,7 +393,7 @@ void Qwen3_5::forward_embed(ArrayInt const &tokens) {
   if (!support_history) {
     assert(token_length <= MAX_INPUT_LENGTH);
   }
-  empty(bm_handle, dev_buffer);
+  // empty(bm_handle, dev_buffer);
   for (int i = 0; i < token_length; i += MAX_INPUT_LENGTH) {
     std::vector<bm_tensor_t> in_tensors;
     std::vector<bm_tensor_t> out_tensors;
@@ -595,10 +593,8 @@ int Qwen3_5::forward_first_with_kv(ArrayInt const &position_ids) {
   int old_kvlen = (history_length > 0) ? (history_length - 1) : 0;
   int last_cur_len = 0; // cur_len of the last chunk, for lmhead offset
   for (int t = 0; t < token_length; t += MAX_INPUT_LENGTH) {
-    auto old_length = history_length;
     int cur_len = std::min(MAX_INPUT_LENGTH, token_length - t);
     last_cur_len = cur_len;
-    history_length += cur_len;
     // copy position ids with offset
     for (int i = 0; i < 3; i++) {
       std::copy(position_ids.data() + i * token_length + t,
@@ -606,7 +602,7 @@ int Qwen3_5::forward_first_with_kv(ArrayInt const &position_ids) {
                 pos_ids.data() + i * cur_len);
     }
 
-    assert(old_length <= PREFILL_KV_LENGTH);
+    // assert(old_length <= PREFILL_KV_LENGTH);
     for (int idx = 0; idx < NUM_LAYERS; idx++) {
       auto fa = is_FA(idx);
       auto &net = (old_kvlen > 0 && fa) ? net_blocks_kv[idx] : net_blocks[idx];
@@ -669,6 +665,7 @@ int Qwen3_5::forward_first_with_kv(ArrayInt const &position_ids) {
     }
     old_kvlen += cur_len;
   }
+  history_length += token_length;
   // forward lmhead
   // the last chunk writes its block output to dev_buffer[0..last_cur_len),
   // so the last token's hidden state is at (last_cur_len - 1) * bytes,

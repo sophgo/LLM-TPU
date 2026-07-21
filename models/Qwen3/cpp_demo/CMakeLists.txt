@@ -23,6 +23,6 @@ endif()
 add_definitions(-DDEBUG --std=c++17 -fPIC -Wall -Werror)
 set(CMAKE_BUILD_TYPE "Debug")
 
-add_executable(pipeline demo.cpp)
+add_executable(pipeline pipeline.cpp chat.cpp)
 target_link_libraries(pipeline PUBLIC bmrt bmlib tokenizers_cpp tokenizers_c sentencepiece pthread dl)
 target_compile_options(pipeline PRIVATE -Wno-error=attributes)

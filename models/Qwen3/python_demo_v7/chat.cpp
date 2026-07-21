@@ -138,7 +138,7 @@ public:
   bool is_dynamic;
   bool prefill_mask;
   std::vector<int> visited_tokens;
-  bool support_prefill_kv;
+  bool support_history;
   int history_length;
   uint16_t mask_value;
 
@@ -218,10 +218,10 @@ void Qwen::init_by_names() {
   }
   MAX_INPUT_LENGTH = net_embed.stages[0].input_shapes[0].dims[1];
   SEQLEN = net_blocks_cache[0].stages[0].input_shapes[3].dims[1];
-  support_prefill_kv = net_blocks[0].input.num == 5; // with kv cache
+  support_history = net_blocks[0].input.num == 5; // with kv cache
   history_length = 0;
   printf("Num Layers:%d\n", NUM_LAYERS);
-  if (support_prefill_kv) {
+  if (support_history) {
     PREFILL_KV_LENGTH = net_blocks[0].stages[0].input_shapes[3].dims[1];
     printf("History by kv: True\n");
   }
@@ -336,7 +336,7 @@ void Qwen::net_launch_decode(int idx, int kv_offset, void *input_mem,
 }
 
 int Qwen::forward_first(std::vector<int> &tokens) {
-  if (support_prefill_kv) {
+  if (support_history) {
     return forward_first_with_kv(tokens);
   }
   std::vector<int> position_id(MAX_INPUT_LENGTH, 0);
@@ -551,7 +551,7 @@ int Qwen::forward_next() {
 }
 
 void Qwen::clear_kv() {
-  if (!support_prefill_kv) {
+  if (!support_history) {
     return;
   }
   for (int i = 0; i < NUM_LAYERS; i++) {
@@ -573,7 +573,7 @@ PYBIND11_MODULE(chat, m) {
       .def_readonly("MAX_INPUT_LENGTH", &Qwen::MAX_INPUT_LENGTH)
       .def_readonly("token_length", &Qwen::token_length)
       .def_readonly("history_length", &Qwen::history_length)
-      .def_readonly("support_prefill_kv", &Qwen::support_prefill_kv)
+      .def_readonly("support_history", &Qwen::support_history)
       .def_readwrite("generation_mode", &Qwen::generation_mode)
       .def_readwrite("penalty", &Qwen::penalty)
       .def_readwrite("temperature", &Qwen::temperature)
