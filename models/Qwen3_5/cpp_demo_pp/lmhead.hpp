@@ -13,7 +13,7 @@
 class LmHead {
 public:
   void init(int devid, std::string model_path, std::string config_path = "",
-            bool do_sample = false);
+            bool do_sample = false, int repetition_window = 64);
   void deinit();
   int forward(ArrayUint16 &hidden_states);
   bool check_stop(const std::string &text);
@@ -33,6 +33,7 @@ public:
   int HIDDEN_SIZE;
   bool lmhead_with_topk;
   bool do_sample = false;
+  int repetition_window = 64; // sliding window for repetition penalty
   std::vector<int> visited_tokens;
   std::vector<std::string> stop_strings;
   float penalty;

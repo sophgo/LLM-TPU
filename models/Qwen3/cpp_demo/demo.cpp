@@ -111,7 +111,7 @@ class Qwen {
 public:
   void init(std::string model_path, std::string config_path,
             std::string system_prompt, bool enable_history, bool do_sample,
-            const std::vector<int> &devid);
+            const std::vector<int> &devid, int rep_window);
   void deinit();
   void chat();
   void answer(const std::string input_str);
@@ -164,6 +164,7 @@ public:
   float temperature;
   int top_k;
   float top_p;
+  int repetition_window; // sliding window for repetition penalty
 
 private:
   std::vector<bm_handle_t> handles;
@@ -273,9 +274,10 @@ void Qwen::init_by_names() {
 
 void Qwen::init(std::string model_path, std::string config_path,
                 std::string system_prompt, bool save_history, bool do_sample,
-                const std::vector<int> &devices) {
+                const std::vector<int> &devices, int rep_window) {
   sys_config = "<|im_start|>system\n" + system_prompt + "<|im_end|>\n";
   enable_history = save_history;
+  repetition_window = rep_window;
 
   // load tokenizer
   std::string tokenizer_path = config_path + "/tokenizer.json";
@@ -496,7 +498,19 @@ int Qwen::penalty_sample(bm_device_mem_t &logits_mem) {
   auto &out1_mem = net_sample_head->stages[0].output_mems[1];
 
   // repeat_penalty + top_p + top_k + temperature
-  bm_memcpy_s2d(bm_handle, in1_mem, (void *)visited_tokens.data());
+  // Only the most recent `repetition_window` tokens are fed to the sample
+  // head so that repetition penalty is applied within a sliding window,
+  // avoiding over-penalization on long contexts. A non-positive window
+  // keeps the original behavior of penalizing the full context.
+  int penalty_len = token_length;
+  const int *penalty_ptr = visited_tokens.data();
+  if (repetition_window > 0 && token_length > repetition_window) {
+    penalty_len = repetition_window;
+    penalty_ptr = visited_tokens.data() + (token_length - repetition_window);
+  }
+  bm_memcpy_s2d_partial(bm_handle, in1_mem, (void *)penalty_ptr,
+                        penalty_len * sizeof(int));
+  net_sample_head->stages[0].input_shapes[1].dims[1] = penalty_len;
   bm_memcpy_s2d(bm_handle, in2_mem, (void *)&penalty);
   bm_memcpy_s2d(bm_handle, in3_mem, (void *)&temperature);
   bm_memcpy_s2d(bm_handle, in4_mem, (void *)&top_k);
@@ -892,26 +906,31 @@ void Usage() {
          "  -s, --do_sample : if set, sample by generation config\n"
          "  -d, --devid     : Set devices to run for model, default is '0'\n"
          "  -p, --prompt    : Programmatic mode prompt; if set, run a single\n"
-         "                    inference and exit (non-interactive)\n");
+         "                    inference and exit (non-interactive)\n"
+         "  -w, --rep_window: Sliding window size for repetition penalty; only\n"
+         "                    the last N tokens are penalized. 64 (default);\n"
+         "                    0 penalizes the full context. Only used with -s\n");
 }
 
 void processArguments(int argc, char *argv[], std::string &model_path,
                       std::string &config_path, std::vector<int> &devices,
                       bool &enable_history, bool &do_sample,
-                      std::string &prompt, bool &has_prompt) {
+                      std::string &prompt, bool &has_prompt,
+                      int &rep_window) {
   struct option longOptions[] = {{"model", required_argument, nullptr, 'm'},
                                  {"config", required_argument, nullptr, 'c'},
                                  {"devid", required_argument, nullptr, 'd'},
                                  {"enable_history", no_argument, nullptr, 'e'},
                                  {"do_sample", no_argument, nullptr, 's'},
                                  {"prompt", required_argument, nullptr, 'p'},
+                                 {"rep_window", required_argument, nullptr, 'w'},
                                  {"help", no_argument, nullptr, 'h'},
                                  {nullptr, 0, nullptr, 0}};
 
   int optionIndex = 0;
   int option;
 
-  while ((option = getopt_long(argc, argv, "m:c:d:p:esh", longOptions,
+  while ((option = getopt_long(argc, argv, "m:c:d:p:w:esh", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -933,6 +952,9 @@ void processArguments(int argc, char *argv[], std::string &model_path,
       prompt = optarg;
       has_prompt = true;
       break;
+    case 'w':
+      rep_window = atoi(optarg);
+      break;
     case 'h':
     case '?':
       Usage();
@@ -951,9 +973,10 @@ int main(int argc, char **argv) {
   bool do_sample = false;
   std::string prompt;
   bool has_prompt = false;
+  int rep_window = 64;
 
   processArguments(argc, argv, model_path, config_path, devices, enable_history,
-                   do_sample, prompt, has_prompt);
+                   do_sample, prompt, has_prompt, rep_window);
   if (model_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);
@@ -964,7 +987,7 @@ int main(int argc, char **argv) {
   Qwen model;
   std::cout << "Init Environment ..." << std::endl;
   model.init(model_path, config_path, system_prompt, enable_history, do_sample,
-             devices);
+             devices, rep_window);
   if (has_prompt) {
     // Programmatic (non-interactive) mode: run a single inference and exit.
     std::cout << "\nQuestion: " << prompt << std::endl;

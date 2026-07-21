@@ -16,7 +16,8 @@
 class Qwen3_5 {
 public:
   void init(std::vector<int> devids, std::string model_path,
-            std::string config_path = "", bool do_sample = false);
+            std::string config_path = "", bool do_sample = false,
+            int repetition_window = 64);
   void deinit();
   void forward_embed(ArrayInt const &tokens);
   void forward_vit(const float *pixel_values, ArrayInt const &position_ids,

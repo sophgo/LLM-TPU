@@ -66,7 +66,7 @@ public:
   ChatPipe(int devid, float video_ratio, float video_fps,
            const std::string &model_path, const std::string &config_path,
            const std::string &lora_dir = "", bool do_sample = false,
-           bool in_device = false);
+           bool in_device = false, int repetition_window = 64);
   ~ChatPipe() {
     model.deinit();
     if (lora_buffer) {
@@ -187,8 +187,9 @@ std::vector<int> ChatPipe::get_position_ids(int token_len) {
 ChatPipe::ChatPipe(int devid, float video_ratio, float video_fps,
                    const std::string &model_path,
                    const std::string &config_path, const std::string &lora_dir,
-                   bool do_sample, bool in_device) {
-  model.init(devid, model_path, config_path, do_sample, in_device);
+                   bool do_sample, bool in_device, int repetition_window) {
+  model.init(devid, model_path, config_path, do_sample, in_device,
+             repetition_window);
   spatial_merge_size = 2;
   spatial_merge_unit = spatial_merge_size * spatial_merge_size;
   tokens_per_second = 2;
@@ -1083,13 +1084,17 @@ void Usage() {
       "  -s, --do_sample   : Enable sampling during generation\n"
       "  -i, --in_device,  : Load total bmodel to dev mem\n"
       "  -l, --lora        : Set Lora directory path \n"
+      "  -w, --rep_window  : Sliding window size for repetition penalty; only\n"
+      "                      the last N tokens are penalized. 64 (default);\n"
+      "                      0 penalizes the full context. Only used with -s\n"
       "  -d, --devid       : Set devices to run for model, default is '0'\n");
 }
 
 void processArguments(int argc, char *argv[], std::string &model_path,
                       std::string &config_path, std::string &image_path,
                       std::string &lora_dir, int &device, float &video_ratio,
-                      float &video_fps, bool &do_sample, bool &in_device) {
+                      float &video_fps, bool &do_sample, bool &in_device,
+                      int &rep_window) {
   struct option longOptions[] = {
       {"model", required_argument, nullptr, 'm'},
       {"config", required_argument, nullptr, 'c'},
@@ -1099,12 +1104,13 @@ void processArguments(int argc, char *argv[], std::string &model_path,
       {"lora", required_argument, nullptr, 'l'},
       {"do_sample", no_argument, nullptr, 's'},
       {"in_device", no_argument, nullptr, 'i'},
+      {"rep_window", required_argument, nullptr, 'w'},
       {"help", no_argument, nullptr, 'h'},
       {nullptr, 0, nullptr, 0}};
 
   int optionIndex = 0;
   int option;
-  while ((option = getopt_long(argc, argv, "m:c:d:r:f:l:sh", longOptions,
+  while ((option = getopt_long(argc, argv, "m:c:d:r:f:l:w:sh", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -1131,6 +1137,9 @@ void processArguments(int argc, char *argv[], std::string &model_path,
     case 'i':
       in_device = true;
       break;
+    case 'w':
+      rep_window = atoi(optarg);
+      break;
     case 'h':
       Usage();
       exit(EXIT_SUCCESS);
@@ -1153,16 +1162,18 @@ int main(int argc, char *argv[]) {
   float video_fps = 1.0f;    // 默认每秒取1帧
   bool do_sample = false;
   bool in_device = false;
+  int rep_window = 64;
 
   processArguments(argc, argv, model_path, config_path, image_path, lora_dir,
-                   dev_id, video_ratio, video_fps, do_sample, in_device);
+                   dev_id, video_ratio, video_fps, do_sample, in_device,
+                   rep_window);
   if (model_path.empty() || config_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);
   }
   assert(video_fps > 0);
   ChatPipe pipeline(dev_id, video_ratio, video_fps, model_path, config_path,
-                    lora_dir, do_sample, in_device);
+                    lora_dir, do_sample, in_device, rep_window);
   pipeline.chat();
   return 0;
 }

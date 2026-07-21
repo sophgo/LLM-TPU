@@ -29,7 +29,7 @@ typedef std::vector<std::vector<float>> ArrayFloat2D;
 class Qwen3_5 {
 public:
   void init(int devid, std::string model_path, std::string config_path = "",
-            bool do_sample = false);
+            bool do_sample = false, int repetition_window = 64);
   void deinit();
   void forward_embed(ArrayInt const &tokens);
   void forward_vit(const float *pixel_values, ArrayInt const &position_ids,
@@ -92,6 +92,7 @@ public:
   float temperature;
   int top_k;
   float top_p;
+  int repetition_window; // sliding window for repetition penalty
 
 private:
   bm_handle_t bm_handle;

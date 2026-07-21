@@ -12,7 +12,8 @@
 #include <iostream>
 
 void Qwen3_5::init(std::vector<int> devids, std::string model_path,
-                   std::string config_path, bool do_sample_) {
+                   std::string config_path, bool do_sample_,
+                   int repetition_window_) {
   // Auto-detect bmodel files in model_path directory by suffix pattern
   std::string embed_vit_path;
   std::string lmhead_path;
@@ -89,7 +90,8 @@ void Qwen3_5::init(std::vector<int> devids, std::string model_path,
   }
 
   // Initialize LmHead
-  lmhead.init(component_devids.back(), lmhead_path, config_path, do_sample_);
+  lmhead.init(component_devids.back(), lmhead_path, config_path, do_sample_,
+              repetition_window_);
 
   // Set public properties from components
   MAX_INPUT_LENGTH = embed_vit.MAX_INPUT_LENGTH;

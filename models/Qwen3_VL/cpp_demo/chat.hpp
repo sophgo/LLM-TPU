@@ -29,7 +29,7 @@ typedef std::vector<std::vector<float>> ArrayFloat2D;
 class Qwen3_VL {
 public:
   void init(int devid, std::string model_path, std::string config_path = "",
-            bool do_sample = false);
+            bool do_sample = false, int repetition_window = 64);
   void deinit();
   void forward_embed(ArrayInt const &tokens);
   void forward_vit(const float *pixel_values, ArrayInt const &position_ids,
@@ -86,6 +86,7 @@ public:
   int num_deepstack;
   std::vector<int> visited_tokens;
   bool do_sample = false;
+  int repetition_window = 64; // sliding window for repetition penalty
   // generation
   std::vector<std::string> stop_strings;
   float penalty;

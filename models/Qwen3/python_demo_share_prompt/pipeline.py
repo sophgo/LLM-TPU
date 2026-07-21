@@ -76,6 +76,7 @@ class Qwen():
             self.model.top_p = gen_config.top_p
             self.model.top_k = gen_config.top_k
             self.model.penalty = gen_config.repetition_penalty
+            self.model.repetition_window = args.rep_window
             if gen_config.eos_token_id is not None:
                 if isinstance(gen_config.eos_token_id, int):
                     self.EOS.append(gen_config.eos_token_id)
@@ -179,6 +180,8 @@ if __name__ == "__main__":
     parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
     parser.add_argument('-l', '--lora', type=str, default="", help='Set Lora directory path')
     parser.add_argument('--do_sample', action='store_true', help="if set, generate tokens by sample parameters")
+    parser.add_argument('-w', '--rep_window', type=int, default=64,
+                        help="sliding window size for repetition penalty; only the last N tokens are penalized; 0 penalizes the full context; only used with --do_sample")
     parser.add_argument('--prompt', type=str, required=True, help="set a text file as prompt")
     # yapf: enable
     args = parser.parse_args()

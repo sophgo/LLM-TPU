@@ -287,7 +287,7 @@ void Qwen3_VL::init_by_names() {
 }
 
 void Qwen3_VL::init(int dev_id, std::string model_path, std::string config_path,
-                    bool do_sample_) {
+                    bool do_sample_, int repetition_window_) {
 
   // request bm_handle
   std::cout << "Device [ " << dev_id << " ] loading .....\n";
@@ -338,6 +338,7 @@ void Qwen3_VL::init(int dev_id, std::string model_path, std::string config_path,
   }
   vit_run = false;
   do_sample = do_sample_;
+  repetition_window = repetition_window_;
   if (do_sample) {
     if (!net_sample_head) {
       std::cerr
@@ -498,10 +499,19 @@ int Qwen3_VL::penalty_sample(bm_device_mem_t &logits_mem) {
   in_tensors[0].device_mem = logits_mem;
 
   // repeat_penalty + top_p + top_k + temperature
+  // Only the most recent `repetition_window` tokens are fed to the sample
+  // head so that repetition penalty is applied within a sliding window,
+  // avoiding over-penalization on long contexts. A non-positive window
+  // keeps the original behavior of penalizing the full context.
+  int penalty_len = token_length;
+  const int *penalty_ptr = visited_tokens.data();
+  if (repetition_window > 0 && token_length > repetition_window) {
+    penalty_len = repetition_window;
+    penalty_ptr = visited_tokens.data() + (token_length - repetition_window);
+  }
   bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
-                        (void *)visited_tokens.data(),
-                        token_length * sizeof(int));
-  in_tensors[1].shape.dims[1] = token_length;
+                        (void *)penalty_ptr, penalty_len * sizeof(int));
+  in_tensors[1].shape.dims[1] = penalty_len;
 
   // inference
   net_launch(net_sample_head, in_tensors, out_tensors);

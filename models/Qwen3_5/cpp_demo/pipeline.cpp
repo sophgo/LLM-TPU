@@ -61,7 +61,7 @@ public:
 
   ChatPipe(int devid, float video_ratio, float video_fps,
            const std::string &model_path, const std::string &config_path,
-           bool do_sample = false);
+           bool do_sample = false, int repetition_window = 64);
   ~ChatPipe() { model.deinit(); }
   // 聊天主循环
   void chat();
@@ -179,8 +179,9 @@ std::vector<int> ChatPipe::get_position_ids(int token_len) {
 // ChatPipe 类构造函数
 ChatPipe::ChatPipe(int devid, float video_ratio, float video_fps,
                    const std::string &model_path,
-                   const std::string &config_path, bool do_sample) {
-  model.init(devid, model_path, config_path, do_sample);
+                   const std::string &config_path, bool do_sample,
+                   int repetition_window) {
+  model.init(devid, model_path, config_path, do_sample, repetition_window);
   spatial_merge_size = 2;
   spatial_merge_unit = spatial_merge_size * spatial_merge_size;
   tokens_per_second = 2;
@@ -1055,7 +1056,10 @@ void Usage() {
       "                      the file contents come first, followed by the\n"
       "                      --prompt value (combined with a newline)\n"
       "  -i, --media_path  : Image/video path(s) for programmatic mode\n"
-      "                      (comma-separated for multiple images)\n");
+      "                      (comma-separated for multiple images)\n"
+      "  -w, --rep_window  : Sliding window size for repetition penalty; only\n"
+      "                      the last N tokens are penalized. 64 (default);\n"
+      "                      0 penalizes the full context. Only used with -s\n");
 }
 
 void processArguments(int argc, char *argv[], std::string &model_path,
@@ -1063,7 +1067,7 @@ void processArguments(int argc, char *argv[], std::string &model_path,
                       int &device, float &video_ratio, float &video_fps,
                       bool &do_sample, std::string &prompt,
                       std::string &media_path, bool &has_prompt,
-                      std::string &prompt_file) {
+                      std::string &prompt_file, int &rep_window) {
   struct option longOptions[] = {
       {"model", required_argument, nullptr, 'm'},
       {"config", required_argument, nullptr, 'c'},
@@ -1074,12 +1078,13 @@ void processArguments(int argc, char *argv[], std::string &model_path,
       {"prompt", required_argument, nullptr, 'p'},
       {"prompt_file", required_argument, nullptr, 't'},
       {"media_path", required_argument, nullptr, 'i'},
+      {"rep_window", required_argument, nullptr, 'w'},
       {"help", no_argument, nullptr, 'h'},
       {nullptr, 0, nullptr, 0}};
 
   int optionIndex = 0;
   int option;
-  while ((option = getopt_long(argc, argv, "m:c:d:r:f:p:t:i:sh", longOptions,
+  while ((option = getopt_long(argc, argv, "m:c:d:r:f:p:t:i:w:sh", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -1111,6 +1116,9 @@ void processArguments(int argc, char *argv[], std::string &model_path,
     case 'i':
       media_path = optarg;
       break;
+    case 'w':
+      rep_window = atoi(optarg);
+      break;
     case 'h':
       Usage();
       exit(EXIT_SUCCESS);
@@ -1135,10 +1143,11 @@ int main(int argc, char *argv[]) {
   std::string media_path;
   std::string prompt_file;
   bool has_prompt = false;
+  int rep_window = 64;
 
   processArguments(argc, argv, model_path, config_path, image_path, dev_id,
                    video_ratio, video_fps, do_sample, prompt, media_path,
-                   has_prompt, prompt_file);
+                   has_prompt, prompt_file, rep_window);
   if (model_path.empty() || config_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);
@@ -1169,7 +1178,7 @@ int main(int argc, char *argv[]) {
     }
   }
   ChatPipe pipeline(dev_id, video_ratio, video_fps, model_path, config_path,
-                    do_sample);
+                    do_sample, rep_window);
   if (has_prompt) {
     // 程序化（非交互）模式：执行一次推理后退出
     pipeline.run_once(prompt, media_path);

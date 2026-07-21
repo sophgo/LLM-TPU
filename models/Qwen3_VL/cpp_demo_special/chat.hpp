@@ -30,7 +30,8 @@ typedef std::vector<std::vector<float>> ArrayFloat2D;
 class Qwen3_VL {
 public:
   void init(int devid, std::string model_path, std::string config_path = "",
-            bool do_sample = false, bool in_device = false);
+            bool do_sample = false, bool in_device = false,
+            int repetition_window = 64);
   void deinit();
   // lora is a buffer stored with lora safetensors
   // config is context of the json config for lora, which contains lora_alpha
@@ -93,6 +94,7 @@ public:
   int num_deepstack;
   std::vector<int> visited_tokens;
   bool do_sample = false;
+  int repetition_window = 64; // sliding window for repetition penalty
   // load bmodel to device memory
   bool in_device = false;
   bm_device_mem_u64_t bmodel_mem;
