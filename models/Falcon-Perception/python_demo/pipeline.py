@@ -114,16 +114,18 @@ class FalconPerception():
         return batch
 
     # ---------------------------------------------------- host-side input states
-    def build_input_states(self, batch, embedding):
-        """embedding: [512,1024] token embeddings (pad at the tail).
-        Scatter img_projector(patches) into the img-token positions."""
+    def build_img_injection(self, batch):
+        """Compute projected image-patch features [M,1024] and their token row
+        positions [M]. chat.cpp scatters these directly into block_0's input
+        mem at the img-token rows (partial s2d by offset), so the full
+        [512,1024] embedding never round-trips through the host."""
         tokens = batch["tokens"][0]                      # [L]
         L = tokens.shape[0]
-        input_states = embedding.copy()                  # [512,1024]
         pixel_values = batch["pixel_values"]             # [N,1,H,W,3]
         pixel_mask = batch["pixel_mask"]                 # [N,H,W]
         if pixel_values is None:
-            return input_states, L
+            return (np.zeros((0, self.hidden), np.float32),
+                    np.zeros((0,), np.int32), L)
         c = self.config
         pixel_patches = E.rearrange(
             pixel_values,
@@ -155,11 +157,10 @@ class FalconPerception():
         padded_tokens = np.concatenate(
             [tokens.numpy().astype(np.int64),
              np.full(pad_len, self.ID_PAD, dtype=np.int64)])
-        img_pos = np.where(padded_tokens == self.ID_IMG)[0]
+        img_pos = np.where(padded_tokens == self.ID_IMG)[0].astype(np.int32)
         assert img_pos.shape[0] == valid_feats.shape[0], (
             f"img tokens {img_pos.shape[0]} != patches {valid_feats.shape[0]}")
-        input_states[img_pos] = valid_feats
-        return input_states, L
+        return valid_feats.astype(np.float32), img_pos, L
 
     # ---------------------------------------------------------- golden 2D RoPE
     def build_golden_cos_sin(self, batch, L):
@@ -419,22 +420,20 @@ class FalconPerception():
         print(f"\n[info] tokens={L}  img_tokens={(tokens.numpy()==self.ID_IMG).sum()}")
         t0 = time.time()
 
-        # 1) token embedding (pad to 512 inside forward_embed)
-        embedding = self.model.forward_embed(
-            tokens.numpy().astype(np.int32))            # [512,1024] numpy
-
-        # 2) assemble input_states (scatter img patches) + golden cos/sin + mask
-        input_states, L = self.build_input_states(batch, embedding)
+        # 1) img-patch injection (projected features + token row positions).
+        #    The token embedding stays on device; forward_first scatters these
+        #    into block_0's input mem at the img-token rows.
+        img_feats, img_pos, L = self.build_img_injection(batch)
         pos_t = batch["pos_t"][0].numpy().astype(np.int32)     # [L]
         pos_pad = np.zeros(self.MAX_INPUT_LENGTH, dtype=np.int32)
         pos_pad[:L] = pos_t
         gcos, gsin = self.build_golden_cos_sin(batch, L)
         attn_mask = self.build_prefill_mask(batch, L)
 
-        # 3) prefill
+        # 2) prefill (embed + img scatter + blocks, all on device)
         token = self.model.forward_first(
-            input_states.astype(np.float32), pos_pad, gcos, gsin,
-            attn_mask, L)
+            tokens.numpy().astype(np.int32), pos_pad, gcos, gsin,
+            attn_mask, L, img_feats, img_pos)
         self.max_posid = int(pos_t[-1])
         t1 = time.time()
         # Don't decode the first token here — the decode loop below dispatches

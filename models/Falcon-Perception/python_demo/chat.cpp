@@ -33,10 +33,12 @@
 //   anyup            : [1,3,256,256] f32, [1,1024,16,16] f32 -> [1,256,256,256] f32
 //                      (window_mask baked into bmodel as a const weight)
 //
-// Image-patch projection + masked_scatter is done host-side (pipeline);
-// forward_first receives the assembled input_states. coord/size Fourier 回灌
-// is done via coord_encoder/size_encoder bmodels whose output overrides the
-// embedded token in forward_next (fourier_emb arg).
+// Image-patch projection is done host-side (pipeline); forward_first embeds
+// the tokens on device, then scatters the projected patch features directly
+// into block_0's input mem at the img-token rows (partial s2d by offset) — the
+// full [MAX_INPUT_LENGTH, HIDDEN] embedding never leaves the device. coord/size
+// Fourier 回灌 is done via coord_encoder/size_encoder bmodels whose output
+// overrides the embedded token in forward_next (fourier_emb arg).
 
 #include "bmruntime_interface.h"
 #include "memory.h"
@@ -91,9 +93,15 @@ public:
   void init(int devid, std::string model_path);
   void deinit();
   ArrayFloat forward_embed(ArrayInt const &tokens);
-  int forward_first(ArrayFloat const &input_states, ArrayInt const &position_ids,
+  // tokens: token ids [MAX_INPUT_LENGTH] (right-padded). img_feats/img_pos:
+  // projected image-patch features [M,HIDDEN] and their token row positions [M]
+  // (the img-token slots). forward_first embeds tokens on device, scatters
+  // img_feats into block_0's input mem at img_pos rows, then runs prefill —
+  // the full embedding never round-trips through the host.
+  int forward_first(ArrayInt const &tokens, ArrayInt const &position_ids,
                     ArrayFloat const &golden_cos, ArrayFloat const &golden_sin,
-                    ArrayFloat const &attention_mask, int token_length);
+                    ArrayFloat const &attention_mask, int token_length,
+                    ArrayFloat const &img_feats, ArrayInt const &img_pos);
   // fourier_emb: if non-empty [1,HIDDEN] embedding, overrides the embedded token
   // (回灌: coord/size token's embedding replaced by Fourier(xy/hw)).
   int forward_next(int prev_token, ArrayInt const &position_ids,
@@ -295,29 +303,63 @@ ArrayFloat FalconPerception::forward_embed(ArrayInt const &tokens) {
   return out;
 }
 
-int FalconPerception::forward_first(ArrayFloat const &input_states,
+int FalconPerception::forward_first(ArrayInt const &tokens,
                                     ArrayInt const &position_ids,
                                     ArrayFloat const &golden_cos,
                                     ArrayFloat const &golden_sin,
                                     ArrayFloat const &attention_mask,
-                                    int tok_len) {
+                                    int tok_len,
+                                    ArrayFloat const &img_feats,
+                                    ArrayInt const &img_pos) {
   token_length = tok_len;
+  auto p_tok = tokens.request();
   auto p_pos = position_ids.request();
   auto p_gcos = golden_cos.request();
   auto p_gsin = golden_sin.request();
   auto p_mask = attention_mask.request();
-  auto p_in = input_states.request();
+  auto p_feats = img_feats.request();
+  auto p_ipos = img_pos.request();
 
-  // run prefill blocks
+  // 1) token embedding on device (no host round-trip). The projected image-
+  //    patch features are scattered directly into block_0's input mem at the
+  //    img-token rows below, so the full [MAX_INPUT_LENGTH, HIDDEN] embedding
+  //    never leaves the device.
+  auto &embed_in = net_embed->stages[0].input_mems[0];
+  auto &embed_out = net_embed->stages[0].output_mems[0];
+  bm_memcpy_s2d(bm_handle, embed_in, p_tok.ptr);
+  net_launch(net_embed);
+
+  // 2) place embedding into block_0's input mem (d2d). embed_out and block_0's
+  //    input mem may alias under BM_RUNTIME_SHARE_MEM (then this is a harmless
+  //    self-copy). net_launch above synced, so embed_out is settled.
+  auto &blk0_in = net_blocks[0]->stages[0].input_mems[0];
+  int embed_bytes = MAX_INPUT_LENGTH * HIDDEN_SIZE * sizeof(float);
+  bm_memcpy_d2d_byte(bm_handle, blk0_in, 0, embed_out, 0, embed_bytes);
+
+  // 3) scatter img-patch features into the img-token rows (partial s2d by row
+  //    offset). Overwrites the placeholder img-token embeddings with the
+  //    projected patch features, matching the old host-side masked_scatter.
+  int M = p_ipos.size;
+  int row_bytes = HIDDEN_SIZE * sizeof(float);
+  auto ipos_ptr = static_cast<int *>(p_ipos.ptr);
+  auto feats_ptr = static_cast<float *>(p_feats.ptr);
+  for (int m = 0; m < M; m++) {
+    int row = ipos_ptr[m];
+    auto dst = bm_mem_from_device(
+        blk0_in.u.device.device_addr + (uint64_t)row * row_bytes, row_bytes);
+    bm_memcpy_s2d(bm_handle, dst,
+                  (void *)(feats_ptr + (int64_t)m * HIDDEN_SIZE));
+  }
+
+  // 4) run prefill blocks
   bm_device_mem_t out_mem;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     auto &net = net_blocks[idx];
     std::vector<bm_tensor_t> in_tensors(net->input_num);
     std::vector<bm_tensor_t> out_tensors(net->output_num);
-    // input_states: first block from host, later blocks from previous output
-    if (idx == 0) {
-      bm_memcpy_s2d(bm_handle, net->stages[0].input_mems[0], p_in.ptr);
-    } else {
+    // block_0 input already filled (embedding + img scatter) above; later
+    // blocks read the previous block's output.
+    if (idx > 0) {
       bm_memcpy_d2d_byte(bm_handle, net->stages[0].input_mems[0], 0, out_mem, 0,
                          token_length * HIDDEN_SIZE * sizeof(float));
     }
@@ -576,7 +618,11 @@ PYBIND11_MODULE(chat, m) {
       .def("init", &FalconPerception::init)
       .def("deinit", &FalconPerception::deinit)
       .def("forward_embed", &FalconPerception::forward_embed)
-      .def("forward_first", &FalconPerception::forward_first)
+      .def("forward_first", &FalconPerception::forward_first,
+           py::arg("tokens"), py::arg("position_ids"), py::arg("golden_cos"),
+           py::arg("golden_sin"), py::arg("attention_mask"),
+           py::arg("token_length"), py::arg("img_feats"),
+           py::arg("img_pos"))
       .def("forward_next", &FalconPerception::forward_next,
            py::arg("prev_token"),
            py::arg("position_ids"), py::arg("golden_cos"), py::arg("golden_sin"),
