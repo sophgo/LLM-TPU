@@ -121,17 +121,6 @@ As follows:
 ./pipeline -m qwen3.5_xxxx.bmodel -c config --prompt_file story.txt --prompt "what is it talking about ?"
 ```
 
-### 2. Support for multi-stage decode
-
-When seqlen is very long, for example > 4K, decode can be split into stages so that the decode phase runs different instructions by length. As follows:
-``` shell
-llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-4B-int4-AutoRound -s 8192 -c bm1684x --out_dir qwen3.5_kv --chunk_length 1024
-```
-It can be used together with historical context support, as follows:
-``` shell
-llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-4B-int4-AutoRound -s 8192 -c bm1684x --out_dir qwen3.5_kv --use_history_kv --chunk_length 1024
-```
-
 
 ## FAQ
 

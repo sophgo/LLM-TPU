@@ -8,11 +8,11 @@ MODEL_DIR=$DIR/../models
 
 # =================== 编译所有的demo代码 =====================
 EXCLUDE_DIRS=(
-    "./Qwen2/demo_parallel"  # Qwen2的demo_parallel需要单独编译
-    "./Qwen1_5/demo_parallel"  # Qwen1_5的demo_parallel需要单独编译
-    "./Qwen/demo_parallel" # Qwen的demo_parallel需要单独编译
-    "./LWM/demo"
-    "./VILA1_5/cpp_demo"
+    "./legacy/Qwen2/demo_parallel"  # Qwen2的demo_parallel需要单独编译
+    "./legacy/Qwen1_5/demo_parallel"  # Qwen1_5的demo_parallel需要单独编译
+    "./legacy/Qwen/demo_parallel" # Qwen的demo_parallel需要单独编译
+    "./legacy/LWM/demo"
+    "./legacy/VILA1_5/cpp_demo"
 )
 
 is_excluded() {

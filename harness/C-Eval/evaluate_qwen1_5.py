@@ -200,7 +200,7 @@ if __name__ == "__main__":
     parser.add_argument('-d', '--devid', type=str, help='device ID to use')
     parser.add_argument('--model_path', type=str, help='Path to the bmodel file.')
     parser.add_argument('--device', type=str, choices=['cuda', 'tpu'], default='tpu')
-    parser.add_argument('--tokenizer_path', type=str, help='Path to the tokenizer file.', default="../../models/Qwen1_5/token_config/")
+    parser.add_argument('--tokenizer_path', type=str, help='Path to the tokenizer file.', default="../../models/legacy/Qwen1_5/token_config/")
     parser.add_argument('--temperature', type=float, default=1.0, help='temperature scaling factor for the likelihood distribution')
     parser.add_argument('--top_p', type=float, default=1.0, help='cumulative probability of token words to consider as a set of candidates')
     parser.add_argument('--repeat_penalty', type=float, default=1.0, help='penalty for repeated tokens')

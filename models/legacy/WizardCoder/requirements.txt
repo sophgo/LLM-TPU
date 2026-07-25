@@ -1,0 +1,11 @@
+activations==0.1.0
+datasets==2.16.1
+fire==0.5.0
+fraction==2.2.0
+gradio==4.16.0
+human_eval==1.0.3
+jsonlines==4.0.0
+openai==1.11.1
+sympy==1.12
+torch==2.0.1+cpu
+tqdm==4.65.0

@@ -130,55 +130,39 @@ cd LLM-TPU
 The [`models/`](./models) directory currently contains the following model implementations:
 
 **LLM**:
-[Baichuan2](./models/Baichuan2) ·
-[ChatGLM2](./models/ChatGLM2) ·
 [ChatGLM3](./models/ChatGLM3) ·
-[CodeFuse](./models/CodeFuse) ·
-[DeepSeek-V2](./models/DeepSeek-V2) ·
-[GLM4](./models/GLM4) ·
-[Llama2](./models/Llama2) ·
 [Llama3](./models/Llama3) ·
-[LWM](./models/LWM) ·
-[Megrez](./models/Megrez) ·
-[MiniCPM3](./models/MiniCPM3) ·
 [MiniCPM4](./models/MiniCPM4) ·
-[Mistral](./models/Mistral) ·
 [Phi-3](./models/Phi-3) ·
-[Qwen](./models/Qwen) ·
-[Qwen1_5](./models/Qwen1_5) ·
-[Qwen2](./models/Qwen2) ·
 [Qwen2_5](./models/Qwen2_5) ·
-[Qwen3](./models/Qwen3) ·
-[RWKV6](./models/RWKV6) ·
-[RWKV7](./models/RWKV7) ·
-[WizardCoder](./models/WizardCoder) ·
-[Yi](./models/Yi) ·
-[Yi34B](./models/Yi34B)
+[Qwen3](./models/Qwen3)
 
 **Multimodal (Vision / Video / Audio)**:
-[DriveMM](./models/DriveMM) ·
 [Falcon-Perception](./models/Falcon-Perception) ·
 [Gemma3](./models/Gemma3) ·
 [Gemma4](./models/Gemma4) ·
 [GLM4V](./models/GLM4V) ·
-[InternVL2](./models/InternVL2) ·
 [InternVL3](./models/InternVL3) ·
 [Janus-Pro](./models/Janus-Pro) ·
 [Llama3_2-Vision](./models/Llama3_2-Vision) ·
 [LocateAnything](./models/LocateAnything) ·
-[MiniCPM-V-2_6](./models/MiniCPM-V-2_6) ·
 [MiniCPMV4](./models/MiniCPMV4) ·
 [MiniCPMV4_6](./models/MiniCPMV4_6) ·
-[Molmo](./models/Molmo) ·
 [NVILA](./models/NVILA) ·
 [Qwen2_5_Omni](./models/Qwen2_5_Omni) ·
 [Qwen2_5_VL](./models/Qwen2_5_VL) ·
-[Qwen2_Audio](./models/Qwen2_Audio) ·
 [Qwen2_VL](./models/Qwen2_VL) ·
 [Qwen3_5](./models/Qwen3_5) ·
 [Qwen3_ASR](./models/Qwen3_ASR) ·
-[Qwen3_VL](./models/Qwen3_VL) ·
-[VILA1_5](./models/VILA1_5)
+[Qwen3_VL](./models/Qwen3_VL)
+
+#### Legacy
+
+Older demos built with the pre-`llm_convert.py` compile flow (ONNX export + `model_transform.py` / `model_deploy.py`) are kept under [`models/legacy/`](./models/legacy) for reference and are no longer actively maintained:
+
+**LLM**: [Baichuan2](./models/legacy/Baichuan2) · [ChatGLM2](./models/legacy/ChatGLM2) · [CodeFuse](./models/legacy/CodeFuse) · [DeepSeek-V2](./models/legacy/DeepSeek-V2) · [GLM4](./models/legacy/GLM4) · [Llama2](./models/legacy/Llama2) · [LWM](./models/legacy/LWM) · [Megrez](./models/legacy/Megrez) · [MiniCPM3](./models/legacy/MiniCPM3) · [Mistral](./models/legacy/Mistral) · [Qwen](./models/legacy/Qwen) · [Qwen1_5](./models/legacy/Qwen1_5) · [Qwen2](./models/legacy/Qwen2) · [RWKV6](./models/legacy/RWKV6) · [RWKV7](./models/legacy/RWKV7) · [WizardCoder](./models/legacy/WizardCoder) · [Yi](./models/legacy/Yi) · [Yi34B](./models/legacy/Yi34B)
+
+**Multimodal**: [DriveMM](./models/legacy/DriveMM) · [InternVL2](./models/legacy/InternVL2) · [MiniCPM-V-2_6](./models/legacy/MiniCPM-V-2_6) · [Molmo](./models/legacy/Molmo) · [Qwen2_Audio](./models/legacy/Qwen2_Audio) · [VILA1_5](./models/legacy/VILA1_5)
 
 See each subdirectory for complete source code and conversion details.
 
@@ -301,7 +285,7 @@ Once finished, the output directory will contain the corresponding **bmodel** an
 <td>Encrypt bmodel with a third-party library; call the decryption API at inference time</td>
 <td>—</td>
 <td>
-<a href="./models/Qwen/share_cache_demo">Qwen</a> · <a href="./models/Qwen1_5/share_cache_demo">Qwen1.5</a>
+<a href="./models/legacy/Qwen/share_cache_demo">Qwen</a> · <a href="./models/legacy/Qwen1_5/share_cache_demo">Qwen1.5</a>
 </td>
 </tr>
 

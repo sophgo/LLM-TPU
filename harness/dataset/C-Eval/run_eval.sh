@@ -58,7 +58,7 @@ case $model in
         model="qwen1_5"
         eval_mode="default"
         if [ ! -e "/path/to/file" ]; then
-            tokenizer_path="../../models/Qwen1_5/token_config/"
+            tokenizer_path="../../models/legacy/Qwen1_5/token_config/"
         fi
         ;;
     *)

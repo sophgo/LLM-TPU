@@ -1,1 +1,0 @@
-ln -s ../../Qwen/demo_parallel/third_party third_party

@@ -1,0 +1,12 @@
+{
+  "auto_map": {
+    "AutoTokenizer": [
+      "tokenization_qwen.QWenTokenizer",
+      null
+    ]
+  },
+  "clean_up_tokenization_spaces": true,
+  "model_max_length": 8192,
+  "padding_side": "left",
+  "tokenizer_class": "QWenTokenizer"
+}
