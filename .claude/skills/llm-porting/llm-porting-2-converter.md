@@ -1,9 +1,13 @@
 # Step 2: Converter Implementation
 
-> **文件落点**：per-model 文件在 `<work_dir>` = `/workspace/llm/LLM-TPU/models/<model>/tmp/` 下（见 SKILL.md）。
+> **文件落点**：per-model 文件在 `<work_dir>` = `<repo_root>/models/<model>/tmp/`（`<repo_root>` 为用户指定的 LLM-TPU 仓库路径） 下（见 SKILL.md）。
 >
 > **前置条件**：步骤 1 完成，`<work_dir>/<model>_plan.md` 已确认。
 > **产物**：`<Model>Converter.py` + 编译成功的 bmodel
+
+## 前置：恢复上下文
+
+Read `<work_dir>/<model>_memory.md`，重点看底部「移植进度备忘」章节，从中恢复 repo 路径、环境信息、关键决策和当前进度，再继续下面的步骤。
 
 ## 目标
 

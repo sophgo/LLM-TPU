@@ -1,6 +1,6 @@
 ---
 name: llm-porting
-description: "Use when: user wants to port a new LLM or VLM model for deployment on SOPHGO TPU (BM1684X/BM1688). Invoke with the model name; the skill copies the blank template (llm-porting-0-template.md) to <model>_memory.md for the user to fill."
+description: "LLM/VLM 模型移植到算能 TPU（BM1684X/BM1688）的全流程指导：架构分析、Converter 实现、pipeline 构建、精度验证、收尾提交。当用户说"移植 LLM""移植 VLM""移植大模型""适配 LLM/VLM""port LLM/VLM""大模型移植到 TPU"时使用。"
 ---
 
 # LLM/VLM 模型移植
@@ -11,11 +11,11 @@ description: "Use when: user wants to port a new LLM or VLM model for deployment
 
 1. 模型权重已下载到本地（HuggingFace 格式）
 2. 用户已确定要移植的模型名（启动时给出）
-3. LLM-TPU 仓库（启动时自动检测，见下方）
+3. LLM-TPU 仓库本地路径（启动时自动检测或询问用户，记为 `<repo_root>`）
 
 > 主模板 `llm-porting-0-template.md` 永远保持空白，由 SKILL 复制使用，无需预填。
 
-**per-model 文件落点**：记 `<work_dir>` = `<repo_root>/models/<model>/tmp/`（`<repo_root>` 为 LLM-TPU 仓库根目录）。`<model>_memory.md` 和 `<model>_plan.md` 都放此目录下，SKILL 在步骤 0 创建该目录。✓ `tmp/` 已被仓库 `.gitignore` 的 `tmp*/` 规则忽略，不会误提交（含环境凭据也安全）。
+**per-model 文件落点**：记 `<repo_root>` 为用户指定的 LLM-TPU 仓库本地路径，`<work_dir>` = `<repo_root>/models/<model>/tmp/`。`<model>_memory.md` 和 `<model>_plan.md` 都放此目录下，SKILL 在步骤 0 创建该目录。✓ `tmp/` 已被 LLM-TPU 仓库 `.gitignore` 的 `tmp*/` 规则忽略，不会误提交（含环境凭据也安全）。
 
 ## 启动方式
 
@@ -29,7 +29,7 @@ SKILL 会 `mkdir -p <work_dir>` 并把空白主模板 `llm-porting-0-template.md
 
 **收到启动指令后，不要自行探索，严格按以下顺序执行：**
 
-1. **确认仓库路径**：从本 SKILL.md 所在目录向上查找 `.git/` 定位仓库根目录，检查根目录下是否有 `models/` 目录且 `README.md` 含 "LLM-TPU" 关键字。命中 → 该根目录即为 `<repo_root>`，告知用户已自动确认。未命中 → 询问用户 LLM-TPU 仓库的本地路径
+1. **确认仓库路径**：从本 SKILL.md 所在目录向上查找 `.git/` 定位仓库根目录，检查根目录下是否有 `models/` 目录且 `README.md` 含 "LLM-TPU" 关键字。命中 → 该根目录即为 `<repo_root>`，告知用户已自动确认。未命中 → 询问用户 LLM-TPU 仓库的本地路径。若用户已在启动指令中给出路径则跳过检测
 2. **复制模板**：`mkdir -p <work_dir>`，把 `llm-porting-0-template.md` 复制为 `<work_dir>/<model>_memory.md`（`<model>` 取自启动指令；预填"模型名称"和"LLM-TPU 路径"字段）。把副本交给用户填写，**停下等用户说「填好了」**
 3. **读取 memory**：用户填好后读取 `<work_dir>/<model>_memory.md`，提取模型名、模态、环境信息等
 4. **注册 MEMORY.md**：在当前会话的项目记忆文件（`~/.claude/projects/` 下对应目录的 `memory/MEMORY.md`）中追加一行：`- [llm-porting] <work_dir>/<model>_memory.md — 当前正在执行 llm-porting skill，每轮对话开始先 Read 此文件恢复上下文（完成后删除本条目）`
@@ -67,7 +67,7 @@ SKILL 会 `mkdir -p <work_dir>` 并把空白主模板 `llm-porting-0-template.md
 - **适配计划**：步骤 1 生成的 `<work_dir>/<model>_plan.md` 是活文档。**每个步骤执行过程中遇到的问题、解决方案、决策变更都要追加到该文档的调试记录章节。** 步骤 5 收尾时确认记录完整
 - **模型特异性**：步骤 1 识别出的特异性内容是后续步骤的重点关注对象，需要人做决策
 - **文本不可继承**：步骤 2/3/4 每个都按文本 → 视觉 → 语音的顺序执行（详见各子 Skill）
-- **提交策略**：中间产物不逐步提交；Converter 跑通后可提交一次 tpu-mlir，Pipeline 跑通后可提交一次 LLM-TPU
+- **提交策略**：中间产物不逐步提交；Converter 跑通、Pipeline 跑通后代码可暂存（`git add`），但**不提交**，步骤 5 统一提交
 
 ## 三个环境
 
