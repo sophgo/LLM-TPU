@@ -26,13 +26,13 @@ if [ "$mode" == "compile" ]; then
   pip3 install torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cpu
   pip3 install transformers_stream_generator einops tiktoken accelerate transformers==4.41.2 peft
 
-  max_rank_num=64 # 开启lora后，外挂的lora分支的秩
-  max_embedding_rank_num=64 # 开启lora embedding后，外挂的lora embedding分支的秩
+  max_rank_num=64 # rank of the external lora branch when lora is enabled
+  max_embedding_rank_num=64 # rank of the external lora embedding branch when lora embedding is enabled
 
-  model_path="/workspace/models/Qwen2-7B-Instruct/" # 训练的pytorch基座模型的路径
-  lib_path="../share_cache_demo/build/libcipher.so" # 加解密so的路径
-  lora_path="saves_lora/lora_sft_qwen2_unpretrained_init/" # 微调的lora模型的路径
-  lora_embedding_path="saves_lora/lora_sft_qwen2_unpretrained_init_embedding/" # 微调的lora模型的路径
+  model_path="/workspace/models/Qwen2-7B-Instruct/" # path to the trained pytorch base model
+  lib_path="../share_cache_demo/build/libcipher.so" # path to the encryption/decryption .so
+  lora_path="saves_lora/lora_sft_qwen2_unpretrained_init/" # path to the fine-tuned lora model
+  lora_embedding_path="saves_lora/lora_sft_qwen2_unpretrained_init_embedding/" # path to the fine-tuned lora model
   device="cpu"
   num_thread=16
 

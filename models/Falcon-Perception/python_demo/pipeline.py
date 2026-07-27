@@ -10,7 +10,7 @@
 #
 # Implements the backbone prefill + decode loop with the mixed attention mask,
 # 3D golden RoPE cos/sin precompute, host-side image-patch scatter,
-# coord/size/seg/mask head dispatch, Fourier 回灌 (coord_encoder/size_encoder),
+# coord/size/seg/mask head dispatch, Fourier feedback (coord_encoder/size_encoder),
 # AnyUp (once after prefill) + mask_head per seg token, coord dedup, and full
 # mask postprocess (crop -> resize -> sigmoid -> NMS) aligned with HF.
 
@@ -449,13 +449,13 @@ class FalconPerception():
         h_last = h_BSD_full[L - 1].copy()                     # hidden that emitted `token`
         hr_features = self.run_anyup(batch, h_BSD_full[:L])   # [1,256,256,256]
 
-        # 4) decode loop with coord/size/seg head dispatch + Fourier 回灌
+        # 4) decode loop with coord/size/seg head dispatch + Fourier feedback
         tok_num = 0
         full_word_tokens = []
         text = ""
         aux = []                                              # emitted xy/hw/mask
         existing_coords = []                                  # for coord dedup
-        pending_fourier = np.zeros((0,), dtype=np.float32)    # 回灌 embedding for next step
+        pending_fourier = np.zeros((0,), dtype=np.float32)    # feedback embedding for next step
         gcos1 = np.ones((1, self.n_heads, self.rope_quart), dtype=np.float32)
         gsin1 = np.zeros((1, self.n_heads, self.rope_quart), dtype=np.float32)
         while token not in self.stop_ids and \
@@ -485,7 +485,7 @@ class FalconPerception():
                     text += word
                     print(word, end="", flush=True)
                     full_word_tokens = []
-            # advance: forward_next consumes pending_fourier (回灌 at this token)
+            # advance: forward_next consumes pending_fourier (feedback at this token)
             self.max_posid += 1
             pos_id = np.array([self.max_posid], dtype=np.int32)
             dec_mask = self.build_decode_mask(self.model.history_length)

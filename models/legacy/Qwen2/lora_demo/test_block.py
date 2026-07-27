@@ -92,7 +92,7 @@ def dequant(npz_file, op_name, q_group_size, hidden_size):
 def get_dequant_weight_dic(fp32_file, npz_file, fp32_op_name_list, op_name_list, op_shape_list, q_group_size, cos_sim_threshold, verify=True):
     dequant_weight_dic = {}
     for fp32_op_name, op_name, op_shape in zip(fp32_op_name_list, op_name_list, op_shape_list):
-        dequant_weight = dequant(npz_file, op_name, q_group_size, op_shape[1]) # 这里用op_shape[1]而不是HIDDEN_SIZE
+        dequant_weight = dequant(npz_file, op_name, q_group_size, op_shape[1]) # use op_shape[1] here instead of HIDDEN_SIZE
 
         if verify:
             fp32_weight = fp32_file[fp32_op_name].flatten()

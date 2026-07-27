@@ -67,7 +67,7 @@ public:
   Model() : sgen(std::random_device()()){};
 
 private:
-  // 以下几个辅助函数不变
+  // The following helper functions are unchanged
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
   void net_launch_dyn(const bm_net_info_t *net, int stage_idx = 0);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
@@ -83,8 +83,8 @@ public:
   int hidden_bytes;
   int kv_bytes;
   int token_length;
-  int SEQLEN;     // 从bmodel中读取的真实seqlen
-  int NUM_LAYERS; // 总层数
+  int SEQLEN;     // The real seqlen read from the bmodel
+  int NUM_LAYERS; // Total number of layers
   int TOKEN_LEN;
   bool is_dynamic;
   std::vector<int> visited_tokens;
@@ -103,25 +103,25 @@ private:
   bm_handle_t bm_handle;
   void *p_bmrt;
 
-  // 模型各模块：
-  // 第一层使用 attention / mlp 模块
+  // Modules of the model:
+  // The first layer uses the attention / mlp modules
   const bm_net_info_t *net_embed;
   const bm_net_info_t *net_embed_cache;
 
-  std::vector<const bm_net_info_t *> attention; // layer0 使用 attention_0
+  std::vector<const bm_net_info_t *> attention; // layer0 uses attention_0
   std::vector<const bm_net_info_t *>
-      attention_cache; // layer0 的 cache 对应 attention_cache_0
-  std::vector<const bm_net_info_t *> mlp; // layer0 使用 mlp_0
+      attention_cache; // The cache of layer0 corresponds to attention_cache_0
+  std::vector<const bm_net_info_t *> mlp; // layer0 uses mlp_0
   std::vector<const bm_net_info_t *>
-      mlp_cache; // layer0 的 cache 对应 mlp_cache_0
+      mlp_cache; // The cache of layer0 corresponds to mlp_cache_0
 
-  // 第二层及之后，采用 shared moe 结构
+  // The second layer and beyond use the shared moe structure
   std::vector<const bm_net_info_t *> shared_moe;
   std::vector<const bm_net_info_t *> shared_moe_cache;
   std::vector<const bm_net_info_t *> moe;
   std::vector<const bm_net_info_t *> moe_cache;
 
-  // lm_head 及生成头
+  // lm_head and generation heads
   const bm_net_info_t *net_lm;
   const bm_net_info_t *net_greedy_head;
   const bm_net_info_t *net_penalty_sample_head;
@@ -175,7 +175,7 @@ void Model::init(const std::vector<int> &devices, std::string model_path) {
   printf("Done!\n");
   print_devmem_info(handles[0]);
 
-  // 获取 embedding 与 lm 模块
+  // Get the embedding and lm modules
   // net_embed = bmrt_get_network_info(p_bmrt, "embedding");
   // net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
   // net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
@@ -183,65 +183,65 @@ void Model::init(const std::vector<int> &devices, std::string model_path) {
   // net_penalty_sample_head = bmrt_get_network_info(p_bmrt,
   // "penalty_sample_head");
 
-  // 根据 embedding 层定义真实 SEQLEN
+  // Define the real SEQLEN based on the embedding layer
   SEQLEN = 512; // real seqlen
 
-  // 计算 NUM_LAYERS，由bmodel中除去固定模块后的数量决定
-  // 注意：总层数的计算公式需保证 layer0 使用 mlp 模块，其余层为 shared moe 结构
+  // Compute NUM_LAYERS, determined by the number of nets in the bmodel excluding the fixed modules
+  // Note: the formula for the total number of layers must ensure that layer0 uses the mlp module and all other layers use the shared moe structure
   // auto num_nets = bmrt_get_network_number(p_bmrt);
-  // 假设 bmodel 中 layer0 有 2模块（attention_0, mlp_0）及其 cache，
-  // 其余层每层有 4模块（attention, shared_moe, moe, 相应 cache），另外再减去
-  // embedding、lmhead、head 模块。
-  // 这里使用下面公式计算，仅为示例，实际情况可能需要调整：
+  // Assume that in the bmodel layer0 has 2 modules (attention_0, mlp_0) plus their caches,
+  // and each remaining layer has 4 modules (attention, shared_moe, moe, and the corresponding caches); additionally subtract
+  // the embedding, lmhead, and head modules.
+  // The formula below is used here as an example only; it may need adjustment in practice:
   NUM_LAYERS = 2;
 
   // resize visited_tokens
   visited_tokens.resize(SEQLEN);
 
-  // 处理 layer0：attention_0 与 mlp_0
+  // Handle layer0: attention_0 and mlp_0
   {
-    // attention 模块
+    // attention module
     auto attn = bmrt_get_network_info(p_bmrt, "attention_0");
     attention.push_back(attn);
-    // attention cache 模块
+    // attention cache module
     auto attn_cache = bmrt_get_network_info(p_bmrt, "attention_cache_0");
     attention_cache.push_back(attn_cache);
-    // mlp 模块
+    // mlp module
     auto mlp_net = bmrt_get_network_info(p_bmrt, "mlp_0");
     mlp.push_back(mlp_net);
-    // mlp cache 模块
+    // mlp cache module
     auto mlp_cache_net = bmrt_get_network_info(p_bmrt, "mlp_cache_0");
     mlp_cache.push_back(mlp_cache_net);
   }
-  // 处理 layer 1 到 NUM_LAYERS-1：shared moe 与 moe 模块
+  // Handle layers 1 to NUM_LAYERS-1: shared moe and moe modules
   for (int i = 1; i < NUM_LAYERS; i++) {
-    // attention 模块
+    // attention module
     auto attn = bmrt_get_network_info(
         p_bmrt, ("attention_" + std::to_string(i)).c_str());
     attention.push_back(attn);
-    // attention cache 模块
+    // attention cache module
     auto attn_cache = bmrt_get_network_info(
         p_bmrt, ("attention_cache_" + std::to_string(i)).c_str());
     attention_cache.push_back(attn_cache);
-    // shared moe 模块
+    // shared moe module
     auto s_moe = bmrt_get_network_info(
         p_bmrt, ("shared_moe_" + std::to_string(i)).c_str());
     shared_moe.push_back(s_moe);
-    // shared moe cache 模块
+    // shared moe cache module
     auto s_moe_cache = bmrt_get_network_info(
         p_bmrt, ("shared_moe_cache_" + std::to_string(i)).c_str());
     shared_moe_cache.push_back(s_moe_cache);
-    // moe 模块
+    // moe module
     auto moe_net =
         bmrt_get_network_info(p_bmrt, ("moe_" + std::to_string(i)).c_str());
     moe.push_back(moe_net);
-    // moe cache 模块
+    // moe cache module
     auto moe_cache_net = bmrt_get_network_info(
         p_bmrt, ("moe_cache_" + std::to_string(i) + "_0").c_str());
     moe_cache.push_back(moe_cache_net);
   }
 
-  // 设备内存尺寸（按 layer0 mlp_cache 为例）
+  // Device memory sizes (taking layer0 mlp_cache as an example)
   hidden_bytes = bm_mem_get_device_size(mlp_cache[0]->stages[0].output_mems[0]);
   kv_bytes = bm_mem_get_device_size(mlp_cache[0]->stages[0].output_mems[1]);
   past_key.resize(NUM_LAYERS);
@@ -426,13 +426,13 @@ int Model::forward_first(std::vector<int> &tokens) {
   // start); std::cout << "net_launch execution time: " << duration.count() << "
   // ms" << std::endl;
 
-  // 清空各个模块的输入（此处调用 empty 函数，假设其定义与原来一致）
-  // 对于 layer0 的模块：
+  // Clear the inputs of each module (calling the empty function here, assuming its definition is the same as before)
+  // For the layer0 modules:
   empty_net(bm_handle, attention[0]);
   empty_net(bm_handle, mlp[0]);
   empty_net(bm_handle, attention_cache[0]);
   empty_net(bm_handle, mlp_cache[0]);
-  // 对于 layer1 及其以后的模块：
+  // For layer1 and beyond:
   for (int idx = 1; idx < NUM_LAYERS; idx++) {
     empty_net(bm_handle, attention[idx]);
     empty_net(bm_handle, shared_moe[idx - 1]);
@@ -448,12 +448,12 @@ int Model::forward_first(std::vector<int> &tokens) {
   bm_memcpy_s2d(bm_handle, in_mem, (void *)visited_tokens.data());
   net_launch(net_embed); // run embedding
 
-  // 第一层：layer0
-  // forward attention_0：这里假设使用 embedding 层输出直接拷贝给 attention 模块
+  // First layer: layer0
+  // forward attention_0: here we assume the embedding layer output is copied directly to the attention module
   auto &in0_mem = attention[0]->stages[0].input_mems[0];
   empty(bm_handle, attention[0]->stages[0].input_mems[0]);
   d2d(in0_mem, out_mem, 0, token_length * hidden_bytes);
-  // 对于 layer0 attention，只有第一次传入 position 与 attention_mask
+  // For layer0 attention, position and attention_mask are only passed in the first time
   bm_memcpy_s2d(bm_handle, attention[0]->stages[0].input_mems[1],
                 (void *)position_id.data());
   bm_memcpy_s2d(bm_handle, attention[0]->stages[0].input_mems[2],
@@ -464,23 +464,23 @@ int Model::forward_first(std::vector<int> &tokens) {
     net_launch(attention[0]);
   out_mem = attention[0]->stages[0].output_mems[0];
 
-  // layer0 mlp 模块
+  // layer0 mlp module
   d2d(mlp[0]->stages[0].input_mems[0], out_mem);
   net_launch(mlp[0]);
   out_mem = mlp[0]->stages[0].output_mems[0];
-  // kv cache 保存：对于 layer0，从 mlp_cache 模块获取 kv 输出
+  // Save the kv cache: for layer0, get the kv outputs from the mlp_cache module
   d2d(past_key[0], mlp_cache[0]->stages[0].output_mems[1], 0,
       token_length * kv_bytes);
   d2d(past_value[0], mlp_cache[0]->stages[0].output_mems[2], 0,
       token_length * kv_bytes);
 
-  // 对于 layer1 及以后，每一层顺序执行
+  // For layer1 and beyond, execute each layer in order
   for (int idx = 1; idx < NUM_LAYERS; idx++) {
-    // 使用 attention 模块
+    // Use the attention module
     auto &attn_in = attention[idx]->stages[0].input_mems[0];
     empty(bm_handle, attn_in);
     d2d(attn_in, out_mem, 0, token_length * hidden_bytes);
-    // 位置、attention mask：仅第一次传入
+    // Position and attention mask: only passed in the first time
     if (idx == 1) {
       bm_memcpy_s2d(bm_handle, attention[idx]->stages[0].input_mems[1],
                     (void *)&position_id[0]);
@@ -493,7 +493,7 @@ int Model::forward_first(std::vector<int> &tokens) {
       net_launch(attention[idx]);
     out_mem = attention[idx]->stages[0].output_mems[0];
 
-    // 接下来 shared moe 模块
+    // Next: the shared moe module
     auto &smoe_in = shared_moe[idx - 1]->stages[0].input_mems[0];
     empty(bm_handle, smoe_in);
     d2d(smoe_in, out_mem, 0, token_length * hidden_bytes);
@@ -503,7 +503,7 @@ int Model::forward_first(std::vector<int> &tokens) {
       net_launch(shared_moe[idx - 1]);
     out_mem = shared_moe[idx - 1]->stages[0].output_mems[0];
 
-    // 接下来 moe 模块
+    // Next: the moe module
     auto &moe_in = moe[idx - 1]->stages[0].input_mems[0];
     empty(bm_handle, moe_in);
     d2d(moe_in, out_mem, 0, token_length * hidden_bytes);
@@ -513,15 +513,15 @@ int Model::forward_first(std::vector<int> &tokens) {
       net_launch(moe[idx - 1]);
     out_mem = moe[idx - 1]->stages[0].output_mems[0];
 
-    // 保存当前层的 kv cache，从 shared_moe_cache（或
-    // moe_cache，此处任选其一）获取
+    // Save the current layer's kv cache, obtained from shared_moe_cache (or
+    // moe_cache; either one works here)
     d2d(past_key[idx], shared_moe_cache[idx - 1]->stages[0].output_mems[1], 0,
         token_length * kv_bytes);
     d2d(past_value[idx], shared_moe_cache[idx - 1]->stages[0].output_mems[2], 0,
         token_length * kv_bytes);
   }
 
-  // forward lmhead：拷贝最后一个 token 的 hidden state
+  // forward lmhead: copy the hidden state of the last token
   auto &lm_in_mem = net_lm->stages[0].input_mems[0];
   auto &lm_out_mem = net_lm->stages[0].output_mems[0];
   bm_memcpy_d2d_byte(bm_handle, lm_in_mem, 0, out_mem,
@@ -554,11 +554,11 @@ int Model::forward_next() {
   bm_memcpy_s2d(bm_handle, in_mem, (void *)&cur_token);
   net_launch(net_embed_cache);
 
-  // 对于 layer0
+  // For layer0
   {
     auto &in0_mem = attention_cache[0]->stages[0].input_mems[0];
     d2d(in0_mem, out_mem);
-    // 对于 layer0 cache，输入 position 和 attention mask 仅第一次需要拷贝
+    // For the layer0 cache, position and attention mask only need to be copied the first time
     bm_memcpy_s2d(bm_handle, attention_cache[0]->stages[0].input_mems[1],
                   (void *)&position_id);
     bm_memcpy_s2d(bm_handle, attention_cache[0]->stages[0].input_mems[2],
@@ -579,7 +579,7 @@ int Model::forward_next() {
                        mlp_cache[0]->stages[0].output_mems[2], 0, kv_bytes);
   }
 
-  // 对于 layer1 及之后
+  // For layer1 and beyond
   for (int idx = 1; idx < NUM_LAYERS; idx++) {
     // attention cache
     auto &in0_mem = attention_cache[idx]->stages[0].input_mems[0];
@@ -650,7 +650,7 @@ std::vector<int> Model::generate(std::vector<int> &history_tokens, int EOS) {
     return {};
   }
 
-  // 控制输入 token 数不超过 SEQLEN-10
+  // Keep the number of input tokens within SEQLEN-10
   int history_length = history_tokens.size();
   if (history_length > SEQLEN - 10) {
     history_tokens.clear();
@@ -677,7 +677,7 @@ PYBIND11_MODULE(chat, m) {
       .def("forward_next", &Model::forward_next)
       .def("generate", &Model::generate)
       .def("deinit", &Model::deinit)
-      .def_readwrite("SEQLEN", &Model::SEQLEN) // 供 pipeline.py 读取
+      .def_readwrite("SEQLEN", &Model::SEQLEN) // Read by pipeline.py
       .def_readwrite("token_length", &Model::token_length)
       .def_readwrite("temperature", &Model::temperature)
       .def_readwrite("top_p", &Model::top_p)

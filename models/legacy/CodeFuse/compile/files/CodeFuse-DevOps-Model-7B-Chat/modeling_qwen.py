@@ -733,7 +733,7 @@ class QWenModel(QWenPreTrainedModel):
             attention_mask = attention_mask[:, None, None, :]
             attention_mask = attention_mask.to(dtype=self.dtype)
             attention_mask = (1.0 - attention_mask) * torch.finfo(self.dtype).min
-            # attention_mask中mask掉的部分是-inf, 看到的部分是0
+            # in attention_mask, the masked-out part is -inf and the visible part is 0
 
         encoder_attention_mask = None
         head_mask = self.get_head_mask(head_mask, self.config.n_layer)

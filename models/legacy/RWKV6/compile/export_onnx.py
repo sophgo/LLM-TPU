@@ -16,24 +16,24 @@ def sample_logits(
     out: torch.Tensor, temperature: float = 1.0, top_p: float = 0.8
 ) -> torch.Tensor:
     """
-    对模型输出的logits进行采样。
+    Sample from the logits output by the model.
 
     Args:
-        out (torch.Tensor): 模型输出的logits张量,形状为[Batch, vocab_size]。
-        temperature (float): 温度参数,用于调节采样的多样性,默认为1.0。
-        top_p (float): Top-p截断参数,用于稳定和控制采样概率分布,默认为0.8。
+        out (torch.Tensor): Logits tensor output by the model, with shape [Batch, vocab_size].
+        temperature (float): Temperature parameter used to control sampling diversity; defaults to 1.0.
+        top_p (float): Top-p truncation parameter used to stabilize and control the sampling probability distribution; defaults to 0.8.
 
     Returns:
-        torch.Tensor: 采样结果,形状为[Batch, 1],每个元素表示一个样本中采样得到的词的索引。
+        torch.Tensor: Sampling result with shape [Batch, 1], where each element is the index of the token sampled for a sample.
     """
-    # 确保top_p和temperature都是非负值
+    # Ensure top_p and temperature are both non-negative
     top_p = max(0.0, min(1.0, top_p))
     temperature = max(0.0, temperature)
 
-    # 将out转换为概率分布
+    # Convert out to a probability distribution
     probs = F.softmax(out, dim=-1)
 
-    # 根据top_p截断概率分布
+    # Truncate the probability distribution according to top_p
     sorted_probs, _ = torch.sort(probs, descending=True)
     cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
     cutoff_mask = (cumulative_probs > top_p).float()
@@ -47,14 +47,14 @@ def sample_logits(
         probs < cutoff_values.unsqueeze(-1), torch.zeros_like(probs), probs
     )
 
-    # 对概率分布进行温度调节
+    # Apply temperature scaling to the probability distribution
     if temperature != 1.0:
         probs = torch.pow(probs, 1.0 / temperature)
 
-    # 归一化概率分布
+    # Normalize the probability distribution
     probs /= torch.sum(probs, dim=-1, keepdim=True)
 
-    # 如果top_p为0,则选择概率最大的位置;否则按照概率分布随机采样
+    # If top_p is 0, pick the position with the highest probability; otherwise sample randomly from the distribution
     if top_p != 0:
         sampled_indices = torch.multinomial(probs, num_samples=1)
     else:
@@ -282,8 +282,8 @@ if __name__ == "__main__":
         os.makedirs(folder)
 
     model_args = {
-        "MODEL_NAME": model_path,  # 模型文件的名字，pth结尾的权重文件。
-        "vocab_size": 65536,  # 词表大小
+        "MODEL_NAME": model_path,  # Name of the model file: the weight file ending in .pth.
+        "vocab_size": 65536,  # Vocabulary size
         "batch_size": 1,
     }
     print(f"Loading model {model_args['MODEL_NAME']}.pth...")
@@ -299,19 +299,19 @@ if __name__ == "__main__":
     print(origin_model)
     print("Done.")
 
-    origin_model.eval()  # 确保模型处于评估模式
+    origin_model.eval()  # Ensure the model is in evaluation mode
     for param in origin_model.parameters():
         param.requires_grad = False
 
-    # 准备输入数据的示例
+    # Prepare an example of the input data
     # example_token = torch.zeros(
     #     model_args["batch_size"], 1
-    # ).long()  # token输入的尺寸 [batch, 1]
+    # ).long()  # Size of the token input [batch, 1]
     example_token = torch.tensor([[1922]]).long()  # token "hi"
     example_state = torch.zeros(
         model_args["batch_size"], *origin_model.state_size
-    )  # state_size是state输入的尺寸
-    # 测试推理
+    )  # state_size is the size of the state input
+    # Test inference
     A, B = origin_model(example_token, example_state)
 
     print(f"output is {sample_logits(A,1,0)}")
@@ -325,7 +325,7 @@ if __name__ == "__main__":
         # test_lm_head()
         exit(0)
 
-    # 导出模型
+    # Export the model
     print("\nExport Onnx...")
 
     print(f"Convert block & block_cache")

@@ -49,7 +49,7 @@ class Qwen:
     def update_bmodel(self):
         start_time = time.time()
         self.model.update_bmodel_weight(self.model_path, self.lora_path, self.net_idx, self.mem_idx, self.weight_idx)
-        # lora更新后，再用全零覆盖，确保没有size越界
+        # after the lora update, overwrite with all zeros to make sure there is no size overflow
         self.model.empty_bmodel_weight(self.model_path, self.net_idx, self.mem_idx, self.weight_idx)
         end_time = time.time()
         print(f"\nLora Update Time: {(end_time - start_time):.3f} s")

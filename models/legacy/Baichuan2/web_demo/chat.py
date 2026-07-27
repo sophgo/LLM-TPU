@@ -6,7 +6,7 @@ import ctypes
 class TokenWord(ctypes.Structure):
     _fields_ = [
         ("token", ctypes.c_int),
-        ("word", ctypes.c_char * 2048)  # 假设最大长度为 100，你可以根据实际情况调整
+        ("word", ctypes.c_char * 2048)  # assume a max length of 100; adjust as needed
     ]
 
 

@@ -1,12 +1,12 @@
 #!/bin/bash
 set -ex
-max_pos_len=8192 # 旋转位置编码的长度，设置为同一个值，才能将block_cache和block权重合并
-generation_mode=default # 解码模式
-embedding_mode=binary # 设置为binary时，bmodel中不包含embedding，而是放到硬盘
-dynamic=1 # prefill阶段开启动态
+max_pos_len=8192 # length of the rotary position embedding; must be set to the same value so that block_cache and block weights can be merged
+generation_mode=default # decoding mode
+embedding_mode=binary # when set to binary, the bmodel does not contain the embedding; it is stored on disk instead
+dynamic=1 # enable dynamic shapes in the prefill stage
 
-seq_length_list=8192,7168,6144,5120,4096,3072,2048,1024 # 输入长度 + 输出长度不能超过seq_length
-share_length_list=8192,7168,6144,5120,4096,3072,2048,1024 # 输入长度share_length
+seq_length_list=8192,7168,6144,5120,4096,3072,2048,1024 # input length + output length must not exceed seq_length
+share_length_list=8192,7168,6144,5120,4096,3072,2048,1024 # input length share_length
 unshare_length_list=0,0,0,0,0,0,0,0,0
 model_path="/workspace/models/Qwen-7B-Chat/"
 device="cpu"

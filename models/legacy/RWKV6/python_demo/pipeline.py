@@ -55,7 +55,7 @@ class RWKV6:
         print(f"输入长度{len(tokens)} {input}")
         output_token = tokens
         ti = time.time()
-        token = self.model.prefill(tokens, True, False, False)  # 缓存状态
+        token = self.model.prefill(tokens, True, False, False)  # Cache the state
         print(f"预填充耗时{time.time()-ti}")
 
         while token != 0 and len(output_token) < test_num + input_len:

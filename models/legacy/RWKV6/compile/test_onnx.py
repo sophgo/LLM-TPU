@@ -5,11 +5,11 @@ import numpy as np
 
 
 def softmax(x, axis=None):
-    # 沿指定轴计算指数值
+    # Compute the exponential values along the specified axis
     exp_x = np.exp(x - np.max(x, axis=axis, keepdims=True))
-    # 沿指定轴计算归一化指数值
+    # Compute the normalized exponential values along the specified axis
     sum_exp_x = np.sum(exp_x, axis=axis, keepdims=True)
-    # 计算softmax值
+    # Compute the softmax values
     softmax_x = exp_x / sum_exp_x
     return softmax_x
 
@@ -18,40 +18,40 @@ def sample_logits(
     out: np.ndarray, temperature: float = 1.0, top_p: float = 0.8
 ) -> list[list[int]]:
     """
-    对模型输出的logits进行采样。
+    Sample from the logits output by the model.
     Args:
-        out (np.ndarray): 模型输出的logits张量，形状为[Batch, vocab_size]。
-        temperature (float): 温度参数，用于调节采样的多样性，默认为1.0。
-        top_p (float): Top-p截断参数，用于稳定和控制采样概率分布，默认为0.8。
+        out (np.ndarray): Logits tensor output by the model, with shape [Batch, vocab_size].
+        temperature (float): Temperature parameter used to control sampling diversity; defaults to 1.0.
+        top_p (float): Top-p truncation parameter used to stabilize and control the sampling probability distribution; defaults to 0.8.
 
     Returns:
-        list[list[int]]: 采样结果，每个子列表包含一个样本中的词的索引序号。
+        list[list[int]]: Sampling result, where each sublist contains the index of the token sampled for a sample.
     """
-    # 将out转换为概率分布
+    # Convert out to a probability distribution
     probs = softmax(out, axis=-1)
-    # 对每个样本进行采样
+    # Sample each sample
     sampled_indices = []
     for sample_probs in probs:
-        # 根据top_p截断概率分布
+        # Truncate the probability distribution according to top_p
         sorted_probs = np.sort(sample_probs)[::-1]
         cumulative_probs = np.cumsum(sorted_probs)
         cutoff = float(sorted_probs[np.argmax(cumulative_probs > top_p)])
         sample_probs[sample_probs < cutoff] = 0
-        # 对概率分布进行温度调节
+        # Apply temperature scaling to the probability distribution
         if temperature != 1.0:
             sample_probs = np.power(sample_probs, 1.0 / temperature)
-        # 归一化概率分布
+        # Normalize the probability distribution
         sample_probs /= np.sum(sample_probs)
-        # 从概率分布中采样一个索引
+        # Sample an index from the probability distribution
         sampled_index = np.random.choice(a=len(sample_probs), p=sample_probs)
         sampled_indices.append([sampled_index])
-    # 返回采样结果
+    # Return the sampling result
     return sampled_indices
 
 
 def model_print(model_file):
     model = onnx.load(model_file)
-    # 打印模型的输入参数
+    # Print the model's input parameters
     for input in model.graph.input:
         print("Input name:", input.name)
         print("Input shape:", [d.dim_value for d in input.type.tensor_type.shape.dim])

@@ -27,7 +27,7 @@ static const int VISION_PAD_TOKEN = 151654;
 static const int IMAGE_PAD_TOKEN = 151655;
 static const int VIDEO_PAD_TOKEN = 151656;
 
-// 从文件加载字节数据
+// Load byte data from a file
 static inline std::string LoadBytesFromFile(const std::string &path) {
   std::ifstream fs(path, std::ios::in | std::ios::binary);
   if (fs.fail()) {
@@ -65,7 +65,7 @@ public:
 
   ChatPipe(int devid, float video_ratio, const std::string &model_path,
            const std::string &vocab_path, const std::string &system_prompt);
-  // 聊天主循环
+  // Main chat loop
   void chat(std::string input_str = "", std::string media_path = "");
 
 private:
@@ -77,63 +77,63 @@ private:
   float video_ratio;
   bool support_history;
   int history_max_posid = 0;
-  // 分词器和处理器
+  // Tokenizer and processor
   std::unique_ptr<Tokenizer> tok;
   std::unique_ptr<Maker> maker;
 
-  // 获取窗口索引和累积窗口序列长度
+  // Get the window index and cumulative window sequence lengths
   std::pair<std::vector<int>, std::vector<int>>
   get_window_index(const std::vector<std::vector<int>> &grid_thw);
 
-  // 获取注意力掩码
+  // Get the attention mask
   std::vector<float> get_attn_mask(int seq_length,
                                    const std::vector<int> &cu_seqlens);
 
-  // 计算旋转位置编码
+  // Compute rotary position embeddings
   std::vector<std::vector<int>>
   rot_pos(const std::vector<std::vector<int>> &grid_thw);
 
-  // 获取媒体类型
+  // Get the media type
   typedef enum { IMAGE, VIDEO, TEXT, UNKNOWN } MediaType;
   MediaType get_media_type(const std::string &file_path);
 
-  // 构建提示
+  // Build the prompt
   std::string build_prompt(std::string input_str, MediaType media_type);
 
-  // 重新整理hidden_states
+  // Rearrange hidden_states
   std::vector<float>
   reorder_hidden_states(const std::vector<float> &hidden_states, int seq_len,
                         const std::vector<int> &window_index);
 
-  // 获取rope索引
+  // Get the RoPE index
   std::vector<std::vector<std::vector<int>>>
   get_rope_index(const std::vector<std::vector<int>> &input_ids,
                  const std::vector<std::vector<int>> &grid_thw, int pad_id);
 
-  // 查找分词偏移量
+  // Find token offsets
   int find_token_offset(const std::vector<int> &input_ids, int pad_id);
 
-  // 获取位置编码
+  // Get position embeddings
   std::vector<int> get_position_ids(int token_len);
 
-  // 处理图像
+  // Process image
   void vit_process_image(std::vector<float> &pixel_values, int vit_offset);
 
-  // 处理视频
+  // Process video
   void vit_process_video(std::vector<float> &pixel_values, int &vit_offset);
 
-  // 编码输入
+  // Encode input
   std::vector<int> encode_input(const std::string &sentence_input);
 
-  // 打印聊天说明
+  // Print chat instructions
   void print_chat_instructions();
 
-  // 推理
+  // Inference
   int forward_prefill(std::vector<int> &position_ids_1d, int &max_posid,
                       int &history_max_posid);
 };
 
-// 获取媒体类型
+// Get the media type
 ChatPipe::MediaType ChatPipe::get_media_type(const std::string &file_path) {
   if (file_path.empty()) {
     return TEXT;
@@ -161,7 +161,7 @@ std::vector<int> ChatPipe::get_position_ids(int token_len) {
   return position_ids;
 }
 
-// ChatPipe 类构造函数
+// ChatPipe class constructor
 ChatPipe::ChatPipe(int devid, float vratio, const std::string &model_path,
                    const std::string &vocab_path,
                    const std::string &system_prompt) {
@@ -192,7 +192,7 @@ ChatPipe::ChatPipe(int devid, float vratio, const std::string &model_path,
   maker = std::make_unique<Maker>(config);
 }
 
-// 获取窗口索引和累积窗口序列长度
+// Get the window index and cumulative window sequence lengths
 std::pair<std::vector<int>, std::vector<int>>
 ChatPipe::get_window_index(const std::vector<std::vector<int>> &grid_thw) {
   std::vector<int> window_index;
@@ -219,7 +219,7 @@ ChatPipe::get_window_index(const std::vector<std::vector<int>> &grid_thw) {
     int num_windows_h = (llm_grid_h + pad_h) / vit_merger_window_size;
     int num_windows_w = (llm_grid_w + pad_w) / vit_merger_window_size;
 
-    // 填充索引
+    // Fill in the indices
     std::vector<int> index_padded(
         (llm_grid_h + pad_h) * (llm_grid_w + pad_w) * grid_t, -100);
     for (int t = 0; t < grid_t; ++t) {
@@ -233,7 +233,7 @@ ChatPipe::get_window_index(const std::vector<std::vector<int>> &grid_thw) {
       }
     }
 
-    // 分窗口
+    // Split into windows
     std::vector<int> index_new;
     std::vector<int> seqlens;
     for (int t = 0; t < grid_t; ++t) {
@@ -268,14 +268,14 @@ ChatPipe::get_window_index(const std::vector<std::vector<int>> &grid_thw) {
   return {window_index, cu_window_seqlens};
 }
 
-// 获取注意力掩码
+// Get the attention mask
 std::vector<float> ChatPipe::get_attn_mask(int seq_length,
                                            const std::vector<int> &cu_seqlens) {
   std::vector<float> attention_mask(seq_length * seq_length, -10000.0f);
   for (size_t i = 1; i < cu_seqlens.size(); ++i) {
     int start = cu_seqlens[i - 1];
     int end = cu_seqlens[i];
-    // 添加边界检查，避免越界访问
+    // Add a boundary check to avoid out-of-bounds access
     if (start >= seq_length)
       continue;
     if (end > seq_length)
@@ -289,7 +289,7 @@ std::vector<float> ChatPipe::get_attn_mask(int seq_length,
   return attention_mask;
 }
 
-// 计算旋转位置编码
+// Compute rotary position embeddings
 std::vector<std::vector<int>>
 ChatPipe::rot_pos(const std::vector<std::vector<int>> &grid_thw) {
   std::vector<std::vector<int>> pos_ids;
@@ -299,7 +299,7 @@ ChatPipe::rot_pos(const std::vector<std::vector<int>> &grid_thw) {
     int h = thw[1];
     int w = thw[2];
 
-    // 生成 hpos_ids
+    // Generate hpos_ids
     std::vector<int> hpos_ids;
     for (int i = 0; i < h; ++i) {
       for (int j = 0; j < w; ++j) {
@@ -307,7 +307,7 @@ ChatPipe::rot_pos(const std::vector<std::vector<int>> &grid_thw) {
       }
     }
 
-    // 重塑 hpos_ids
+    // Reshape hpos_ids
     std::vector<int> reshaped_hpos_ids;
     int h_merged = h / spatial_merge_size;
     int w_merged = w / spatial_merge_size;
@@ -323,7 +323,7 @@ ChatPipe::rot_pos(const std::vector<std::vector<int>> &grid_thw) {
       }
     }
 
-    // 生成 wpos_ids
+    // Generate wpos_ids
     std::vector<int> wpos_ids;
     for (int i = 0; i < h; ++i) {
       for (int j = 0; j < w; ++j) {
@@ -331,7 +331,7 @@ ChatPipe::rot_pos(const std::vector<std::vector<int>> &grid_thw) {
       }
     }
 
-    // 重塑 wpos_ids
+    // Reshape wpos_ids
     std::vector<int> reshaped_wpos_ids;
     for (int i = 0; i < h_merged; ++i) {
       for (int j = 0; j < w_merged; ++j) {
@@ -345,13 +345,13 @@ ChatPipe::rot_pos(const std::vector<std::vector<int>> &grid_thw) {
       }
     }
 
-    // 合并 hpos_ids 和 wpos_ids
+    // Merge hpos_ids and wpos_ids
     std::vector<std::vector<int>> merged;
     for (size_t i = 0; i < reshaped_hpos_ids.size(); ++i) {
       merged.push_back({reshaped_hpos_ids[i], reshaped_wpos_ids[i]});
     }
 
-    // 重复 t 次
+    // Repeat t times
     std::vector<std::vector<int>> repeated;
     for (int i = 0; i < t; ++i) {
       repeated.insert(repeated.end(), merged.begin(), merged.end());
@@ -363,7 +363,7 @@ ChatPipe::rot_pos(const std::vector<std::vector<int>> &grid_thw) {
   return pos_ids;
 }
 
-// 查找元素在向量中的所有索引
+// Find all indices of an element in a vector
 std::vector<size_t> argwhere(const std::vector<int> &vec, int value) {
   std::vector<size_t> indices;
   for (size_t i = 0; i < vec.size(); ++i) {
@@ -374,7 +374,7 @@ std::vector<size_t> argwhere(const std::vector<int> &vec, int value) {
   return indices;
 }
 
-// 生成从 start 到 end-1 的整数序列
+// Generate an integer sequence from start to end-1
 std::vector<int> arange(int start, int end) {
   std::vector<int> result;
   for (int i = start; i < end; ++i) {
@@ -383,7 +383,7 @@ std::vector<int> arange(int start, int end) {
   return result;
 }
 
-// 获取向量中的最大值
+// Get the maximum value in a vector
 int max(const std::vector<int> &vec) {
   int max_val = vec[0];
   for (int val : vec) {
@@ -394,7 +394,7 @@ int max(const std::vector<int> &vec) {
   return max_val;
 }
 
-// 将二维向量在指定维度上拼接
+// Concatenate 2D vectors along the specified dimension
 std::vector<std::vector<int>>
 cat(const std::vector<std::vector<std::vector<int>>> &vecs, int dim) {
   if (dim == 1) {
@@ -408,7 +408,7 @@ cat(const std::vector<std::vector<std::vector<int>>> &vecs, int dim) {
   }
   return {};
 }
-// 返回形状为 [3][batch_size][seq_len] 的position_ids
+// Return position_ids with shape [3][batch_size][seq_len]
 std::vector<std::vector<std::vector<int>>>
 ChatPipe::get_rope_index(const std::vector<std::vector<int>> &input_ids,
                          const std::vector<std::vector<int>> &grid_thw,
@@ -417,7 +417,7 @@ ChatPipe::get_rope_index(const std::vector<std::vector<int>> &input_ids,
   size_t batch_size = input_ids.size();
   size_t seq_length = input_ids[0].size();
 
-  // 初始化 attention_mask 和 position_ids
+  // Initialize attention_mask and position_ids
   std::vector<std::vector<int>> attention_mask(batch_size,
                                                std::vector<int>(seq_length, 1));
   std::vector<std::vector<std::vector<int>>> position_ids(
@@ -427,7 +427,7 @@ ChatPipe::get_rope_index(const std::vector<std::vector<int>> &input_ids,
   int image_index = 0;
 
   for (size_t i = 0; i < batch_size; ++i) {
-    // 获取有效输入
+    // Get the valid input
     std::vector<int> valid_input_ids;
     for (size_t j = 0; j < seq_length; ++j) {
       if (attention_mask[i][j] == 1) {
@@ -435,7 +435,7 @@ ChatPipe::get_rope_index(const std::vector<std::vector<int>> &input_ids,
       }
     }
 
-    // 计算图像数量
+    // Compute the number of images
     int image_nums = 0;
     std::vector<size_t> vision_start_indices =
         argwhere(valid_input_ids, ID_VISION_START);
@@ -486,7 +486,7 @@ ChatPipe::get_rope_index(const std::vector<std::vector<int>> &input_ids,
         st_idx = max_val + 1;
       }
 
-      // 处理文本部分的位置索引
+      // Compute position indices for the text part
       std::vector<std::vector<int>> text_pos(3);
       std::vector<int> text_range = arange(0, text_len);
       for (int j = 0; j < 3; ++j) {
@@ -498,7 +498,7 @@ ChatPipe::get_rope_index(const std::vector<std::vector<int>> &input_ids,
       }
       llm_pos_ids_list.push_back(text_pos);
 
-      // 处理图像部分的位置索引
+      // Compute position indices for the image part
 
       std::vector<int> t_index;
       for (int i = 0; i < llm_grid_t; i++) {
@@ -576,13 +576,13 @@ ChatPipe::get_rope_index(const std::vector<std::vector<int>> &input_ids,
 
 std::string strip(const std::string &s) {
   const std::string WHITESPACE = " \n\r\t\f\v";
-  // 找到第一个非空白字符位置
+  // Find the position of the first non-whitespace character
   size_t start = s.find_first_not_of(WHITESPACE);
   if (start == std::string::npos) {
-    // 全是空白
+    // All whitespace
     return "";
   }
-  // 找到最后一个非空白字符位置
+  // Find the position of the last non-whitespace character
   size_t end = s.find_last_not_of(WHITESPACE);
   // substr(pos, len)，len = end-start+1
   return s.substr(start, end - start + 1);
@@ -611,7 +611,7 @@ int ChatPipe::forward_prefill(std::vector<int> &position_ids_1d, int &max_posid,
   return model.forward_first(position_ids_1d);
 }
 
-// 聊天主循环
+// Main chat loop
 void ChatPipe::chat(std::string input_str, std::string media_path) {
 
   int token = 0;
@@ -653,7 +653,7 @@ void ChatPipe::chat(std::string input_str, std::string media_path) {
     std::vector<std::vector<std::vector<int>>> position_ids =
         get_rope_index({tokens}, {config.grid_thw}, IMAGE_PAD_TOKEN);
 
-    // 找到三维数组position_ids中的最大值
+    // Find the maximum value in the 3D array position_ids
     for (const auto &sub_tensor : position_ids[0]) {
       for (int val : sub_tensor) {
         if (val > max_posid) {
@@ -661,7 +661,7 @@ void ChatPipe::chat(std::string input_str, std::string media_path) {
         }
       }
     }
-    // 将三维数组position_ids转换维1维
+    // Convert the 3D array position_ids to 1D
     std::vector<int> position_ids_1d;
     for (const auto &two_dim_tensor : position_ids) {
       for (const auto &one_dim_tensor : two_dim_tensor) {
@@ -690,7 +690,7 @@ void ChatPipe::chat(std::string input_str, std::string media_path) {
     std::vector<std::vector<std::vector<int>>> position_ids =
         get_rope_index({tokens}, {config.grid_thw}, VIDEO_PAD_TOKEN);
 
-    // 找到三维数组position_ids中的最大值
+    // Find the maximum value in the 3D array position_ids
     for (const auto &sub_tensor : position_ids[0]) {
       for (int val : sub_tensor) {
         if (val > max_posid) {
@@ -698,7 +698,7 @@ void ChatPipe::chat(std::string input_str, std::string media_path) {
         }
       }
     }
-    // 将三维数组position_ids转换维1维
+    // Convert the 3D array position_ids to 1D
     std::vector<int> position_ids_1d;
     for (const auto &two_dim_tensor : position_ids) {
       for (const auto &one_dim_tensor : two_dim_tensor) {
@@ -723,7 +723,7 @@ void ChatPipe::chat(std::string input_str, std::string media_path) {
     std::cerr << "Unsupported media type." << std::endl;
     return;
   }
-  // 后续分词
+  // Subsequent tokenization
   std::vector<int> full_word_tokens;
   std::string text;
   while (token != ID_IM_END && model.history_length < model.SEQLEN) {
@@ -749,7 +749,7 @@ void ChatPipe::chat(std::string input_str, std::string media_path) {
   std::cout << std::endl;
 }
 
-// 构建提示
+// Build the prompt
 std::string ChatPipe::build_prompt(std::string input_str,
                                    MediaType media_type) {
   std::string prompt = sys_config;
@@ -768,7 +768,7 @@ std::string ChatPipe::build_prompt(std::string input_str,
   return prompt;
 }
 
-// 查找分词偏移量
+// Find token offsets
 int ChatPipe::find_token_offset(const std::vector<int> &input_ids, int pad_id) {
   for (size_t i = 0; i < input_ids.size(); ++i)
     if (input_ids[i] == pad_id)
@@ -782,7 +782,7 @@ ChatPipe::reorder_hidden_states(const std::vector<float> &hidden_states,
                                 const std::vector<int> &window_index) {
   int w = seq_len;
   int h = hidden_states.size() / seq_len;
-  // 转换为 w×h 大小的矩阵
+  // Convert to a w×h matrix
   std::vector<std::vector<float>> matrix(w, std::vector<float>(h));
   for (int i = 0; i < w; ++i) {
     for (int j = 0; j < h; ++j) {
@@ -790,7 +790,7 @@ ChatPipe::reorder_hidden_states(const std::vector<float> &hidden_states,
     }
   }
 
-  // 执行第一步重塑操作
+  // Perform the first reshape operation
   int first_dim = seq_len / spatial_merge_unit;
   std::vector<std::vector<std::vector<float>>> reshaped_1(
       first_dim, std::vector<std::vector<float>>(spatial_merge_unit,
@@ -803,7 +803,7 @@ ChatPipe::reorder_hidden_states(const std::vector<float> &hidden_states,
     }
   }
 
-  // 执行索引操作
+  // Perform the indexing operation
   std::vector<std::vector<std::vector<float>>> indexed(
       window_index.size(), std::vector<std::vector<float>>(
                                spatial_merge_unit, std::vector<float>(h)));
@@ -816,7 +816,7 @@ ChatPipe::reorder_hidden_states(const std::vector<float> &hidden_states,
     }
   }
 
-  // 执行第二步重塑操作
+  // Perform the second reshape operation
   std::vector<float> final_result(seq_len * h);
   for (int i = 0; i < seq_len; ++i) {
     for (int j = 0; j < h; ++j) {
@@ -832,7 +832,7 @@ ChatPipe::reorder_hidden_states(const std::vector<float> &hidden_states,
 std::vector<int>
 calculate_cu_seqlens(const std::vector<std::vector<int>> &grid_thw) {
   std::vector<int> intermediate;
-  // 对应 torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:,
+  // Corresponds to torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:,
   // 0])
   for (size_t i = 0; i < grid_thw.size(); ++i) {
     int product = grid_thw[i][1] * grid_thw[i][2];
@@ -841,7 +841,7 @@ calculate_cu_seqlens(const std::vector<std::vector<int>> &grid_thw) {
     }
   }
 
-  // 对应 cumsum(dim=0, dtype=torch.int32)
+  // Corresponds to cumsum(dim=0, dtype=torch.int32)
   std::vector<int> cu_seqlens;
   int sum = 0;
   for (int val : intermediate) {
@@ -849,23 +849,23 @@ calculate_cu_seqlens(const std::vector<std::vector<int>> &grid_thw) {
     cu_seqlens.push_back(sum);
   }
 
-  // 对应 F.pad(cu_seqlens, (1, 0), value=0)
+  // Corresponds to F.pad(cu_seqlens, (1, 0), value=0)
   cu_seqlens.insert(cu_seqlens.begin(), 0);
 
   return cu_seqlens;
 }
 
-// 处理图像
+// Process image
 void ChatPipe::vit_process_image(std::vector<float> &pixel_values,
                                  int vit_offset) {
 
-  // hidden_states 在长度上等于pixel_values
+  // hidden_states has the same length as pixel_values
   int t = config.grid_thw[0];
   int h = config.grid_thw[1];
   int w = config.grid_thw[2];
   std::vector<std::vector<int>> grid_thw = {config.grid_thw};
 
-  // 调用 rot_pos 生成 position_ids
+  // Call rot_pos to generate position_ids
   std::vector<std::vector<int>> pos_ids_vec = rot_pos(grid_thw);
 
   // std::cout << "pos_ids_vec size: " << pos_ids_vec.size() << "  " <<
@@ -875,7 +875,7 @@ void ChatPipe::vit_process_image(std::vector<float> &pixel_values,
     position_ids.insert(position_ids.end(), v.begin(), v.end());
   }
 
-  // 调用 get_window_index
+  // Call get_window_index
   auto [window_index, cu_window_seqlens] = get_window_index(grid_thw);
 
   int seq_len = t * h * w;
@@ -889,7 +889,7 @@ void ChatPipe::vit_process_image(std::vector<float> &pixel_values,
       convertFloatToInt(processed_position_ids);
 
   std::vector<int> cu_seqlens = calculate_cu_seqlens(grid_thw);
-  // 生成掩码
+  // Generate the mask
   std::vector<float> full_attn_mask = get_attn_mask(seq_len, cu_seqlens);
   std::vector<float> window_attn_mask =
       get_attn_mask(seq_len, cu_window_seqlens);
@@ -906,7 +906,7 @@ void ChatPipe::vit_process_image(std::vector<float> &pixel_values,
 
 void ChatPipe::vit_process_video(std::vector<float> &pixel_values,
                                  int &vit_offset) {
-  // hidden_states 在长度上等于pixel_values
+  // hidden_states has the same length as pixel_values
   int t = config.grid_thw[0];
   int h = config.grid_thw[1];
   int w = config.grid_thw[2];
@@ -923,7 +923,7 @@ void ChatPipe::vit_process_video(std::vector<float> &pixel_values,
   int t_offset = 0;
   int v_offset = vit_offset;
   for (auto t_i : t_list) {
-    // 调用 rot_pos 生成 position_ids
+    // Call rot_pos to generate position_ids
     std::vector<std::vector<int>> grid_thw = {{t_i, h, w}};
     std::vector<std::vector<int>> pos_ids_vec = rot_pos(grid_thw);
 
@@ -932,7 +932,7 @@ void ChatPipe::vit_process_video(std::vector<float> &pixel_values,
       position_ids.insert(position_ids.end(), v.begin(), v.end());
     }
 
-    // 调用 get_window_index
+    // Call get_window_index
     auto [window_index, cu_window_seqlens] = get_window_index(grid_thw);
 
     int seq_len = t_i * h * w;
@@ -949,7 +949,7 @@ void ChatPipe::vit_process_video(std::vector<float> &pixel_values,
         convertFloatToInt(processed_position_ids);
 
     std::vector<int> cu_seqlens = calculate_cu_seqlens(grid_thw);
-    // 生成掩码
+    // Generate the mask
     std::vector<float> full_attn_mask = get_attn_mask(seq_len, cu_seqlens);
     std::vector<float> window_attn_mask =
         get_attn_mask(seq_len, cu_window_seqlens);
@@ -968,7 +968,7 @@ void ChatPipe::vit_process_video(std::vector<float> &pixel_values,
   }
 }
 
-// 编码输入
+// Encode input
 std::vector<int> ChatPipe::encode_input(const std::string &sentence_input) {
   return tok->Encode(sentence_input);
 }
@@ -1035,7 +1035,7 @@ int main(int argc, char *argv[]) {
   std::string config_path;
   std::string image_path;
   int dev_id = 0;
-  float video_ratio = 0.25f; // 默认视频比例为0.25
+  float video_ratio = 0.25f; // Default video ratio is 0.25
 
   processArguments(argc, argv, model_path, config_path, image_path, dev_id,
                    video_ratio);

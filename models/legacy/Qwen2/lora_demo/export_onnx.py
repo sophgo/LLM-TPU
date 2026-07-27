@@ -231,10 +231,10 @@ def convert_embedding_to_bit(path, transformer):
     embedding_weights = transformer.embed_tokens.weight.data
     embedding_weights_fp32 = embedding_weights.numpy().astype(np.float32).flatten()
     embedding_weights_uint32 = embedding_weights_fp32.view(np.uint32)
-    embedding_weights_uint16 = (embedding_weights_uint32 >> 16).astype(np.uint16) # torch的格式必须是bfloat16才行
+    embedding_weights_uint16 = (embedding_weights_uint32 >> 16).astype(np.uint16) # the torch dtype must be bfloat16
     if embedding_weights_uint16.dtype.byteorder == '>':
         embedding_weights_uint16 = embedding_weights_uint16.byteswap()
-    embedding_weights_uint16 = embedding_weights_uint16.newbyteorder('little') # 确保数据以小端序存储
+    embedding_weights_uint16 = embedding_weights_uint16.newbyteorder('little') # ensure the data is stored in little-endian order
     embedding_weights_uint8 = embedding_weights_uint16.view(np.uint8)
 
     header = make_header(len(embedding_weights_uint8))
@@ -313,7 +313,7 @@ def load_lora_model(origin_model, path):
     with open(config_file) as f:
         lora_config_dict = json.load(f)
     lora_config = LoraConfig(**lora_config_dict)
-    lora_model = PeftModel.from_pretrained(copy.deepcopy(origin_model), path, offload_dir='./offload_dir') # 需要做deepcopy，不然会影响origin_model
+    lora_model = PeftModel.from_pretrained(copy.deepcopy(origin_model), path, offload_dir='./offload_dir') # deepcopy is required, otherwise origin_model will be affected
     return lora_model, lora_config
 
 
@@ -347,8 +347,8 @@ def convert_lora_to_bit(lora_model, lora_config, args):
             else:
                 raise NotImplementedError
 
-        # 由于在final.mlir中，weight的权重排列顺序是[lora_B, lora_A, lora_B, lora_A]的形式
-        # 所以需要把B排列在前面
+        # Because in final.mlir the weights are laid out in the order [lora_B, lora_A, lora_B, lora_A],
+        # B must be placed first
         for a, b in zip(lora_A_weight_list, lora_B_weight_list):
             lora_weight_list.append(a)
             lora_weight_list.append(b)
@@ -413,9 +413,9 @@ def convert_lora_embedding_to_bit(lora_model, lora_config, args):
         else:
             raise NotImplementedError
 
-    # 由于在final.mlir中，weight的权重排列顺序是[lora_B, lora_A]的形式
-    # 但是在加载时，是按照算子调用逻辑来调用的，lora_A先走先调，lora_B后跑后调
-    # 所以需要把A排列在前面
+    # Because in final.mlir the weights are laid out in the order [lora_B, lora_A],
+    # but at load time they are called in operator execution order: lora_A runs first, lora_B runs second,
+    # so A must be placed first
     for a, b in zip(lora_A_weight_list, lora_B_weight_list):
         lora_weight_list.append(a)
         lora_weight_list.append(b)
@@ -461,7 +461,7 @@ def convert_total_lora_to_bit(encrypt_path, origin_model, args):
     lora_weights = convert_lora_to_bit(lora_model, lora_config, args)
     # header
     header = make_header(len(lora_weights) + len(lora_embedding_weights))
-    total_lora_weights = np.concatenate([header, lora_weights, lora_embedding_weights]) # 由于在bmodel中，lora_embedding放在后面，因此这里是lora,lora_embedding的顺序
+    total_lora_weights = np.concatenate([header, lora_weights, lora_embedding_weights]) # because lora_embedding is placed at the end in the bmodel, the order here is lora, lora_embedding
 
     # save and encrypt & decrypt
     with open(origin_path, 'wb') as f:

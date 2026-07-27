@@ -6,11 +6,11 @@ MODEL_DIR=$DIR/../models
 
 
 
-# =================== 编译所有的demo代码 =====================
+# =================== Build all demo code =====================
 EXCLUDE_DIRS=(
-    "./legacy/Qwen2/demo_parallel"  # Qwen2的demo_parallel需要单独编译
-    "./legacy/Qwen1_5/demo_parallel"  # Qwen1_5的demo_parallel需要单独编译
-    "./legacy/Qwen/demo_parallel" # Qwen的demo_parallel需要单独编译
+    "./legacy/Qwen2/demo_parallel"  # Qwen2's demo_parallel needs to be built separately
+    "./legacy/Qwen1_5/demo_parallel"  # Qwen1_5's demo_parallel needs to be built separately
+    "./legacy/Qwen/demo_parallel" # Qwen's demo_parallel needs to be built separately
     "./legacy/LWM/demo"
     "./legacy/VILA1_5/cpp_demo"
 )
@@ -18,7 +18,7 @@ EXCLUDE_DIRS=(
 is_excluded() {
   local dir="$1"
   for ex in "${EXCLUDE_DIRS[@]}"; do
-    # 统一成相对 MODEL_DIR 的路径形式（以 ./ 开头）
+    # Normalize to a path relative to MODEL_DIR (starting with ./)
     if [[ "$dir" == "$ex" ]]; then
       return 0
     fi
@@ -41,15 +41,15 @@ find . -type f -name "$TARGET_FILE" \
         fi
         echo "==> Processing: $proj_dir"
 
-        # 进入项目目录
+        # Enter the project directory
         (
           cd "$proj_dir"
 
-          # 创建和进入 build 目录
+          # Create and enter the build directory
           mkdir -p build
           cd build
 
-          # 配置与编译
+          # Configure and build
           cmake .. || { echo "CMake configure failed in $proj_dir"; exit 1; }
           make -j4 || { echo "Make failed in $proj_dir"; exit 1; }
         )

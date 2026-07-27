@@ -8,12 +8,12 @@ from typing import Tuple
 
 class RWKV_Block(nn.Module):
     """
-    RWKV模型的块结构。
+    Block structure of the RWKV model.
 
     Args:
-        block_w (dict): 权重字典。
-        n_embd (int): 嵌入维度。
-        n_head (int): 头数。
+        block_w (dict): Weight dictionary.
+        n_embd (int): Embedding dimension.
+        n_head (int): Number of heads.
     """
 
     def __init__(self, block_w: dict, n_embd: int, n_head: int, onnx_opset=16):
@@ -23,7 +23,7 @@ class RWKV_Block(nn.Module):
         self.head_size = n_embd // n_head
         self.onnx_opset = onnx_opset
 
-        # 初始化层归一化
+        # Initialize layer normalization
         if self.onnx_opset >= 17:
             self.ln1 = nn.LayerNorm(n_embd)
             self.ln1.weight = nn.Parameter(block_w["ln1.weight"])
@@ -37,10 +37,10 @@ class RWKV_Block(nn.Module):
             self.ln2_weight = nn.Parameter(block_w["ln2.weight"])
             self.ln2_bias = nn.Parameter(block_w["ln2.bias"])
 
-        # 初始化激活函数
+        # Initialize the activation function
         self.silu = nn.SiLU(inplace=False)
 
-        # 初始化注意力参数
+        # Initialize attention parameters
         self.att_time_maa_x = nn.Parameter(block_w["att.time_maa_x"])
         self.att_time_maa_w = nn.Parameter(block_w["att.time_maa_w"])
         self.att_time_maa_k = nn.Parameter(block_w["att.time_maa_k"])
@@ -74,7 +74,7 @@ class RWKV_Block(nn.Module):
             self.att_group_norm_weight = nn.Parameter(block_w["att.ln_x.weight"])
             self.att_group_norm_bias = nn.Parameter(block_w["att.ln_x.bias"])
 
-        # 初始化前馈参数
+        # Initialize feed-forward parameters
         self.ffn_time_maa_k = nn.Parameter(block_w["ffn.time_maa_k"])
         self.ffn_time_maa_r = nn.Parameter(block_w["ffn.time_maa_r"])
         self.ffn_key = nn.Linear(self.n_embd, self.n_embd, bias=False)
@@ -92,15 +92,15 @@ class RWKV_Block(nn.Module):
         eps: float = 1e-5,
     ) -> torch.Tensor:
         """
-        人工层归一化函数
+        Manual layer normalization function
         Args:
-            x (torch.Tensor): 输入张量，形状为 [Batch, 2048]。
-            weight (torch.Tensor): 归一化的权重张量，形状为 [2048]。
-            bias (torch.Tensor): 归一化的偏置张量，形状为 [2048]。
-            eps (float): 用于数值稳定性的小值，防止除以零。
+            x (torch.Tensor): Input tensor with shape [Batch, 2048].
+            weight (torch.Tensor): Normalization weight tensor with shape [2048].
+            bias (torch.Tensor): Normalization bias tensor with shape [2048].
+            eps (float): Small value for numerical stability, preventing division by zero.
 
         Returns:
-            torch.Tensor: 经过手动层归一化后的张量，形状与输入的 x 相同。
+            torch.Tensor: Tensor after manual layer normalization, with the same shape as the input x.
 
         """
         mean = x.mean(dim=1, keepdim=True)
@@ -119,33 +119,33 @@ class RWKV_Block(nn.Module):
         eps: float = 1e-5,
     ) -> torch.Tensor:
         """
-        人工组归一化函数。
+        Manual group normalization function.
         Args:
-            x (torch.Tensor): 输入张量，形状为 [Batch, 2048]。
-            num_groups (int): 分组数，这里为 RWKV 的注意力头数。
-            weight (torch.Tensor): 归一化的权重张量，形状为 [2048]。
-            bias (torch.Tensor): 归一化的偏置张量，形状为 [2048]。
-            eps (float): 用于数值稳定性的小值，防止除以零。
+            x (torch.Tensor): Input tensor with shape [Batch, 2048].
+            num_groups (int): Number of groups, here the number of RWKV attention heads.
+            weight (torch.Tensor): Normalization weight tensor with shape [2048].
+            bias (torch.Tensor): Normalization bias tensor with shape [2048].
+            eps (float): Small value for numerical stability, preventing division by zero.
 
         Returns:
-            torch.Tensor: 经过人工组归一化后的张量，形状与输入的 x 相同。
+            torch.Tensor: Tensor after manual group normalization, with the same shape as the input x.
 
         """
         N, C = x.shape
         # if C % num_groups != 0:
         # raise ValueError("num_channels must be divisible by num_groups")
-        # 加上这个会有无法推断静态图的警告
+        # Adding this would cause a warning that the static graph cannot be inferred
         channels_per_group = C // num_groups
-        # 重塑x以便于分组
+        # Reshape x to facilitate grouping
         x = x.view(N, num_groups, channels_per_group)
-        # 计算每组的均值和方差
+        # Compute the mean and variance of each group
         mean = x.mean(dim=2, keepdim=True)
         var = x.var(dim=2, keepdim=True, unbiased=False)
-        # 归一化
+        # Normalize
         x_normalized = (x - mean) / torch.sqrt(var + eps)
-        # 恢复原始的形状
+        # Restore the original shape
         x_normalized = x_normalized.view(N, C)
-        # 应用权重和偏置
+        # Apply weight and bias
         x_scaled = x_normalized * weight
         x_shifted = x_scaled + bias
         return x_shifted
@@ -157,15 +157,15 @@ class RWKV_Block(nn.Module):
         i: torch.Tensor,
     ) -> torch.Tensor:
         """
-        通道混合函数。
+        Channel mixing function.
 
         Args:
-            x (torch.Tensor): 输入张量，形状为[Batch, 2048]。
-            state (torch.Tensor): 时间状态张量，形状为[Batch, State Size, 2048]。
-            i (int): 时间索引。
+            x (torch.Tensor): Input tensor with shape [Batch, 2048].
+            state (torch.Tensor): Time state tensor with shape [Batch, State Size, 2048].
+            i (int): Time index.
 
         Returns:
-            torch.Tensor: 混合后的张量，形状与输入的x相同。
+            torch.Tensor: Mixed tensor, with the same shape as the input x.
         """
         i0 = (2 + self.head_size) * i + 0
 
@@ -185,20 +185,20 @@ class RWKV_Block(nn.Module):
         self, x: torch.Tensor, state: torch.Tensor, i: torch.Tensor
     ) -> torch.Tensor:
         """
-        时间混合函数。
+        Time mixing function.
 
         Args:
-            x (torch.Tensor): 输入张量，形状为[Batch, 2048]。
-            state (torch.Tensor): 时间状态张量，形状为[Batch, State Size, 2048]。
-            i (int): 时间索引。
+            x (torch.Tensor): Input tensor with shape [Batch, 2048].
+            state (torch.Tensor): Time state tensor with shape [Batch, State Size, 2048].
+            i (int): Time index.
 
         Returns:
-            torch.Tensor: 混合后的时间状态张量，形状与输入的state相同。
+            torch.Tensor: Mixed time state tensor, with the same shape as the input state.
         """
         batch_size, H, S = x.size(0), self.n_head, self.head_size
         i1 = (2 + S) * i + 1
 
-        # 修复了当i为tensor时，无法正常索引的bug
+        # Fixed the bug where indexing fails when i is a tensor
         sx = state[:, i1[0]] - x
         state[:, i1[0]] = x
         xxx = x + sx * self.att_time_maa_x
@@ -216,16 +216,16 @@ class RWKV_Block(nn.Module):
             torch.tanh(xw @ self.att_time_decay_w1) @ self.att_time_decay_w2
         )
 
-        # 计算注意力机制的权重
+        # Compute the weights of the attention mechanism
         w = torch.exp(-torch.exp(w.view(batch_size, H, S, 1)))
 
-        # 计算注意力机制的组件
+        # Compute the components of the attention mechanism
         r = self.att_receptance(xr).view(batch_size, H, 1, S)
         k = self.att_key(xk).view(batch_size, H, S, 1)
         v = self.att_value(xv).view(batch_size, H, 1, S)
         g = self.silu(self.att_gate(xg))
 
-        # 使用注意力机制更新状态
+        # Update the state using the attention mechanism
         s = state[:, ((2 + S) * i + 2)[0] : ((2 + S) * (i + 1))[0], :].view(
             batch_size, H, S, S
         )
@@ -236,7 +236,7 @@ class RWKV_Block(nn.Module):
             batch_size, S, -1
         )
 
-        # 展平x并应用组归一化和门控
+        # Flatten x and apply group normalization and gating
         if self.onnx_opset >= 18:
             x = self.att_group_norm(x.flatten(start_dim=1)) * g
         else:
@@ -251,25 +251,25 @@ class RWKV_Block(nn.Module):
                 * g
             )
 
-        # 应用输出层并返回结果
+        # Apply the output layer and return the result
         return self.att_output(x)
 
     def forward(
         self, x: torch.Tensor, state: torch.Tensor, i: torch.Tensor
     ) -> torch.Tensor:
         """
-        模型的前向传播。
+        Forward pass of the model.
 
         Args:
-            x (torch.Tensor): 输入张量，形状为[Batch, N_embd]。
-            state (torch.Tensor): 隐藏状态张量，形状为[Batch, State Size, N_embd]。
-            i (int): 时间索引。
+            x (torch.Tensor): Input tensor with shape [Batch, N_embd].
+            state (torch.Tensor): Hidden state tensor with shape [Batch, State Size, N_embd].
+            i (int): Time index.
 
         Returns:
-            torch.Tensor: 前向传播结果张量，形状与输入的x相同。
+            torch.Tensor: Forward pass result tensor, with the same shape as the input x.
         """
         # TODO fix TracerWarning: torch.as_tensor results are registered as constants in the trace......
-        # 这个转换会导致模型的layer id固定为常量, 但似乎不影响模型运行
+        # This conversion fixes the model's layer id as a constant, but it does not seem to affect model execution
         i = torch.as_tensor([i], dtype=torch.int64)
         if self.onnx_opset >= 17:
             x = x + self.time_mixing(self.ln1(x), state, i)
@@ -290,10 +290,10 @@ class RWKV_Block(nn.Module):
 
 class RWKV_RNN(nn.Module):
     """
-    RWKV模型的RNN结构。
+    RNN structure of the RWKV model.
 
     Args:
-        args (dict): 参数字典。
+        args (dict): Parameter dictionary.
     """
 
     def __init__(self, args: dict):
@@ -303,15 +303,15 @@ class RWKV_RNN(nn.Module):
         try:
             self.onnx_opset = int(args["onnx_opset"])
         except:
-            self.onnx_opset = 16  # 默认是最低的，op17版本才支持LayerNorm算子，op18版本才支持GroupNorm算子
+            self.onnx_opset = 16  # Defaults to the lowest; opset 17 is required for the LayerNorm operator, and opset 18 for the GroupNorm operator
         print("onnx opset ", self.onnx_opset)
 
         self.eval()
 
-        # 加载权重
+        # Load weights
         w = torch.load(args["MODEL_NAME"] + ".pth", map_location="cpu")
 
-        # 将所有权重转换为float32
+        # Convert all weights to float32
         self.num_layer = 0
         for k in w.keys():
             w[k] = w[k].float()
@@ -330,7 +330,7 @@ class RWKV_RNN(nn.Module):
 
         print(f"state_size:{self.state_size}")
 
-        # 初始化模型参数
+        # Initialize model parameters
         self.emb = nn.Embedding.from_pretrained(w["emb.weight"], freeze=True)
 
         if self.onnx_opset >= 17:
@@ -344,7 +344,7 @@ class RWKV_RNN(nn.Module):
         self.blocks = nn.ModuleList()
 
         for i in range(self.num_layer):
-            # 提取当前块的权重
+            # Extract the weights of the current block
             block_w = {
                 k[len(f"blocks.{i}.") :]: v for k, v in w.items() if f"blocks.{i}." in k
             }
@@ -371,15 +371,15 @@ class RWKV_RNN(nn.Module):
         eps: float = 1e-5,
     ) -> torch.Tensor:
         """
-        人工层归一化函数
+        Manual layer normalization function
         Args:
-            x (torch.Tensor): 输入张量，形状为 [Batch, 2048]。
-            weight (torch.Tensor): 归一化的权重张量，形状为 [2048]。
-            bias (torch.Tensor): 归一化的偏置张量，形状为 [2048]。
-            eps (float): 用于数值稳定性的小值，防止除以零。
+            x (torch.Tensor): Input tensor with shape [Batch, 2048].
+            weight (torch.Tensor): Normalization weight tensor with shape [2048].
+            bias (torch.Tensor): Normalization bias tensor with shape [2048].
+            eps (float): Small value for numerical stability, preventing division by zero.
 
         Returns:
-            torch.Tensor: 经过手动层归一化后的张量，形状与输入的 x 相同。
+            torch.Tensor: Tensor after manual layer normalization, with the same shape as the input x.
 
         """
         mean = x.mean(dim=1, keepdim=True)
@@ -393,13 +393,13 @@ class RWKV_RNN(nn.Module):
         self, token: torch.Tensor, state: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        模型的前向传播。
+        Forward pass of the model.
 
         Args:
-            token (torch.Tensor): 输入的令牌张量。[Batch_size, N_embd]
-            state (torch.Tensor): 隐藏状态张量。[Batch_size, State_size, N_embd]
+            token (torch.Tensor): Input token tensor. [Batch_size, N_embd]
+            state (torch.Tensor): Hidden state tensor. [Batch_size, State_size, N_embd]
         Returns:
-            torch.Tensor: 模型输出。
+            torch.Tensor: Model output.
         """
         x = self.emb(token).squeeze(1)
 

@@ -238,7 +238,7 @@ llm_convert.py \
 <tr>
 <td><b>Prefill with KV Cache</b></td>
 <td>历史上下文以 KV Cache 形式保留，显著降低多轮对话延时</td>
-<td><code>--use_block_with_kv</code><br/><code>--max_input_length</code><br/><code>--max_prefill_kv_length</code></td>
+<td><code>--use_history_kv</code><br/><code>--chunk_length</code></td>
 <td>
 <a href="./models/Qwen3_VL">Qwen3-VL</a> · <a href="./models/Qwen2_5_VL">Qwen2.5-VL</a> · <a href="./models/Qwen3">Qwen3</a> · <a href="./models/InternVL3">InternVL3</a>
 </td>
@@ -274,9 +274,9 @@ llm_convert.py \
 <tr>
 <td><b>Prefill 共享复用</b></td>
 <td>长 prompt 仅 prefill 一次，后续对话共享其 KV Cache</td>
-<td><code>--share_prompt</code><br/><code>--max_prefill_kv_length</code></td>
+<td><code>--use_history_kv</code></td>
 <td>
-<a href="./models/Qwen2_5/python_demo_share_prompt">Qwen2.5</a> · <a href="./models/Qwen3/python_demo_share_prompt">Qwen3</a>
+<a href="./models/Qwen2_5/python_demo_share_prompt">Qwen2.5</a> · <a href="./models/Qwen3/python_demo_share_prompt">Qwen3</a> · <a href="./models/Qwen3_5/cpp_demo_share_prompt">Qwen3.5</a>
 </td>
 </tr>
 

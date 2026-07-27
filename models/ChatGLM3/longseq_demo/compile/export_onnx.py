@@ -163,9 +163,9 @@ def convert_block(layer_id):
         output_names=['hidden_states', 'past_k', 'past_v'],
         do_constant_folding=True,
         dynamic_axes={
-        'input_states' : {0 : 'sequence_len'},  # 使得第0、2、3维度是动态的
-        'position_ids' : {1 : 'sequence_len'},  # 使得第0、2、3维度是动态的
-        'attention_mask' : {2 : 'sequence_len_row',3 : 'sequence_len_col'},  # 使得第0、2、3维度是动态的
+        'input_states' : {0 : 'sequence_len'},  # make dimensions 0, 2, and 3 dynamic
+        'position_ids' : {1 : 'sequence_len'},  # make dimensions 0, 2, and 3 dynamic
+        'attention_mask' : {2 : 'sequence_len_row',3 : 'sequence_len_col'},  # make dimensions 0, 2, and 3 dynamic
         'hidden_states' : {0 : 'sequence_len'},
         'past_k' : {0 : 'sequence_len'},
         'past_v' : {0 : 'sequence_len'}
@@ -175,13 +175,13 @@ def convert_block(layer_id):
     # import onnx
     # from onnx2pytorch import ConvertModel
 
-    # # 加载ONNX模型
+    # # Load the ONNX model
     # onnx_model = onnx.load(f'{folder}/block_{layer_id}_dynamic.onnx')
 
-    # # 转换ONNX模型为PyTorch模型
+    # # Convert the ONNX model to a PyTorch model
     # pytorch_model = ConvertModel(onnx_model)
 
-    # # 保存PyTorch模型
+    # # Save the PyTorch model
     # torch.save(pytorch_model, f'{folder}/model_{layer_id}.pt')
     # model = Block(layer_id)
     # module = torch.jit.trace(model.forward, (hidden_states, position_ids, attention_mask))

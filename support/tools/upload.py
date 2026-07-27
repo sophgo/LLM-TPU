@@ -162,9 +162,9 @@ def sftp_transfer(host, port, username, password, remote_dir, local_archive, rem
         transport.connect(username=username, password=password)
         sftp = paramiko.SFTPClient.from_transport(transport)
         
-        # 确保目录存在逻辑保持不变...
-        
-        # 新增上传进度回调
+        # Keep the directory existence logic unchanged...
+
+        # Add an upload progress callback
         file_size = os.path.getsize(local_archive)
         progress = TransferProgress(total_size=file_size, operation="Uploading")
         

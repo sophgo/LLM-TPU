@@ -34,7 +34,7 @@ class InternVL2():
         print("Load " + args.tokenizer + " ...")
         self.tokenizer = AutoTokenizer.from_pretrained(args.tokenizer,
                                                        trust_remote_code=True,
-                                                       use_fast=False) # 这里使用use_fase和不用use_fast得到的结果不同，要特别注意
+                                                       use_fast=False) # Note: using use_fast versus not using it gives different results; pay special attention to this
         self.tokenizer.decode([0])  # warm up
 
         # preprocess parameters, such as prompt & tokenizer

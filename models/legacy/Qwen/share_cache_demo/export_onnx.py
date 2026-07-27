@@ -406,10 +406,10 @@ def convert_embedding_to_bit():
     embedding_weights = transformer.wte.weight.data
     embedding_weights_fp32 = embedding_weights.numpy().astype(np.float32).flatten()
     embedding_weights_uint32 = embedding_weights_fp32.view(np.uint32)
-    embedding_weights_uint16 = (embedding_weights_uint32 >> 16).astype(np.uint16) # torch的格式必须是bfloat16才行
+    embedding_weights_uint16 = (embedding_weights_uint32 >> 16).astype(np.uint16) # the torch dtype must be bfloat16
     if embedding_weights_uint16.dtype.byteorder == '>':
         embedding_weights_uint16 = embedding_weights_uint16.byteswap()
-    embedding_weights_uint16 = embedding_weights_uint16.newbyteorder('little') # 确保数据以小端序存储
+    embedding_weights_uint16 = embedding_weights_uint16.newbyteorder('little') # ensure the data is stored in little-endian order
 
     with open('embedding.bin', 'wb') as f:
         embedding_weights_uint16.tofile(f)

@@ -29,7 +29,7 @@
 //   coord_head/size_head : [1,1024] f32 -> [1,2,1024] f32
 //   seg_head         : [1,1024] f32 -> [1,256] f32
 //   mask_head        : [1,256,256,256] f32, [16,256] f32 -> [16,256,256] f32
-//   coord_encoder/size_encoder : [1,2] f32 -> [1,1024] f32 (Fourier 回灌)
+//   coord_encoder/size_encoder : [1,2] f32 -> [1,1024] f32 (Fourier feedback)
 //   anyup            : [1,3,256,256] f32, [1,1024,16,16] f32 -> [1,256,256,256] f32
 //                      (window_mask baked into bmodel as a const weight)
 //
@@ -37,7 +37,7 @@
 // the tokens on device, then scatters the projected patch features directly
 // into block_0's input mem at the img-token rows (partial s2d by offset) — the
 // full [MAX_INPUT_LENGTH, HIDDEN] embedding never leaves the device. coord/size
-// Fourier 回灌 is done via coord_encoder/size_encoder bmodels whose output
+// Fourier feedback is done via coord_encoder/size_encoder bmodels whose output
 // overrides the embedded token in forward_next (fourier_emb arg).
 
 #include "bmruntime_interface.h"
@@ -103,7 +103,7 @@ public:
                     ArrayFloat const &attention_mask, int token_length,
                     ArrayFloat const &img_feats, ArrayInt const &img_pos);
   // fourier_emb: if non-empty [1,HIDDEN] embedding, overrides the embedded token
-  // (回灌: coord/size token's embedding replaced by Fourier(xy/hw)).
+  // (feedback: the coord/size token's embedding is replaced by Fourier(xy/hw)).
   int forward_next(int prev_token, ArrayInt const &position_ids,
                    ArrayFloat const &golden_cos,
                    ArrayFloat const &golden_sin,
@@ -123,7 +123,7 @@ public:
                            ArrayFloat const &segm_tokens);
   ArrayFloat forward_anyup(ArrayFloat const &images,
                             ArrayFloat const &lr_tokens);
-  // Fourier encoders for 回灌: [1,2] (x,y)/(h,w) -> [1,HIDDEN]
+  // Fourier encoders for feedback: [1,2] (x,y)/(h,w) -> [1,HIDDEN]
   ArrayFloat forward_fourier_coord(ArrayFloat const &coords);
   ArrayFloat forward_fourier_size(ArrayFloat const &coords);
   void clear_history();
@@ -182,7 +182,7 @@ void FalconPerception::net_launch(const bm_net_info_t *net, int stage_idx) {
   // bmrt reuses device mem globally, so a net's output mem can be aliased by a
   // later net's input mem and overwritten while still in flight. The natural
   // d2s at each forward_* tail does not cover these mid-sequence handoffs
-  // (e.g. embed_cache -> fourier 回灌 s2d, lm -> embed_cache d2d), which race
+  // (e.g. embed_cache -> fourier feedback s2d, lm -> embed_cache d2d), which race
   // across the GDMA/TPU engines and produce nondeterministic output. Syncing
   // after every launch is the safe fix; these nets are small and called few
   // times, so the cost is modest. The prefill block loop has its own per-layer
@@ -434,7 +434,7 @@ int FalconPerception::forward_next(int prev_token,
   int32_t tok = (int32_t)prev_token;
   bm_memcpy_s2d(bm_handle, ec_in, &tok);
   net_launch(net_embed_cache);
-  // 回灌: if a Fourier-encoded embedding is provided (coord/size token),
+  // Feedback: if a Fourier-encoded embedding is provided (coord/size token),
   // overwrite the embedded token before it enters block_cache_0. net_launch
   // syncs above, so this s2d into ec_out cannot race the embed_cache launch.
   if (fourier_emb.size() > 0) {
@@ -522,7 +522,7 @@ ArrayFloat FalconPerception::forward_hidden() {
   return out;
 }
 
-// ---- Fourier encoders for 回灌: [1,2] -> [1, HIDDEN] ----
+// ---- Fourier encoders for feedback: [1,2] -> [1, HIDDEN] ----
 ArrayFloat FalconPerception::forward_fourier_coord(ArrayFloat const &coords) {
   auto &net = net_coord_enc;
   bm_memcpy_s2d(bm_handle, net->stages[0].input_mems[0], coords.request().ptr);

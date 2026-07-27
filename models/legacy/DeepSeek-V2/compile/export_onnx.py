@@ -542,7 +542,7 @@ def test_deepseek_v2_net():
             split_shared_moe_weights(layers[layer_id].mlp, DEVICE_NUM)
             split_moe_weights(layers[layer_id].mlp, DEVICE_NUM)
 
-    # 初始化模块
+    # Initialize the modules
     embed = Embedding().to(device)
     attentions = [[Attention(layer_id, device_id).to(device) for device_id in range(DEVICE_NUM)] 
                  for layer_id in range(NUM_LAYERS)]
@@ -552,7 +552,7 @@ def test_deepseek_v2_net():
     mlps = [[MLP(layer_id, device_id).to(device) for device_id in range(DEVICE_NUM)]
            for layer_id in range(1)]
     
-    # MoE相关模块初始化
+    # Initialize MoE-related modules
     shared_moes = [[SharedMOE(layer_id, device_id).to(device) for device_id in range(DEVICE_NUM)]
                   for layer_id in range(1, NUM_LAYERS)]
     moes = [[MOE(layer_id, device_id).to(device) for device_id in range(DEVICE_NUM)]
@@ -565,7 +565,7 @@ def test_deepseek_v2_net():
     lm_head = LmHead().to(device)
     greedy_head = GreedyHead().to(device)
 
-    # 测试数据准备
+    # Prepare the test data
     tokenizer_path = "/workspace/models/DeepSeek-V2.5-1210-quantized.w4a16/"
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
     messages = [{"role": "user", "content": "Write a piece of quicksort code in C++"}]
@@ -575,27 +575,27 @@ def test_deepseek_v2_net():
     token_len = len(input_ids)
     seq_length = SEQ_LENGTH
 
-    # 首轮推理（完整序列）
-    # 准备输入
+    # First inference pass (full sequence)
+    # Prepare the input
     padded_ids = input_ids + [0] * (seq_length - token_len)
     input_tensor = torch.tensor(padded_ids, device=device)
     
-    # 嵌入层
+    # Embedding layer
     hidden_states = embed(input_tensor).view(1, seq_length, HIDDEN_SIZE)
     
-    # 位置编码
+    # Position encoding
     position_ids = torch.tensor([list(range(token_len)) + [0]*(seq_length - token_len)], device=device)
     
-    # 注意力掩码（下三角）
+    # Attention mask (lower triangular)
     attention_mask = torch.full((seq_length, seq_length), -10000, device=device)
     for i in range(token_len):
         attention_mask[i, :i+1] = 0
     attention_mask = attention_mask.view(1, 1, seq_length, seq_length)
 
-    # 逐层处理
+    # Process layer by layer
     kv_caches = []
     for layer_id in range(NUM_LAYERS):
-        # 注意力层
+        # Attention layer
         out_hidden_states = []
         device_kv = []
         for device_id in range(DEVICE_NUM):
@@ -614,55 +614,55 @@ def test_deepseek_v2_net():
             if layer_id < 1:
                 hidden_states = mlps[layer_id][device_id](hidden_states.to(dtype))
             else:
-                # MoE处理
-                # Shared expert前向
+                # MoE processing
+                # Shared expert forward
                 shared_out, gate_logits = shared_moes[layer_id-1][device_id](hidden_states.to(dtype))
-                
-                # 门控计算 (示例实现)
-                num_total_experts = gate_logits.shape[-1]  # 获取总专家数
-                sorted_val, sorted_idx = torch.sort(gate_logits, dim=-1, descending=True)  # 全排序
+
+                # Gate computation (example implementation)
+                num_total_experts = gate_logits.shape[-1]  # Get the total number of experts
+                sorted_val, sorted_idx = torch.sort(gate_logits, dim=-1, descending=True)  # Full sort
 
                 expert_counts = torch.zeros(N_EXPERTS, dtype=torch.int32, device=device)
                 token_index = torch.zeros((N_EXPERTS, MAX_TOKENS_PER_EXPERT), dtype=torch.long, device=device)
                 re_index = torch.zeros(SEQ_LENGTH * N_EXPERTS_PER_TOK, dtype=torch.long, device=device)
                 topk_weights = torch.zeros(SEQ_LENGTH * N_EXPERTS_PER_TOK, dtype=dtype, device=device)
 
-                # 获取全专家排序 [batch*seq_len, num_experts]
+                # Get the full expert ranking [batch*seq_len, num_experts]
                 sorted_idx = torch.sort(gate_logits, dim=-1, descending=True).indices
                 sorted_idx_flat = sorted_idx.view(-1, gate_logits.size(-1))
                 
                 sorted_values = torch.gather(gate_logits, -1, sorted_idx)
                 sorted_values_flat = sorted_values.view(-1, gate_logits.size(-1))
 
-                # 遍历每个token进行专家分配
+                # Iterate over each token for expert assignment
                 for token_idx in range(token_len):
-                    # 当前token的专家排序列表
+                    # The expert ranking list of the current token
                     experts = sorted_idx_flat[token_idx].tolist()
                     values = sorted_values_flat[token_idx].tolist()
-                    
-                    # 当前token在re_index中的起始位置
+
+                    # The starting position of the current token in re_index
                     re_start = token_idx * N_EXPERTS_PER_TOK
                     valid_weights = []
                     assigned = 0
-                    
-                    # 遍历候选专家
+
+                    # Iterate over the candidate experts
                     for expert_id, gate_value in zip(experts, values):
-                        # 检查专家容量
+                        # Check the expert capacity
                         if expert_counts[expert_id] < MAX_TOKENS_PER_EXPERT:
-                            # 记录到token_index
+                            # Record into token_index
                             pos = expert_counts[expert_id]
                             token_index[expert_id, pos] = token_idx
-                            
-                            # 记录到re_index
+
+                            # Record into re_index
                             re_index[re_start + assigned] = expert_id * MAX_TOKENS_PER_EXPERT + pos
 
                             valid_weights.append(gate_value)
-                            
-                            # 更新计数器
+
+                            # Update the counter
                             expert_counts[expert_id] += 1
                             assigned += 1
-                            
-                            # 达到top_k则停止
+
+                            # Stop once top_k is reached
                             if assigned == N_EXPERTS_PER_TOK:
                                 break
 
@@ -670,8 +670,8 @@ def test_deepseek_v2_net():
                     normalized_weights = torch.softmax(weights_tensor, dim=0)
                     topk_weights[re_start:re_start+N_EXPERTS_PER_TOK] = normalized_weights
 
-                # MoE专家计算
-                hidden_states = moes[layer_id-1][device_id](  # 示例使用第一个设备上的专家
+                # MoE expert computation
+                hidden_states = moes[layer_id-1][device_id](  # Example: use the experts on the first device
                     hidden_states.squeeze(0).to(dtype),
                     token_index,
                     re_index,
@@ -681,29 +681,29 @@ def test_deepseek_v2_net():
             out_hidden_states.append(hidden_states)
         hidden_states = sum(out_hidden_states)
 
-    # 生成首个token
+    # Generate the first token
     logits = lm_head(hidden_states[:, token_len-1, :].unsqueeze(1))
     next_token = greedy_head(logits)
 
-    # 自回归生成
+    # Autoregressive generation
     max_new_tokens = 10
     for _ in tqdm(range(max_new_tokens)):
-        # 准备输入：当前生成的单个token
+        # Prepare the input: the single token just generated
         input_tensor = next_token
         position_ids = torch.tensor([[token_len]], device=device)
         
         hidden_states = embed(input_tensor).view(1, 1, HIDDEN_SIZE)
         
-        # 扩展的注意力掩码：注意后续缓存长度为seq_length+1
+        # Extended attention mask: note that the subsequent cache length is seq_length+1
         cur_attn_mask = torch.zeros(1, 1, 1, seq_length+1, device=device)
         cur_attn_mask[:, :, :, token_len+1:] = -10000
 
-        new_kv_caches = []  # 保存每层的新 kv_cache，各层为多个设备
-        # 针对每一层进行多设备推理，并更新 kv cache
+        new_kv_caches = []  # Store the new kv_cache of each layer; each layer spans multiple devices
+        # Perform multi-device inference for each layer and update the kv cache
         for layer_id in range(NUM_LAYERS):
             out_hidden_states = []
             device_kv = []
-            # 每个设备分别计算带缓存的注意力层
+            # Each device computes the cached attention layer separately
             for device_id in range(DEVICE_NUM):
                 past_k, past_v = kv_caches[layer_id][device_id]
                 hs_device, new_k, new_v = attention_caches[layer_id][device_id](
@@ -713,33 +713,33 @@ def test_deepseek_v2_net():
                     past_k,
                     past_v
                 )
-                # 更新当前设备的kv cache（将新的k、v与过去的拼接）
+                # Update the current device's kv cache (concatenate the new k, v with the past ones)
                 past_k[:, token_len:token_len+1] = new_k
                 past_v[:, token_len:token_len+1] = new_v
                 updated_k = past_k
                 updated_v = past_v
                 device_kv.append((updated_k, updated_v))
                 out_hidden_states.append(hs_device)
-            # all-reduce：多设备融合
+            # all-reduce: merge across multiple devices
             hidden_states = sum(out_hidden_states)
             new_kv_caches.append(device_kv)
             
-            # 接下来的 MLP / MoE 层处理
+            # Next: MLP / MoE layer processing
             out_hidden_states = []
             for device_id in range(DEVICE_NUM):
                 if layer_id < 1:
                     hs_out = mlps[layer_id][device_id](hidden_states.to(dtype))
                 else:
-                    # MoE缓存处理：Shared expert前向
+                    # MoE cache processing: Shared expert forward
                     shared_out, gate_logits = shared_moes[layer_id-1][device_id](hidden_states.to(dtype))
                     
-                    # 针对单token进行门控计算
+                    # Gate computation for a single token
                     topk_val, topk_idx = torch.topk(gate_logits[:, -1:], k=6, dim=-1)
                     topk_weight = torch.softmax(topk_val.float(), dim=-1).to(dtype)
                     
-                    # 专家计算: 遍历所有专家，选择 topk 的进行计算
+                    # Expert computation: iterate over all experts and compute the topk ones
                     expert_outputs = []
-                    # 注意：这里为了保持多设备支持，目前采用各设备均计算，之后仍进行all-reduce聚合
+                    # Note: to keep multi-device support, all devices currently compute this, and the results are still aggregated with all-reduce afterwards
                     idx = 0
                     for expert_id in range(160):
                         if expert_id in topk_idx:
@@ -750,17 +750,17 @@ def test_deepseek_v2_net():
                             )
                             idx += 1
                             expert_outputs.append(expert_out)
-                    # 如果 topk 为空则直接使用 shared_out 作为输出（防止除0）
+                    # If topk is empty, use shared_out directly as the output (to avoid division by zero)
                     if len(expert_outputs) > 0:
                         hs_out = sum(expert_outputs) / len(expert_outputs)
                     else:
                         hs_out = shared_out
                 out_hidden_states.append(hs_out)
             hidden_states = sum(out_hidden_states)
-        # 更新 kv_caches 为新的 kv cache（多设备）
+        # Update kv_caches to the new kv cache (multi-device)
         kv_caches = new_kv_caches
 
-        # 生成下一个token
+        # Generate the next token
         logits = lm_head(hidden_states)
         next_token = greedy_head(logits)
         token_len += 1
@@ -768,7 +768,7 @@ def test_deepseek_v2_net():
         if next_token.item() == tokenizer.eos_token_id:
             break
 
-# 运行测试
+# Run the test
 test_deepseek_v2_net()
 
 exit()

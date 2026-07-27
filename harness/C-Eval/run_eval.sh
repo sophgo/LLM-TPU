@@ -6,7 +6,7 @@ model="chatglm3"
 bmodel_dir="../../bmodels"
 tokenizer_path=""
 
-# 解析参数
+# Parse arguments
 for (( i=1; i<=$#; i++ )); do
     eval opt='$'{${i}}
     case ${opt} in

@@ -33,7 +33,7 @@ static void print_devmem_info(bm_handle_t &bm_handle) {
 class RWKV6 {
 public:
   void init(const std::vector<int> &devices, std::string model_path);
-  void init_state(); // 初始化一段默认的提示词
+  void init_state(); // Initialize a default prompt
   void deinit();
 
   // forward method
@@ -61,12 +61,12 @@ public:
   int SEQLEN = 4096;
   int NUM_LAYERS;
   std::string generation_mode;
-  std::string prompt_mode;            // 暂时没啥用
+  std::string prompt_mode;            // Not used for now
   int max_new_tokens;                 // for test
-  std::vector<int> visited_tokens;    // 模型的可见token范围
-  bool state_calculated_flag = false; // Blocks的输出内存中，是否有state
+  std::vector<int> visited_tokens;    // Token range visible to the model
+  bool state_calculated_flag = false; // Whether the Blocks output memory holds a state
   bool state_mem_cached_flag =
-      false; // state cache mem中是否存有state（TODO之后改成state树）
+      false; // Whether the state cache mem holds a state (TODO: change to a state tree later)
 
   // generation
   float temperature;
@@ -80,15 +80,15 @@ private:
   bm_handle_t bm_handle;
   void *p_bmrt;
 
-  // 模型参数
-  int STATE_SIZE_1 = 0; // RWKV状态大小
-  int STATE_SIZE_2 = 0; // RWKV状态大小
+  // Model parameters
+  int STATE_SIZE_1 = 0; // RWKV state size
+  int STATE_SIZE_2 = 0; // RWKV state size
   std::vector<const bm_net_info_t *> net_blocks;
   const bm_net_info_t *net_embed;
   const bm_net_info_t *net_lm_head;
   const bm_net_info_t *net_greedy_head;
   const bm_net_info_t *net_penalty_sample_head;
-  // 内部变量
+  // Internal variables
   const uint16_t STATE_INIT_DATA = 0x0000;
   std::vector<std::vector<uint32_t>> tokens_temp; // temp the token to be infer
   bm_device_mem_t state_cache;                    // state cache
@@ -167,7 +167,7 @@ void RWKV6::init(const std::vector<int> &devices, std::string model_path) {
   SEQLEN = net_penalty_sample_head->stages[0]
                .input_shapes[1]
                .dims[1]; // TODO:
-                         // 序列长度，后续改成无限长，但是限制惩罚采样的复读长度
+                         // Sequence length; change to unlimited later, but keep limiting the repetition length for penalty sampling
   int num_nets = bmrt_get_network_number(p_bmrt);
   NUM_LAYERS = num_nets - 4;
 
@@ -259,9 +259,9 @@ int RWKV6::penalty_sample(const bm_net_info_t *net,
 
   std::vector<int> generated_tokens(
       SEQLEN, visited_tokens[token_length -
-                             1]); // SEQLEN为采样器限制长度，后面改成无限长
+                             1]); // SEQLEN is the sampler's length limit; change to unlimited later
   repeat_last_n =
-      std::min(repeat_last_n, token_length); // 总生成token长度 或 重复判定范围
+      std::min(repeat_last_n, token_length); // Total generated token length or repetition detection range
   std::copy(visited_tokens.begin() + token_length - repeat_last_n,
             visited_tokens.begin() + token_length, generated_tokens.begin());
   bm_memcpy_s2d(bm_handle, in1_mem, (void *)generated_tokens.data());
@@ -285,17 +285,17 @@ int RWKV6::penalty_sample(const bm_net_info_t *net,
 }
 
 /**
- * @brief 预填充：输入一段token，填充并生成当前的状态，放在模型输出内存，
- * 如果开启 @param cache_state2mem 则复制一份，存储到state缓存tensor中
+ * @brief Prefill: input a sequence of tokens, fill and generate the current state, placed in the model output memory.
+ * If @param cache_state2mem is enabled, also copy a copy into the state cache tensor.
  * TODO:
- * 扩容state缓存槽到50个（具体待定）加上state和文本的对应管理系统（预计是个Trie）
+ * Expand the state cache slots to 50 (exact number TBD) plus a management system mapping states to text (expected to be a Trie)
  *
- * 如果需要接着之前的state继续填充，则开启 @param use_previous_state
+ * To continue filling from a previous state, enable @param use_previous_state
  *
  * @param tokens
  * @param cache_state2mem
- * @param use_previous_state  使用模型内存里的状态
- * @param use_cached_state    使用主动缓存的状态
+ * @param use_previous_state  Use the state in the model memory
+ * @param use_cached_state    Use the actively cached state
  * @return int
  */
 int RWKV6::prefill(std::vector<uint32_t> &tokens, bool cache_state2mem,
@@ -305,23 +305,23 @@ int RWKV6::prefill(std::vector<uint32_t> &tokens, bool cache_state2mem,
 
   if (use_previous_state)
     assert(state_calculated_flag ==
-           true); // 禁止在没做缓存的情况下使用模型内state
+           true); // Using the in-model state without a prior prefill is forbidden
   if (use_cached_state)
     assert(state_mem_cached_flag ==
-           true); // 禁止在没做缓存的情况下使用模型内state
+           true); // Using the cached state without having cached one is forbidden
 
   assert((use_previous_state && use_cached_state) ==
-         0); // 禁止同时使用两个缓存！
+         0); // Using both caches at the same time is forbidden!
   std::vector<uint16_t> state_init_data(STATE_SIZE_1 * STATE_SIZE_2,
                                         STATE_INIT_DATA);
   /**
-   * @brief 状态使用逻辑
+   * @brief State usage logic
    *
-   * 0  不使用模型内存里的状态+不使用缓存的状态=  使用 空状态
-   * 1  使用模型内存里的状态+不使用缓存的状态=    使用 内存状态
-   * 2  不使用模型内存里的状态+使用缓存的状态=    使用 主动状态
+   * 0  Not using the state in model memory + not using the cached state = use empty state
+   * 1  Using the state in model memory + not using the cached state   = use in-memory state
+   * 2  Not using the state in model memory + using the cached state   = use actively cached state
    *
-   * 不能同时使用两个状态！！
+   * The two states cannot be used at the same time!!
    */
   // int state_logic = 0;
   // if (!use_previous_state && !use_cached_state)
@@ -336,50 +336,50 @@ int RWKV6::prefill(std::vector<uint32_t> &tokens, bool cache_state2mem,
     /**
      * emb forward
      */
-    // 初始化emb的输入内存
+    // Initialize the emb input memory
     bm_device_mem_t &emb_in_mem = net_embed->stages[0].input_mems[0];
     bm_device_mem_t &emb_out_mem = net_embed->stages[0].output_mems[0];
-    // 输入单个token
+    // Input a single token
     bm_memcpy_s2d(bm_handle, emb_in_mem, (void *)&visited_tokens[input_idx]);
     net_launch(net_embed); // forward emb
 
     /**
      * blocks forward
      */
-    // 初始化blocks内存映射
+    // Initialize the blocks memory mapping
     bm_device_mem_t &out0_mem = net_blocks[0]->stages[0].output_mems[0];
     bm_device_mem_t &out1_mem = net_blocks[0]->stages[0].output_mems[1];
     // forward blocks
     for (int idx = 0; idx < NUM_LAYERS; idx++) {
       bm_device_mem_t &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
       bm_device_mem_t &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
-      if (idx == 0) // block_0, 根据参数判断state处理逻辑
+      if (idx == 0) // block_0, decide the state handling logic based on the parameters
       {
         if (input_idx ==
-            0) // 第一个字的时候，进行状态初始化********************************
+            0) // For the first token, initialize the state********************************
         {
-          if (!use_previous_state && !use_cached_state) // 使用 空状态
+          if (!use_previous_state && !use_cached_state) // Use empty state
           {
             bm_memcpy_s2d(bm_handle, in1_mem, (void *)state_init_data.data());
-          } else if (use_previous_state && !use_cached_state) // 使用 内存状态
+          } else if (use_previous_state && !use_cached_state) // Use in-memory state
           {
             bm_device_mem_t &past_out1_mem =
                 net_blocks[NUM_LAYERS - 1]->stages[0].output_mems[1];
             d2d(in1_mem, past_out1_mem);
-          } else if (!use_previous_state && use_cached_state) // 使用 主动状态
+          } else if (!use_previous_state && use_cached_state) // Use actively cached state
           {
             d2d(in1_mem, state_cache);
           }
-        } else // 不是第一个字，使用
-               // 内存状态*************************************************
+        } else // Not the first token, use
+               // the in-memory state*************************************************
         {
           bm_device_mem_t &past_out1_mem =
               net_blocks[NUM_LAYERS - 1]->stages[0].output_mems[1];
           d2d(in1_mem, past_out1_mem);
         }
-        // 第一层，输入来自emb
+        // First layer; input comes from emb
         d2d(in0_mem, emb_out_mem);
-      } else // 非block_0，复制上一层输出
+      } else // Not block_0, copy the previous layer's output
       {
         out0_mem = net_blocks[idx - 1]->stages[0].output_mems[0];
         out1_mem = net_blocks[idx - 1]->stages[0].output_mems[1];
@@ -389,17 +389,17 @@ int RWKV6::prefill(std::vector<uint32_t> &tokens, bool cache_state2mem,
       // start forward
       net_launch(net_blocks[idx]);
     }
-    // prefill不用跑head，输出才跑
+    // The head is not run during prefill; it only runs at output time
   }
-  state_calculated_flag = true; // 跑过一遍 blocks，即为已经缓存状态
+  state_calculated_flag = true; // Having run the blocks once means the state is cached
   if (cache_state2mem) {
     d2d(state_cache, net_blocks[NUM_LAYERS - 1]->stages[0].output_mems[1]);
-    state_mem_cached_flag = true; // 状态已经主动缓存
+    state_mem_cached_flag = true; // State has been actively cached
   }
   /**
    * head forward
    */
-  // 分配内存映射
+  // Set up the memory mapping
   bm_device_mem_t &out_mem =
       net_blocks[NUM_LAYERS - 1]->stages[0].output_mems[0];
   bm_device_mem_t &lm_in_mem = net_lm_head->stages[0].input_mems[0];
@@ -426,17 +426,17 @@ int RWKV6::prefill(std::vector<uint32_t> &tokens, bool cache_state2mem,
 }
 
 /**
- * @brief 循环推理：使用模型内存里已有的数据，进行单字推理
+ * @brief Recurrent inference: perform single-token inference using the data already in the model memory
  *
- * @param input_token 新的输入token(一般为刚刚生成的token)
- * @param use_cached_state  是否使用 主动状态
- * @param cache_state2mem   是否进行 主动状态 缓存操作
+ * @param input_token New input token (usually the token just generated)
+ * @param use_cached_state  Whether to use the actively cached state
+ * @param cache_state2mem   Whether to actively cache the state
  * @return int
  */
 int RWKV6::rnn_gen(bool use_cached_state, bool cache_state2mem) {
   int cur_token = visited_tokens[token_length - 1];
 
-  // 缓存了才能RNN，禁止在没做缓存的情况下使用模型内state
+  // RNN requires a cached state; using the in-model state without a prior prefill is forbidden
   assert(state_calculated_flag == true);
 
   /**
@@ -449,25 +449,25 @@ int RWKV6::rnn_gen(bool use_cached_state, bool cache_state2mem) {
   /**
    * blocks forward
    */
-  bm_device_mem_t &out0_mem = net_blocks[0]->stages[0].output_mems[0]; // 输入
+  bm_device_mem_t &out0_mem = net_blocks[0]->stages[0].output_mems[0]; // Input
   bm_device_mem_t &out1_mem = net_blocks[0]->stages[0].output_mems[1];
   // forward blocks
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     bm_device_mem_t &in0_mem = net_blocks[idx]->stages[0].input_mems[0];
     bm_device_mem_t &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
-    if (idx == 0) // block_0，拷贝状态，开始生成
+    if (idx == 0) // block_0, copy the state and start generating
     {
-      if (use_cached_state) // 使用主动状态
+      if (use_cached_state) // Use actively cached state
       {
         d2d(in1_mem, state_cache);
-      } else // 使用内存状态
+      } else // Use in-memory state
       {
         bm_device_mem_t &past_out1_mem =
             net_blocks[NUM_LAYERS - 1]->stages[0].output_mems[1];
-        d2d(in1_mem, past_out1_mem); // 初始化state为上一波跑完的state
+        d2d(in1_mem, past_out1_mem); // Initialize state to the state from the previous run
         d2d(in0_mem, emb_out_mem);
-      }    // 第一层，输入来自emb
-    } else // 非第一层，复制上一层输出
+      }    // First layer; input comes from emb
+    } else // Not the first layer, copy the previous layer's output
     {
       out0_mem = net_blocks[idx - 1]->stages[0].output_mems[0];
       out1_mem = net_blocks[idx - 1]->stages[0].output_mems[1];
@@ -478,12 +478,12 @@ int RWKV6::rnn_gen(bool use_cached_state, bool cache_state2mem) {
   }
   if (cache_state2mem) {
     d2d(state_cache, net_blocks[NUM_LAYERS - 1]->stages[0].output_mems[1]);
-    state_mem_cached_flag = true; // 状态已经主动缓存
+    state_mem_cached_flag = true; // State has been actively cached
   }
   /**
    * head forward
    */
-  // 分配内存映射
+  // Set up the memory mapping
   bm_device_mem_t &out_mem =
       net_blocks[NUM_LAYERS - 1]->stages[0].output_mems[0];
   bm_device_mem_t &lm_in_mem = net_lm_head->stages[0].input_mems[0];
@@ -515,7 +515,7 @@ std::vector<int> RWKV6::generate(std::vector<uint32_t> &input_tokens, int EOS) {
     input_tokens.clear();
     return {};
   }
-  // 限制最大token数（虽然可能没啥用）
+  // Limit the maximum number of tokens (though it may not be very useful)
   if ((int)input_tokens.size() > SEQLEN - 10) {
     input_tokens.clear();
     printf("Error: your question is too large!\n");

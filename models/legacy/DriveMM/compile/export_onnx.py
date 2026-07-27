@@ -31,7 +31,7 @@ for param in model.parameters():
 output_dir = "./exported_tokenizer"
 os.makedirs(output_dir, exist_ok=True)
 
-# 保存 tokenizer 及相关配置文件
+# Save the tokenizer and related config files
 tokenizer.save_pretrained(output_dir)
 
 
@@ -68,21 +68,21 @@ def convert_image_encoder():
     vision_tower = model.get_model().vision_tower.to(device).to(torch.float32)
     mm_projector = model.get_model().mm_projector.to(device).to(torch.float32)
     
-    # 检查所有参数类型
+    # Check the dtype of all parameters
     for name, param in vision_tower.named_parameters():
         assert param.dtype == torch.float32, f"{name} 类型错误: {param.dtype}"
     
     image_encoder = ImageEncoder(vision_tower, mm_projector).eval()
     dummy_images = torch.randn(1, 3, 384, 384, dtype=torch.float32, device=device)
     
-    # 导出时使用 opset 18
+    # Use opset 18 for export
     torch.onnx.export(
         image_encoder,
         dummy_images,
         f'{folder}/image_encoder.onnx',
         input_names=['pixel_values'],
         output_names=['image_features'],
-        opset_version=18  # 关键修改
+        opset_version=18  # key change
     )
 
        
@@ -267,12 +267,12 @@ def export_vision_tower():
     device = torch.device('cpu')
     vision_tower = model.get_model().vision_tower.to(device).to(torch.float32)
     
-    # 修复动态形状检查问题
+    # Fix the dynamic shape check issue
     for layer in vision_tower.modules():
         if hasattr(layer, 'num_heads'):
-            # 修改注意力层的动态判断逻辑
+            # Modify the dynamic check logic of the attention layers
             def _forward_hook(module, input, output):
-                # 替换原始代码中的 if attn_weights.size() != ... 判断
+                # Replace the original `if attn_weights.size() != ...` check
                 return output
             layer.register_forward_hook(_forward_hook)
     
@@ -296,8 +296,8 @@ def export_projector():
     device = torch.device('cpu')
     mm_projector = model.get_model().mm_projector.to(device).to(torch.float32)
     
-    # 生成中间输入样本（需与 Vision Tower 输出形状匹配）
-    dummy_vision_features = torch.randn(1, 729, 1024, dtype=torch.float32, device=device)  # 假设 Vision Tower 输出形状为 [1, 729, 1024]
+    # Generate a sample intermediate input (must match the Vision Tower output shape)
+    dummy_vision_features = torch.randn(1, 729, 1024, dtype=torch.float32, device=device)  # assume the Vision Tower output shape is [1, 729, 1024]
     
     projector_model = ProjectorWrapper(mm_projector).eval()
     

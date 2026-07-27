@@ -25,7 +25,7 @@ def eval_chat(model, tokenizer, subject, dev_df, test_df, num_few_shot, max_leng
                             cot=cot)
         label = test_df.iloc[i, test_df.shape[1] - 1]
 
-        #根据prompt推理结果
+        # Run inference based on the prompt
         # prompt = "你好"
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},

@@ -55,8 +55,8 @@ def convert_lora_to_bit(lora_model, lora_config, max_rank_num: int):
             else:
                 raise NotImplementedError
 
-        # 由于在final.mlir中，weight的权重排列顺序是[lora_B, lora_A, lora_B, lora_A]的形式
-        # 所以需要把B排列在前面
+        # In final.mlir, the weights are laid out as [lora_B, lora_A, lora_B, lora_A],
+        # so B must come first
         for a, b in zip(lora_A_weight_list, lora_B_weight_list):
             lora_weight_list.append(a)
             lora_weight_list.append(b)
@@ -106,9 +106,10 @@ def convert_lora_embedding_to_bit(lora_model, max_embedding_rank_num: int):
         else:
             raise NotImplementedError
 
-    # 由于在final.mlir中，weight的权重排列顺序是[lora_B, lora_A]的形式
-    # 但是在加载时，是按照算子调用逻辑来调用的，lora_A先走先调，lora_B后跑后调
-    # 所以需要把A排列在前面
+    # In final.mlir, the weights are laid out as [lora_B, lora_A],
+    # but at load time they are consumed in operator call order: lora_A runs
+    # first and is loaded first, while lora_B runs later and is loaded later,
+    # so A must come first
     for a, b in zip(lora_A_weight_list, lora_B_weight_list):
         lora_weight_list.append(a)
         lora_weight_list.append(b)

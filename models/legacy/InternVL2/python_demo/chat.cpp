@@ -176,7 +176,7 @@ void InternVL2::vit_launch(std::vector<float> &pixel_values,
     assert(vit_in_size);
 
     int offset = i * pixel_values.size() /
-                 img_offset.size(); // 假设 IMAGE_BYTES 是每张图片展平后的大小
+                 img_offset.size(); // Assume IMAGE_BYTES is the flattened size of each image
     bm_memcpy_s2d(bm_handle, vit_in_mem,
                   (void *)(pixel_values.data() + offset));
 

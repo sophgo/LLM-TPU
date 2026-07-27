@@ -1,10 +1,10 @@
 # https://github.com/yuunnn-w/RWKV_Pytorch
 class RWKV_TOKENIZER():
     """
-    RWKV模型的分词器。
+    Tokenizer for the RWKV model.
 
     Args:
-        file_name (str): 词汇表文件名。
+        file_name (str): Vocabulary file name.
     """
     def __init__(self, file_name: str):
         self.idx2token = {}
@@ -29,13 +29,13 @@ class RWKV_TOKENIZER():
 
     def encodeBytes(self, src: bytes) -> list[int]:
         """
-        对字节序列进行编码。
+        Encode a byte sequence.
 
         Args:
-            src (bytes): 输入的字节序列。
+            src (bytes): Input byte sequence.
 
         Returns:
-            list[int]: 编码后的标记序列。
+            list[int]: Encoded token sequence.
         """
         tokens = []
         i = 0
@@ -56,36 +56,36 @@ class RWKV_TOKENIZER():
 
     def decodeBytes(self, tokens: list[int]) -> bytes:
         """
-        对标记序列进行解码。
+        Decode a token sequence.
 
         Args:
-            tokens (list[int]): 输入的标记序列。
+            tokens (list[int]): Input token sequence.
 
         Returns:
-            bytes: 解码后的字节序列。
+            bytes: Decoded byte sequence.
         """
         return b''.join(self.idx2token.get(idx, b'<unk>') for idx in tokens)
 
     def encode(self, src: list[str]) -> list[list[int]]:
         """
-        对字符串列表进行编码。
+        Encode a list of strings.
 
         Args:
-            src (list[str]): 输入的字符串列表。
+            src (list[str]): Input list of strings.
 
         Returns:
-            list[list[int]]: 编码后的标记序列列表。
+            list[list[int]]: List of encoded token sequences.
         """
         return [self.encodeBytes(s.encode("utf-8")) for s in src]
 
     def decode(self, tokens: list[list[int]]) -> list[str]:
         """
-        对标记序列列表进行解码。
+        Decode a list of token sequences.
 
         Args:
-            tokens (list[list[int]]): 输入的标记序列列表。
+            tokens (list[list[int]]): Input list of token sequences.
 
         Returns:
-            list[str]: 解码后的字符串列表。
+            list[str]: List of decoded strings.
         """
         return [self.decodeBytes(batch).decode('utf-8') for batch in tokens]

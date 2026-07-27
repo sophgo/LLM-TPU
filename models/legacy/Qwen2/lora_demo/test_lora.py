@@ -87,7 +87,7 @@ def convert_total_lora_to_bit(encrypt_path, lora_model, lora_config, args):
     lora_embedding_weights = convert_lora_embedding_to_bit(lora_model, lora_config, args)
     # lora
     lora_weights = convert_lora_to_bit(lora_model, lora_config, args)
-    total_lora_weights = np.concatenate([zero_prefix, lora_weights, lora_embedding_weights]) # 由于在bmodel中，lora_embedding放在后面，因此这里是lora,lora_embedding的顺序
+    total_lora_weights = np.concatenate([zero_prefix, lora_weights, lora_embedding_weights]) # because lora_embedding is placed at the end in the bmodel, the order here is lora, lora_embedding
 
     # encrypt
     encrypt_and_save(total_lora_weights, encrypt_path, args)
