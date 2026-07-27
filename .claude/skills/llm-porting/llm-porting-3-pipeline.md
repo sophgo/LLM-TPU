@@ -1,9 +1,13 @@
 # Step 03: Pipeline Implementation
 
-> **文件落点**：per-model 文件在 `<work_dir>` = `/workspace/llm/LLM-TPU/models/<model>/tmp/` 下（见 SKILL.md）。
+> **文件落点**：per-model 文件在 `<work_dir>` = `<repo_root>/models/<model>/tmp/`（`<repo_root>` 为用户指定的 LLM-TPU 仓库路径） 下（见 SKILL.md）。
 >
 > **前置条件**：步骤 2 完成，bmodel 编译成功。
 > **产物**：`chat.cpp` + `pipeline.py` + 端到端跑通推理
+
+## 前置：恢复上下文
+
+Read `<work_dir>/<model>_memory.md`，重点看底部「移植进度备忘」章节，从中恢复 repo 路径、环境信息、关键决策和当前进度，再继续下面的步骤。
 
 ## 目标
 
@@ -226,6 +230,10 @@ def run_once(self, input_str, media_path=""):
     # 8. 循环 forward_next() 生成后续 token
     # 9. 解码并输出文本
 ```
+
+#### decode mask 必须包含对角线
+
+causal mask 的含义是 `q_idx >= kv_idx`（含等号），即当前 token 必须 attend 到自己刚算出的 k/v。如果 mask 构造时漏掉对角线（如 `range(history_length-1, mk)` 应为 `range(history_length-1, mk-1)` 来保留最后一位），decode 第一步 h_last 就会骤降（实测可从 1.0 降到 0.92），后续全链路偏移。
 
 #### Unicode 替换字符处理
 

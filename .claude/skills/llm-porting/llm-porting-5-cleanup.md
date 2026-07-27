@@ -1,13 +1,17 @@
 # Step 5: Cleanup and Documentation
 
-> **文件落点**：per-model 文件在 `<work_dir>` = `/workspace/llm/LLM-TPU/models/<model>/tmp/` 下（见 SKILL.md）。
+> **文件落点**：per-model 文件在 `<work_dir>` = `<repo_root>/models/<model>/tmp/`（`<repo_root>` 为用户指定的 LLM-TPU 仓库路径） 下（见 SKILL.md）。
 >
 > **前置条件**：步骤 4 完成，精度验证通过。
-> **产物**：清理后的代码 + README.md
+> **产物**：清理后的代码 + README.md + 两个仓库的 commit
+
+## 前置：恢复上下文
+
+Read `<work_dir>/<model>_memory.md`，重点看底部「移植进度备忘」章节，从中恢复 repo 路径、环境信息、关键决策和当前进度，再继续下面的步骤。
 
 ## 目标
 
-清理所有调试代码，编写部署文档。
+清理所有调试代码，编写部署文档，提交到 tpu-mlir 和 LLM-TPU 两个仓库。
 
 ## 执行步骤
 
@@ -64,13 +68,18 @@ Converter 和 bmodel 确认 OK 后，再清理 LLM-TPU demo 的调试代码：
   （如 `utils.h`、`cnpy.cpp`、`cnpy.h` 等），确认不再需要后删除
 - CMakeLists.txt 中如果为了链接这些工具做了修改（如添加 `cnpy.cpp`、链接 `z`），同步还原
 
+⚠️ **删除 dump 工具后须检查 `bm_thread_sync`**：`dump_net_to_file` 内部调用 `bm_thread_sync(bm_handle)`（全设备屏障），开发期间无意中为异步 launch 提供了串行化保证。删除后，bmrt 全局复用 device memory 导致的**输出 mem 被后续 net 输入别名覆写**的竞态可能暴露——表现为输出非确定性（同一输入多次运行结果不同）或部分子 net 输出偶发垃圾。如果出现此问题，需在 chat.cpp 的关键交接点显式加 `bm_thread_sync`：
+- 每个 `net_launch()` 之后（覆盖小 net 交接：embed/lm_head/heads/encoder 等）
+- prefill block 循环每轮末尾（覆盖 per-iteration s2d 别名竞态）
+- decode block_cache 循环通常不需要（无 per-iteration s2d），但加上也无害
+
 #### 1e. 运行 demo 检查 warning
 
 debug 代码清理完、干净 bmodel 重新编译后，实际跑一遍 demo（交互 + 单次推理），留意运行时打出的 **warning**：Python/transformers 的 deprecation、bmodel runtime 的 shape / 数值告警、未使用参数提示等。开发测试期可以忽略，但**发布前要逐一解决或确认无害**——warning 常是潜在问题的信号。发现的 warning 记到 `<model>_plan.md`。
 
 ### 2. 编写 README.md
 
-基于 `<model>_plan.md` 中步骤 4 多设备精度验证已跑通的编译/运行命令，参考已有模型 README 格式写成，包含以下章节：
+基于 `<model>_memory.md`「关键命令」章节中记录的编译/运行命令，参考已有模型 README 格式写成，包含以下章节：
 
 ```markdown
 # <模型名>
@@ -107,7 +116,7 @@ debug 代码清理完、干净 bmodel 重新编译后，实际跑一遍 demo（�
 - 内存需求
 ```
 
-**「编译 bmodel」一节**：把 `<model>_plan.md` 中记录的编译命令（各目标芯片）填入，但**去掉 `--debug`**——`--debug` 是开发期保留 npz 权重给步骤 4 验证用的，发布的命令不需要。
+**「编译 bmodel」一节**：把 `<model>_memory.md`「关键命令」中记录的编译命令（各目标芯片）填入，但**去掉 `--debug`**——`--debug` 是开发期保留 npz 权重给步骤 4 验证用的，发布的命令不需要。
 
 ### 3. 更新根目录 README
 
@@ -115,7 +124,7 @@ debug 代码清理完、干净 bmodel 重新编译后，实际跑一遍 demo（�
 
 三处修改：
 
-1. **最新动态表**：添加一行
+1. **最新动态表**：添加一行，同时把上一条目的 🔥 去掉（只保留最新一条带 🔥）
    ```
    | 🔥 **<日期>** | **<模型名>** 已支持 BM1684X / BM1688 → [查看](./models/<Model>/) |
    ```
