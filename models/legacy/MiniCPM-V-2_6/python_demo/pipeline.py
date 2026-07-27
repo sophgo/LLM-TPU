@@ -80,21 +80,22 @@ class MiniCPMV():
         # Instruct
         print(
             """\n=================================================================
-1. If you want to quit, please enter one of [q, quit, exit]
-2. To create a new chat session, please enter one of [clear, new]
+1. If you want to quit, please enter one of [/q, /quit, /exit]
+2. To create a new chat session, please enter one of [/clear, /new]
+3. To ask about images, include one or more @<path> in your question
 ================================================================="""
         )
-        # Stop Chatting with "exit" input
+        # Stop Chatting with "/exit" input
         while True:
             self.input_str = input("\nQuestion: ")
             # Quit
-            if self.input_str in ["exit", "q", "quit"]:
+            if self.input_str in ["/exit", "/q", "/quit"]:
                 break
-            try:
-                self.patch_num = int(input("\nImage Num: "))
-            except:
-                self.patch_num = 0
-            self.image_str = [input(f"\nImage Path {i}: ") for i in range(self.patch_num)] if self.patch_num >= 1 else []
+            # Images are attached with @path in the question
+            tokens = self.input_str.split()
+            self.image_str = [t[1:] for t in tokens if t.startswith("@") and len(t) > 1]
+            self.input_str = " ".join(t for t in tokens if not (t.startswith("@") and len(t) > 1))
+            self.patch_num = len(self.image_str)
 
             if self.image_str:
                 missing_images = [x for x in self.image_str if not os.path.exists(x)]

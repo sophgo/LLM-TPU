@@ -49,15 +49,15 @@ class RWKV7():
     def chat(self):
         print(
             "\n=================================================================\n"
-            "1. If you want to quit, please enter one of [q, quit, exit]\n"
-            "2. To create a new chat session, please enter one of [clear, new]\n"
+            "1. If you want to quit, please enter one of [/q, /quit, /exit]\n"
+            "2. To create a new chat session, please enter one of [/clear, /new]\n"
             "================================================================="
             )
         while True:
             input_str = input("\nUser: ")
-            if input_str in ["exit", "q", "quit"]:
+            if input_str in ["/exit", "/q", "/quit"]:
                 break
-            elif input_str in ["clear", "new"]:
+            elif input_str in ["/clear", "/new"]:
                 self.model.clear_state()
                 continue
             elif not input_str:

@@ -125,23 +125,29 @@ class Qwen3_ASR():
         """
         # Instruct
         print("""\n=================================================================
-1. If you want to quit, please enter one of [q, quit, exit]
-2. To create a new asr session, please enter one of [clear, new]
+1. If you want to quit, please enter one of [/q, /quit, /exit]
+2. To create a new asr session, please enter one of [/clear, /new]
+3. To transcribe audio, include @<audio path> in your input
 =================================================================""")
-        # Stop Chatting with "exit" input
+        # Stop Chatting with "/exit" input
         while True:
             self.input_str = input("\nContext: ")
             # Quit
-            if self.input_str in ["exit", "q", "quit"]:
+            if self.input_str in ["/exit", "/q", "/quit"]:
                 break
-            if self.input_str in ["clear", "new", "c"]:
+            if self.input_str in ["/clear", "/new", "/c"]:
                 print("New asr session created.")
                 self.model.clear_history()
                 self.history_max_posid = 0
                 continue
 
-            media_path = input("\nAudio Path: ")
-            media_path = media_path.strip()
+            # Audio files are attached with @path in the input
+            tokens = self.input_str.split()
+            media_paths = [t[1:] for t in tokens if t.startswith("@") and len(t) > 1]
+            self.input_str = " ".join(t for t in tokens if not (t.startswith("@") and len(t) > 1))
+            if len(media_paths) > 1:
+                print("Only one audio file is supported, using: {}".format(media_paths[0]))
+            media_path = media_paths[0] if media_paths else ""
             if media_path == "":
                 print("Error: No input, try again!!")
                 continue

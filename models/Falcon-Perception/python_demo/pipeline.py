@@ -524,24 +524,38 @@ class FalconPerception():
 
     def chat(self):
         print("""\n=================================================================
-1. quit: q / quit / exit
-2. new session: clear / new
+1. quit: /q, /quit, /exit
+2. new session: /clear, /new
+3. To ask about an image, include @<path> in your query
 =================================================================""")
         while True:
             query = input("\nQuery: ")
-            if query in ["exit", "q", "quit"]:
+            if query in ["/exit", "/q", "/quit"]:
                 break
-            if query in ["clear", "new", "c"]:
+            if query in ["/clear", "/new", "/c"]:
                 self.model.clear_history()
                 continue
-            media_path = input("Image Path: ")
+            # Media files are attached with @path in the query
+            query, media_path = extract_media(query)
             self.run_once(query, media_path)
+
+
+def extract_media(input_str):
+    """Split @<path> media attachments out of the input text."""
+    tokens = input_str.split()
+    media_paths = [t[1:] for t in tokens if t.startswith("@") and len(t) > 1]
+    input_str = " ".join(t for t in tokens if not (t.startswith("@") and len(t) > 1))
+    if len(media_paths) > 1:
+        print("Only one media file is supported, using: {}".format(media_paths[0]))
+    media_path = media_paths[0] if media_paths else ""
+    return input_str, media_path
 
 
 def main(args):
     model = FalconPerception(args)
     if args.query is not None:
-        model.run_once(args.query, args.media_path)
+        query, media_path = extract_media(args.query)
+        model.run_once(query, media_path)
     else:
         model.chat()
 
@@ -555,8 +569,6 @@ if __name__ == "__main__":
                              'custom processor python + falcon_extra_weights.npz)')
     parser.add_argument('-d', '--devid', type=int, default=0)
     parser.add_argument('-q', '--query', type=str, default=None,
-                        help='If set, run a single inference and exit.')
-    parser.add_argument('--media_path', type=str, default="",
-                        help='Path to an image for programmatic mode.')
+                        help='If set, run a single inference and exit. Include @<path> to attach an image.')
     args = parser.parse_args()
     main(args)

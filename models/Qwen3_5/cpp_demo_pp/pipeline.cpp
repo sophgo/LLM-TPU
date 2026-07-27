@@ -11,6 +11,7 @@
 #include "cv_utils.h"
 #include "tokenizers-cpp/tokenizers_cpp.h"
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -676,6 +677,70 @@ static std::vector<std::string> splitString(const std::string &s) {
   return result;
 }
 
+// Read a @-referenced .txt/.md file and return its contents.
+static std::string readPromptFile(const std::string &path) {
+  std::ifstream fs(path, std::ios::in | std::ios::binary);
+  if (fs.fail()) {
+    std::cerr << "Cannot open prompt file [ " << path << " ]" << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  std::ostringstream oss;
+  oss << fs.rdbuf();
+  std::string content = oss.str();
+  // Trim trailing newlines so the file behaves like a typed prompt.
+  while (!content.empty() &&
+         (content.back() == '\n' || content.back() == '\r')) {
+    content.pop_back();
+  }
+  return content;
+}
+
+// Whether a @-referenced path points to a prompt text file (.txt/.md).
+static bool isPromptFilePath(const std::string &path) {
+  std::string lower = path;
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+  auto endsWith = [&lower](const std::string &suffix) {
+    return lower.size() >= suffix.size() &&
+           lower.compare(lower.size() - suffix.size(), suffix.size(),
+                         suffix) == 0;
+  };
+  return endsWith(".txt") || endsWith(".md");
+}
+
+// Extract "@path" tokens from the question. A token whose path ends in
+// .txt/.md is read as prompt text and replaces the token inline; any other
+// token is treated as a media attachment. Returns the media paths joined
+// with ',' and removes the media tokens from input_str.
+static std::string extractMedia(std::string &input_str) {
+  std::vector<std::string> medias;
+  std::stringstream ss(input_str);
+  std::string token, question, media_path;
+  while (ss >> token) {
+    if (token.size() > 1 && token[0] == '@') {
+      std::string path = token.substr(1);
+      if (isPromptFilePath(path)) {
+        token = readPromptFile(path);
+      } else {
+        medias.push_back(path);
+        continue;
+      }
+    }
+    if (!question.empty()) {
+      question += " ";
+    }
+    question += token;
+  }
+  input_str = question;
+  for (size_t i = 0; i < medias.size(); i++) {
+    if (i > 0) {
+      media_path += ",";
+    }
+    media_path += medias[i];
+  }
+  return media_path;
+}
+
 // Main chat loop
 void ChatPipe::chat() {
   print_chat_instructions();
@@ -685,19 +750,17 @@ void ChatPipe::chat() {
     std::cout << "\nQuestion: ";
     std::getline(std::cin, input_str);
     input_str = strip(input_str);
-    if (input_str == "exit" || input_str == "q" || input_str == "quit") {
+    if (input_str == "/exit" || input_str == "/q" || input_str == "/quit") {
       break;
     }
-    if (input_str == "clear" || input_str == "c" || input_str == "new") {
+    if (input_str == "/clear" || input_str == "/c" || input_str == "/new") {
       model.clear_history();
       history_max_posid_state = 0;
       std::cout << "Chat history cleared." << std::endl;
       continue;
     }
 
-    std::string media_path;
-    std::cout << "\nImage or Video Path: ";
-    std::getline(std::cin, media_path);
+    std::string media_path = extractMedia(input_str);
     run_once(input_str, media_path);
   }
 }
@@ -1033,8 +1096,11 @@ void ChatPipe::print_chat_instructions() {
   std::cout
       << "\n================================================================="
          "\n"
-      << "1. If you want to quit, please enter one of [q, quit, exit]\n"
-      << "2. To create a new chat session, please enter one of [clear, new]\n"
+      << "1. If you want to quit, please enter one of [/q, /quit, /exit]\n"
+      << "2. To create a new chat session, please enter one of [/clear, /new]\n"
+      << "3. To ask about an image or video, include @<path> in your question\n"
+      << "4. To use the contents of a .txt or .md file as your question, "
+         "include @<path>\n"
       << "================================================================="
          "\n";
 }
@@ -1051,13 +1117,10 @@ void Usage() {
       "  -d, --devid       : Set device IDs, comma-separated (e.g. '0,1,2'),"
       " default is '0'\n"
       "  -p, --prompt      : Programmatic mode prompt; if set, run a single\n"
-      "                      inference and exit (non-interactive)\n"
-      "  -t, --prompt_file : Path to a text file whose contents are used as the\n"
-      "                      programmatic mode prompt. If --prompt is also set,\n"
-      "                      the file contents come first, followed by the\n"
-      "                      --prompt value (combined with a newline)\n"
-      "  -i, --media_path  : Image/video path(s) for programmatic mode\n"
-      "                      (comma-separated for multiple images)\n"
+      "                      inference and exit (non-interactive). Include\n"
+      "                      @<path> to attach image/video (repeat for\n"
+      "                      multiple images), or to read prompt text from a\n"
+      "                      .txt/.md file\n"
       "  -w, --rep_window  : Sliding window size for repetition penalty; only\n"
       "                      the last N tokens are penalized. 64 (default);\n"
       "                      0 penalizes the full context. Only used with -s\n");
@@ -1077,8 +1140,7 @@ void processArguments(int argc, char *argv[], std::string &model_path,
                       std::string &config_path, std::string &image_path,
                       std::vector<int> &devids, float &video_ratio,
                       float &video_fps, bool &do_sample, std::string &prompt,
-                      std::string &media_path, bool &has_prompt,
-                      std::string &prompt_file, int &rep_window) {
+                      bool &has_prompt, int &rep_window) {
   struct option longOptions[] = {
       {"model", required_argument, nullptr, 'm'},
       {"config", required_argument, nullptr, 'c'},
@@ -1087,15 +1149,13 @@ void processArguments(int argc, char *argv[], std::string &model_path,
       {"video_fps", required_argument, nullptr, 'f'},
       {"do_sample", no_argument, nullptr, 's'},
       {"prompt", required_argument, nullptr, 'p'},
-      {"prompt_file", required_argument, nullptr, 't'},
-      {"media_path", required_argument, nullptr, 'i'},
       {"rep_window", required_argument, nullptr, 'w'},
       {"help", no_argument, nullptr, 'h'},
       {nullptr, 0, nullptr, 0}};
 
   int optionIndex = 0;
   int option;
-  while ((option = getopt_long(argc, argv, "m:c:d:r:f:sp:t:i:w:h", longOptions,
+  while ((option = getopt_long(argc, argv, "m:c:d:r:f:sp:w:h", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -1119,13 +1179,6 @@ void processArguments(int argc, char *argv[], std::string &model_path,
     case 'p':
       prompt = optarg;
       has_prompt = true;
-      break;
-    case 't':
-      prompt_file = optarg;
-      has_prompt = true;
-      break;
-    case 'i':
-      media_path = optarg;
       break;
     case 'w':
       rep_window = atoi(optarg);
@@ -1151,47 +1204,22 @@ int main(int argc, char *argv[]) {
   float video_fps = 1.0f;    // Sample 1 frame per second by default
   bool do_sample = false;
   std::string prompt;
-  std::string media_path;
-  std::string prompt_file;
   bool has_prompt = false;
   int rep_window = 64;
 
   processArguments(argc, argv, model_path, config_path, image_path, dev_ids,
-                   video_ratio, video_fps, do_sample, prompt, media_path,
-                   has_prompt, prompt_file, rep_window);
+                   video_ratio, video_fps, do_sample, prompt, has_prompt,
+                   rep_window);
   if (model_path.empty() || config_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);
   }
   assert(video_fps > 0);
-  // If --prompt_file was provided, load the prompt text from that file. If
-  // --prompt is also given, the file contents come first and the --prompt
-  // value is appended afterwards so that the two can be combined.
-  if (has_prompt && !prompt_file.empty()) {
-    std::ifstream fs(prompt_file, std::ios::in | std::ios::binary);
-    if (fs.fail()) {
-      std::cerr << "Cannot open prompt file [ " << prompt_file << " ]"
-                << std::endl;
-      exit(EXIT_FAILURE);
-    }
-    std::ostringstream oss;
-    oss << fs.rdbuf();
-    std::string file_prompt = oss.str();
-    // Trim a trailing newline so the file behaves like a CLI-supplied prompt.
-    while (!file_prompt.empty() &&
-           (file_prompt.back() == '\n' || file_prompt.back() == '\r')) {
-      file_prompt.pop_back();
-    }
-    if (prompt.empty()) {
-      prompt = file_prompt;
-    } else {
-      prompt = file_prompt + "\n" + prompt;
-    }
-  }
   ChatPipe pipeline(dev_ids, video_ratio, video_fps, model_path, config_path,
                     do_sample, rep_window);
   if (has_prompt) {
     // Programmatic (non-interactive) mode: exit after running inference once
+    std::string media_path = extractMedia(prompt);
     pipeline.run_once(prompt, media_path);
   } else {
     pipeline.chat();

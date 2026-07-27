@@ -1,8 +1,8 @@
 ## cpp_demo_share_prompt
 
 A long prompt can be converted into a KV cache, and every subsequent
-question shares this KV cache. The input given by `--prompt` /
-`--prompt_file` / `--media_path` is only prefilled to generate the kv cache
+question shares this KV cache. The input given by `--prompt` is only
+prefilled to generate the kv cache
 and states (no answer is generated). The demo then enters the interactive
 chat loop, and every question is independently based on the shared prompt —
 the kv cache and states are rolled back to the shared prompt's snapshot
@@ -38,11 +38,12 @@ cmake .. && make
 
 ``` shell
 ./pipeline -m bmodel_path -c config \
-    --prompt_file story.txt --media_path test.jpg
+    --prompt "@story.txt @test.jpg"
 ```
 
-Any combination of `--prompt` / `--prompt_file` / `--media_path` can be
-used as the shared prompt (at least one of them is required).
+`--prompt` is required as the shared prompt. Include `@<path>` to read
+prompt text from a `.txt`/`.md` file, or to attach images/videos (repeat
+for multiple files).
 
 Notes:
 

@@ -302,10 +302,11 @@ class Qwen3_VL():
         """
         # Instruct
         print("""\n=================================================================
-1. If you want to quit, please enter one of [q, quit, exit]
-2. To create a new chat session, please enter one of [clear, new]
+1. If you want to quit, please enter one of [/q, /quit, /exit]
+2. To create a new chat session, please enter one of [/clear, /new]
+3. To ask about an image or video, include @<path> in your question
 =================================================================""")
-        # Stop Chatting with "exit" input
+        # Stop Chatting with "/exit" input
         while True:
             first_duration = 0
             token_batch = []
@@ -313,18 +314,21 @@ class Qwen3_VL():
                 self.input_str = input("\nQuestion-{}: ".format(batch_idx))
                 # self.input_str = "简单描述图片内容"
                 # Quit
-                if self.input_str in ["exit", "q", "quit"]:
+                if self.input_str in ["/exit", "/q", "/quit"]:
                     return
-                if self.input_str in ["clear", "new", "c"]:
+                if self.input_str in ["/clear", "/new", "/c"]:
                     print("New chat session created.")
                     self.model.clear_history()
                     self.history_max_posid = [0] * self.model.BATCH
                     continue
 
-                media_path = input("\nImage or Video Path-{}: ".format(batch_idx))
-                # media_path = "test.jpg"
-                # media_path = "/workspace/ai-nvr/qwen3vl/datasets/loading/case{}.png".format(batch_idx+1)
-                media_path = media_path.strip()
+                # Media files are attached with @path in the question
+                tokens = self.input_str.split()
+                media_paths = [t[1:] for t in tokens if t.startswith("@") and len(t) > 1]
+                self.input_str = " ".join(t for t in tokens if not (t.startswith("@") and len(t) > 1))
+                if len(media_paths) > 1:
+                    print("Only one media file is supported, using: {}".format(media_paths[0]))
+                media_path = media_paths[0] if media_paths else ""
                 if media_path == "":
                     messages = self.text_message()
                     media_type = "text"

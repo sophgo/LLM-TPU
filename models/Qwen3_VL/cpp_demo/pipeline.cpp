@@ -675,6 +675,32 @@ static std::vector<std::string> splitString(const std::string &s) {
   return result;
 }
 
+// Extract "@path" media tokens from the question; returns the media paths
+// joined with ',' and removes the tokens from input_str.
+static std::string extractMedia(std::string &input_str) {
+  std::vector<std::string> medias;
+  std::stringstream ss(input_str);
+  std::string token, question, media_path;
+  while (ss >> token) {
+    if (token.size() > 1 && token[0] == '@') {
+      medias.push_back(token.substr(1));
+    } else {
+      if (!question.empty()) {
+        question += " ";
+      }
+      question += token;
+    }
+  }
+  input_str = question;
+  for (size_t i = 0; i < medias.size(); i++) {
+    if (i > 0) {
+      media_path += ",";
+    }
+    media_path += medias[i];
+  }
+  return media_path;
+}
+
 // Main chat loop
 void ChatPipe::chat() {
   print_chat_instructions();
@@ -684,19 +710,17 @@ void ChatPipe::chat() {
     std::cout << "\nQuestion: ";
     std::getline(std::cin, input_str);
     input_str = strip(input_str);
-    if (input_str == "exit" || input_str == "q" || input_str == "quit") {
+    if (input_str == "/exit" || input_str == "/q" || input_str == "/quit") {
       break;
     }
-    if (input_str == "clear" || input_str == "c" || input_str == "new") {
+    if (input_str == "/clear" || input_str == "/c" || input_str == "/new") {
       model.clear_history();
       history_max_posid_state = 0;
       std::cout << "Chat history cleared." << std::endl;
       continue;
     }
 
-    std::string media_path;
-    std::cout << "\nImage or Video Path: ";
-    std::getline(std::cin, media_path);
+    std::string media_path = extractMedia(input_str);
     run_once(input_str, media_path);
   }
 }
@@ -1025,8 +1049,9 @@ void ChatPipe::print_chat_instructions() {
   std::cout
       << "\n================================================================="
          "\n"
-      << "1. If you want to quit, please enter one of [q, quit, exit]\n"
-      << "2. To create a new chat session, please enter one of [clear, new]\n"
+      << "1. If you want to quit, please enter one of [/q, /quit, /exit]\n"
+      << "2. To create a new chat session, please enter one of [/clear, /new]\n"
+      << "3. To ask about an image or video, include @<path> in your question\n"
       << "================================================================="
          "\n";
 }
@@ -1042,9 +1067,9 @@ void Usage() {
       "  -s, --do_sample   : Enable sampling during generation\n"
       "  -d, --devid       : Set devices to run for model, default is '0'\n"
       "  -p, --prompt      : Programmatic mode prompt; if set, run a single\n"
-      "                      inference and exit (non-interactive)\n"
-      "  -i, --media_path  : Image/video path(s) for programmatic mode\n"
-      "                      (comma-separated for multiple images)\n"
+      "                      inference and exit (non-interactive). Include\n"
+      "                      @<path> to attach image/video (repeat for\n"
+      "                      multiple images)\n"
       "  -w, --rep_window  : Sliding window size for repetition penalty; only\n"
       "                      the last N tokens are penalized. 64 (default);\n"
       "                      0 penalizes the full context. Only used with -s\n");
@@ -1053,8 +1078,7 @@ void Usage() {
 void processArguments(int argc, char *argv[], std::string &model_path,
                       std::string &config_path, std::string &image_path,
                       int &device, float &video_ratio, float &video_fps,
-                      bool &do_sample, std::string &prompt,
-                      std::string &media_path, bool &has_prompt,
+                      bool &do_sample, std::string &prompt, bool &has_prompt,
                       int &rep_window) {
   struct option longOptions[] = {
       {"model", required_argument, nullptr, 'm'},
@@ -1064,14 +1088,13 @@ void processArguments(int argc, char *argv[], std::string &model_path,
       {"video_fps", required_argument, nullptr, 'f'},
       {"do_sample", no_argument, nullptr, 's'},
       {"prompt", required_argument, nullptr, 'p'},
-      {"media_path", required_argument, nullptr, 'i'},
       {"rep_window", required_argument, nullptr, 'w'},
       {"help", no_argument, nullptr, 'h'},
       {nullptr, 0, nullptr, 0}};
 
   int optionIndex = 0;
   int option;
-  while ((option = getopt_long(argc, argv, "m:c:d:r:f:p:i:w:sh", longOptions,
+  while ((option = getopt_long(argc, argv, "m:c:d:r:f:p:w:sh", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -1095,9 +1118,6 @@ void processArguments(int argc, char *argv[], std::string &model_path,
     case 'p':
       prompt = optarg;
       has_prompt = true;
-      break;
-    case 'i':
-      media_path = optarg;
       break;
     case 'w':
       rep_window = atoi(optarg);
@@ -1123,13 +1143,12 @@ int main(int argc, char *argv[]) {
   float video_fps = 1.0f;    // Sample 1 frame per second by default
   bool do_sample = false;
   std::string prompt;
-  std::string media_path;
   bool has_prompt = false;
   int rep_window = 64;
 
   processArguments(argc, argv, model_path, config_path, image_path, dev_id,
-                   video_ratio, video_fps, do_sample, prompt, media_path,
-                   has_prompt, rep_window);
+                   video_ratio, video_fps, do_sample, prompt, has_prompt,
+                   rep_window);
   if (model_path.empty() || config_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);
@@ -1139,6 +1158,7 @@ int main(int argc, char *argv[]) {
                     do_sample, rep_window);
   if (has_prompt) {
     // Programmatic (non-interactive) mode: exit after running inference once
+    std::string media_path = extractMedia(prompt);
     pipeline.run_once(prompt, media_path);
   } else {
     pipeline.chat();

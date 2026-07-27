@@ -592,6 +592,32 @@ std::string strip(const std::string &s) {
   return s.substr(start, end - start + 1);
 }
 
+// Extract "@path" media tokens from the question; returns the media paths
+// joined with ',' and removes the tokens from input_str.
+static std::string extractMedia(std::string &input_str) {
+  std::vector<std::string> medias;
+  std::stringstream ss(input_str);
+  std::string token, question, media_path;
+  while (ss >> token) {
+    if (token.size() > 1 && token[0] == '@') {
+      medias.push_back(token.substr(1));
+    } else {
+      if (!question.empty()) {
+        question += " ";
+      }
+      question += token;
+    }
+  }
+  input_str = question;
+  for (size_t i = 0; i < medias.size(); i++) {
+    if (i > 0) {
+      media_path += ",";
+    }
+    media_path += medias[i];
+  }
+  return media_path;
+}
+
 int ChatPipe::forward_prefill(std::vector<int> &position_ids_1d, int &max_posid,
                               int &history_max_posid) {
   if (model.history_length == 0 || support_history == false) {
@@ -627,20 +653,22 @@ void ChatPipe::chat() {
     std::cout << "\nQuestion: ";
     std::getline(std::cin, input_str);
     input_str = strip(input_str);
-    if (input_str == "exit" || input_str == "q" || input_str == "quit") {
+    if (input_str == "/exit" || input_str == "/q" || input_str == "/quit") {
       break;
     }
-    if (input_str == "clear" || input_str == "c" || input_str == "new") {
+    if (input_str == "/clear" || input_str == "/c" || input_str == "/new") {
       model.clear_history();
       history_max_posid = 0;
       std::cout << "Chat history cleared." << std::endl;
       continue;
     }
 
-    std::string media_path;
-    std::cout << "\nImage or Video Path: ";
-    std::getline(std::cin, media_path);
-    media_path = strip(media_path);
+    std::string media_path = extractMedia(input_str);
+    if (media_path.find(',') != std::string::npos) {
+      std::cout << "Only one media file is supported, using the first."
+                << std::endl;
+      media_path = media_path.substr(0, media_path.find(','));
+    }
     auto media_type = get_media_type(media_path);
     if (media_type == ChatPipe::UNKNOWN) {
       std::cout
@@ -1217,8 +1245,9 @@ std::vector<int> ChatPipe::encode_input(const std::string &sentence_input) {
 void ChatPipe::print_chat_instructions() {
   std::cout
       << "\n=================================================================\n"
-      << "1. If you want to quit, please enter one of [q, quit, exit]\n"
-      << "2. To create a new chat session, please enter one of [clear, new]\n"
+      << "1. If you want to quit, please enter one of [/q, /quit, /exit]\n"
+      << "2. To create a new chat session, please enter one of [/clear, /new]\n"
+      << "3. To ask about an image or video, include @<path> in your question\n"
       << "=================================================================\n";
 }
 
@@ -1230,27 +1259,26 @@ void Usage() {
          "  -v, --video_ratio : Set video ratio, default is 0.25\n"
          "  -d, --devid     : Set devices to run for model, default is '0'\n"
          "  -p, --prompt    : Programmatic mode prompt; if set, run a single\n"
-         "                    inference and exit (non-interactive)\n"
-         "  -i, --media_path : Image/video path for programmatic mode\n");
+         "                    inference and exit (non-interactive). Include\n"
+         "                    @<path> to attach an image or video\n");
 }
 
 void processArguments(int argc, char *argv[], std::string &model_path,
                       std::string &config_path, std::string &image_path,
                       int &device, float &video_ratio, std::string &prompt,
-                      std::string &media_path, bool &has_prompt) {
+                      bool &has_prompt) {
   struct option longOptions[] = {
       {"model", required_argument, nullptr, 'm'},
       {"config", required_argument, nullptr, 'c'},
       {"devid", required_argument, nullptr, 'd'},
       {"video_ratio", required_argument, nullptr, 'v'},
       {"prompt", required_argument, nullptr, 'p'},
-      {"media_path", required_argument, nullptr, 'i'},
       {"help", no_argument, nullptr, 'h'},
       {nullptr, 0, nullptr, 0}};
 
   int optionIndex = 0;
   int option;
-    while ((option = getopt_long(argc, argv, "m:c:d:v:p:i:h", longOptions,
+    while ((option = getopt_long(argc, argv, "m:c:d:v:p:h", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -1268,9 +1296,6 @@ void processArguments(int argc, char *argv[], std::string &model_path,
       case 'p':
         prompt = optarg;
         has_prompt = true;
-        break;
-      case 'i':
-        media_path = optarg;
         break;
       case 'h':
         Usage();
@@ -1291,11 +1316,10 @@ int main(int argc, char *argv[]) {
   int dev_id = 0;
   float video_ratio = 0.25f; // Default video ratio is 0.25
   std::string prompt;
-  std::string media_path;
   bool has_prompt = false;
 
   processArguments(argc, argv, model_path, config_path, image_path, dev_id,
-                   video_ratio, prompt, media_path, has_prompt);
+                   video_ratio, prompt, has_prompt);
   if (model_path.empty() || config_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);
@@ -1307,6 +1331,12 @@ int main(int argc, char *argv[]) {
                     system_prompt);
   if (has_prompt) {
     // Programmatic (non-interactive) mode: exit after running inference once
+    std::string media_path = extractMedia(prompt);
+    if (media_path.find(',') != std::string::npos) {
+      std::cout << "Only one media file is supported, using the first."
+                << std::endl;
+      media_path = media_path.substr(0, media_path.find(','));
+    }
     pipeline.run_once(prompt, media_path);
   } else {
     pipeline.chat();

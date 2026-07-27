@@ -18,6 +18,7 @@
 #include <iostream>
 #include <memory.h>
 #include <random>
+#include <sstream>
 #include <tokenizers-cpp/tokenizers_cpp.h>
 #include <vector>
 
@@ -36,6 +37,32 @@ using tokenizers::Tokenizer;
 
 static const int VISION_PAD_TOKEN = 151654;
 static const int IMAGE_PAD_TOKEN = 151655;
+
+// Extract "@path" media tokens from the question; returns the media paths
+// joined with ',' and removes the tokens from input_str.
+static std::string extractMedia(std::string &input_str) {
+  std::vector<std::string> medias;
+  std::stringstream ss(input_str);
+  std::string token, question, media_path;
+  while (ss >> token) {
+    if (token.size() > 1 && token[0] == '@') {
+      medias.push_back(token.substr(1));
+    } else {
+      if (!question.empty()) {
+        question += " ";
+      }
+      question += token;
+    }
+  }
+  input_str = question;
+  for (size_t i = 0; i < medias.size(); i++) {
+    if (i > 0) {
+      media_path += ",";
+    }
+    media_path += medias[i];
+  }
+  return media_path;
+}
 
 static inline std::string LoadBytesFromFile(const std::string &path) {
   std::ifstream fs(path, std::ios::in | std::ios::binary);
@@ -467,9 +494,11 @@ void Qwen2VL::chat(std::string image_path) {
   std::cout
       << "================================================================="
       << std::endl
-      << "1. If you want to quit, please enter one of [q, quit, exit]"
+      << "1. If you want to quit, please enter one of [/q, /quit, /exit]"
       << std::endl
-      << "2. To create a new chat session, please enter one of [clear, new]"
+      << "2. To create a new chat session, please enter one of [/clear, /new]"
+      << std::endl
+      << "3. To switch images, include @<image path> in your question"
       << std::endl
       << "================================================================="
       << std::endl;
@@ -477,14 +506,17 @@ void Qwen2VL::chat(std::string image_path) {
     std::cout << "\nQuestion: ";
     std::string input_str;
     std::getline(std::cin, input_str);
-    if (input_str == "exit" || input_str == "q" || input_str == "quit") {
+    if (input_str == "/exit" || input_str == "/q" || input_str == "/quit") {
       break;
     }
-    if (input_str == "clear" || input_str == "new") {
+    if (input_str == "/clear" || input_str == "/new") {
       history_vector = {};
-      std::cout << "\nNew Image Path: ";
-      std::getline(std::cin, image_path);
       continue;
+    }
+    // Switch images with @path in the question
+    std::string media_path = extractMedia(input_str);
+    if (!media_path.empty()) {
+      image_path = media_path;
     }
     std::cout << "\nAnswer: " << std::flush;
     answer(input_str, image_path);

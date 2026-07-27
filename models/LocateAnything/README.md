@@ -108,7 +108,7 @@ cd build && cmake .. && make && cp *cpython* .. && cd ..
 python3 pipeline.py -m /path/to/model.bmodel -c ../config
 ```
 
-In interactive mode, enter a description text and an image path to get the bounding box coordinates. You can also use the `-p` single-inference mode (see the examples below).
+In interactive mode, include `@<path>` in your question to attach an image and get the bounding box coordinates. You can also use the `-p` single-inference mode (see the examples below).
 
 ### Running examples
 
@@ -117,7 +117,7 @@ The following tasks are supported (the prompt templates are consistent with the 
 **Single-object detection / phrase grounding**
 
 ``` shell
-python3 pipeline.py -m model.bmodel -c ../config -p "detect bed" --media_path test.jpg
+python3 pipeline.py -m model.bmodel -c ../config -p "detect bed @test.jpg"
 # token output: <ref>bed</ref><box><0><585><627><998></box>
 # coordinates are normalized values in [0,1000], corresponding to (x1,y1,x2,y2)
 # parsed output (pixel coordinates): [bed] box (0,283)-(401,482)
@@ -129,8 +129,7 @@ Multiple `<box>` entries can be output for one `<ref>`, and multiple categories 
 
 ``` shell
 python3 pipeline.py -m model.bmodel -c ../config \
-  -p "Locate all the instances that matches the following description: bed</c>window</c>pillow" \
-  --media_path test.jpg
+  -p "Locate all the instances that matches the following description: bed</c>window</c>pillow @test.jpg"
 # parsed output (keeping ref associations: 1 bed box, 1 window box, 16 pillow boxes):
 #   [bed] box (0,283)-(401,482)
 #   [window] box (259,36)-(394,226)
@@ -143,7 +142,7 @@ python3 pipeline.py -m model.bmodel -c ../config \
 Outputs 2 coordinates (x, y):
 
 ``` shell
-python3 pipeline.py -m model.bmodel -c ../config -p "Point to: bed" --media_path test.jpg
+python3 pipeline.py -m model.bmodel -c ../config -p "Point to: bed @test.jpg"
 # token output: <ref>bed</ref><box><333><811></box>
 # parsed output (pixel coordinates): [bed] point (213,392)
 ```

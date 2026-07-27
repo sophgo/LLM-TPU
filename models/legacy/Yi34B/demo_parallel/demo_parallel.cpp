@@ -452,7 +452,7 @@ void Yi::chat() {
     std::cout << "\nQuestion: ";
     std::string input_str;
     std::getline(std::cin, input_str);
-    if (input_str == "exit") {
+    if (input_str == "/exit") {
       break;
     }
 

@@ -90,11 +90,11 @@ python3 pipeline.py -m minicpm-v-4.6.bmodel -c ../config
 
 # Single inference mode (image)
 python3 pipeline.py -m minicpm-v-4.6.bmodel -c ../config \
-    --prompt "Describe this image" --media_path test.jpg
+    --prompt "Describe this image @test.jpg"
 
 # Single inference mode (video)
 python3 pipeline.py -m minicpm-v-4.6.bmodel -c ../config \
-    --prompt "Describe what happened in the video" --media_path test.mp4
+    --prompt "Describe what happened in the video @test.mp4"
 ```
 
 ### CLI Parameters
@@ -107,9 +107,7 @@ python3 pipeline.py -m minicpm-v-4.6.bmodel -c ../config \
 | `--downsample_mode` | `16x` | ViT downsampling mode, either `4x` or `16x` |
 | `--max_slice_nums` | None | Maximum number of image slices. If not specified, the default is 36 for images and 1 for videos; if specified, it applies uniformly |
 | `--max_num_frames` | `16` | Maximum number of sampled video frames |
-| `-p, --prompt` | None | Enter single inference mode when specified |
-| `-t, --prompt_file` | None | Load the prompt from a file |
-| `--media_path` | Empty | Image or video path, used together with `--prompt` |
+| `-p, --prompt` | None | Enter single inference mode when specified; include `@<path>` to attach an image or video, or to read prompt text from a `.txt`/`.md` file |
 
 ## Advanced Applications
 

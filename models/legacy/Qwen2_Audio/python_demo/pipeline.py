@@ -91,24 +91,28 @@ class Qwen2Audio():
         """
         # Instruct
         print("""\n=================================================================
-                1. If you want to quit, please enter one of [q, quit, exit]
-                2. To create a new chat session, please enter one of [clear, new]
+                1. If you want to quit, please enter one of [/q, /quit, /exit]
+                2. To create a new chat session, please enter one of [/clear, /new]
+                3. To transcribe audio, include @<audio path> in your question
                 =================================================================""")
         
         greedy = GreedyHead()
-        # Stop Chatting with "exit" input
+        # Stop Chatting with "/exit" input
         while True:
             self.input_str = input("\nQuestion: ")
             # Quit
-            if self.input_str in ["exit", "q", "quit"]:
+            if self.input_str in ["/exit", "/q", "/quit"]:
                 break
             
-            media_path = input("\naudios path: ")
+            # Audio files are attached with @path in the question
+            tokens = self.input_str.split()
+            media_paths = [t[1:] for t in tokens if t.startswith("@") and len(t) > 1]
+            self.input_str = " ".join(t for t in tokens if not (t.startswith("@") and len(t) > 1))
+            media_path = media_paths[0] if media_paths else ''
             if media_path == '':
                 media_path = 'https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen2-Audio/audio/translate_to_chinese.wav'
             if self.input_str == '':
                 self.input_str = "What does the person say?"
-            media_path = media_path.strip()
             messages = self.audio_message(self.input_str, media_path)
             import time
             t1 = time.time()

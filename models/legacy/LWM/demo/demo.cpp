@@ -426,7 +426,7 @@ void LWM::chat() {
     std::string input_str;
     std::getline(std::cin, input_str);
     std::string sys_config = "You are a helpful assistant. USER: ";
-    if (input_str == "exit") {
+    if (input_str == "/exit") {
       break;
     }
 

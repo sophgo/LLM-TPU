@@ -419,9 +419,9 @@ void Qwen2::chat() {
   std::cout
       << "================================================================="
       << std::endl
-      << "1. If you want to quit, please enter one of [q, quit, exit]"
+      << "1. If you want to quit, please enter one of [/q, /quit, /exit]"
       << std::endl
-      << "2. To create a new chat session, please enter one of [clear, new]"
+      << "2. To create a new chat session, please enter one of [/clear, /new]"
       << std::endl
       << "================================================================="
       << std::endl;
@@ -429,10 +429,10 @@ void Qwen2::chat() {
     std::cout << "\nQuestion: ";
     std::string input_str;
     std::getline(std::cin, input_str);
-    if (input_str == "exit" || input_str == "q" || input_str == "quit") {
+    if (input_str == "/exit" || input_str == "/q" || input_str == "/quit") {
       break;
     }
-    if (input_str == "clear" || input_str == "new") {
+    if (input_str == "/clear" || input_str == "/new") {
       history_vector = {};
       continue;
     }

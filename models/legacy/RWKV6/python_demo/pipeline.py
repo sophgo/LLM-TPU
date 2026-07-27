@@ -83,7 +83,7 @@ Assistant:
     print()
     while True:
         input_str = input("输入文本:\n")
-        if input_str != "exit" or input_str != "q":
+        if input_str != "/exit" or input_str != "/q":
             model.test(input_str)
 
     # model.chat()

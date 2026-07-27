@@ -976,8 +976,8 @@ std::vector<int> ChatPipe::encode_input(const std::string &sentence_input) {
 void ChatPipe::print_chat_instructions() {
   std::cout
       << "\n=================================================================\n"
-      << "1. If you want to quit, please enter one of [q, quit, exit]\n"
-      << "2. To create a new chat session, please enter one of [clear, new]\n"
+      << "1. If you want to quit, please enter one of [/q, /quit, /exit]\n"
+      << "2. To create a new chat session, please enter one of [/clear, /new]\n"
       << "=================================================================\n";
 }
 

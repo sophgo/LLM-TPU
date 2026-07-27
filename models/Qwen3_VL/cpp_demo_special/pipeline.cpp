@@ -709,6 +709,32 @@ static std::vector<std::string> splitString(const std::string &s) {
   return result;
 }
 
+// Extract "@path" media tokens from the question; returns the media paths
+// joined with ',' and removes the tokens from input_str.
+static std::string extractMedia(std::string &input_str) {
+  std::vector<std::string> medias;
+  std::stringstream ss(input_str);
+  std::string token, question, media_path;
+  while (ss >> token) {
+    if (token.size() > 1 && token[0] == '@') {
+      medias.push_back(token.substr(1));
+    } else {
+      if (!question.empty()) {
+        question += " ";
+      }
+      question += token;
+    }
+  }
+  input_str = question;
+  for (size_t i = 0; i < medias.size(); i++) {
+    if (i > 0) {
+      media_path += ",";
+    }
+    media_path += medias[i];
+  }
+  return media_path;
+}
+
 // Main chat loop
 void ChatPipe::chat() {
   using clock = std::chrono::steady_clock;
@@ -721,16 +747,16 @@ void ChatPipe::chat() {
     std::cout << "\nQuestion: ";
     std::getline(std::cin, input_str);
     input_str = strip(input_str);
-    if (input_str == "exit" || input_str == "q" || input_str == "quit") {
+    if (input_str == "/exit" || input_str == "/q" || input_str == "/quit") {
       break;
     }
-    if (input_str == "clear" || input_str == "c" || input_str == "new") {
+    if (input_str == "/clear" || input_str == "/c" || input_str == "/new") {
       model.clear_history();
       history_max_posid = 0;
       std::cout << "Chat history cleared." << std::endl;
       continue;
     }
-    if (input_str == "lora_load") {
+    if (input_str == "/lora_load") {
       if (lora_dir.empty()) {
         std::cerr << "LoRA directory not specified during initialization."
                   << std::endl;
@@ -746,15 +772,13 @@ void ChatPipe::chat() {
                 << std::endl;
       continue;
     }
-    if (input_str == "lora_clear") {
+    if (input_str == "/lora_clear") {
       model.lora_clear();
       std::cout << "LoRA cleared." << std::endl;
       continue;
     }
 
-    std::string media_path;
-    std::cout << "\nImage or Video Path: ";
-    std::getline(std::cin, media_path);
+    std::string media_path = extractMedia(input_str);
     auto medias = splitString(media_path);
     auto media_type = get_media_type(medias);
     if (media_type == ChatPipe::UNKNOWN) {
@@ -1067,8 +1091,9 @@ void ChatPipe::print_chat_instructions() {
   std::cout
       << "\n================================================================="
          "\n"
-      << "1. If you want to quit, please enter one of [q, quit, exit]\n"
-      << "2. To create a new chat session, please enter one of [clear, new]\n"
+      << "1. If you want to quit, please enter one of [/q, /quit, /exit]\n"
+      << "2. To create a new chat session, please enter one of [/clear, /new]\n"
+      << "3. To ask about an image or video, include @<path> in your question\n"
       << "================================================================="
          "\n";
 }

@@ -118,8 +118,11 @@ llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-4B-int4-AutoRound -s 8192 -c bm1684
 Both cpp_demo and python_demo support it. Type clear to clear the history.
 As follows:
 ```
-./pipeline -m qwen3.5_xxxx.bmodel -c config --prompt_file story.txt --prompt "what is it talking about ?"
+./pipeline -m qwen3.5_xxxx.bmodel -c config --prompt "@story.txt what is it talking about ?"
 ```
+
+A `@<path>` token ending in `.txt` or `.md` is replaced inline with the file's
+contents; any other `@<path>` attaches an image or video.
 
 
 ## FAQ

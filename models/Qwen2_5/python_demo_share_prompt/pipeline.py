@@ -80,14 +80,14 @@ class Qwen():
         """
         # Instruct
         print("""\n=================================================================
-1. If you want to quit, please enter one of [q, quit, exit]
-2. To create a new chat session, please enter one of [clear, new]
+1. If you want to quit, please enter one of [/q, /quit, /exit]
+2. To create a new chat session, please enter one of [/clear, /new]
 =================================================================""")
-        # Stop Chatting with "exit" input
+        # Stop Chatting with "/exit" input
         while True:
             input_str = input("\nQuestion: ")
             # Quit
-            if input_str in ["exit", "q", "quit"]:
+            if input_str in ["/exit", "/q", "/quit"]:
                 break
             # Chat
             tokens = self.tokenizer(input_str).input_ids

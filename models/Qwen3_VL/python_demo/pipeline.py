@@ -406,30 +406,44 @@ class Qwen3_VL():
         """
         # Instruct
         print("""\n=================================================================
-1. If you want to quit, please enter one of [q, quit, exit]
-2. To create a new chat session, please enter one of [clear, new]
+1. If you want to quit, please enter one of [/q, /quit, /exit]
+2. To create a new chat session, please enter one of [/clear, /new]
+3. To ask about an image or video, include @<path> in your question
 =================================================================""")
-        # Stop Chatting with "exit" input
+        # Stop Chatting with "/exit" input
         while True:
             input_str = input("\nQuestion: ")
             # Quit
-            if input_str in ["exit", "q", "quit"]:
+            if input_str in ["/exit", "/q", "/quit"]:
                 break
-            if input_str in ["clear", "new", "c"]:
+            if input_str in ["/clear", "/new", "/c"]:
                 print("New chat session created.")
                 self.model.clear_history()
                 self.history_max_posid = 0
                 continue
 
-            media_path = input("\nImage or Video Path: ")
+            # Media files are attached with @path in the question
+            input_str, media_path = extract_media(input_str)
             self.run_once(input_str, media_path)
+
+
+def extract_media(input_str):
+    """Split @<path> media attachments out of the input text."""
+    tokens = input_str.split()
+    media_paths = [t[1:] for t in tokens if t.startswith("@") and len(t) > 1]
+    input_str = " ".join(t for t in tokens if not (t.startswith("@") and len(t) > 1))
+    if len(media_paths) > 1:
+        print("Only one media file is supported, using: {}".format(media_paths[0]))
+    media_path = media_paths[0] if media_paths else ""
+    return input_str, media_path
 
 
 def main(args):
     model = Qwen3_VL(args)
     if args.prompt is not None:
         # Programmatic (non-interactive) mode: run once and exit.
-        model.run_once(args.prompt, args.media_path)
+        prompt, media_path = extract_media(args.prompt)
+        model.run_once(prompt, media_path)
     else:
         model.chat()
 
@@ -444,9 +458,7 @@ if __name__ == "__main__":
     parser.add_argument('--video_ratio', type=float, default=0.25, help='Set video ratio, default is 0.25')
     parser.add_argument('-d', '--devid', type=int, default=0, help='device ID to use')
     parser.add_argument('-p', '--prompt', type=str, default=None,
-                        help='If set, run programmatically (non-interactive): a single inference is performed using this prompt and then the program exits.')
-    parser.add_argument('--media_path', type=str, default="",
-                        help='Path to an image or video for programmatic mode (used together with --prompt). Leave empty for text-only.')
+                        help='If set, run programmatically (non-interactive): a single inference is performed using this prompt and then the program exits. Include @<path> to attach an image or video.')
     # yapf: enable
     args = parser.parse_args()
     main(args)

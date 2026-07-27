@@ -105,15 +105,15 @@ mkdir build && cd build && cmake .. && make -j4 && cp *cpython* .. && cd ..
 
 ``` shell
 python3 pipeline.py -m falcon-perception.bmodel -c ../config \
-  -q "the bed" --media_path test.jpg
+  -q "the bed @test.jpg"
 ```
 
-**Interactive mode** (without `-q`): enter the Query and Image Path in turn; type `exit` to quit.
+**Interactive mode** (without `-q`): enter the query; attach an image by including `@<path>` in the query; type `exit` to quit.
 
 ### Example run
 
 ``` shell
-python3 pipeline.py -m ../falcon-perception_bf16_flex.bmodel -c ../config -q "the bed" --media_path test.jpg
+python3 pipeline.py -m ../falcon-perception_bf16_flex.bmodel -c ../config -q "the bed @test.jpg"
 # [info] tokens=210  img_tokens=192
 # Answer:
 # <|presence|>
@@ -141,8 +141,7 @@ The pipeline performs full post-processing on the raw 256×256 mask logits (alig
 | `-m` / `--model_path` | (required) | Path to the bmodel |
 | `-c` / `--config_path` | `../config` | Model config directory (config.json + custom processor + falcon_extra_weights.npz) |
 | `-d` / `--devid` | `0` | TPU device ID |
-| `-q` / `--query` | `None` | If set, runs a single inference and exits; if not set, enters interactive mode |
-| `--media_path` | `""` | Image path (single inference mode) |
+| `-q` / `--query` | `None` | If set, runs a single inference and exits; if not set, enters interactive mode. Include `@<path>` to attach an image |
 
 ## Technical notes
 

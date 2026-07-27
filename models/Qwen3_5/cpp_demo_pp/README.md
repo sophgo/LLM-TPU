@@ -155,16 +155,14 @@ If a `block_kv_<idx>` network is detected at startup, `History Support: True` is
 
 | Parameter | Description |
 | --- | --- |
-| `-p, --prompt` | Run a single inference in programmatic mode with the given prompt text |
-| `-t, --prompt_file` | Read content from a text file as the prompt; concatenated when used together with `-p` |
-| `-i, --media_path` | Specify image/video paths (comma-separated for multiple) |
+| `-p, --prompt` | Run a single inference in programmatic mode with the given prompt text; include `@<path>` to attach image/video (repeat for multiple), or to read prompt text from a `.txt`/`.md` file |
 
 Example:
 
 ```bash
 # read long text from a file and ask a question
 ./pipeline -m /path/to/qwen3.5_kv -c config -d 8,9,10,11 \
-    -t novel.txt -p "what is it talking about ?"
+    -p "@novel.txt what is it talking about ?"
 
 # pass in only the prompt text
 ./pipeline -m /path/to/qwen3.5_kv -c config -d 8,9,10,11 \

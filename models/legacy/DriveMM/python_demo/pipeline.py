@@ -116,25 +116,31 @@ class Model():
         # Instruct
         print(
             """\n=================================================================
-1. If you want to quit, please enter one of [q, quit, exit]
-2. To create a new chat session, please enter one of [clear, new]
+1. If you want to quit, please enter one of [/q, /quit, /exit]
+2. To create a new chat session, please enter one of [/clear, /new]
+3. To ask about an image or video, include @<path> in your question
 =================================================================""")
-        # Stop Chatting with "exit" input
+        # Stop Chatting with "/exit" input
         while True:
             self.input_str = input("\nQuestion: ")
             # Quit
-            if self.input_str in ["exit", "q", "quit"]:
+            if self.input_str in ["/exit", "/q", "/quit"]:
                 break
 
-            image_or_video_str = input("\nImage or Video Path: ")
+            # Media files are attached with @path in the question
+            tokens = self.input_str.split()
+            media_paths = [t[1:] for t in tokens if t.startswith("@") and len(t) > 1]
+            self.input_str = " ".join(t for t in tokens if not (t.startswith("@") and len(t) > 1))
+            if not media_paths:
+                print("Please attach an image or video with @<path>")
+                continue
+            image_or_video_str = media_paths[0]
             if not os.path.exists(image_or_video_str):
                 print("Can't find image or video: {}".format(image_or_video_str))
                 continue
 
-            image_or_video_type = input("\nImage or Video Type: ")
-            if image_or_video_type not in ["image", "video"]:
-                print("The type you input is: {}, not image or video".format(image_or_video_type))
-                continue
+            image_or_video_type = "video" if image_or_video_str.lower().endswith(
+                (".mp4", ".avi", ".mov", ".mkv")) else "image"
             input_ids, image_tensors = self.process(image_or_video_str, image_or_video_type)
             print("\nAnswer:")
 

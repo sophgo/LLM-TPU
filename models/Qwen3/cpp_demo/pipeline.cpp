@@ -9,6 +9,8 @@
 
 #include "chat.hpp"
 #include "tokenizers-cpp/tokenizers_cpp.h"
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <fstream>
 #include <getopt.h>
@@ -33,6 +35,55 @@ static inline std::string LoadBytesFromFile(const std::string &path) {
   data.resize(size);
   fs.read(data.data(), size);
   return data;
+}
+
+// Read a @-referenced .txt/.md file and return its contents.
+static std::string readPromptFile(const std::string &path) {
+  std::ifstream fs(path, std::ios::in | std::ios::binary);
+  if (fs.fail()) {
+    std::cerr << "Cannot open prompt file [ " << path << " ]" << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  std::ostringstream oss;
+  oss << fs.rdbuf();
+  std::string content = oss.str();
+  // Trim trailing newlines so the file behaves like a typed prompt.
+  while (!content.empty() &&
+         (content.back() == '\n' || content.back() == '\r')) {
+    content.pop_back();
+  }
+  return content;
+}
+
+// Whether a @-referenced path points to a prompt text file (.txt/.md).
+static bool isPromptFilePath(const std::string &path) {
+  std::string lower = path;
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+  auto endsWith = [&lower](const std::string &suffix) {
+    return lower.size() >= suffix.size() &&
+           lower.compare(lower.size() - suffix.size(), suffix.size(),
+                         suffix) == 0;
+  };
+  return endsWith(".txt") || endsWith(".md");
+}
+
+// Replace each @<path> token pointing to a .txt/.md file with the file's
+// contents; all other tokens are kept as-is.
+static std::string expandPromptFiles(const std::string &input_str) {
+  std::stringstream ss(input_str);
+  std::string token, result;
+  while (ss >> token) {
+    if (token.size() > 1 && token[0] == '@' &&
+        isPromptFilePath(token.substr(1))) {
+      token = readPromptFile(token.substr(1));
+    }
+    if (!result.empty()) {
+      result += " ";
+    }
+    result += token;
+  }
+  return result;
 }
 
 class ChatPipe {
@@ -178,9 +229,12 @@ void ChatPipe::chat() {
   std::cout
       << "================================================================="
       << std::endl
-      << "1. If you want to quit, please enter one of [q, quit, exit]"
+      << "1. If you want to quit, please enter one of [/q, /quit, /exit]"
       << std::endl
-      << "2. To create a new chat session, please enter one of [clear, new]"
+      << "2. To create a new chat session, please enter one of [/clear, /new]"
+      << std::endl
+      << "3. To use the contents of a .txt or .md file as your question, "
+         "include @<path>"
       << std::endl
       << "================================================================="
       << std::endl;
@@ -188,10 +242,10 @@ void ChatPipe::chat() {
     std::cout << "\nQuestion: ";
     std::string input_str;
     std::getline(std::cin, input_str);
-    if (input_str == "exit" || input_str == "q" || input_str == "quit") {
+    if (input_str == "/exit" || input_str == "/q" || input_str == "/quit") {
       break;
     }
-    if (input_str == "clear" || input_str == "new") {
+    if (input_str == "/clear" || input_str == "/new") {
       history_vector = {};
       model.history_length = 0;
       model.clear_kv();
@@ -199,7 +253,7 @@ void ChatPipe::chat() {
       continue;
     }
     std::cout << "\nAnswer: " << std::flush;
-    answer(input_str);
+    answer(expandPromptFiles(input_str));
     std::cout << std::endl;
   }
 }
@@ -213,11 +267,8 @@ void Usage() {
          "  -s, --do_sample : if set, sample by generation config\n"
          "  -d, --devid     : Set devices to run for model, default is '0'\n"
          "  -p, --prompt    : Programmatic mode prompt; if set, run a single\n"
-         "                    inference and exit (non-interactive)\n"
-         "  -t, --prompt_file : Path to a text file whose contents are used as the\n"
-         "                    programmatic mode prompt. If --prompt is also set,\n"
-         "                    the file contents come first, followed by the\n"
-         "                    --prompt value (combined with a newline)\n"
+         "                    inference and exit (non-interactive). Include\n"
+         "                    @<path> to read prompt text from a .txt/.md file\n"
          "  -w, --rep_window: Sliding window size for repetition penalty; only\n"
          "                    the last N tokens are penalized. 64 (default);\n"
          "                    0 penalizes the full context. Only used with -s\n");
@@ -226,15 +277,13 @@ void Usage() {
 void processArguments(int argc, char *argv[], std::string &model_path,
                       std::string &config_path, std::vector<int> &devices,
                       bool &enable_history, bool &do_sample,
-                      std::string &prompt, bool &has_prompt,
-                      std::string &prompt_file, int &rep_window) {
+                      std::string &prompt, bool &has_prompt, int &rep_window) {
   struct option longOptions[] = {{"model", required_argument, nullptr, 'm'},
                                  {"config", required_argument, nullptr, 'c'},
                                  {"devid", required_argument, nullptr, 'd'},
                                  {"enable_history", no_argument, nullptr, 'e'},
                                  {"do_sample", no_argument, nullptr, 's'},
                                  {"prompt", required_argument, nullptr, 'p'},
-                                 {"prompt_file", required_argument, nullptr, 't'},
                                  {"rep_window", required_argument, nullptr, 'w'},
                                  {"help", no_argument, nullptr, 'h'},
                                  {nullptr, 0, nullptr, 0}};
@@ -242,7 +291,7 @@ void processArguments(int argc, char *argv[], std::string &model_path,
   int optionIndex = 0;
   int option;
 
-  while ((option = getopt_long(argc, argv, "m:c:d:p:t:w:esh", longOptions,
+  while ((option = getopt_long(argc, argv, "m:c:d:p:w:esh", longOptions,
                                &optionIndex)) != -1) {
     switch (option) {
     case 'm':
@@ -262,10 +311,6 @@ void processArguments(int argc, char *argv[], std::string &model_path,
       break;
     case 'p':
       prompt = optarg;
-      has_prompt = true;
-      break;
-    case 't':
-      prompt_file = optarg;
       has_prompt = true;
       break;
     case 'w':
@@ -288,40 +333,19 @@ int main(int argc, char **argv) {
   bool enable_history = false;
   bool do_sample = false;
   std::string prompt;
-  std::string prompt_file;
   bool has_prompt = false;
   int rep_window = 64;
 
   processArguments(argc, argv, model_path, config_path, devices, enable_history,
-                   do_sample, prompt, has_prompt, prompt_file, rep_window);
+                   do_sample, prompt, has_prompt, rep_window);
   if (model_path.empty()) {
     Usage();
     exit(EXIT_FAILURE);
   }
 
-  // If --prompt_file was provided, load the prompt text from that file. If
-  // --prompt is also given, the file contents come first and the --prompt
-  // value is appended afterwards so that the two can be combined.
-  if (has_prompt && !prompt_file.empty()) {
-    std::ifstream fs(prompt_file, std::ios::in | std::ios::binary);
-    if (fs.fail()) {
-      std::cerr << "Cannot open prompt file [ " << prompt_file << " ]"
-                << std::endl;
-      exit(EXIT_FAILURE);
-    }
-    std::ostringstream oss;
-    oss << fs.rdbuf();
-    std::string file_prompt = oss.str();
-    // Trim a trailing newline so the file behaves like a CLI-supplied prompt.
-    while (!file_prompt.empty() &&
-           (file_prompt.back() == '\n' || file_prompt.back() == '\r')) {
-      file_prompt.pop_back();
-    }
-    if (prompt.empty()) {
-      prompt = file_prompt;
-    } else {
-      prompt = file_prompt + "\n" + prompt;
-    }
+  // Expand @<path> tokens that reference .txt/.md prompt files.
+  if (has_prompt) {
+    prompt = expandPromptFiles(prompt);
   }
 
   std::string system_prompt = "You are a helpful assistant.";

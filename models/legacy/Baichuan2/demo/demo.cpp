@@ -320,10 +320,10 @@ void Baichuan2::chat() {
     std::getline(std::cin, input_str);
     std::string user_token = "<reserved_106>";     // user token id 195
     std::string assitant_token = "<reserved_107>"; // assistant token id 196
-    if (input_str == "exit") {
+    if (input_str == "/exit") {
       break;
     }
-    if (input_str == "clear") {
+    if (input_str == "/clear") {
       history.clear();
       continue;
     }

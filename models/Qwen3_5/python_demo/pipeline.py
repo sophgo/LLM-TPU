@@ -407,30 +407,70 @@ class Qwen3_5():
         """
         # Instruct
         print("""\n=================================================================
-1. If you want to quit, please enter one of [q, quit, exit]
-2. To create a new chat session, please enter one of [clear, new]
+1. If you want to quit, please enter one of [/q, /quit, /exit]
+2. To create a new chat session, please enter one of [/clear, /new]
+3. To ask about an image or video, include @<path> in your question
+4. To use the contents of a .txt or .md file as your question, include @<path>
 =================================================================""")
-        # Stop Chatting with "exit" input
+        # Stop Chatting with "/exit" input
         while True:
             input_str = input("\nQuestion: ")
             # Quit
-            if input_str in ["exit", "q", "quit"]:
+            if input_str in ["/exit", "/q", "/quit"]:
                 break
-            if input_str in ["clear", "new", "c"]:
+            if input_str in ["/clear", "/new", "/c"]:
                 print("New chat session created.")
                 self.model.clear_history()
                 self.history_max_posid = 0
                 continue
 
-            media_path = input("\nImage or Video Path: ")
+            # Media files are attached with @path in the question
+            input_str, media_path = extract_media(input_str)
             self.run_once(input_str, media_path)
+
+
+def read_prompt_file(path):
+    """Read a @-referenced .txt/.md file and return its contents."""
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except OSError as e:
+        print(f"Cannot open prompt file [ {path} ]: {e}")
+        sys.exit(1)
+    # Trim trailing newlines so the file behaves like a typed prompt.
+    return content.rstrip('\r\n')
+
+
+def extract_media(input_str):
+    """Split @<path> attachments out of the input text.
+
+    An @<path> ending in .txt or .md is read as prompt text and replaces the
+    token inline; any other @<path> is treated as an image/video attachment.
+    """
+    media_paths = []
+    text_tokens = []
+    for t in input_str.split():
+        if t.startswith("@") and len(t) > 1:
+            path = t[1:]
+            if path.lower().endswith((".txt", ".md")):
+                text_tokens.append(read_prompt_file(path))
+            else:
+                media_paths.append(path)
+        else:
+            text_tokens.append(t)
+    input_str = " ".join(text_tokens)
+    if len(media_paths) > 1:
+        print("Only one media file is supported, using: {}".format(media_paths[0]))
+    media_path = media_paths[0] if media_paths else ""
+    return input_str, media_path
 
 
 def main(args):
     model = Qwen3_5(args)
     if args.prompt is not None:
         # Programmatic (non-interactive) mode: run once and exit.
-        model.run_once(args.prompt, args.media_path)
+        prompt, media_path = extract_media(args.prompt)
+        model.run_once(prompt, media_path)
     else:
         model.chat()
 
@@ -445,27 +485,7 @@ if __name__ == "__main__":
     parser.add_argument('--video_ratio', type=float, default=0.25, help='Set video ratio, default is 0.25')
     parser.add_argument('-d', '--devid', type=int, default=0, help='device ID to use')
     parser.add_argument('-p', '--prompt', type=str, default=None,
-                        help='If set, run programmatically (non-interactive): a single inference is performed using this prompt and then the program exits.')
-    parser.add_argument('-t', '--prompt_file', type=str, default=None,
-                        help='Path to a text file whose contents are used as the programmatic mode prompt. If --prompt is also set, the file contents come first, followed by the --prompt value (combined with a newline).')
-    parser.add_argument('--media_path', type=str, default="",
-                        help='Path to an image or video for programmatic mode (used together with --prompt). Leave empty for text-only.')
+                        help='If set, run programmatically (non-interactive): a single inference is performed using this prompt and then the program exits. Include @<path> to attach an image or video, or to read prompt text from a .txt/.md file.')
     # yapf: enable
     args = parser.parse_args()
-    # If --prompt_file was provided, load the prompt text from that file. If
-    # --prompt is also given, the file contents come first and the --prompt
-    # value is appended afterwards so that the two can be combined.
-    if args.prompt_file is not None:
-        try:
-            with open(args.prompt_file, 'r', encoding='utf-8') as f:
-                file_prompt = f.read()
-        except OSError as e:
-            print(f"Cannot open prompt file [ {args.prompt_file} ]: {e}")
-            sys.exit(1)
-        # Trim a trailing newline so the file behaves like a CLI-supplied prompt.
-        file_prompt = file_prompt.rstrip('\r\n')
-        if args.prompt is None or args.prompt == "":
-            args.prompt = file_prompt
-        else:
-            args.prompt = file_prompt + "\n" + args.prompt
     main(args)

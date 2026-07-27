@@ -95,17 +95,20 @@ class InternVL2():
         # Instruct
         print(
             """\n=================================================================
-1. If you want to quit, please enter one of [q, quit, exit]
-2. To create a new chat session, please enter one of [clear, new]
+1. If you want to quit, please enter one of [/q, /quit, /exit]
+2. To create a new chat session, please enter one of [/clear, /new]
+3. To ask about images, include one or more @<path> in your question
 =================================================================""")
-        # Stop Chatting with "exit" input
+        # Stop Chatting with "/exit" input
         while True:
             self.input_str = input("\nQuestion: ")
             # Quit
-            if self.input_str in ["exit", "q", "quit"]:
+            if self.input_str in ["/exit", "/q", "/quit"]:
                 break
-            self.image_str = input("\nImage Path: ")
-            self.image_str_list = [img for img in self.image_str.split(",")]
+            # Images are attached with @path in the question
+            tokens = self.input_str.split()
+            self.image_str_list = [t[1:] for t in tokens if t.startswith("@") and len(t) > 1]
+            self.input_str = " ".join(t for t in tokens if not (t.startswith("@") and len(t) > 1))
             print("\nAnswer:")
             image_num = 0
             for image_str in self.image_str_list:

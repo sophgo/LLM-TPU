@@ -74,27 +74,32 @@ class Llama3_2_Vision():
         # Instruct
         print(
 """\n=================================================================
-1. If you want to quit, please enter one of [q, quit, exit]
-2. To create a new chat session, please enter one of [clear, new]
+1. If you want to quit, please enter one of [/q, /quit, /exit]
+2. To create a new chat session, please enter one of [/clear, /new]
+3. To switch images, include @<image path> in your question
 ================================================================="""
 )
-        # Stop Chatting with "exit" input
+        # Stop Chatting with "/exit" input
         while True:
             self.input_str = input("\nQuestion: ")
             # Quit
-            if self.input_str in ["exit", "q", "quit"]:
+            if self.input_str in ["/exit", "/q", "/quit"]:
                 break
             # New Chat
-            elif self.input_str in ["clear", "new"]:
-                image_path = input("\nNew image path:")
-                try:
-                    self.image = Image.open(image_path)
-                    print(f'load new image:"{image_path}"')
-                except:
-                    print(f'load image:"{image_path}" faild, load origin image:"{args.image_path}" instead')
+            elif self.input_str in ["/clear", "/new"]:
                 self.clear()
             # Chat
             else:
+                # Switch images with @path in the question
+                tokens = self.input_str.split()
+                image_paths = [t[1:] for t in tokens if t.startswith("@") and len(t) > 1]
+                self.input_str = " ".join(t for t in tokens if not (t.startswith("@") and len(t) > 1))
+                if image_paths:
+                    try:
+                        self.image = Image.open(image_paths[-1])
+                        print(f'load new image:"{image_paths[-1]}"')
+                    except:
+                        print(f'load image:"{image_paths[-1]}" faild, keep the origin image instead')
                 inputs = self.process_input()
                 tokens = inputs['input_ids']
 

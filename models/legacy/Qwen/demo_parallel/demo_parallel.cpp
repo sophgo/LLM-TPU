@@ -480,10 +480,10 @@ void QwenChat::chat() {
     if (input_str.empty()) {
       continue;
     }
-    if (input_str == "exit" || input_str == "quit") {
+    if (input_str == "/exit" || input_str == "/quit") {
       break;
     }
-    if (input_str == "clear") {
+    if (input_str == "/clear") {
       history.clear();
       continue;
     }

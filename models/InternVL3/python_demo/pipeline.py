@@ -220,22 +220,28 @@ class InternVL3():
         """
         # Instruct
         print("""\n=================================================================
-1. If you want to quit, please enter one of [q, quit, exit]
-2. To create a new chat session, please enter one of [clear, new]
+1. If you want to quit, please enter one of [/q, /quit, /exit]
+2. To create a new chat session, please enter one of [/clear, /new]
+3. To ask about an image or video, include @<path> in your question
 =================================================================""")
-        # Stop Chatting with "exit" input
+        # Stop Chatting with "/exit" input
         while True:
             self.input_str = input("\nQuestion: ")
             # Quit
-            if self.input_str in ["exit", "q", "quit"]:
+            if self.input_str in ["/exit", "/q", "/quit"]:
                 break
-            if self.input_str in ["clear", "new", "c"]:
+            if self.input_str in ["/clear", "/new", "/c"]:
                 print("New chat session created.")
                 self.model.clear_history()
                 continue
 
-            media_path = input("\nImage or Video Path: ")
-            media_path = media_path.strip()
+            # Media files are attached with @path in the question
+            tokens = self.input_str.split()
+            media_paths = [t[1:] for t in tokens if t.startswith("@") and len(t) > 1]
+            self.input_str = " ".join(t for t in tokens if not (t.startswith("@") and len(t) > 1))
+            if len(media_paths) > 1:
+                print("Only one media file is supported, using: {}".format(media_paths[0]))
+            media_path = media_paths[0] if media_paths else ""
             if media_path != "" and not os.path.exists(media_path):
                 print(f"Media file not found: {media_path}")
                 continue
