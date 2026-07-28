@@ -37,6 +37,11 @@ CMake links against `bmrt` / `bmlib` from `/opt/sophon/libsophon-current` and re
 Finds every `CMakeLists.txt` under `models/` (skipping an exclude list) and runs `cmake .. && make -j4` in each.
 
 ### Compile a model to bmodel (requires TPU-MLIR env)
+Before running `llm_convert.py` or any tpu-mlir tool, source the environment:
+```bash
+cd /workspace/llm/tpu-mlir/ && source ./envsetup.sh
+```
+Then:
 ```bash
 llm_convert.py -m /path/to/weights -s 2048 --max_input_length 1024 -c bm1684x -o out_dir
 ```
@@ -51,13 +56,22 @@ python3 eval/eval_qwen3vl.py --model_path <model> --datasets <dataset>   # VLM
 
 ## Repository layout
 
-- `models/` — one directory per supported model. Each typically has:
-  - `README.md`, `run_demo.sh`, `config/` (tokenizer/chat_template/generation_config used at runtime)
+- `models/` — one directory per supported model (Qwen3, Qwen2_5_VL, InternVL3, MiniCPMV4_6, Gemma4, LocateAnything, ...). Each typically has:
+  - `config/` — runtime assets loaded by `pipeline.py` via `transformers`: `config.json` (architecture), `tokenizer.json` / `tokenizer_config.json` / `vocab.json` (tokenization), `generation_config.json` (sampling params), and the chat template. These files are **not** embedded in the bmodel — they must ship alongside it.
   - `python_demo/` — `pipeline.py` (orchestration + tokenization via `transformers`) + `chat.cpp` (pybind11 TPU runtime) + `CMakeLists.txt`
-  - `cpp_demo/` (some models) — standalone C++ demo with bundled libs; builds a `pipeline` binary
-  - variant dirs: `python_demo_parallel` (multi-chip TP), `cpp_demo_pp` (pipeline-parallel), `python_demo_v7` (TPU v7), multiuser / share-prompt / multiimage variants
-- `support/` — reference bmrt headers (`include*/` — **do not include from demos**), replacement runtime libs if the system lib is too old, `tools/` (upload/export_lora), `debug*/` helpers for output mismatches.
-- `harness/` — accuracy benchmark harness over datasets.
+  - `cpp_demo/` (only some models) — standalone C++ demo with bundled `lib_pcie`/`lib_soc`/`include`; either a single `demo.cpp` (newer models) or `pipeline.cpp` + `chat.cpp`/`chat.hpp`; builds a `pipeline` binary linking `bmrt`/`bmlib` + bundled tokenizer libs
+  - variant dirs — each enabled by a specific `llm_convert.py` compile flag:
+
+    | Directory suffix | Compile flag(s) | Purpose |
+    |---|---|---|
+    | `python_demo_parallel` / `cpp_demo_parallel` | `--num_device N` | Multi-chip tensor parallelism |
+    | `python_demo_share_prompt` | `--use_history_kv --chunk_length N` | Reuse history KV cache across turns (forces `--dynamic`) |
+    | `cpp_demo_multiuser` | (runtime only) | Load same model N times, weights shared on chip |
+    | `python_demo_multiimage` | (runtime only) | Batch image processing for VLMs |
+    | `cpp_demo_pp` | `--distribute_strategy pp` | Pipeline parallelism (per-layer distribution) |
+    | `python_demo_v7` | (separate TPU v7 toolchain) | TPU v7 runtime with `tpuv7_*.h` headers |
+- `support/` — `include/` + `include_v7/` (bmrt headers, reference only — **do not include from demos**), `lib_pcie/` + `lib_soc/` (replacement `libbmrt.so`/`libbmlib.so` if the system lib is too old), `tools/` (upload/export_lora), `debug/` + `debug_v7/` (debugging helpers when bmodel output mismatches a reference — copy `cnpy.cpp`/`cnpy.h` into a demo, link `libz`, call `dump_net_to_file` to export net I/O as `.npz` for offline comparison).
+- `harness/` — accuracy benchmark harness over datasets; `task/bmodel_task.py` loads a model's `pipeline.py` `Model` + `chat` module and scores with `tools/indicators.py`.
 - `eval/` — standalone VLM accuracy scripts (CUDA source model vs BM1684X bmodel).
 - `docs/` — `Quick_Start.md`, `FAQ.md`, `LLM_Convert_Pipeline.md`.
 - `run.sh` / `regression/run.sh` — demo launcher / build-all-demos check.
@@ -69,6 +83,20 @@ The bmodels these demos run are produced by `llm_convert.py` in the tpu-mlir rep
 - **Compiler internals** (dispatch, flag semantics, quant detection, gotchas): the `tpu-mlir-llm-converter` skill.
 - **bmodel ↔ demo contract** (net names, I/O shapes, `config/` contents, which compile flag enables which runtime feature): [docs/LLM_Convert_Pipeline.md](docs/LLM_Convert_Pipeline.md). Consult it before adding a model, changing demo net I/O, or debugging a bmodel/demo mismatch.
 - **Source of truth** for any flag: `/workspace/tpu-mlir/python/tools/llm_convert.py`.
+
+## Adding a new model
+
+The typical flow for porting a new LLM/VLM:
+
+1. **Check the compiler supports it**: look up `model_type` (from the HF `config.json`) in the dispatch table in [docs/LLM_Convert_Pipeline.md](docs/LLM_Convert_Pipeline.md) — or check `/workspace/tpu-mlir/python/llm/*Converter.py` for existing converter classes. If no converter exists, one must be added to tpu-mlir first.
+2. **Compile a bmodel**: `llm_convert.py -m /path/to/weights -s <seq_len> -c <chip> -q <quantize>`. The converter emits the bmodel + `config/` dir.
+3. **Write the demo**: copy the closest existing model's `python_demo/` (and optionally `cpp_demo/`) and adapt:
+   - `chat.cpp` — adjust net names, I/O shapes, and any model-specific logic (e.g. ViT encoding for VLMs, rotary embedding differences) to match what the converter emitted.
+   - `pipeline.py` — adjust prompt construction, tokenization, and (for VLMs) image/video preprocessing to match the model's expected input format.
+   - `CMakeLists.txt` — usually just change the project name.
+4. **Verify** by diffing against a known-good reference (e.g. the model's `cpp_demo/` or a previously ported model with the same architecture).
+
+The `/llm-porting` skill can bootstrap a new model template.
 
 ## Architecture notes
 
@@ -88,5 +116,5 @@ The bmodels these demos run are produced by `llm_convert.py` in the tpu-mlir rep
 - **English refinement:** Users are mostly non-native English speakers. When the user's input or a description contains awkward or incorrect English, render the corresponding output (reports, docs, commit messages) in clear, natural English rather than mirroring the broken phrasing. If the user's English is already correct, preserve it as-is.
 - **No compiling:** Do not try to compile this project (no `cmake`/`make`, `regression/run.sh`, or syntax-check builds) — this environment has no SOPHGO toolchain or TPU hardware. Verify C++ changes by reviewing and diffing against reference code (e.g. a model's `cpp_demo`) instead.
 - **No auto-commit:** When making code fixes, do not `git commit` them directly. Leave the changes in the working tree for the user to review and commit themselves.
-- **Preserve file ownership:** Do not change file ownership. Edits made through the Edit/Write tools run as root and silently change the edited file's owner to `root` — after editing, copying, moving, or regenerating any file, restore its original owner (repo files are uid/gid 1018; verify against untouched neighbors with `ls -l`), e.g. `chown 1018:1018 <files>`.
+- **Preserve file ownership:** Do not change file ownership. Edits made through the Edit/Write tools run as root and silently change the edited file's owner to `root` — after editing, copying, moving, or regenerating any file, restore its original owner (repo files are uid/gid 1001; verify against untouched neighbors with `ls -l`), e.g. `chown 1001:1001 <files>`.
 - **Remember in CLAUDE.md:** When the user asks to remember something (a rule, preference, or lesson learned), always record it in this `CLAUDE.md` so it persists in the repo for every session — not in private/session-only memory.
