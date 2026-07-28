@@ -59,7 +59,7 @@ python3 eval/eval_qwen3vl.py --model_path <model> --datasets <dataset>   # VLM
 - `support/` — reference bmrt headers (`include*/` — **do not include from demos**), replacement runtime libs if the system lib is too old, `tools/` (upload/export_lora), `debug*/` helpers for output mismatches.
 - `harness/` — accuracy benchmark harness over datasets.
 - `eval/` — standalone VLM accuracy scripts (CUDA source model vs BM1684X bmodel).
-- `docs/` — `Quick_Start.md`, `FAQ.md`, `LLM_Convert_Pipeline.md`.
+- `docs/` — `FAQ.md`, `LLM_Convert_Pipeline.md`.
 - `run.sh` / `regression/run.sh` — demo launcher / build-all-demos check.
 
 ## tpu-mlir converter relationship

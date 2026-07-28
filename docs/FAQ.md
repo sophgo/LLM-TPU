@@ -36,12 +36,14 @@ When the BM1684X environment has no Internet access, how do I run a large langua
 1. On an Internet-connected host machine, run the following commands:
    ```bash
    git clone https://github.com/sophgo/LLM-TPU.git
-   ./run.sh --model llama2-7b
+   cd LLM-TPU
+   ./run.sh --model qwen3
    ```
-2. Copy all files of `LLM-TPU` to the Airbox, including `LLM-TPU/models` and `LLM-TPU/deploy`.
-3. On the Airbox, run the following command:
+   This downloads the pre-compiled bmodel into the model's directory under `models/`.
+2. Copy the whole `LLM-TPU` directory (including the downloaded bmodels under `models/`) to the offline device, e.g. the Airbox.
+3. On the device, run the same command:
    ```bash
-   ./run.sh --model llama2-7b
+   ./run.sh --model qwen3
    ```
 
 ---
@@ -81,16 +83,12 @@ echo "setr vpll_clock 100000000"> /sys/kernel/debug/top/clock
 echo 3 > /proc/sys/vm/drop_caches
 ```
 
-**Method 3:** Data format issue; switch between the `fp16` and `bf16` formats:
-1. If `quantize_args` in `compile.sh` is:
+**Method 3:** Data format issue; switch between the `bf16` and `f16` compute formats by recompiling with `llm_convert.py`:
+1. If the bmodel was compiled with `-q w4bf16` (or the source quantization resolved to it), recompile with:
    ```bash
-   quantize_args="--quantize W4BF16 --q_group_size 64"
+   llm_convert.py -m /path/to/weights -s 2048 -q w4f16 -o out_dir
    ```
-   change it to:
-   ```bash
-   quantize_args="--quantize W4F16 --q_group_size 64"
-   ```
-2. If it was originally `W4F16`, change it to `W4BF16`.
+2. If it was originally `w4f16`, change it to `w4bf16`.
 
 ---
 
@@ -218,9 +216,9 @@ This is usually because the model is too large or the card does not have enough 
    Refer to [this article](https://doc.sophgo.com/sdk-docs/v23.07.01/docs_latest_release/docs/SophonSDK_doc/zh/html/appendix/2_mem_edit_tools.html).
 
 **Method 2:**  
-If the model is too large, try compiling with `fp16/bf16`, or compile with `w4fp16/w4bf16`:
+If the model is too large, recompile with a lighter quantization — e.g. from `bf16`/`f16` down to `w4bf16`/`w4f16`:
 ```shell
-./compile.sh --mode int4 --name qwen2-7b --addr_mode io_alone
+llm_convert.py -m /path/to/weights -s 2048 -q w4bf16 -o out_dir
 ```
 
 ---

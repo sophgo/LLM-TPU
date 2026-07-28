@@ -247,6 +247,47 @@ sequence at image-placeholder positions.
 | `--max_pixels W,H` | ViT input budget | VLM image preprocessing limit |
 | `--only_mlir` / `--debug` | stop at MLIR / keep intermediates | analysis only |
 
+## Recommended compile configurations
+
+All LLM compile scenarios fall into two categories, selected by
+`--use_history_kv`:
+
+1. **Without history** — compiles `block_*` (prefill) and `block_cache_*`
+   (decode) only. `-s` sets the maximum total length, `--max_input_length`
+   the maximum single-input length. Best for single-turn conversations with
+   short contexts (≤ 4K):
+
+   ```bash
+   llm_convert.py -m Qwen3.5-2B-int4-AutoRound -c bm1688 -s 2048 --max_input_length 1024 --out_dir qwen3_5_bm1688
+   ```
+
+2. **With history** — compiles `block_*` (prefill), `block_kv_*` (prefill
+   with history KV), and `block_cache_*` (decode). `--chunk_length` sets the
+   segment length for chunked inference: with `--chunk_length 1024`, a 7K
+   input prefill runs in 7 chunk passes — the first through `block_`, the
+   remaining 6 through `block_kv_` — and decode is likewise segmented by
+   KV-cache length (performance at 1K / 2K / 4K / 8K varies with context
+   length). Best when multi-turn history is needed, contexts are long
+   (e.g. 8K), or in doubt — it is the most flexible option with good
+   performance:
+
+   ```bash
+   llm_convert.py -m Qwen3.5-2B-int4-AutoRound -c bm1688 -s 8192 --use_history_kv --chunk_length 1024 --out_dir qwen3_5_bm1688
+   ```
+
+General flag advice:
+
+- **`--dynamic`** — recommended on every build. Static compilation is still
+  the default only for backward compatibility (`qwen3_5` forces dynamic);
+  the flag may disappear once all models go dynamic.
+- **`--do_sample`** — enable when random sampling is needed.
+- **`--max_pixels`** — leave unset; the built-in per-model default is
+  recommended.
+- **`--embedding_disk`** — moves the word embedding into `config/` and runs
+  it on CPU, saving device memory.
+- **`--lora_max_rank`** — compiles the LoRA variant (note: Qwen3.5 LoRA
+  support is not tuned yet).
+
 ## The `config/` directory contract
 
 Every bmodel must be paired with the `config/` dir generated alongside it

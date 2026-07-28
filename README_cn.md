@@ -87,7 +87,6 @@ cd LLM-TPU
 | Qwen2.5-VL-3B  | `./run.sh --model qwen2.5vl`      |
 | InternVL3-2B   | `./run.sh --model internvl3`      |
 
-📘 详细步骤请参考 **[Quick Start](./docs/Quick_Start.md)**。
 
 <div align="center">
   <img src="./assets/test.jpg" width="45%"/>
@@ -170,15 +169,15 @@ cd LLM-TPU
 
 ## 🧩 LLM 编译流程
 
-以 `Qwen2.5-VL` 为例：
+以 `Qwen3.5-2B` 为例：
 
 ### 1. 下载权重
 
-> 优先选择 **AWQ** 或 **GPTQ** 量化版本，精度更优。
+> 优先选择 **AWQ** / **GPTQ** / **AutoRound** 量化版本，精度更优。
 
 ```bash
 git lfs install
-git clone git@hf.co:Qwen/Qwen2.5-VL-3B-Instruct-AWQ
+git clone https://huggingface.co/Intel/Qwen3.5-2B-int4-AutoRound
 ```
 
 ### 2. 配置 TPU-MLIR
@@ -189,30 +188,53 @@ git clone git@hf.co:Qwen/Qwen2.5-VL-3B-Instruct-AWQ
 
 ```bash
 llm_convert.py \
-    -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ \
+    -m /workspace/Qwen3.5-2B-int4-AutoRound \
     -s 2048 --max_input_length 1024 \
     -c bm1684x \
-    --max_pixels 672,896 \
-    -o qwen2.5vl_3b
+    -o qwen3.5_2b
 ```
+
+#### 两种编译模式：不支持历史 vs. 支持历史
+
+LLM 的所有编译场景可归纳为两类，通过 `--use_history_kv` 控制：
+
+**模式一：不支持历史。** 典型命令：
+
+```bash
+llm_convert.py -m Qwen3.5-2B-int4-AutoRound -c bm1688 -s 2048 --max_input_length 1024 --out_dir qwen3_5_bm1688
+```
+
+- 编译 `block_`（prefill 阶段）和 `block_cache_`（decode 阶段）两种网络；
+- `-s` 指定最大总长度，`--max_input_length` 指定单次输入最大长度；
+- 如果是单轮对话且长度较短（如 4K 以内），建议使用该方式编译。
+
+**模式二：支持历史。** 典型命令：
+
+```bash
+llm_convert.py -m Qwen3.5-2B-int4-AutoRound -c bm1688 -s 8192 --use_history_kv --chunk_length 1024 --out_dir qwen3_5_bm1688
+```
+
+- 编译 `block_`（prefill）、`block_kv_`（带历史的 prefill）和 `block_cache_`（decode）三种网络；
+- `-s` 指定最大总长度，`--chunk_length` 指定分段长度，用于分段推理。例如指定为 1K 时，若实际输入为 7K，prefill 阶段会分 7 段完成推理：第 1 段走 `block_`，其余 6 段走 `block_kv_`；decode 阶段也会按 KV Cache 长度分段，1K / 2K / 4K / 8K 的性能因长度而异；
+- 如果需要支持历史、长度较长（如 8K），或者不确定，建议使用该方式编译——灵活性更高，且兼顾性能。
 
 #### `llm_convert.py` 主要参数
 
 | 参数 | 简写 | 必选 | 说明 |
 | :--- | :---: | :---: | :--- |
 | `--model_path`         | `-m` | ✅ | 权重路径 |
-| `--seq_length`         | `-s` | ✅ | 最大序列长度 |
-| `--max_input_length`   |  —   |    | 单次最大输入长度，默认等于 `seq_length` |
-| `--quantize`           | `-q` |    | 量化类型：`w4bf16` / `w4f16` / `bf16` / `f16` … |
-| `--chip`               | `-c` | ✅ | 目标平台：`bm1684x` / `bm1688` / `cv186x` |
-| `--q_group_size`       | `-g` |    | 量化组大小，默认 `64` |
-| `--max_pixels`         |  —   |    | VLM 专用，最大像素，如 `672,896` 或 `602112` |
-| `--do_sample`          |  —   |    | 输出包含采样模型，默认关闭 |
-| `--out_dir`            | `-o` | ✅ | 输出目录 |
+| `--seq_length`         | `-s` | ✅ | 最大总长度（KV Cache 容量） |
+| `--max_input_length`   |  —   |    | 单次最大输入长度，默认等于 `seq_length`；使用 `--use_history_kv` 时**不要**设置（由 `--chunk_length` 推导） |
+| `--use_history_kv`     |  —   |    | 编译支持历史 KV 的版本（多轮对话），见上方两种编译模式 |
+| `--chunk_length`       |  —   |    | 分段 prefill/decode 的分段长度；配合 `--use_history_kv` 时默认为 `seq_length // 4` |
+| `--chip`               | `-c` |    | 目标平台：`bm1684x`（默认）/ `bm1688` / `cv186x` |
+| `--dynamic`            |  —   |    | 动态编译，建议默认都加上 |
+| `--do_sample`          |  —   |    | 开启随机采样，默认关闭（greedy） |
+| `--out_dir`            | `-o` |    | 输出目录，默认为 `./<model>_<chip>_<quantize>` |
 
 > 💡 量化类型选择：如果是已经量化的模型，不需要指定quantize；未量化模型需要指定。
 >
-> 更多高级参数见 [进阶应用](#-进阶应用)。
+> 高级参数（`--quantize`、`--q_group_size`、`--max_pixels`、`--embedding_disk`、`--lora_max_rank`）见 [高级编译参数](#高级编译参数)；更多能力见 [进阶应用](#-进阶应用)。
 
 执行完成后，输出目录会生成对应的 **bmodel** 与 **config** 配置目录，可直接加载推理。
 
@@ -292,11 +314,34 @@ llm_convert.py \
 </tbody>
 </table>
 
+### 高级编译参数
+
+不常用的 `llm_convert.py` 参数：
+
+| 参数 | 简写 | 说明 |
+| :--- | :---: | :--- |
+| `--quantize`       | `-q` | 量化类型：`w4bf16` / `w4f16` / `bf16` / `f16` … |
+| `--q_group_size`   | `-g` | 量化组大小，默认 `64` |
+| `--max_pixels`     |  —   | VLM 专用，最大图像像素，如 `672,896` 或 `602112`；建议不指定，使用内部默认参数 |
+| `--embedding_disk` |  —   | 将 word embedding 存储到 bin 文件，用 CPU 推理 |
+| `--lora_max_rank`  |  —   | 指定 LoRA 最大 rank，指定后编译 LoRA 版本（Qwen3.5 的 LoRA 功能尚未开始调试） |
+
+---
+
+## 使用 Demo
+
+交互式 Demo 支持一些便捷输入：
+
+- **斜杠命令** —— 输入 `/exit`（或 `/q`、`/quit`）退出 Demo；输入 `/clear`（或 `/new`）开启新的对话。
+- **`@<path>` 附件** —— 在问题中包含 `@<path>` 以附加文件：
+  - 图片（模型支持时也包括视频），例如 `图片里有什么？ @./test.jpg`
+  - 文本文件（`.txt` / `.md`），例如 `这篇文章讲了什么？ @./story.txt`
+
 ---
 
 ## 🎯 精度优化建议
 
-1. **优先使用 AWQ / GPTQ 量化模型** 转 bmodel，精度损失最小。
+1. **优先使用 AWQ / GPTQ / AutoRound 量化模型** 转 bmodel，精度损失最小。
 2. 若仅有浮点权重，建议先用 [AutoAWQ](https://huggingface.co/docs/transformers/main/en/quantization/awq#awq) 或 [AutoGPTQ](https://huggingface.co/docs/transformers/main/en/quantization/gptq) 进行 W4A16 量化，再编译为 bmodel。
 
 ---
@@ -309,6 +354,7 @@ llm_convert.py \
 
 ## 🔗 资料链接
 
+- 📄 [An MLIR-Based Compilation Method for Large Language Models](https://arxiv.org/abs/2607.15865) — 介绍 TPU-MLIR对LLM的编译流程
 - 📘 [TPU-MLIR](https://github.com/sophgo/tpu-mlir) — 编译器主仓库
 - 📗 [TPU-MLIR 快速入门手册](https://doc.sophgo.com/sdk-docs/v23.09.01-lts-sp4/docs_latest_release/docs/tpu-mlir/quick_start/html/index.html)
 - 🎬 [TPU-MLIR 论文 / 整体工程讲解 (Bilibili)](https://www.bilibili.com/video/BV1My4y1o73Q)

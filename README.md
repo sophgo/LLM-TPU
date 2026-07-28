@@ -33,11 +33,11 @@
 
 | Date | Updates |
 | :--- | :--- |
-| 🔥 **2026.07.16** | **Falcon-Perception** now supports BM1684X, Python demo, referring segmentation (box + mask) → [Details](./models/Falcon-Perception/) |
-| 🔥 **2026.07.09** | **LocateAnything-3B** now supports BM1684X / BM1688, Python demo, visual grounding (box / point) → [Details](./models/LocateAnything/) |
-| **2026.06.30** | **MiniCPM-V-4.6** now supports BM1684X / BM1688, Python demo, image & video support → [Details](./models/MiniCPMV4_6/) |
-| **2026.05.21** | **Gemma4** now supports BM1684X / BM1688, Python demo, image / video / audio support → [Details](./models/Gemma4/) |
-| **2026.04.15** | **Qwen3.5** now supports BM1684X / BM1688, Python & C++ demos, image & video support → [Details](./models/Qwen3_5/) |
+| 🔥 **2026.07.16** | **Falcon-Perception** now supports BM1684X — Python demo for referring segmentation (box + mask) → [Details](./models/Falcon-Perception/) |
+| 🔥 **2026.07.09** | **LocateAnything-3B** now supports BM1684X / BM1688 — Python demo for visual grounding (box / point) → [Details](./models/LocateAnything/) |
+| **2026.06.30** | **MiniCPM-V-4.6** now supports BM1684X / BM1688 — Python demo with image & video support → [Details](./models/MiniCPMV4_6/) |
+| **2026.05.21** | **Gemma4** now supports BM1684X / BM1688 — Python demo with image / video / audio support → [Details](./models/Gemma4/) |
+| **2026.04.15** | **Qwen3.5** now supports BM1684X / BM1688 — Python & C++ demos with image & video support → [Details](./models/Qwen3_5/) |
 | **2025.10.15** | **Qwen3-VL** now supports BM1684X / BM1688, Python / C++ demos, image & video support → [Details](./models/Qwen3_VL/) |
 | **2025.05.22** | **InternVL3** now supports BM1684X / BM1688, image & video support → [Details](./models/InternVL3/) |
 | **2025.04.30** | **Qwen2.5-VL** now supports BM1684X / BM1688, Python / C++ demos → [Details](./models/Qwen2_5_VL/) |
@@ -87,7 +87,6 @@ cd LLM-TPU
 | Qwen2.5-VL-3B  | `./run.sh --model qwen2.5vl`      |
 | InternVL3-2B   | `./run.sh --model internvl3`      |
 
-📘 For detailed steps, see **[Quick Start](./docs/Quick_Start.md)**.
 
 <div align="center">
   <img src="./assets/test.jpg" width="45%"/>
@@ -170,15 +169,15 @@ See each subdirectory for complete source code and conversion details.
 
 ## 🧩 LLM Compilation Flow
 
-Using `Qwen2.5-VL` as an example:
+Using `Qwen3.5-2B` as an example:
 
 ### 1. Download Weights
 
-> Prefer **AWQ** or **GPTQ** quantized versions for better accuracy.
+> Prefer **AWQ** / **GPTQ** / **AutoRound** quantized versions for better accuracy.
 
 ```bash
 git lfs install
-git clone git@hf.co:Qwen/Qwen2.5-VL-3B-Instruct-AWQ
+git clone https://huggingface.co/Intel/Qwen3.5-2B-int4-AutoRound
 ```
 
 ### 2. Set Up TPU-MLIR
@@ -189,30 +188,53 @@ Refer to [TPU-MLIR](https://github.com/sophgo/tpu-mlir)
 
 ```bash
 llm_convert.py \
-    -m /workspace/Qwen2.5-VL-3B-Instruct-AWQ \
+    -m /workspace/Qwen3.5-2B-int4-AutoRound \
     -s 2048 --max_input_length 1024 \
     -c bm1684x \
-    --max_pixels 672,896 \
-    -o qwen2.5vl_3b
+    -o qwen3.5_2b
 ```
+
+#### Two compile modes: without history vs. with history
+
+All LLM compile scenarios fall into two categories, controlled by `--use_history_kv`:
+
+**Mode 1 — Without history.** Typical command:
+
+```bash
+llm_convert.py -m Qwen3.5-2B-int4-AutoRound -c bm1688 -s 2048 --max_input_length 1024 --out_dir qwen3_5_bm1688
+```
+
+- Compiles two kinds of nets: `block_*` (prefill) and `block_cache_*` (decode).
+- `-s` sets the maximum total length; `--max_input_length` sets the maximum single-input length.
+- Recommended for single-turn conversations with short contexts (e.g. within 4K).
+
+**Mode 2 — With history.** Typical command:
+
+```bash
+llm_convert.py -m Qwen3.5-2B-int4-AutoRound -c bm1688 -s 8192 --use_history_kv --chunk_length 1024 --out_dir qwen3_5_bm1688
+```
+
+- Compiles three kinds of nets: `block_*` (prefill), `block_kv_*` (prefill with history KV), and `block_cache_*` (decode).
+- `-s` sets the maximum total length; `--chunk_length` sets the segment length used for chunked inference. For example, with `--chunk_length 1024` and a 7K-token input, prefill runs in 7 chunk passes: the first through `block_`, the remaining 6 through `block_kv_`. Decode is also segmented by KV-cache length, so performance at 1K / 2K / 4K / 8K varies with the context length.
+- Recommended whenever multi-turn history is needed, contexts are long (e.g. 8K), or you are unsure — it is more flexible while retaining good performance.
 
 #### Key `llm_convert.py` Arguments
 
 | Argument | Short | Required | Description |
 | :--- | :---: | :---: | :--- |
 | `--model_path`         | `-m` | ✅ | Path to model weights |
-| `--seq_length`         | `-s` | ✅ | Maximum sequence length |
-| `--max_input_length`   |  —   |    | Maximum single-input length; defaults to `seq_length` |
-| `--quantize`           | `-q` |    | Quantization type: `w4bf16` / `w4f16` / `bf16` / `f16` … |
-| `--chip`               | `-c` | ✅ | Target platform: `bm1684x` / `bm1688` / `cv186x` |
-| `--q_group_size`       | `-g` |    | Quantization group size, default `64` |
-| `--max_pixels`         |  —   |    | VLM only, max pixels, e.g. `672,896` or `602112` |
-| `--do_sample`          |  —   |    | Include sampling model in output; off by default |
-| `--out_dir`            | `-o` | ✅ | Output directory |
+| `--seq_length`         | `-s` | ✅ | Maximum total sequence length (KV cache capacity) |
+| `--max_input_length`   |  —   |    | Maximum single-input length; defaults to `seq_length`. Do **not** set with `--use_history_kv` (there it is derived from `--chunk_length`) |
+| `--use_history_kv`     |  —   |    | Compile with history-KV support (multi-turn); see the two compile modes above |
+| `--chunk_length`       |  —   |    | Segment length for chunked prefill/decode; with `--use_history_kv` it defaults to `seq_length // 4` |
+| `--chip`               | `-c` |    | Target platform: `bm1684x` (default) / `bm1688` / `cv186x` |
+| `--dynamic`            |  —   |    | Dynamic compilation — recommended to always add |
+| `--do_sample`          |  —   |    | Enable random sampling; off by default (greedy) |
+| `--out_dir`            | `-o` |    | Output directory; defaults to `./<model>_<chip>_<quantize>` |
 
 > 💡 Choosing quantization: if the model is already quantized, you do NOT need to specify `quantize`; unquantized models require it.
 >
-> For more advanced options, see [Advanced Features](#-advanced-features).
+> For advanced options (`--quantize`, `--q_group_size`, `--max_pixels`, `--embedding_disk`, `--lora_max_rank`), see [Advanced Compile Options](#advanced-compile-options); for more capabilities, see [Advanced Features](#-advanced-features).
 
 Once finished, the output directory will contain the corresponding **bmodel** and **config** directory, ready to load for inference.
 
@@ -292,11 +314,34 @@ Once finished, the output directory will contain the corresponding **bmodel** an
 </tbody>
 </table>
 
+### Advanced Compile Options
+
+Less commonly used `llm_convert.py` arguments:
+
+| Argument | Short | Description |
+| :--- | :---: | :--- |
+| `--quantize`       | `-q` | Quantization type: `w4bf16` / `w4f16` / `bf16` / `f16` … |
+| `--q_group_size`   | `-g` | Quantization group size, default `64` |
+| `--max_pixels`     |  —   | VLM only, max image pixels, e.g. `672,896` or `602112`; recommended to leave unset and use the built-in default |
+| `--embedding_disk` |  —   | Store the word embedding in a `.bin` file and run it on CPU |
+| `--lora_max_rank`  |  —   | Maximum LoRA rank; setting it compiles the LoRA variant (Qwen3.5 LoRA support is not tuned yet) |
+
+---
+
+## Using the Demo
+
+The interactive demos support a few convenience inputs:
+
+- **Slash commands** — enter `/exit` (or `/q`, `/quit`) to quit the demo, and `/clear` (or `/new`) to start a new chat session.
+- **`@<path>` attachments** — include `@<path>` in your question to attach a file:
+  - Images (and videos, where the model supports them), e.g. `what is the image about? @./test.jpg`
+  - Text files (`.txt` / `.md`), e.g. `what is it talking about? @./story.txt`
+
 ---
 
 ## 🎯 Accuracy Optimization Tips
 
-1. **Prefer AWQ / GPTQ quantized models** when converting to bmodel — they incur the least accuracy loss.
+1. **Prefer AWQ / GPTQ / AutoRound quantized models** when converting to bmodel — they incur the least accuracy loss.
 2. If only floating-point weights are available, first apply W4A16 quantization with [AutoAWQ](https://huggingface.co/docs/transformers/main/en/quantization/awq#awq) or [AutoGPTQ](https://huggingface.co/docs/transformers/main/en/quantization/gptq), then compile to bmodel.
 
 ---
@@ -309,6 +354,7 @@ Please refer to the **[LLM-TPU FAQ](./docs/FAQ.md)**.
 
 ## 🔗 Resources
 
+- 📄 [An MLIR-Based Compilation Method for Large Language Models](https://arxiv.org/abs/2607.15865) — Paper describing the TPU-MLIR LLM compilation flow
 - 📘 [TPU-MLIR](https://github.com/sophgo/tpu-mlir) — Main compiler repository
 - 📗 [TPU-MLIR Quick Start Guide](https://doc.sophgo.com/sdk-docs/v23.09.01-lts-sp4/docs_latest_release/docs/tpu-mlir/quick_start/html/index.html)
 - 🎬 [TPU-MLIR Paper / Full Project Walkthrough (Bilibili)](https://www.bilibili.com/video/BV1My4y1o73Q)
