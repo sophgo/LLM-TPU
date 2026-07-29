@@ -36,14 +36,8 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-9b-int4-autoround_w4bf16_seq2048_bm1684x_6dev_dynamic_20260429_152927_embed_vit.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-9b-int4-autoround_w4bf16_seq2048_bm1684x_6dev_dynamic_20260429_152927_lmhead.bmodel
 
-# Qwen3.5-35B-A3B, seven chips (2K)
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_7dev/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq2048_bm1684x_7dev_dynamic_20260611_174448_block_00.bmodel
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_7dev/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq2048_bm1684x_7dev_dynamic_20260611_174448_block_01.bmodel
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_7dev/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq2048_bm1684x_7dev_dynamic_20260611_174448_block_02.bmodel
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_7dev/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq2048_bm1684x_7dev_dynamic_20260611_174448_block_03.bmodel
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_7dev/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq2048_bm1684x_7dev_dynamic_20260611_174448_block_04.bmodel
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_7dev/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq2048_bm1684x_7dev_dynamic_20260611_174448_embed_vit.bmodel
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_7dev/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq2048_bm1684x_7dev_dynamic_20260611_174448_lmhead.bmodel
+# Qwen3.5-35B-A3B, seven chips, support history (144K)
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-35b-a3b-int4-autoround_w4bf16_seq147456_bm1684x_7dev_history_dynamic_20260729_132022_pp.tar
 
 # Qwen3.5-35B-A3B, seven chips (10K)
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5_35b_a3b_int4_10k_7dev.tar

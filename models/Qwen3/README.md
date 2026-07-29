@@ -6,17 +6,18 @@ This project deploys the large model [Qwen3](https://huggingface.co/Qwen/Qwen3-4
 This document covers how to compile the bmodel and how to run it in a BM1684X/BM1688 environment. The LLM compilation step can be skipped by downloading directly from the following links:
 
 ``` shell
+# =============== bm1684x =================
 # 1684x 512
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-4b-awq_w4bf16_seq512_bm1684x_1dev_20250514_161445.bmodel
-# 1684x 8k, static model
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-4b-awq_w4bf16_seq8192_bm1684x_1dev_20250514_161732.bmodel
-# 1684x 8k, dynamic model
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-4b-awq_w4bf16_seq8192_bm1684x_dyn.bmodel
-# 1684x 8k, supports prefill_with_kv, history saved as kv
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-4b-awq_w4bf16_seq8192_bm1684x_1dev_kv.bmodel
+# 1684x 8k, supports history
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-4b-awq_w4f16_seq8192_bm1684x_1dev_history_dynamic_20260729_172138.bmodel
 
+# ============== bm1688 ===================
 # 1688 512
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU_Lite/qwen3-4b-awq_w4bf16_seq512_bm1688_2core_20250514_162231.bmodel
+# 1688 8k, supports history
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-4b-awq_w4f16_seq8192_bm1688_2core_history_dynamic_20260729_171121.bmodel
+ 
 ```
 
 ### deepseek-r1-0528-qwen3-8b

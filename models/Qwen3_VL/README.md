@@ -10,10 +10,9 @@ This document covers how to compile the bmodel and how to run the bmodel in BM16
 # =============== 1684x =====================
 # 1684x 2B, max 1K input, max_pixel 768x768, supports videos up to 12s (1 frame per second)
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-2b-instruct-w4a16_w4bf16_seq2048_bm1684x_1dev_dynamic_20260318_164243.bmodel
-# 1684x 4B, max 1K input, max_pixel 768x768, supports videos up to 12s (1 frame per second)
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-4b-instruct-awq-4bit_w4bf16_seq2048_bm1684x_1dev_dynamic_20260318_165737.bmodel
-# 1684x 8B, max 1K input, max_pixel 768x768, supports videos up to 12s (1 frame per second)
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-8b-instruct-4bit-gptq_w4bf16_seq2048_bm1684x_1dev_dynamic_20260318_165042.bmodel
+
+# 1684x 4B, 8k, supports history
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-4b-instruct-awq-4bit_w4bf16_seq8192_bm1684x_1dev_history_dynamic_20260729_164238.bmodel
 
 # =============== 1688 ======================
 # 1688 2B, max 1K input, max_pixel 768x768, supports videos up to 12s (1 frame per second)
@@ -21,6 +20,8 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-v
 # 1688 4B, max 1K input, max_pixel 768x768, supports videos up to 12s (1 frame per second)
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-4b-instruct-awq-4bit_w4bf16_seq2048_bm1688_2core_dynamic_20260318_170105.bmodel
 
+# 1688 4B, 8k, supports history
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-4b-instruct-awq-4bit_w4bf16_seq8192_bm1688_2core_history_dynamic_20260729_165209.bmodel
 ```
 
 
