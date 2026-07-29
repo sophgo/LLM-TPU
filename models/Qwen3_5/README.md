@@ -125,6 +125,47 @@ A `@<path>` token ending in `.txt` or `.md` is replaced inline with the file's
 contents; any other `@<path>` attaches an image or video.
 
 
+## OvisOCR2 (GGUF)
+
+[OvisOCR2](https://www.modelscope.cn/models/Abiray/OvisOCR2-GGUF) is a compact 0.8B end-to-end model for page-level document parsing, built on Qwen3.5-0.8B. It parses full document pages directly into clean Markdown (including LaTeX formulas, HTML tables, and layout components). This section covers deploying the GGUF version on BM1684X/BM1688.
+
+#### 1. Download pre-compiled bmodel
+
+``` shell
+# =============== 1684x =====================
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/ovisocr2-q8_0.gguf_w8bf16_seq2048_bm1684x_1dev_dynamic_20260728_110315.bmodel
+
+# =============== 1688 ======================
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/ovisocr2-q8_0.gguf_w8bf16_seq2048_bm1688_2core_dynamic_20260728_110556.bmodel
+```
+
+#### 2. Download GGUF weights from ModelScope
+
+``` shell
+pip install modelscope
+modelscope download --model Abiray/OvisOCR2-GGUF OvisOCR2-Q8_0.gguf --local_dir ./
+modelscope download --model Abiray/OvisOCR2-GGUF mmproj-BF16.gguf --local_dir ./
+```
+
+#### 3. Compile bmodel from GGUF
+
+``` shell
+cd /workspace/tpu-mlir && source ./envsetup.sh
+
+# BM1688
+llm_convert.py -m OvisOCR2-Q8_0.gguf --mmproj mmproj-BF16.gguf \
+  -q w8bf16 -c bm1688 -s 2048 --max_input_length 1024 -o ovisocr2/
+```
+
+#### 4. Run inference
+
+Use the same `python_demo` as Qwen3.5. Build and run:
+
+``` shell
+cd python_demo && mkdir build && cd build && cmake .. && make && cp *cpython* .. && cd ..
+python3 pipeline.py -m ovisocr2_xxx.bmodel -c ../config
+```
+
 ## FAQ
 
 #### How to configure a python3.10 environment on SoC?
