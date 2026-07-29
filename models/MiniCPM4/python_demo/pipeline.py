@@ -7,6 +7,7 @@
 # ==============================================================================
 
 import argparse
+import os
 
 import chat
 import time
@@ -45,6 +46,11 @@ class MiniCPM4():
         self.model.generation_mode = "greedy"
         self.stop_strings = []
         if args.do_sample:
+            gen_config_file = os.path.join(args.config_path, "generation_config.json")
+            if not os.path.exists(gen_config_file):
+                raise FileNotFoundError(
+                    f"'{gen_config_file}' not found. '--do_sample' requires "
+                    "generation_config.json to provide sampling parameters.")
             gen_config = GenerationConfig.from_pretrained(args.config_path)
             self.model.generation_mode = "sample"
             self.model.temperature = gen_config.temperature

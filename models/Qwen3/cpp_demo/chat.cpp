@@ -58,6 +58,12 @@ struct GenerationConfig {
   static GenerationConfig from_json(const std::string &path) {
     GenerationConfig config;
     std::ifstream in(path);
+    if (!in.is_open()) {
+      throw std::runtime_error("'" + path +
+                               "' not found. '--do_sample' requires "
+                               "generation_config.json to provide sampling "
+                               "parameters.");
+    }
     nlohmann::json j;
     in >> j;
     if (j.contains("eos_token_id")) {
