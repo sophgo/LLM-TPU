@@ -12,7 +12,7 @@ set -euo pipefail
 # Mapping from short demo name -> directory under models/
 declare -A MODEL_TO_DEMO=(
     ["qwen3"]="Qwen3"
-    ["qwen2.5vl"]="Qwen2_5_VL"
+    ["qwen3.5"]="Qwen3_5"
     ["internvl3"]="InternVL3"
 )
 
@@ -29,7 +29,7 @@ Options:
   -h, --help       Show this help message and exit.
 
 Example:
-  $(basename "$0") --model qwen2.5vl
+  $(basename "$0") --model qwen3.5
 EOF
 }
 

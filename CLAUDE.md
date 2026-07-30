@@ -16,7 +16,7 @@ This repo contains **demo/eval code**, not the compiler. Compilation uses the [T
 
 ### Run a built-in demo end-to-end
 ```bash
-./run.sh --model qwen3        # also: qwen2.5vl, internvl3
+./run.sh --model qwen3        # also: qwen3.5, internvl3
 ```
 `run.sh` maps the short name to `models/<Dir>/run_demo.sh`, which downloads a pre-compiled bmodel via `dfss`, builds the python extension, and launches `python_demo/pipeline.py`.
 

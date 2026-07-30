@@ -73,7 +73,7 @@ Get an LLM running on your TPU device in just two steps:
 ```bash
 git clone https://github.com/sophgo/LLM-TPU.git
 cd LLM-TPU
-./run.sh --model qwen2.5vl
+./run.sh --model qwen3.5
 ```
 
 ### One-command demo models
@@ -81,13 +81,12 @@ cd LLM-TPU
 | Model          | Command                           |
 | :------------- | :-------------------------------- |
 | Qwen3-4B       | `./run.sh --model qwen3`          |
-| Qwen2.5-VL-3B  | `./run.sh --model qwen2.5vl`      |
+| Qwen3.5-2B     | `./run.sh --model qwen3.5`        |
 | InternVL3-2B   | `./run.sh --model internvl3`      |
 
 
 <div align="center">
-  <img src="./assets/test.jpg" width="45%"/>
-  <img src="./assets/qwen2_5-vl.png" width="45%"/>
+  <img src="./assets/qwen3.5.png"/>
 </div>
 
 ---
