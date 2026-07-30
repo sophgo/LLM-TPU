@@ -51,12 +51,9 @@
 
 **LLM-TPU** 是 [SOPHGO](https://www.sophgo.com/) 官方维护的开源项目，致力于在算能 **BM1684X / BM1688 / CV186X** 系列 TPU 芯片上部署主流的 **生成式 AI 模型**（LLM / VLM）。
 
-```
-   ┌──────────────┐    tpu-mlir    ┌──────────────┐    tpu-runtime   ┌──────────────────┐
-   │  HuggingFace │ ─────────────► │   bmodel     │ ───────────────► │  PCIE / SoC 部署  │
-   │   原始权重    │   llm_convert  │  (量化模型)  │    Python / C++  │  BM1684X / 1688  │
-   └──────────────┘                └──────────────┘                  └──────────────────┘
-```
+<div align="center">
+  <img src="./assets/llm_tpu_pipeline.png" alt="LLM-TPU 部署流程：通过 llm_convert.py（tpu-mlir）将 HuggingFace / GGUF 原始权重一键编译为量化 bmodel，再经 Python / C++ Demo 部署到算能 BM1684X / BM1688 / CV186X TPU" width="760"/>
+</div>
 
 - 🚀 **一键编译**：`llm_convert.py` 直接将 HuggingFace 权重导出为 bmodel
 - 🧩 **模型丰富**：覆盖 Qwen / Llama / DeepSeek / InternVL / MiniCPM / Phi / ChatGLM 等数十种模型

@@ -89,9 +89,8 @@ private:
   std::vector<float> get_attn_mask(int seq_length,
                                    const std::vector<int> &cu_seqlens);
 
-  // Compute rotary position embeddings
-  std::vector<std::vector<int>>
-  rot_pos(const std::vector<std::vector<int>> &grid_thw);
+  // Compute rotary position embeddings (flat: [h0, w0, h1, w1, ...])
+  std::vector<int> rot_pos(const std::vector<std::vector<int>> &grid_thw);
 
   // Get the media type
   typedef enum { IMAGE, VIDEO, TEXT, UNKNOWN } MediaType;
@@ -153,11 +152,10 @@ ChatPipe::MediaType ChatPipe::get_media_type(const std::string &file_path) {
 
 std::vector<int> ChatPipe::get_position_ids(int token_len) {
   std::vector<int> position_ids(token_len * 3);
-  for (int j = 0; j < 3; j++) {
-    for (int i = 0; i < token_len; ++i) {
-      position_ids[j * token_len + i] = i;
-    }
-  }
+  std::iota(position_ids.begin(), position_ids.begin() + token_len, 0);
+  std::copy_n(position_ids.begin(), token_len, position_ids.begin() + token_len);
+  std::copy_n(position_ids.begin(), token_len,
+              position_ids.begin() + 2 * token_len);
   return position_ids;
 }
 
@@ -290,132 +288,55 @@ std::vector<float> ChatPipe::get_attn_mask(int seq_length,
 }
 
 // Compute rotary position embeddings
-std::vector<std::vector<int>>
+// Returns a flat [h0, w0, h1, w1, ...] array in spatial-merge block order,
+// with the per-frame block repeated t times.
+std::vector<int>
 ChatPipe::rot_pos(const std::vector<std::vector<int>> &grid_thw) {
-  std::vector<std::vector<int>> pos_ids;
+  size_t total = 0;
+  for (const auto &thw : grid_thw) {
+    total += (size_t)thw[0] * thw[1] * thw[2] * 2;
+  }
+
+  std::vector<int> pos_ids;
+  pos_ids.reserve(total);
+  const int msize = spatial_merge_size;
 
   for (const auto &thw : grid_thw) {
-    int t = thw[0];
-    int h = thw[1];
-    int w = thw[2];
+    const int t = thw[0];
+    const int h = thw[1];
+    const int w = thw[2];
 
-    // Generate hpos_ids
-    std::vector<int> hpos_ids;
-    for (int i = 0; i < h; ++i) {
-      for (int j = 0; j < w; ++j) {
-        hpos_ids.push_back(i);
-      }
-    }
-
-    // Reshape hpos_ids
-    std::vector<int> reshaped_hpos_ids;
-    int h_merged = h / spatial_merge_size;
-    int w_merged = w / spatial_merge_size;
-    for (int i = 0; i < h_merged; ++i) {
-      for (int j = 0; j < w_merged; ++j) {
-        for (int k = 0; k < spatial_merge_size; ++k) {
-          for (int l = 0; l < spatial_merge_size; ++l) {
-            int src_idx = ((i * spatial_merge_size + k) * w) +
-                          (j * spatial_merge_size + l);
-            reshaped_hpos_ids.push_back(hpos_ids[src_idx]);
+    // Build one frame: (h_idx, w_idx) pairs in block-reordered order
+    std::vector<int> frame;
+    frame.reserve((size_t)h * w * 2);
+    for (int i_blk = 0; i_blk < h / msize; ++i_blk) {
+      for (int j_blk = 0; j_blk < w / msize; ++j_blk) {
+        for (int k = 0; k < msize; ++k) {
+          for (int l = 0; l < msize; ++l) {
+            frame.push_back(i_blk * msize + k);
+            frame.push_back(j_blk * msize + l);
           }
         }
       }
-    }
-
-    // Generate wpos_ids
-    std::vector<int> wpos_ids;
-    for (int i = 0; i < h; ++i) {
-      for (int j = 0; j < w; ++j) {
-        wpos_ids.push_back(j);
-      }
-    }
-
-    // Reshape wpos_ids
-    std::vector<int> reshaped_wpos_ids;
-    for (int i = 0; i < h_merged; ++i) {
-      for (int j = 0; j < w_merged; ++j) {
-        for (int k = 0; k < spatial_merge_size; ++k) {
-          for (int l = 0; l < spatial_merge_size; ++l) {
-            int src_idx = ((i * spatial_merge_size + k) * w) +
-                          (j * spatial_merge_size + l);
-            reshaped_wpos_ids.push_back(wpos_ids[src_idx]);
-          }
-        }
-      }
-    }
-
-    // Merge hpos_ids and wpos_ids
-    std::vector<std::vector<int>> merged;
-    for (size_t i = 0; i < reshaped_hpos_ids.size(); ++i) {
-      merged.push_back({reshaped_hpos_ids[i], reshaped_wpos_ids[i]});
     }
 
     // Repeat t times
-    std::vector<std::vector<int>> repeated;
     for (int i = 0; i < t; ++i) {
-      repeated.insert(repeated.end(), merged.begin(), merged.end());
+      pos_ids.insert(pos_ids.end(), frame.begin(), frame.end());
     }
-
-    pos_ids.insert(pos_ids.end(), repeated.begin(), repeated.end());
   }
 
   return pos_ids;
 }
 
-// Find all indices of an element in a vector
-std::vector<size_t> argwhere(const std::vector<int> &vec, int value) {
-  std::vector<size_t> indices;
-  for (size_t i = 0; i < vec.size(); ++i) {
-    if (vec[i] == value) {
-      indices.push_back(i);
-    }
-  }
-  return indices;
-}
-
-// Generate an integer sequence from start to end-1
-std::vector<int> arange(int start, int end) {
-  std::vector<int> result;
-  for (int i = start; i < end; ++i) {
-    result.push_back(i);
-  }
-  return result;
-}
-
-// Get the maximum value in a vector
-int max(const std::vector<int> &vec) {
-  int max_val = vec[0];
-  for (int val : vec) {
-    if (val > max_val) {
-      max_val = val;
-    }
-  }
-  return max_val;
-}
-
-// Concatenate 2D vectors along the specified dimension
-std::vector<std::vector<int>>
-cat(const std::vector<std::vector<std::vector<int>>> &vecs, int dim) {
-  if (dim == 1) {
-    std::vector<std::vector<int>> result(3);
-    for (const auto &vec : vecs) {
-      for (int i = 0; i < 3; ++i) {
-        result[i].insert(result[i].end(), vec[i].begin(), vec[i].end());
-      }
-    }
-    return result;
-  }
-  return {};
-}
 // Return position_ids with shape [3][batch_size][seq_len]
 std::vector<std::vector<std::vector<int>>>
 ChatPipe::get_rope_index(const std::vector<std::vector<int>> &input_ids,
                          const std::vector<std::vector<int>> &grid_thw,
                          int pad_id) {
 
-  size_t batch_size = input_ids.size();
-  size_t seq_length = input_ids[0].size();
+  const size_t batch_size = input_ids.size();
+  const size_t seq_length = input_ids[0].size();
 
   // Initialize attention_mask and position_ids
   std::vector<std::vector<int>> attention_mask(batch_size,
@@ -424,11 +345,13 @@ ChatPipe::get_rope_index(const std::vector<std::vector<int>> &input_ids,
       3, std::vector<std::vector<int>>(batch_size,
                                        std::vector<int>(seq_length, 1)));
 
+  const int second_per_grid_t = pad_id == VIDEO_PAD_TOKEN ? 1 : 0;
   int image_index = 0;
 
   for (size_t i = 0; i < batch_size; ++i) {
     // Get the valid input
     std::vector<int> valid_input_ids;
+    valid_input_ids.reserve(seq_length);
     for (size_t j = 0; j < seq_length; ++j) {
       if (attention_mask[i][j] == 1) {
         valid_input_ids.push_back(input_ids[i][j]);
@@ -437,129 +360,84 @@ ChatPipe::get_rope_index(const std::vector<std::vector<int>> &input_ids,
 
     // Compute the number of images
     int image_nums = 0;
-    std::vector<size_t> vision_start_indices =
-        argwhere(valid_input_ids, ID_VISION_START);
-    for (size_t idx : vision_start_indices) {
-      if (idx + 1 < valid_input_ids.size() &&
+    for (size_t idx = 0; idx + 1 < valid_input_ids.size(); ++idx) {
+      if (valid_input_ids[idx] == ID_VISION_START &&
           valid_input_ids[idx + 1] == pad_id) {
         ++image_nums;
       }
     }
 
-    std::vector<int> input_tokens = valid_input_ids;
-    std::vector<std::vector<std::vector<int>>> llm_pos_ids_list;
+    const std::vector<int> &input_tokens = valid_input_ids;
+
+    // Build the three rows directly instead of assembling per-segment
+    // vectors and concatenating them afterwards.
+    std::vector<std::vector<int>> llm_positions(3);
+    for (auto &row : llm_positions) {
+      row.reserve(input_tokens.size());
+    }
+
+    int st_idx = 0; // running max(position_ids) + 1
     size_t st = 0;
-    int remain_images = image_nums;
-    int second_per_grid_t = pad_id == VIDEO_PAD_TOKEN ? 1 : 0;
+
+    // Append a text segment: 0..text_len-1 offset by st_idx, on all three rows
+    auto append_text = [&](size_t text_len) {
+      for (auto &row : llm_positions) {
+        const size_t off = row.size();
+        row.resize(off + text_len);
+        std::iota(row.begin() + off, row.end(), st_idx);
+      }
+      st_idx += (int)text_len;
+    };
+
     for (int img_idx = 0; img_idx < image_nums; ++img_idx) {
       size_t ed_image = input_tokens.size();
-      if (remain_images > 0) {
-        auto it =
-            std::find(input_tokens.begin() + st, input_tokens.end(), pad_id);
-        if (it != input_tokens.end()) {
-          ed_image = it - input_tokens.begin();
-        }
+      auto it = std::find(input_tokens.begin() + st, input_tokens.end(), pad_id);
+      if (it != input_tokens.end()) {
+        ed_image = it - input_tokens.begin();
       }
 
-      int t = grid_thw[image_index][0];
-      int h = grid_thw[image_index][1];
-      int w = grid_thw[image_index][2];
-
+      const int t = grid_thw[image_index][0];
+      const int h = grid_thw[image_index][1];
+      const int w = grid_thw[image_index][2];
       ++image_index;
-      --remain_images;
-      size_t ed = ed_image;
+      const size_t ed = ed_image;
 
-      int llm_grid_t = t;
-      int llm_grid_h = h / spatial_merge_size;
-      int llm_grid_w = w / spatial_merge_size;
-      size_t text_len = ed - st;
+      const int llm_grid_t = t;
+      const int llm_grid_h = h / spatial_merge_size;
+      const int llm_grid_w = w / spatial_merge_size;
+      const size_t frame = (size_t)llm_grid_h * llm_grid_w;
+      const size_t text_len = ed - st;
 
-      int st_idx = 0;
-      if (!llm_pos_ids_list.empty()) {
-        int max_val = 0;
-        for (const auto &row : llm_pos_ids_list.back()) {
-          int row_max = max(row);
-          if (row_max > max_val) {
-            max_val = row_max;
-          }
-        }
-        st_idx = max_val + 1;
+      append_text(text_len);
+
+      // Append the media segment (grid indices offset past the text)
+      const int offset = st_idx;
+      auto &row_t = llm_positions[0];
+      auto &row_h = llm_positions[1];
+      auto &row_w = llm_positions[2];
+      for (int ti = 0; ti < llm_grid_t; ti++) {
+        row_t.insert(row_t.end(), frame,
+                     offset + ti * second_per_grid_t * tokens_per_second);
       }
-
-      // Compute position indices for the text part
-      std::vector<std::vector<int>> text_pos(3);
-      std::vector<int> text_range = arange(0, text_len);
-      for (int j = 0; j < 3; ++j) {
-        std::vector<int> temp(text_range);
-        for (int &val : temp) {
-          val += st_idx;
-        }
-        text_pos[j] = temp;
-      }
-      llm_pos_ids_list.push_back(text_pos);
-
-      // Compute position indices for the image part
-
-      std::vector<int> t_index;
-      for (int i = 0; i < llm_grid_t; i++) {
-        auto time_val = i * second_per_grid_t * tokens_per_second;
-        t_index.insert(t_index.end(), llm_grid_h * llm_grid_w, time_val);
-      }
-
-      std::vector<int> h_index;
       for (int n = 0; n < llm_grid_t; ++n) {
         for (int p = 0; p < llm_grid_h; ++p) {
+          row_h.insert(row_h.end(), llm_grid_w, offset + p);
           for (int q = 0; q < llm_grid_w; ++q) {
-            h_index.push_back(p);
+            row_w.push_back(offset + q);
           }
         }
       }
 
-      std::vector<int> w_index;
-      for (int n = 0; n < llm_grid_t; ++n) {
-        for (int p = 0; p < llm_grid_h; ++p) {
-          for (int q = 0; q < llm_grid_w; ++q) {
-            w_index.push_back(q);
-          }
-        }
-      }
-
-      std::vector<std::vector<int>> grid_pos = {t_index, h_index, w_index};
-      for (auto &row : grid_pos) {
-        for (int &val : row) {
-          val += text_len + st_idx;
-        }
-      }
-      llm_pos_ids_list.push_back(grid_pos);
-
-      st = ed + llm_grid_t * llm_grid_h * llm_grid_w;
+      // Advance past the media segment max (closed form, no re-scan)
+      const int grid_max =
+          std::max({(llm_grid_t - 1) * second_per_grid_t * tokens_per_second,
+                    llm_grid_h - 1, llm_grid_w - 1});
+      st_idx = offset + grid_max + 1;
+      st = ed + llm_grid_t * frame;
     }
     if (st < input_tokens.size()) {
-      int st_idx = 0;
-      if (!llm_pos_ids_list.empty()) {
-        int max_val = 0;
-        for (const auto &row : llm_pos_ids_list.back()) {
-          int row_max = max(row);
-          if (row_max > max_val) {
-            max_val = row_max;
-          }
-        }
-        st_idx = max_val + 1;
-      }
-      size_t text_len = input_tokens.size() - st;
-      std::vector<std::vector<int>> text_pos(3);
-      std::vector<int> text_range = arange(0, text_len);
-      for (int j = 0; j < 3; ++j) {
-        std::vector<int> temp(text_range);
-        for (int &val : temp) {
-          val += st_idx;
-        }
-        text_pos[j] = temp;
-      }
-      llm_pos_ids_list.push_back(text_pos);
+      append_text(input_tokens.size() - st);
     }
-
-    std::vector<std::vector<int>> llm_positions = cat(llm_pos_ids_list, 1);
 
     size_t valid_index = 0;
     for (size_t j = 0; j < seq_length; ++j) {
@@ -611,6 +489,26 @@ int ChatPipe::forward_prefill(std::vector<int> &position_ids_1d, int &max_posid,
   return model.forward_first(position_ids_1d);
 }
 
+// Flatten [3][batch][seq_len] position ids to 1D; also yields max of row 0
+static std::vector<int> flatten_position_ids(
+    const std::vector<std::vector<std::vector<int>>> &position_ids,
+    int &max_posid) {
+  std::vector<int> out;
+  out.reserve(position_ids[0].size() * position_ids[0][0].size() * 3);
+  for (const auto &two_dim_tensor : position_ids) {
+    for (const auto &one_dim_tensor : two_dim_tensor) {
+      out.insert(out.end(), one_dim_tensor.begin(), one_dim_tensor.end());
+    }
+  }
+  max_posid = 0;
+  for (const auto &sub_tensor : position_ids[0]) {
+    max_posid =
+        std::max(max_posid, *std::max_element(sub_tensor.begin(),
+                                              sub_tensor.end()));
+  }
+  return out;
+}
+
 // Main chat loop
 void ChatPipe::chat(std::string input_str, std::string media_path) {
 
@@ -652,23 +550,8 @@ void ChatPipe::chat(std::string input_str, std::string media_path) {
     vit_process_image(pixel_values, vit_offset);
     std::vector<std::vector<std::vector<int>>> position_ids =
         get_rope_index({tokens}, {config.grid_thw}, IMAGE_PAD_TOKEN);
-
-    // Find the maximum value in the 3D array position_ids
-    for (const auto &sub_tensor : position_ids[0]) {
-      for (int val : sub_tensor) {
-        if (val > max_posid) {
-          max_posid = val;
-        }
-      }
-    }
-    // Convert the 3D array position_ids to 1D
-    std::vector<int> position_ids_1d;
-    for (const auto &two_dim_tensor : position_ids) {
-      for (const auto &one_dim_tensor : two_dim_tensor) {
-        position_ids_1d.insert(position_ids_1d.end(), one_dim_tensor.begin(),
-                               one_dim_tensor.end());
-      }
-    }
+    std::vector<int> position_ids_1d =
+        flatten_position_ids(position_ids, max_posid);
     token = forward_prefill(position_ids_1d, max_posid, history_max_posid);
   } break;
   case VIDEO: {
@@ -689,23 +572,8 @@ void ChatPipe::chat(std::string input_str, std::string media_path) {
     vit_process_video(pixel_values, vit_offset);
     std::vector<std::vector<std::vector<int>>> position_ids =
         get_rope_index({tokens}, {config.grid_thw}, VIDEO_PAD_TOKEN);
-
-    // Find the maximum value in the 3D array position_ids
-    for (const auto &sub_tensor : position_ids[0]) {
-      for (int val : sub_tensor) {
-        if (val > max_posid) {
-          max_posid = val;
-        }
-      }
-    }
-    // Convert the 3D array position_ids to 1D
-    std::vector<int> position_ids_1d;
-    for (const auto &two_dim_tensor : position_ids) {
-      for (const auto &one_dim_tensor : two_dim_tensor) {
-        position_ids_1d.insert(position_ids_1d.end(), one_dim_tensor.begin(),
-                               one_dim_tensor.end());
-      }
-    }
+    std::vector<int> position_ids_1d =
+        flatten_position_ids(position_ids, max_posid);
     token = forward_prefill(position_ids_1d, max_posid, history_max_posid);
   } break;
   case TEXT: {
@@ -726,6 +594,7 @@ void ChatPipe::chat(std::string input_str, std::string media_path) {
   // Subsequent tokenization
   std::vector<int> full_word_tokens;
   std::string text;
+  std::vector<int> following_position_ids(3);
   while (token != ID_IM_END && model.history_length < model.SEQLEN) {
     // std::cout << "\nfull_word_tokens: " << token << "  " << std::endl;
     full_word_tokens.push_back(token);
@@ -741,7 +610,8 @@ void ChatPipe::chat(std::string input_str, std::string media_path) {
       full_word_tokens.clear();
     }
     max_posid++;
-    std::vector<int> following_position_ids = {max_posid, max_posid, max_posid};
+    following_position_ids[0] = following_position_ids[1] =
+        following_position_ids[2] = max_posid;
     token = model.forward_next(following_position_ids);
     tok_num++;
   }
@@ -865,15 +735,8 @@ void ChatPipe::vit_process_image(std::vector<float> &pixel_values,
   int w = config.grid_thw[2];
   std::vector<std::vector<int>> grid_thw = {config.grid_thw};
 
-  // Call rot_pos to generate position_ids
-  std::vector<std::vector<int>> pos_ids_vec = rot_pos(grid_thw);
-
-  // std::cout << "pos_ids_vec size: " << pos_ids_vec.size() << "  " <<
-  // pos_ids_vec[0].size() << std::endl;
-  std::vector<int> position_ids;
-  for (const auto &v : pos_ids_vec) {
-    position_ids.insert(position_ids.end(), v.begin(), v.end());
-  }
+  // Call rot_pos to generate position_ids (flat [h0, w0, h1, w1, ...])
+  std::vector<int> position_ids = rot_pos(grid_thw);
 
   // Call get_window_index
   auto [window_index, cu_window_seqlens] = get_window_index(grid_thw);
@@ -923,14 +786,9 @@ void ChatPipe::vit_process_video(std::vector<float> &pixel_values,
   int t_offset = 0;
   int v_offset = vit_offset;
   for (auto t_i : t_list) {
-    // Call rot_pos to generate position_ids
+    // Call rot_pos to generate position_ids (flat [h0, w0, h1, w1, ...])
     std::vector<std::vector<int>> grid_thw = {{t_i, h, w}};
-    std::vector<std::vector<int>> pos_ids_vec = rot_pos(grid_thw);
-
-    std::vector<int> position_ids;
-    for (const auto &v : pos_ids_vec) {
-      position_ids.insert(position_ids.end(), v.begin(), v.end());
-    }
+    std::vector<int> position_ids = rot_pos(grid_thw);
 
     // Call get_window_index
     auto [window_index, cu_window_seqlens] = get_window_index(grid_thw);

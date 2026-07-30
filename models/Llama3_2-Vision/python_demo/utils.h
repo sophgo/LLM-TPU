@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <climits>
 #include <cmath>
+#include <numeric>
 
 //===------------------------------------------------------------===//
 // Union & Struct
@@ -738,16 +739,17 @@ private:
 
   // ViT position utilities
   std::vector<int> make_qwen2vl_vit_position_id() {
-    std::vector<int> pos_ids;
-
-    int t = config_.grid_thw[0];
-    int h = config_.grid_thw[1];
-    int w = config_.grid_thw[2];
+    const int t = config_.grid_thw[0];
+    const int h = config_.grid_thw[1];
+    const int w = config_.grid_thw[2];
+    const int merge = config_.spatial_merge_size;
+    const int valid_vit_pixels = h * w;
 
     // generate hpos_ids
     std::vector<int> hpos_ids;
-    for (int n = 0; n < h; n += config_.spatial_merge_size) {
-      for (int _ = 0; _ < w / config_.spatial_merge_size; ++_) {
+    hpos_ids.reserve(valid_vit_pixels);
+    for (int n = 0; n < h; n += merge) {
+      for (int col = 0; col < w / merge; ++col) {
         hpos_ids.push_back(n);
         hpos_ids.push_back(n);
         hpos_ids.push_back(n + 1);
@@ -757,8 +759,9 @@ private:
 
     // generate wpos_ids
     std::vector<int> wpos_ids;
-    for (int _ = 0; _ < h / config_.spatial_merge_size; ++_) {
-      for (int e = 0; e < w; e += config_.spatial_merge_size) {
+    wpos_ids.reserve(valid_vit_pixels);
+    for (int row = 0; row < h / merge; ++row) {
+      for (int e = 0; e < w; e += merge) {
         wpos_ids.push_back(e);
         wpos_ids.push_back(e + 1);
         wpos_ids.push_back(e);
@@ -766,13 +769,15 @@ private:
       }
     }
 
-    int valid_vit_pixels = h * w;
-    pos_ids.resize(config_.MAX_PIXELS * 2, 0);
-    for (int i = 0; i < t; ++i) {
-      for (int j = 0; j < valid_vit_pixels; ++j) {
-        pos_ids[i * valid_vit_pixels + 2 * j] = hpos_ids[j];
-        pos_ids[i * valid_vit_pixels + 2 * j + 1] = wpos_ids[j];
-      }
+    // interleave h/w into the base block, then replicate it for each t
+    std::vector<int> pos_ids(config_.MAX_PIXELS * 2, 0);
+    const size_t block = (size_t)valid_vit_pixels * 2;
+    for (int j = 0; j < valid_vit_pixels; ++j) {
+      pos_ids[2 * j] = hpos_ids[j];
+      pos_ids[2 * j + 1] = wpos_ids[j];
+    }
+    for (int i = 1; i < t; ++i) {
+      std::copy_n(pos_ids.data(), block, pos_ids.data() + i * block);
     }
 
     return pos_ids;
@@ -791,25 +796,21 @@ private:
     std::vector<int> h_position_id;
     std::vector<int> w_position_id;
 
-    // Populate t_position_id
+    // Populate t_position_id (runs of the same value -> insert-fill)
+    const int frame_tokens = llm_grid_h * llm_grid_w;
+    const int media_tokens = llm_grid_t * frame_tokens;
+    t_position_id.reserve(media_tokens);
+    h_position_id.reserve(media_tokens);
+    w_position_id.reserve(media_tokens);
     for (int i = text_len; i < llm_grid_t + text_len; ++i) {
-      for (int j = 0; j < llm_grid_h * llm_grid_w; ++j) {
-        t_position_id.push_back(i);
-      }
+      t_position_id.insert(t_position_id.end(), frame_tokens, i);
     }
 
-    // Populate h_position_id
-    for (int _ = 0; _ < llm_grid_t; ++_) {
-      for (int i = 0; i < llm_grid_h; ++i) {
-        for (int j = 0; j < llm_grid_w; ++j) {
-          h_position_id.push_back(i + text_len);
-        }
-      }
-    }
-
-    // Populate w_position_id
-    for (int _ = 0; _ < llm_grid_t; ++_) {
-      for (int i = 0; i < llm_grid_h; ++i) {
+    // Populate h_position_id and w_position_id
+    for (int i = 0; i < llm_grid_t; ++i) {
+      for (int h_idx = 0; h_idx < llm_grid_h; ++h_idx) {
+        h_position_id.insert(h_position_id.end(), llm_grid_w,
+                             h_idx + text_len);
         for (int j = text_len; j < llm_grid_w + text_len; ++j) {
           w_position_id.push_back(j);
         }
@@ -824,16 +825,12 @@ private:
     position_id.reserve(config_.SEQLEN * 3);
 
     // Prepare head position ids
-    std::vector<int> head_position_id;
-    for (int i = 0; i < text_len; ++i) {
-      head_position_id.push_back(i);
-    }
+    std::vector<int> head_position_id(text_len);
+    std::iota(head_position_id.begin(), head_position_id.end(), 0);
 
     // Prepare tail position ids
-    std::vector<int> tail_position_id;
-    for (int i = st_idx; i < st_idx + tail_text_len; ++i) {
-      tail_position_id.push_back(i);
-    }
+    std::vector<int> tail_position_id(tail_text_len);
+    std::iota(tail_position_id.begin(), tail_position_id.end(), st_idx);
 
     // Fill position_id for t
     position_id.insert(
@@ -875,9 +872,8 @@ private:
 
   std::vector<int> make_default_position_id() {
     std::vector<int> position_id(config_.MAX_PREFILL_LENGTH, 0);
-    for (int i = 0; i < config_.total_length; i++) {
-      position_id[i] = i;
-    }
+    std::iota(position_id.begin(), position_id.begin() + config_.total_length,
+              0);
     return position_id;
   }
 

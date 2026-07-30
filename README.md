@@ -51,12 +51,9 @@
 
 **LLM-TPU** is an open-source project officially maintained by [SOPHGO](https://www.sophgo.com/), dedicated to deploying mainstream **generative AI models** (LLM / VLM) on SOPHGO **BM1684X / BM1688 / CV186X** series TPU chips.
 
-```
-   ┌──────────────┐    tpu-mlir    ┌──────────────┐    tpu-runtime   ┌──────────────────┐
-   │  HuggingFace │ ─────────────► │   bmodel     │ ───────────────► │  PCIE / SoC       │
-   │   weights    │   llm_convert  │ (quantized)  │    Python / C++  │  BM1684X / 1688  │
-   └──────────────┘                └──────────────┘                  └──────────────────┘
-```
+<div align="center">
+  <img src="./assets/llm_tpu_pipeline.png" alt="LLM-TPU deployment pipeline: HuggingFace / GGUF weights compiled to a quantized bmodel by llm_convert.py (tpu-mlir), then deployed via Python / C++ demos onto SOPHGO BM1684X / BM1688 / CV186X TPUs" width="760"/>
+</div>
 
 - 🚀 **One-click compilation**: `llm_convert.py` exports HuggingFace weights directly to bmodel
 - 🧩 **Rich model coverage**: Dozens of models including Qwen / Llama / DeepSeek / InternVL / MiniCPM / Phi / ChatGLM

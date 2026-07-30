@@ -13,6 +13,9 @@
 #define CV_UTILS_H_
 
 #include "PillowResize.h"
+#include <algorithm>
+#include <cassert>
+#include <cstring>
 #include <iostream>
 #include <numeric>
 #include <opencv2/imgcodecs.hpp>
@@ -119,16 +122,17 @@ private:
 
   // ViT position utilities
   std::vector<int> make_qwen2vl_vit_position_id() {
-    std::vector<int> pos_ids;
-
-    int t = config_.grid_thw[0];
-    int h = config_.grid_thw[1];
-    int w = config_.grid_thw[2];
+    const int t = config_.grid_thw[0];
+    const int h = config_.grid_thw[1];
+    const int w = config_.grid_thw[2];
+    const int merge = config_.spatial_merge_size;
+    const int valid_vit_pixels = h * w;
 
     // generate hpos_ids
     std::vector<int> hpos_ids;
-    for (int n = 0; n < h; n += config_.spatial_merge_size) {
-      for (int _ = 0; _ < w / config_.spatial_merge_size; ++_) {
+    hpos_ids.reserve(valid_vit_pixels);
+    for (int n = 0; n < h; n += merge) {
+      for (int col = 0; col < w / merge; ++col) {
         hpos_ids.push_back(n);
         hpos_ids.push_back(n);
         hpos_ids.push_back(n + 1);
@@ -138,8 +142,9 @@ private:
 
     // generate wpos_ids
     std::vector<int> wpos_ids;
-    for (int _ = 0; _ < h / config_.spatial_merge_size; ++_) {
-      for (int e = 0; e < w; e += config_.spatial_merge_size) {
+    wpos_ids.reserve(valid_vit_pixels);
+    for (int row = 0; row < h / merge; ++row) {
+      for (int e = 0; e < w; e += merge) {
         wpos_ids.push_back(e);
         wpos_ids.push_back(e + 1);
         wpos_ids.push_back(e);
@@ -147,44 +152,35 @@ private:
       }
     }
 
-    int valid_vit_pixels = h * w;
-    pos_ids.resize(config_.MAX_PATCHES * 2, 0);
-    for (int i = 0; i < t; ++i) {
-      for (int j = 0; j < valid_vit_pixels; ++j) {
-        pos_ids[i * valid_vit_pixels + 2 * j] = hpos_ids[j];
-        pos_ids[i * valid_vit_pixels + 2 * j + 1] = wpos_ids[j];
-      }
+    // interleave h/w into the base block, then replicate it for each t
+    std::vector<int> pos_ids(config_.MAX_PATCHES * 2, 0);
+    const size_t block = (size_t)valid_vit_pixels * 2;
+    for (int j = 0; j < valid_vit_pixels; ++j) {
+      pos_ids[2 * j] = hpos_ids[j];
+      pos_ids[2 * j + 1] = wpos_ids[j];
+    }
+    for (int i = 1; i < t; ++i) {
+      std::copy_n(pos_ids.data(), block, pos_ids.data() + i * block);
     }
 
     return pos_ids;
   }
 
   std::vector<float> make_qwen2vl_vit_attention_mask() {
-    std::vector<float> attention_mask;
-    int t = config_.grid_thw[0];
-    int h = config_.grid_thw[1];
-    int w = config_.grid_thw[2];
-
-    // Compute cu_seqlens
-    std::vector<int> cu_seqlens(t + 1, 0);
-    for (int i = 0; i <= t; ++i) {
-      cu_seqlens[i] = h * w * i;
-    }
+    const int t = config_.grid_thw[0];
+    const int frame_pixels = config_.grid_thw[1] * config_.grid_thw[2];
+    const size_t max_patches = config_.MAX_PATCHES;
 
     // Initialize attention_mask with -10000
-    attention_mask.resize(config_.MAX_PATCHES * config_.MAX_PATCHES, -10000.);
+    std::vector<float> attention_mask(max_patches * max_patches, -10000.f);
 
-    // Update attention_mask based on cu_seqlens
-    for (size_t i = 1; i < cu_seqlens.size(); ++i) {
-      int start = cu_seqlens[i - 1];
-      int end = cu_seqlens[i];
+    // Unmask the per-frame diagonal blocks
+    for (int i = 0; i < t; ++i) {
+      const int start = frame_pixels * i;
+      const int end = start + frame_pixels;
       for (int row = start; row < end; ++row) {
-        for (int col = start; col < end; ++col) {
-          size_t index = row * config_.MAX_PATCHES + col;
-          if (index < attention_mask.size()) {
-            attention_mask[index] = 0;
-          }
-        }
+        std::fill_n(attention_mask.data() + row * max_patches + start,
+                    end - start, 0.f);
       }
     }
 
@@ -204,25 +200,21 @@ private:
     std::vector<int> h_position_id;
     std::vector<int> w_position_id;
 
-    // Populate t_position_id
+    // Populate t_position_id (runs of the same value -> fill)
+    const int frame_tokens = llm_grid_h * llm_grid_w;
+    const int media_tokens = llm_grid_t * frame_tokens;
+    t_position_id.reserve(media_tokens);
+    h_position_id.reserve(media_tokens);
+    w_position_id.reserve(media_tokens);
     for (int i = text_len; i < llm_grid_t + text_len; ++i) {
-      for (int j = 0; j < llm_grid_h * llm_grid_w; ++j) {
-        t_position_id.push_back(i);
-      }
+      t_position_id.insert(t_position_id.end(), frame_tokens, i);
     }
 
-    // Populate h_position_id
-    for (int _ = 0; _ < llm_grid_t; ++_) {
-      for (int i = 0; i < llm_grid_h; ++i) {
-        for (int j = 0; j < llm_grid_w; ++j) {
-          h_position_id.push_back(i + text_len);
-        }
-      }
-    }
-
-    // Populate w_position_id
-    for (int _ = 0; _ < llm_grid_t; ++_) {
-      for (int i = 0; i < llm_grid_h; ++i) {
+    // Populate h_position_id and w_position_id
+    for (int i = 0; i < llm_grid_t; ++i) {
+      for (int h_idx = 0; h_idx < llm_grid_h; ++h_idx) {
+        h_position_id.insert(h_position_id.end(), llm_grid_w,
+                             h_idx + text_len);
         for (int j = text_len; j < llm_grid_w + text_len; ++j) {
           w_position_id.push_back(j);
         }
@@ -237,16 +229,12 @@ private:
     position_id.reserve(config_.SEQLEN * 3);
 
     // Prepare head position ids
-    std::vector<int> head_position_id;
-    for (int i = 0; i < text_len; ++i) {
-      head_position_id.push_back(i);
-    }
+    std::vector<int> head_position_id(text_len);
+    std::iota(head_position_id.begin(), head_position_id.end(), 0);
 
     // Prepare tail position ids
-    std::vector<int> tail_position_id;
-    for (int i = st_idx; i < st_idx + tail_text_len; ++i) {
-      tail_position_id.push_back(i);
-    }
+    std::vector<int> tail_position_id(tail_text_len);
+    std::iota(tail_position_id.begin(), tail_position_id.end(), st_idx);
 
     // Fill position_id for t
     position_id.insert(
@@ -288,9 +276,8 @@ private:
 
   std::vector<int> make_default_position_id() {
     std::vector<int> position_id(config_.MAX_PREFILL_LENGTH, 0);
-    for (int i = 0; i < config_.total_length; i++) {
-      position_id[i] = i;
-    }
+    std::iota(position_id.begin(), position_id.begin() + config_.total_length,
+              0);
     return position_id;
   }
 
@@ -518,21 +505,19 @@ cv::Mat convert_to_rgb(const cv::Mat &input_image) {
 
   switch (input_image.channels()) {
   case 4: {
+    // alpha blend over white: out = bgr * alpha + 255 * (1 - alpha)
     std::vector<cv::Mat> bgra_channels;
     cv::split(input_image, bgra_channels);
 
-    cv::Mat alpha;
+    cv::Mat alpha, inv_alpha;
     bgra_channels[3].convertTo(alpha, CV_32FC1, 1.0 / 255.0);
+    cv::subtract(cv::Scalar(1.0), alpha, inv_alpha);
 
-    cv::Mat white_bg(input_image.size(), CV_32FC3,
-                     cv::Scalar(1.0f, 1.0f, 1.0f));
-
-    std::vector<cv::Mat> blended_channels;
+    std::vector<cv::Mat> blended_channels(3);
     for (int i = 0; i < 3; ++i) {
       cv::Mat channel;
-      bgra_channels[i].convertTo(channel, CV_32FC1, 1.0 / 255.0);
-      cv::Mat blended = channel.mul(alpha) + white_bg.col(i).mul(1.0 - alpha);
-      blended_channels.push_back(blended * 255.0);
+      bgra_channels[i].convertTo(channel, CV_32FC1);
+      blended_channels[i] = channel.mul(alpha) + inv_alpha * 255.0;
     }
 
     cv::merge(blended_channels, output_image);
@@ -576,30 +561,21 @@ std::vector<float> bicubic_resize(const cv::Mat &image, int resized_height,
   //       0, 0,
   //       cv::INTER_CUBIC
   // );
-  // rescale
-  resized_image.convertTo(resized_image, CV_32FC1, 0.00392156862745098, 0);
+  // rescale to [0, 1]
+  resized_image.convertTo(resized_image, CV_32FC3, 0.00392156862745098, 0);
 
-  // split channel
-  std::vector<cv::Mat> rgbChannels(3);
-  cv::split(resized_image, rgbChannels);
-
-  // normaliza
-  for (int c = 0; c < 3; c++) {
-    rgbChannels[c] = (rgbChannels[c] - image_mean[c]) / image_std[c];
-  }
-
-  // combine channel
-  cv::Mat normalized_image;
-  cv::merge(rgbChannels, normalized_image);
-
-  // convert to 1D
-  std::vector<float> processed_image;
-  processed_image.reserve(resized_height * resized_width * 3);
+  // split channels, normalize in place (single fused multiply-add pass),
+  // and write CHW directly -- no intermediate merge
   std::vector<cv::Mat> chw(3);
-  cv::split(normalized_image, chw);
+  cv::split(resized_image, chw);
+
+  const size_t plane_size = (size_t)resized_height * resized_width;
+  std::vector<float> processed_image(3 * plane_size);
   for (int c = 0; c < 3; c++) {
-    processed_image.insert(processed_image.end(), (float *)chw[c].datastart,
-                           (float *)chw[c].dataend);
+    chw[c].convertTo(chw[c], CV_32FC1, 1.0 / image_std[c],
+                     -image_mean[c] / image_std[c]);
+    std::memcpy(processed_image.data() + c * plane_size, chw[c].ptr<float>(),
+                plane_size * sizeof(float));
   }
   return processed_image;
 }
