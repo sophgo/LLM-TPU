@@ -79,6 +79,8 @@ class FalconPerception():
 
         self.MAX_INPUT_LENGTH = self.model.MAX_INPUT_LENGTH  # 512
         self.SEQLEN = self.model.SEQLEN                       # 4096
+        self.IMG_H = self.model.IMG_H                         # from bmodel anyup shape
+        self.IMG_W = self.model.IMG_W                         # from bmodel anyup shape
 
         # img_projector + golden rope freqs are exported into config_path as a
         # small npz (falcon_extra_weights.npz) so the pipeline need not touch the
@@ -108,7 +110,8 @@ class FalconPerception():
         batch = self.process_batch(
             self.tokenizer, self.config, [(image_path, prompt)],
             max_length=self.MAX_INPUT_LENGTH,
-            min_dimension=192, max_dimension_h=320, max_dimension_w=192,
+            min_dimension=min(self.IMG_H, self.IMG_W),
+            max_dimension_h=self.IMG_H, max_dimension_w=self.IMG_W,
             patch_size=self.patch_size, merge_size=self.merge_size,
         )
         return batch

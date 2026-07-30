@@ -136,6 +136,8 @@ public:
   int HIDDEN_SIZE;
   int KV_BYTES;
   int NUM_LAYERS;
+  int IMG_H;
+  int IMG_W;
   bool lmhead_with_topk;
   bool support_history;
 
@@ -248,6 +250,9 @@ void FalconPerception::init_by_names() {
   MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
   HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[1];
   SEQLEN = net_blocks_cache[0]->stages[0].input_shapes[5].dims[1];
+  // anyup images input shape [1,3,H,W] — the compiled max image dimensions
+  IMG_H = net_anyup->stages[0].input_shapes[0].dims[2];
+  IMG_W = net_anyup->stages[0].input_shapes[0].dims[3];
   KV_BYTES =
       bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
   support_history = true;
@@ -642,6 +647,8 @@ PYBIND11_MODULE(chat, m) {
       .def_readonly("MAX_INPUT_LENGTH", &FalconPerception::MAX_INPUT_LENGTH)
       .def_readonly("HIDDEN_SIZE", &FalconPerception::HIDDEN_SIZE)
       .def_readonly("NUM_LAYERS", &FalconPerception::NUM_LAYERS)
+      .def_readonly("IMG_H", &FalconPerception::IMG_H)
+      .def_readonly("IMG_W", &FalconPerception::IMG_W)
       .def_readonly("support_history", &FalconPerception::support_history)
       .def_readonly("history_length", &FalconPerception::history_length);
 }
