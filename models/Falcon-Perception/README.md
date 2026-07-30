@@ -60,6 +60,11 @@ llm_convert.py -m /workspace/falcon-perception \
   -s 512 --max_input_length 384 -q bf16 -c bm1684x --max_pixels 256,256 \
   -o /workspace/falcon-perception_bmodel
 
+# BF16 non-square example (320×192)
+llm_convert.py -m /workspace/falcon-perception \
+  -s 512 --max_input_length 384 -q bf16 -c bm1684x --max_pixels 320,192 \
+  -o /workspace/falcon-perception_bmodel
+
 # F32 full precision
 llm_convert.py -m /workspace/falcon-perception \
   -s 512 --max_input_length 384 -q f32 -c bm1684x --max_pixels 256,256 \
@@ -71,9 +76,9 @@ Compilation parameter description:
 - `-q f32`: F32 full precision (no quantization, hand-written attention decomposition).
 - `-s 512`: total KV cache length (SEQLEN).
 - `--max_input_length 384`: prefill input limit.
-- `--max_pixels 256,256`: maximum image size of 256×256 pixels.
+- `--max_pixels H,W`: maximum image size in pixels. Supports non-square shapes (both H and W must be multiples of 16), e.g. `320,192`.
 - `-c bm1684x`: target chip.
-- Static compilation (fixed shapes). For extra-long queries or scenarios with more than ~16 detections, you need to increase `-s`/`--max_input_length` and recompile yourself.
+- Static compilation (fixed shapes). The bmodel is locked to the compiled `--max_pixels` shape. For extra-long queries or scenarios with more than ~16 detections, you need to increase `-s`/`--max_input_length` and recompile yourself.
 
 Output: `falcon-perception_f32_seq512_bm1684x_1dev_static_<ts>.bmodel` (approx. 2.5GB, 64 nets).
 
@@ -162,6 +167,6 @@ The pipeline performs full post-processing on the raw 256×256 mask logits (alig
 
 ## FAQ
 
-- **Supported resolutions**: up to 256×256 (`--max_pixels 256,256`). Changing the resolution requires recompiling the bmodel.
-- **Number of image tokens**: the image is resized to ≤256×256 while preserving the aspect ratio, with each side rounded to a multiple of 16 (patch_size=16, merge=1); `image_tokens = (H_res/16) × (W_res/16)`. Example: 640×483 → 256×192 → 16×12 = 192 tokens; a square 256×256 image hits the upper limit of 256 tokens. Adding template tokens plus the query gives the prefill length.
-- **Device memory**: BF16 approx. 2.0GB (DevMem 2041/14678 MB); F32 approx. 3.3GB (DevMem 3363/14678 MB).
+- **Supported resolutions**: the bmodel is statically compiled with `--max_pixels H,W` (both must be multiples of 16). Non-square shapes are supported. Changing the shape requires recompiling the bmodel and updating `pipeline.py` `process()` to pass matching `min_dimension`, `max_dimension_h`, `max_dimension_w`.
+- **Number of image tokens**: the image is resized to fit within max_H × max_W while preserving the aspect ratio, with each side rounded to a multiple of 16 (patch_size=16, merge=1); `image_tokens = (H_res/16) × (W_res/16)`. Example (256×256): 640×483 → 256×192 → 16×12 = 192 tokens. Example (320×192): 640×360 → 320×180 → 20×11 = 220 tokens. Adding template tokens plus the query gives the prefill length.
+- **Device memory**: BF16 256×256 approx. 2.0GB; BF16 320×192 approx. 2.0GB; F32 256×256 approx. 3.3GB.

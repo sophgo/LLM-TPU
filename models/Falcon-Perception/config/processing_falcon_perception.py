@@ -378,7 +378,8 @@ def process_batch(
     image_prompt_pairs,
     max_length,
     min_dimension,
-    max_dimension,
+    max_dimension_h,
+    max_dimension_w,
     patch_size=16,
     merge_size=1,
 ):
@@ -389,11 +390,18 @@ def process_batch(
     all_input_ids = []
     all_selected_images = []
     processor_local = ImageProcessor(patch_size, merge_size)
+    max_dimension = max(max_dimension_h, max_dimension_w)
 
     for img_input, prompt in image_prompt_pairs:
         img = load_image(img_input)
         if img is not None:
             img = resize_image_if_necessary(img, min_dimension, max_dimension)
+            # Ensure both dimensions fit within max_dimension_h x max_dimension_w
+            # (resize_image_if_necessary only constrains the longest side).
+            w, h = img.size
+            if w > max_dimension_w or h > max_dimension_h:
+                scale = min(max_dimension_w / w, max_dimension_h / h)
+                img = img.resize((int(w * scale), int(h * scale)))
         images = processor_local.preprocess(images=[img] if img else [])
         input_ids, selected_images = tokenize_inputs(
             prompt, images, tokenizer, config, patch_size, merge_size, max_length,
@@ -406,7 +414,7 @@ def process_batch(
         all_input_ids, batch_first=True, padding_value=pad_token_id, padding_side="left",
     )
 
-    processed = processor_local.batch_images_with_mask(all_selected_images, max_dimension, max_dimension)
+    processed = processor_local.batch_images_with_mask(all_selected_images, max_dimension_h, max_dimension_w)
     assert processed is not None
 
     pos_t, pos_hw = get_pos_thw(

@@ -92,7 +92,7 @@ class FalconPerception():
         self.img_projector = data["img_projector_weight"].astype(np.float32)  # [1024,768] numpy
         self.freqs_cis_golden = torch.from_numpy(
             data["freqs_cis_golden"].astype(np.float32))         # [16,32,2]
-        # AnyUp window attention mask is geometry-only (static 256x256), so it
+        # AnyUp window attention mask is geometry-only (static HxW), so it
         # is baked into the anyup bmodel as a const weight — not needed here.
 
     # ------------------------------------------------------------------ process
@@ -108,7 +108,7 @@ class FalconPerception():
         batch = self.process_batch(
             self.tokenizer, self.config, [(image_path, prompt)],
             max_length=self.MAX_INPUT_LENGTH,
-            min_dimension=256, max_dimension=256,
+            min_dimension=192, max_dimension_h=320, max_dimension_w=192,
             patch_size=self.patch_size, merge_size=self.merge_size,
         )
         return batch
@@ -239,33 +239,33 @@ class FalconPerception():
 
     # -------------------------------------------------------- anyup + heads
     def build_anyup_inputs(self, batch, h_BSD):
-        """images [1,3,256,256], lr_tokens [1,1024,16,16] (gather img-token
-        hidden PRE conv_segm into the full 16x16 grid, invalid patches = 0).
+        """images [1,3,H,W], lr_tokens [1,1024,h,w] (gather img-token
+        hidden PRE conv_segm into the full hxw grid, invalid patches = 0).
         Mirrors HF gather_img_tokens. (window_mask is baked into the bmodel.)"""
         c = self.config
         ph = pw = c.spatial_patch_size                         # 16
         tokens = batch["tokens"][0].numpy().astype(np.int64)
         img_pos = np.where(tokens == self.ID_IMG)[0]           # [M] valid img tokens
         valid = h_BSD[img_pos].astype(np.float32)              # [M,1024] in (h,w) order
-        # itok grid mask [16,16] from pixel_mask [N,1,H,W] (or [N,H,W])
+        # itok grid mask [h,w] from pixel_mask [N,1,H,W] (or [N,H,W])
         pm = batch["pixel_mask"]
         if pm.ndim == 4:
             pm = pm[:, 0]                                      # [N,H,W]
         itok = E.reduce(pm.numpy().astype(bool),
                         "n (h ph) (w pw) -> h w", reduction="any",
-                        ph=ph, pw=pw)                          # [16,16]
+                        ph=ph, pw=pw)                          # [h,w]
         grid = np.zeros((itok.shape[0], itok.shape[1], self.hidden),
-                        dtype=np.float32)                      # [16,16,1024]
+                        dtype=np.float32)                      # [h,w,1024]
         grid[itok] = valid                                     # scatter valid, rest 0
-        lr_tokens = grid.transpose(2, 0, 1)[None].astype(np.float32)  # [1,1024,16,16]
+        lr_tokens = grid.transpose(2, 0, 1)[None].astype(np.float32)  # [1,1024,h,w]
         pv = batch["pixel_values"]                             # [N,1,H,W,3]
-        images = pv[0, 0].numpy().transpose(2, 0, 1)[None].astype(np.float32)  # [1,3,256,256]
+        images = pv[0, 0].numpy().transpose(2, 0, 1)[None].astype(np.float32)  # [1,3,H,W]
         return images, lr_tokens
 
     def run_anyup(self, batch, h_BSD):
         images, lr_tokens = self.build_anyup_inputs(batch, h_BSD)
         hr = np.array(self.model.forward_anyup(images, lr_tokens),
-                      dtype=np.float32)                       # [1,256,256,256]
+                      dtype=np.float32)                       # [1,256,H,W]
         return hr
 
     def decode_coord(self, h_last, existing_coords):
@@ -301,19 +301,20 @@ class FalconPerception():
         return hw, fourier
 
     def decode_seg(self, h_last, hr_features):
-        """h_last [1024], hr_features [1,256,256,256] -> mask logits [256,256]."""
+        """h_last [1024], hr_features [1,256,H,W] -> mask logits [H,W]."""
         seg_vec = np.array(self.model.forward_seg(
             h_last.astype(np.float32)), dtype=np.float32).reshape(1, self.segm_out_dim)
         k = self.max_segm_tokens
         seg_pad = np.zeros((k, self.segm_out_dim), dtype=np.float32)
         seg_pad[0] = seg_vec[0]
-        hr = hr_features.astype(np.float32)                    # [1,256,256,256]
+        hr = hr_features.astype(np.float32)                    # [1,256,H,W]
+        mh, mw = hr.shape[2], hr.shape[3]
         mask = np.array(self.model.forward_mask(hr, seg_pad),
-                        dtype=np.float32).reshape(k, 256, 256)
-        return mask[0]                                         # [256,256]
+                        dtype=np.float32).reshape(k, mh, mw)
+        return mask[0]                                         # [H,W]
 
     def _mask_to_binary(self, mask_logits, pixel_mask_hw, orig_hw, threshold=0.5):
-        """[256,256] logits (processed space) -> binary [orig_h, orig_w] mask.
+        """[H,W] logits (processed space) -> binary [orig_h, orig_w] mask.
         Mirrors HF _postprocess_aux: crop to pixel_mask active region, bilinear
         resize to original size, sigmoid > threshold."""
         import torch.nn.functional as F
@@ -447,7 +448,7 @@ class FalconPerception():
                               dtype=np.float32).reshape(self.MAX_INPUT_LENGTH,
                                                         self.hidden)
         h_last = h_BSD_full[L - 1].copy()                     # hidden that emitted `token`
-        hr_features = self.run_anyup(batch, h_BSD_full[:L])   # [1,256,256,256]
+        hr_features = self.run_anyup(batch, h_BSD_full[:L])   # [1,256,H,W]
 
         # 4) decode loop with coord/size/seg head dispatch + Fourier feedback
         tok_num = 0
