@@ -156,6 +156,13 @@ void Qwen3_VL::net_launch_decode(int idx, int kv_offset,
       past_key[idx].u.device.device_addr + kv_offset, KV_BYTES);
   out_tensors[2].device_mem = bm_mem_from_device(
       past_value[idx].u.device.device_addr + kv_offset, KV_BYTES);
+  // The real KV lives in past_key/past_value; rebind history inputs to them
+  // (only stage 0's input_mems is aliased there).
+  int stage_capacity = net->stages[stage_idx].input_shapes[3].dims[1];
+  in_tensors[3].device_mem = bm_mem_from_device(
+      past_key[idx].u.device.device_addr, stage_capacity * KV_BYTES);
+  in_tensors[4].device_mem = bm_mem_from_device(
+      past_value[idx].u.device.device_addr, stage_capacity * KV_BYTES);
 
   // ===== launch =====
   net_launch(net, in_tensors, out_tensors);

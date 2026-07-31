@@ -30,6 +30,13 @@ void Block::net_launch_decode(int local_idx, int kv_offset, const int *pos_id,
   bm_memcpy_s2d(bm_handle, in_tensors[1].device_mem, (void *)pos_id);
   bm_memcpy_s2d(bm_handle, in_tensors[2].device_mem,
                 (void *)attention_mask.data());
+  // The real KV lives in past_key/past_value; rebind history inputs to them
+  // (only stage 0's input_mems is aliased there).
+  int stage_capacity = net->stages[stage_idx].input_shapes[3].dims[1];
+  in_tensors[3].device_mem = bm_mem_from_device(
+      past_key[local_idx].u.device.device_addr, stage_capacity * KV_BYTES);
+  in_tensors[4].device_mem = bm_mem_from_device(
+      past_value[local_idx].u.device.device_addr, stage_capacity * KV_BYTES);
   out_tensors[1].device_mem = bm_mem_from_device(
       past_key[local_idx].u.device.device_addr + kv_offset, KV_BYTES);
   out_tensors[2].device_mem = bm_mem_from_device(

@@ -393,8 +393,8 @@ void Qwen::net_launch_decode(int idx, int kv_offset, bm_device_mem_t &input_mem,
   // auto &in0_mem = net_blocks_cache[idx]->stages[stage_idx].input_mems[0];
   auto &in1_mem = net_blocks_cache[idx]->stages[stage_idx].input_mems[1];
   auto &in2_mem = net_blocks_cache[idx]->stages[stage_idx].input_mems[2];
-  auto &in3_mem = net_blocks_cache[idx]->stages[stage_idx].input_mems[3];
-  auto &in4_mem = net_blocks_cache[idx]->stages[stage_idx].input_mems[4];
+  // auto &in3_mem = net_blocks_cache[idx]->stages[stage_idx].input_mems[3];
+  // auto &in4_mem = net_blocks_cache[idx]->stages[stage_idx].input_mems[4];
   auto &out0_mem = net_blocks_cache[idx]->stages[stage_idx].output_mems[0];
   // ===== prepare input tensors =====
   bmrt_tensor_with_device(&in_tensors[0], input_mem, net->input_dtypes[0],
@@ -414,10 +414,19 @@ void Qwen::net_launch_decode(int idx, int kv_offset, bm_device_mem_t &input_mem,
         &in_tensors[2], net_blocks_cache[0]->stages[stage_idx].input_mems[2],
         net->input_dtypes[2], net->stages[stage_idx].input_shapes[2]);
   }
-  bmrt_tensor_with_device(&in_tensors[3], in3_mem, net->input_dtypes[3],
-                          net->stages[stage_idx].input_shapes[3]);
-  bmrt_tensor_with_device(&in_tensors[4], in4_mem, net->input_dtypes[4],
-                          net->stages[stage_idx].input_shapes[4]);
+  // The real KV lives in past_key/past_value; rebind history inputs to them
+  // (only stage 0's input_mems is aliased there).
+  int stage_capacity = net->stages[stage_idx].input_shapes[3].dims[1];
+  bmrt_tensor_with_device(
+      &in_tensors[3],
+      bm_mem_from_device(past_key[idx].u.device.device_addr,
+                         stage_capacity * kv_bytes),
+      net->input_dtypes[3], net->stages[stage_idx].input_shapes[3]);
+  bmrt_tensor_with_device(
+      &in_tensors[4],
+      bm_mem_from_device(past_value[idx].u.device.device_addr,
+                         stage_capacity * kv_bytes),
+      net->input_dtypes[4], net->stages[stage_idx].input_shapes[4]);
   // ===== prepare output tensors =====
   bmrt_tensor_with_device(&out_tensors[0], out0_mem, net->output_dtypes[0],
                           net->stages[stage_idx].output_shapes[0]);
