@@ -204,6 +204,7 @@ reshape_op(op, [1, 4624, n_heads, d_head]) # ✗ 硬编码
 
 - **`init_vconfig()` 拿不到 `args`**：`init_vconfig()` 被父类 `__init__` 调用，但 `args` 不是它的参数。需要在 `__init__` 里先把要用到的存到 `self`（如 `self.max_pixels = args.max_pixels`），`init_vconfig()` 再读 `self.*`。
 - **`save_weights()` 必须在 `save_mlir_module()` 之前**：debug 模式下 `save_mlir_module()` 会立即做 shape-infer，需要权重文件已存在，否则 crash 报 `*.npz doesn't exist`。
+- **Linear 权重尽量用 `set_linear_weight` 存，不要 `self.model.read` 后手动塞 `weights_dict`**：`set_linear_weight(path, weights_dict)` 会自动把 HF 的 `(out, in)` 权重转置成 `(in, out)`，这是 `self.linear()` / `MatMulOp` 期望的布局。手动 `self.model.read` 后直接存入 `weights_dict` 会漏掉转置。
 - **只有 `ReshapeOp` 的 `shape` 参数支持 `-1`**：`SliceOp`/`MatMulOp` 等的 output shape 必须是确定数值。动态维度下的切片（如 RoPE 的 rotate_half）不要用 `SliceOp` + 静态 ends——runtime 实际 seq 比编译期小会越界，改用原生 `top.RopeOp`（动态安全）或 `GatherOp`。
 - **不要为模型特异需求改共享基类**：如需让某个子网络（如 ViT）强制动态而文本保持默认，在子类 Converter 覆盖 `compile_vit()` 附加 `--dynamic`，**不要改 `LlmConverter.submit_deploy_task` 的门控条件**（会污染所有 LLM 模型，且与 `use_small_mask()` 等其他 `self.dynamic` 分支状态不一致）。
 - **BF16 模型量化 dtype 推导**：模型 `torch_dtype=bfloat16` + 4bit 时，框架推导出 `w4bf16` 并强制覆盖用户指定的 `w4f16`（打印 warning）。编译时直接用 `-q w4bf16`。
