@@ -1,0 +1,34 @@
+{
+  "architectures": [
+    "Qwen2AudioForConditionalGeneration"
+  ], 
+  "audio_config": {
+    "model_type": "qwen2_audio_encoder",
+    "num_mel_bins": 128,
+    "encoder_layers": 32,
+    "encoder_attention_heads": 20,
+    "encoder_ffn_dim": 5120,
+    "d_model": 1280,
+    "activation_function": "gelu",
+    "scale_embedding": false,
+    "max_source_positions": 1500
+  },
+  "audio_token_index": 151646,
+  "ignore_index": -100,
+  "model_type": "qwen2_audio",
+  "text_config": {
+    "bos_token_id": 151643,
+    "eos_token_id": 151645,
+    "intermediate_size": 11008,
+    "max_position_embeddings": 8192,
+    "model_type": "qwen2",
+    "rope_theta": 10000,
+    "rms_norm_eps": 1e-5,
+    "sliding_window": 32768,
+    "torch_dtype": "bfloat16",
+    "use_mrope": false,
+    "vocab_size": 156032
+  },
+  "transformers_version": "4.38.1",
+  "vocab_size": 156032
+}
