@@ -33,8 +33,9 @@
 
 | Date | Updates |
 | :--- | :--- |
-| 🔥 **2026.07.16** | **Falcon-Perception** now supports BM1684X — Python demo for referring segmentation (box + mask) → [Details](./models/Falcon-Perception/) |
-| 🔥 **2026.07.09** | **LocateAnything-3B** now supports BM1684X / BM1688 — Python demo for visual grounding (box / point) → [Details](./models/LocateAnything/) |
+| 🔥 **2026.08.03** | **Step3_VL** now supports BM1684X — Python demo for image understanding → [Details](./models/Step3_VL/) |
+| **2026.07.16** | **Falcon-Perception** now supports BM1684X — Python demo for referring segmentation (box + mask) → [Details](./models/Falcon-Perception/) |
+| **2026.07.09** | **LocateAnything-3B** now supports BM1684X / BM1688 — Python demo for visual grounding (box / point) → [Details](./models/LocateAnything/) |
 | **2026.06.30** | **MiniCPM-V-4.6** now supports BM1684X / BM1688 — Python demo with image & video support → [Details](./models/MiniCPMV4_6/) |
 | **2026.05.21** | **Gemma4** now supports BM1684X / BM1688 — Python demo with image / video / audio support → [Details](./models/Gemma4/) |
 | **2026.04.15** | **Qwen3.5** now supports BM1684X / BM1688 — Python & C++ demos with image & video support → [Details](./models/Qwen3_5/) |
@@ -97,6 +98,7 @@ cd LLM-TPU
 
 | Model | Supported Chips | One-click Compile | Notes |
 | :--- | :---: | :---: | :--- |
+| [Step3_VL](https://huggingface.co/stepfun/Step3-VL-10B-AWQ) | BM1684X | — | Python, image understanding |
 | [Falcon-Perception](https://huggingface.co/tiiuae/falcon-perception) | BM1684X | — | Python, referring segmentation box + mask |
 | [LocateAnything-3B](https://huggingface.co/NVIDIA/LocateAnything-3B) | BM1684X / 1688 | — | Python, visual grounding box / point |
 | [Qwen3.5](https://www.modelscope.cn/collections/Qwen/Qwen35) | BM1684X / 1688 | ✅ | Python + C++, image / video |
@@ -149,7 +151,8 @@ The [`models/`](./models) directory currently contains the following model imple
 [Qwen2_VL](./models/Qwen2_VL) ·
 [Qwen3_5](./models/Qwen3_5) ·
 [Qwen3_ASR](./models/Qwen3_ASR) ·
-[Qwen3_VL](./models/Qwen3_VL)
+[Qwen3_VL](./models/Qwen3_VL) ·
+[Step3_VL](./models/Step3_VL)
 
 #### Legacy
 

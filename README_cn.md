@@ -33,8 +33,9 @@
 
 | 日期 | 更新内容 |
 | :--- | :--- |
-| 🔥 **2026.07.16** | **Falcon-Perception** 已支持 BM1684X，Python Demo，referring segmentation（box + mask） → [查看](./models/Falcon-Perception/) |
-| 🔥 **2026.07.09** | **LocateAnything-3B** 已支持 BM1684X / BM1688，Python Demo，视觉定位（box / point） → [查看](./models/LocateAnything/) |
+| 🔥 **2026.08.03** | **Step3_VL** 已支持 BM1684X，Python Demo，图片理解 → [查看](./models/Step3_VL/) |
+| **2026.07.16** | **Falcon-Perception** 已支持 BM1684X，Python Demo，referring segmentation（box + mask） → [查看](./models/Falcon-Perception/) |
+| **2026.07.09** | **LocateAnything-3B** 已支持 BM1684X / BM1688，Python Demo，视觉定位（box / point） → [查看](./models/LocateAnything/) |
 | **2026.06.30** | **MiniCPM-V-4.6** 已支持 BM1684X / BM1688，Python Demo，支持图片与视频 → [查看](./models/MiniCPMV4_6/) |
 | **2026.05.21** | **Gemma4** 已支持 BM1684X / BM1688，Python Demo，支持图片 / 视频 / 音频 → [查看](./models/Gemma4/) |
 | **2026.04.15** | **Qwen3.5** 已支持 BM1684X / BM1688，提供 Python 与 C++ Demo，支持图片与视频 → [查看](./models/Qwen3_5/) |
@@ -97,8 +98,9 @@ cd LLM-TPU
 
 | 模型 | 支持芯片 | 一键编译 | 备注 |
 | :--- | :---: | :---: | :--- |
-| [Falcon-Perception](https://huggingface.co/tiiuae/falcon-perception) | BM1684X | — | Python，referring segmentation box + mask |
-| [LocateAnything-3B](https://huggingface.co/NVIDIA/LocateAnything-3B) | BM1684X / 1688 | — | Python，视觉定位 box / point |
+| [Step3_VL](https://huggingface.co/stepfun/Step3-VL-10B-AWQ) | BM1684X | — | Python，图片理解 |
+| [Falcon-Perception](https://huggingface.co/tiiuae/falcon-perception) | BM1684X | — | Python，指代分割（框 + 掩码） |
+| [LocateAnything-3B](https://huggingface.co/NVIDIA/LocateAnything-3B) | BM1684X / 1688 | — | Python，视觉定位（框 / 点） |
 | [Qwen3.5](https://www.modelscope.cn/collections/Qwen/Qwen35) | BM1684X / 1688 | ✅ | Python + C++，图片 / 视频 |
 | [Qwen3-VL](https://www.modelscope.cn/models/Qwen/Qwen3-VL-4B-Instruct) | BM1684X / 1688 | ✅ | Python + C++，图片 / 视频 |
 | [Qwen2.5-VL](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct-AWQ) | BM1684X / 1688 | ✅ | Python + C++ |
@@ -149,7 +151,8 @@ cd LLM-TPU
 [Qwen2_VL](./models/Qwen2_VL) ·
 [Qwen3_5](./models/Qwen3_5) ·
 [Qwen3_ASR](./models/Qwen3_ASR) ·
-[Qwen3_VL](./models/Qwen3_VL)
+[Qwen3_VL](./models/Qwen3_VL) ·
+[Step3_VL](./models/Step3_VL)
 
 #### 历史版本 (Legacy)
 

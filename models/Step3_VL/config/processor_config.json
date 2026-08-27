@@ -1,0 +1,6 @@
+{
+  "auto_map": {
+    "AutoProcessor": "processing_step3.Step3VLProcessor"
+  }
+}
+

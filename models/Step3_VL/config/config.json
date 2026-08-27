@@ -1,0 +1,83 @@
+{
+  "name_or_path": "tclf90/Step3-VL-10B-AWQ",
+  "architectures": [
+    "StepVLForConditionalGeneration"
+  ],
+  "auto_map": {
+    "AutoConfig": "configuration_step_vl.StepRoboticsConfig"
+  },
+  "model_type": "step_robotics",
+  "im_end_token": "<im_end>",
+  "im_patch_token": "<im_patch>",
+  "im_start_token": "<im_start>",
+  "image_token_len": 169,
+  "patch_token_len": 81,
+  "image_token_id": 151679,
+  "understand_projector_stride": 2,
+  "use_im_start_end": "true",
+  "vision_select_layer": -1,
+  "projector_bias": false,
+  "vision_config": {
+    "image_size": 728,
+    "patch_size": 14,
+    "width": 1536,
+    "layers": 47,
+    "heads": 16,
+    "pool_type": "none",
+    "output_dim": null,
+    "use_cls_token": false,
+    "ls_init_value": 0.1,
+    "use_ln_post": false,
+    "hidden_act": "quick_gelu"
+  },
+  "text_config": {
+    "architectures": [
+      "Qwen3ForCausalLM"
+    ],
+    "attention_bias": false,
+    "attention_dropout": 0.0,
+    "bos_token_id": 151643,
+    "eos_token_id": [
+      151643,
+      151645,
+      151679
+    ],
+    "head_dim": 128,
+    "hidden_act": "silu",
+    "hidden_size": 4096,
+    "initializer_range": 0.02,
+    "intermediate_size": 12288,
+    "max_position_embeddings": 40960,
+    "max_window_layers": 36,
+    "model_type": "qwen3",
+    "num_attention_heads": 32,
+    "num_hidden_layers": 36,
+    "num_key_value_heads": 8,
+    "rms_norm_eps": 1e-06,
+    "rope_scaling": null,
+    "rope_theta": 1000000,
+    "sliding_window": null,
+    "tie_word_embeddings": false,
+    "torch_dtype": "bfloat16",
+    "transformers_version": "4.51.0",
+    "use_cache": true,
+    "use_sliding_window": false,
+    "vocab_size": 151936
+  },
+  "torch_dtype": "bfloat16",
+  "quantization_config": {
+    "quant_method": "awq",
+    "bits": 4,
+    "group_size": 128,
+    "version": "gemm",
+    "zero_point": true,
+    "modules_to_not_convert": [
+      "vision_model.transformer.resblocks.0.",
+      "attn.qkv_proj",
+      "attn.out_proj",
+      "vit_large_projector",
+      "model.layers.0."
+    ]
+  },
+  "transformers_version": "4.57.0"
+}
