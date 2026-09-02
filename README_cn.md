@@ -33,7 +33,8 @@
 
 | 日期 | 更新内容 |
 | :--- | :--- |
-| 🔥 **2026.08.03** | **Step3_VL** 已支持 BM1684X，Python Demo，图片理解 → [查看](./models/Step3_VL/) |
+| 🔥 **2026.09.01** | **Mage-VL** 已支持 BM1684X，Python Demo，支持图片、视频与流式推理（Mage-ViT + Qwen3-4B + StreamMind Gate） → [查看](./models/Mage_VL/) |
+| **2026.08.03** | **Step3_VL** 已支持 BM1684X，Python Demo，图片理解 → [查看](./models/Step3_VL/) |
 | **2026.07.16** | **Falcon-Perception** 已支持 BM1684X，Python Demo，referring segmentation（box + mask） → [查看](./models/Falcon-Perception/) |
 | **2026.07.09** | **LocateAnything-3B** 已支持 BM1684X / BM1688，Python Demo，视觉定位（box / point） → [查看](./models/LocateAnything/) |
 | **2026.06.30** | **MiniCPM-V-4.6** 已支持 BM1684X / BM1688，Python Demo，支持图片与视频 → [查看](./models/MiniCPMV4_6/) |
@@ -98,6 +99,7 @@ cd LLM-TPU
 
 | 模型 | 支持芯片 | 一键编译 | 备注 |
 | :--- | :---: | :---: | :--- |
+| [Mage-VL](https://huggingface.co/microsoft/Mage-VL-AWQ) | BM1684X | ✅ | Python，图片 / 视频 / 流式推理（Mage-ViT + Qwen3-4B + Gate） |
 | [Step3_VL](https://huggingface.co/stepfun/Step3-VL-10B-AWQ) | BM1684X | — | Python，图片理解 |
 | [Falcon-Perception](https://huggingface.co/tiiuae/falcon-perception) | BM1684X | — | Python，指代分割（框 + 掩码） |
 | [LocateAnything-3B](https://huggingface.co/NVIDIA/LocateAnything-3B) | BM1684X / 1688 | — | Python，视觉定位（框 / 点） |
@@ -143,6 +145,7 @@ cd LLM-TPU
 [Janus-Pro](./models/Janus-Pro) ·
 [Llama3_2-Vision](./models/Llama3_2-Vision) ·
 [LocateAnything](./models/LocateAnything) ·
+[Mage_VL](./models/Mage_VL) ·
 [MiniCPMV4](./models/MiniCPMV4) ·
 [MiniCPMV4_6](./models/MiniCPMV4_6) ·
 [NVILA](./models/NVILA) ·
