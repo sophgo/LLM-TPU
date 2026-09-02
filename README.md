@@ -33,8 +33,10 @@
 
 | Date | Updates |
 | :--- | :--- |
-| 🔥 **2026.07.16** | **Falcon-Perception** now supports BM1684X — Python demo for referring segmentation (box + mask) → [Details](./models/Falcon-Perception/) |
-| 🔥 **2026.07.09** | **LocateAnything-3B** now supports BM1684X / BM1688 — Python demo for visual grounding (box / point) → [Details](./models/LocateAnything/) |
+| 🔥 **2026.09.01** | **Mage-VL** adds streaming video support — real-time Gate decision + LLM generation on BM1684X (PCIe & SoC) → [Details](./models/Mage_VL/) |
+| **2026.08.18** | **Mage-VL** now supports BM1684X — Python demo with image & video support (Mage-ViT + Qwen3-4B) → [Details](./models/Mage_VL/) |
+| **2026.07.16** | **Falcon-Perception** now supports BM1684X — Python demo for referring segmentation (box + mask) → [Details](./models/Falcon-Perception/) |
+| **2026.07.09** | **LocateAnything-3B** now supports BM1684X / BM1688 — Python demo for visual grounding (box / point) → [Details](./models/LocateAnything/) |
 | **2026.06.30** | **MiniCPM-V-4.6** now supports BM1684X / BM1688 — Python demo with image & video support → [Details](./models/MiniCPMV4_6/) |
 | **2026.05.21** | **Gemma4** now supports BM1684X / BM1688 — Python demo with image / video / audio support → [Details](./models/Gemma4/) |
 | **2026.04.15** | **Qwen3.5** now supports BM1684X / BM1688 — Python & C++ demos with image & video support → [Details](./models/Qwen3_5/) |
@@ -97,6 +99,7 @@ cd LLM-TPU
 
 | Model | Supported Chips | One-click Compile | Notes |
 | :--- | :---: | :---: | :--- |
+| [Mage-VL](https://huggingface.co/microsoft/Mage-VL-AWQ) | BM1684X | ✅ | Python, image / video / **streaming** (Mage-ViT + Qwen3-4B + Gate) |
 | [Falcon-Perception](https://huggingface.co/tiiuae/falcon-perception) | BM1684X | — | Python, referring segmentation box + mask |
 | [LocateAnything-3B](https://huggingface.co/NVIDIA/LocateAnything-3B) | BM1684X / 1688 | — | Python, visual grounding box / point |
 | [Qwen3.5](https://www.modelscope.cn/collections/Qwen/Qwen35) | BM1684X / 1688 | ✅ | Python + C++, image / video |
@@ -141,6 +144,7 @@ The [`models/`](./models) directory currently contains the following model imple
 [Janus-Pro](./models/Janus-Pro) ·
 [Llama3_2-Vision](./models/Llama3_2-Vision) ·
 [LocateAnything](./models/LocateAnything) ·
+[Mage_VL](./models/Mage_VL) ·
 [MiniCPMV4](./models/MiniCPMV4) ·
 [MiniCPMV4_6](./models/MiniCPMV4_6) ·
 [NVILA](./models/NVILA) ·
