@@ -1,0 +1,74 @@
+{
+  "data_format": "channels_first",
+  "default_to_square": true,
+  "do_convert_rgb": true,
+  "do_normalize": true,
+  "do_rescale": true,
+  "do_resize": true,
+  "image_mean": [
+    0.48145466,
+    0.4578275,
+    0.40821073
+  ],
+  "image_processor_type": "Qwen2VLImageProcessor",
+  "image_std": [
+    0.26862954,
+    0.26130258,
+    0.27577711
+  ],
+  "max_pixels": 4000000,
+  "merge_size": 2,
+  "min_pixels": 3136,
+  "patch_size": 16,
+  "processor_class": "MageVLProcessor",
+  "auto_map": {
+    "AutoProcessor": "processing_mage_vl.MageVLProcessor",
+    "AutoVideoProcessor": "video_processing_mage_vl.MageVLVideoProcessor"
+  },
+  "codec": {
+    "engine": "hevc",
+    "target_canvas": 32,
+    "group_size": 32,
+    "images_per_group": 4,
+    "patch": 14,
+    "min_group_frames": 8,
+    "max_group_frames": 64,
+    "spatial_mask_mode": "off",
+    "dcvc": {
+      "qp": 42,
+      "reset_interval": 64,
+      "intra_period": -1,
+      "max_side": 0,
+      "seq_len_frames": 0,
+      "patch": 16,
+      "canvas_token_side": null,
+      "num_sampled_frames": 256,
+      "grouping_mode": "readiness",
+      "readiness_sum_threshold_mode": "auto",
+      "group_size": 32,
+      "images_per_group": 4,
+      "max_pixels": 150000,
+      "min_group_frames": 8,
+      "max_group_frames": 128,
+      "readiness_coverage_bins": 3,
+      "readiness_delta_ratio": 0.05,
+      "bitcost_grid": "sub",
+      "bitcost_pct": 99,
+      "decode_backsearch_max": 16,
+      "canvas_format": "jpg",
+      "per_frame_cap_ratio": 1.2,
+      "bottom_atten": 0.5,
+      "bottom_band": 0.1,
+      "threshold_scale": 1.0,
+      "random_select": false,
+      "random_seed": 0
+    }
+  },
+  "resample": 3,
+  "rescale_factor": 0.00392156862745098,
+  "size": {
+    "longest_edge": 4000000,
+    "shortest_edge": 3136
+  },
+  "temporal_patch_size": 1
+}
