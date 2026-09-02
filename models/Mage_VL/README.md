@@ -12,6 +12,14 @@ Mage-VL is a multimodal model composed of three stages:
 
 This demo covers both **offline (non-streaming)** and **streaming** text / image / video modalities. The vision tower (Mage-ViT) is a static 392-patch bmodel net; an image is pre-resized to a 392-patch grid, and a video is sampled into `N` frames each processed as an independent single-frame ViT pass (no cross-frame attention inside the ViT — temporal reasoning happens in the LM). In streaming mode, the video is divided into consecutive segments of `T=4` frames; each segment gets a Gate decision ("speak" or "silent"), and the LLM generates only when "speak" is triggered.
 
+## Download pre-compiled bmodel
+
+```shell
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/mage-vl-awq_w4bf16_seq2048_bm1684x_1dev_static_20260901_122401.bmodel
+```
+
+This bmodel (4.8GB) includes the full pipeline: Mage-ViT + Qwen3-4B LLM + StreamMind Gate + ClsNet, supporting offline (text/image/video) and streaming modalities on BM1684X.
+
 ## Compile the bmodel
 
 > Skip this section if you already have a pre-compiled bmodel.
