@@ -87,6 +87,7 @@ void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
   int value = 0;
   auto ret = bm_memset_device_ext(bm_handle, &value, 1, mem);
   assert(BM_SUCCESS == ret);
+  (void)ret;
 }
 
 void empty_net(bm_handle_t &bm_handle, const bm_net_info_t *net,
@@ -190,6 +191,7 @@ void Mage_VL::net_launch(const bm_net_info_t *net,
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
+  (void)ret;
 }
 
 void Mage_VL::net_launch_decode(int idx, int kv_offset,
@@ -326,15 +328,17 @@ void Mage_VL::init_by_names() {
 
 void Mage_VL::init(int dev_id, std::string model_path) {
   std::cout << "Device [ " << dev_id << " ] loading .....\n";
-  bm_status_t status = bm_dev_request(&bm_handle, dev_id);
+  auto status = bm_dev_request(&bm_handle, dev_id);
   assert(BM_SUCCESS == status);
+  (void)status;
 
   p_bmrt = bmrt_create(bm_handle);
   assert(NULL != p_bmrt);
   bmrt_set_flags(p_bmrt, BM_RUNTIME_SHARE_MEM);
   printf("Model[%s] loading ....\n", model_path.c_str());
-  bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
+  auto ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
+  (void)ret;
   bm_thread_sync(bm_handle);
   printf("Done!\n");
   print_devmem_info(bm_handle);

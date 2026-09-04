@@ -6,19 +6,16 @@
 #
 # ==============================================================================
 #
-# Mage-VL pipeline: phase-1 offline VLM + phase-4 streaming gate.
+# Mage-VL pipeline: offline VLM + streaming gate.
 #
-# Text backbone is plain Qwen3-4B (1D RoPE), so the LLM position_ids are a
-# simple range(0, token_len). The 3D RoPE lives INSIDE the vit net, fed by the
-# per-patch (t, h, w) grid coordinates built in rot_pos_3d(). Image embeddings
-# (merger output, [N/4, HIDDEN_SIZE]) are injected into dev_buffer at the
-# image_pad span (right after <|vision_start|>), overwriting the placeholder
-# token embeddings produced by forward_embed.
+# Text backbone is Qwen3-4B (1D RoPE); position_ids are range(0, token_len).
+# The 3D RoPE lives inside the ViT net. Image embeddings (merger output) are
+# injected into dev_buffer at the image_pad span (right after <|vision_start|>),
+# overwriting the placeholder token embeddings from forward_embed.
 #
-# Streaming mode (phase 4): for video input, the pipeline loads ALL frames,
-# divides them into segments of GATE_FRAMES, runs ViT + Gate + ClsNet per
-# segment to decide "silent" vs "speak". On a "speak" decision the LLM is
-# invoked independently to generate a description of that segment.
+# Streaming mode: for video input, the pipeline divides frames into segments
+# of GATE_FRAMES, runs ViT + Gate + ClsNet per segment to decide "silent" vs
+# "speak". On "speak" the LLM generates a description of that segment.
 
 import time
 import argparse
@@ -31,15 +28,8 @@ from magevl_video import load_video_frames
 
 
 def _force_trust_remote_code():
-    """Force transformers' ``resolve_trust_remote_code`` to True everywhere.
-
-    transformers 5.7 does not forward ``trust_remote_code=True`` from
-    ``AutoProcessor.from_pretrained`` down to the dynamic-module loader that
-    pulls in the custom ``MageVLProcessor`` class, so it raises an interactive
-    [y/N] prompt. In a non-interactive TPU demo that prompt blocks on stdin
-    (and the SIGALRM fallback is unsafe with native extensions loaded), so we
-    resolve it to True up front. The custom code is our own config/ files.
-    """
+    """Force ``resolve_trust_remote_code`` to True globally so the custom
+    ``MageVLProcessor`` loads without an interactive [y/N] prompt."""
     import importlib
     import transformers.dynamic_module_utils as dmu
 
@@ -48,13 +38,13 @@ def _force_trust_remote_code():
 
     dmu.resolve_trust_remote_code = _always_true
     for name in (
-        "transformers.models.auto.processing_auto",
-        "transformers.models.auto.image_processing_auto",
-        "transformers.models.auto.tokenization_auto",
-        "transformers.models.auto.configuration_auto",
-        "transformers.models.auto.video_processing_auto",
-        "transformers.models.auto.feature_extraction_auto",
-        "transformers.models.auto.auto_factory",
+            "transformers.models.auto.processing_auto",
+            "transformers.models.auto.image_processing_auto",
+            "transformers.models.auto.tokenization_auto",
+            "transformers.models.auto.configuration_auto",
+            "transformers.models.auto.video_processing_auto",
+            "transformers.models.auto.feature_extraction_auto",
+            "transformers.models.auto.auto_factory",
     ):
         try:
             mod = importlib.import_module(name)
@@ -67,17 +57,17 @@ def _force_trust_remote_code():
 _force_trust_remote_code()
 
 
-
 class Mage_VL():
 
     def __init__(self, args):
         self.device = args.devid
+        self.max_new_tokens = args.max_new_tokens
 
         # load model
         self.model = chat.Mage_VL()
         self.model.init(self.device, args.model_path)
-        self.processor = AutoProcessor.from_pretrained(
-            args.config_path, trust_remote_code=True)
+        self.processor = AutoProcessor.from_pretrained(args.config_path,
+                                                       trust_remote_code=True)
         self.tokenizer = self.processor.tokenizer
 
         # special token ids — read from the tokenizer, never hard-code.
@@ -86,20 +76,12 @@ class Mage_VL():
         self.ID_VISION_START = \
             self.tokenizer.convert_tokens_to_ids("<|vision_start|>")
 
-        # The vit net is STATIC (num_patches == MAX_PATCHES). The Qwen2VL
-        # smart_resize does NOT pin the patch count (flooring by aspect ratio
-        # gives e.g. 352 instead of 392), so we disable the processor's resize
-        # and pre-resize each image ourselves to a grid of exactly MAX_PIXELS
-        # pixels (H*W = MAX_PIXELS, both multiples of 32 => num_patches =
-        # MAX_PATCHES regardless of which (H,W) split is chosen).
+        # The ViT net expects a fixed number of patches. Disable the
+        # processor's resize and pre-resize each image to exactly MAX_PIXELS.
         self.processor.image_processor.do_resize = False
         self.merge_size = self.processor.image_processor.merge_size  # 2
 
-        # Number of frames sampled per video. The Mage-VL frames backend
-        # treats each frame as an independent single-frame image (no
-        # cross-frame attention inside the vit), so T is a free knob: more
-        # frames = more temporal coverage at the cost of T vit calls and
-        # T*MAX_PATCHES vision tokens injected into the LM context.
+        # Number of frames sampled per video.
         self.num_video_frames = getattr(args, "num_video_frames", 4) or 4
 
     def __del__(self):
@@ -120,9 +102,6 @@ class Mage_VL():
         return messages
 
     def image_message(self, path):
-        # Mage-VL chat template emits <|vision_start|><|image_pad|><|vision_end|>
-        # for a {"type": "image"} content item; the actual PIL image is passed
-        # to the processor separately (see process()).
         # yapf: disable
         messages = [{
             "role": "user",
@@ -135,11 +114,6 @@ class Mage_VL():
         return messages
 
     def video_message(self, path):
-        # Mage-VL chat template emits <|vision_start|><|video_pad|><|vision_end|>
-        # for a {"type": "video"} content item; the processor's frames backend
-        # rewrites <|video_pad|> into per-frame `<X.X seconds>`+<|image_pad|>
-        # blocks. The decoded PIL frames are passed to the processor separately
-        # (see process()).
         # yapf: disable
         messages = [{
             "role": "user",
@@ -188,46 +162,20 @@ class Mage_VL():
         H, W = best
         return img.resize((W, H), Image.BILINEAR)
 
-    def rot_pos_3d(self, grid_thw):
-        """Per-patch (t, h, w) grid coordinates for the vit's 3D RoPE.
-
-        Kept for reference; the live path uses the processor's
-        ``patch_positions`` (see vit_process_image), which is built by
-        ``build_patch_positions`` and matches this layout for a single image
-        while also carrying the correct per-frame t-axis for video.
-        """
-        t, h, w = int(grid_thw[0]), int(grid_thw[1]), int(grid_thw[2])
-        ms = self.merge_size  # 2
-        mh, mw = h // ms, w // ms
-        # one-frame block-ordered (h, w); C-order flatten => bh, bw, dh, dw
-        bh, bw, dh, dw = np.mgrid[0:mh, 0:mw, 0:ms, 0:ms]
-        h_pos = (bh * ms + dh).reshape(-1).astype(np.int32)
-        w_pos = (bw * ms + dw).reshape(-1).astype(np.int32)
-        # tile across t frames
-        pos_h = np.tile(h_pos, t)
-        pos_w = np.tile(w_pos, t)
-        pos_t = np.repeat(np.arange(t, dtype=np.int32), h_pos.size)
-        return pos_t, pos_h, pos_w
-
     def vit_process_image(self, inputs):
-        # <|vision_start|> sits immediately before the expanded image_pad span;
-        # injection starts one position after it.
         vit_token_list = torch_where(inputs.input_ids == self.ID_VISION_START)
-        # The processor emits a single contiguous patch_positions tensor
-        # [N_total, 3] in (t, h, w) block layout covering ALL visuals (one
-        # row per patch, frame-by-frame for video). We slice it per visual
-        # the same way we slice pixel_values: by each row of image_grid_thw.
         patch_positions = inputs.patch_positions.numpy().astype(np.int32)
         pre_patches = 0
         for idx, vit_offset in enumerate(vit_token_list):
             grid_thw = inputs.image_grid_thw[idx]
-            num_patches = int(grid_thw[0]) * int(grid_thw[1]) * int(grid_thw[2])
-            hidden_states = inputs.pixel_values[pre_patches:
-                                                pre_patches + num_patches, :]
+            num_patches = int(grid_thw[0]) * int(grid_thw[1]) * int(
+                grid_thw[2])
+            hidden_states = inputs.pixel_values[pre_patches:pre_patches +
+                                                num_patches, :]
             pos = patch_positions[pre_patches:pre_patches + num_patches]
             pos_t, pos_h, pos_w = pos[:, 0], pos[:, 1], pos[:, 2]
-            self.model.forward_vit(hidden_states.numpy(), pos_t, pos_h,
-                                    pos_w, vit_offset + 1)
+            self.model.forward_vit(hidden_states.numpy(), pos_t, pos_h, pos_w,
+                                   vit_offset + 1)
             pre_patches += num_patches
 
     def process(self, messages, media_type):
@@ -238,8 +186,9 @@ class Mage_VL():
                 add_generation_prompt=True,
                 return_dict=True,
                 return_tensors="pt")
-        text = self.processor.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True)
+        text = self.processor.apply_chat_template(messages,
+                                                  tokenize=False,
+                                                  add_generation_prompt=True)
         if media_type == "image":
             img = Image.open(self.media_path).convert("RGB")
             img = self.resize_to_fixed_pixels(img)
@@ -247,18 +196,8 @@ class Mage_VL():
                                   images=[img],
                                   return_tensors="pt")
         if media_type == "video":
-            # Decode T frames off the video file and resize each to the fixed
-            # pixel budget (do_resize is off, so the processor skips its own
-            # smart_resize and each frame yields exactly MAX_PATCHES patches).
-            # The frames-backend video path treats each frame as an
-            # independent single-frame image: image_grid_thw is expanded to
-            # T rows [1, H, W] and patch_positions carries per-frame t-indices
-            # (0..T-1), so the vit encodes each frame in its own bidirectional
-            # attention chunk - exactly what the static 392-patch vit bmodel
-            # expects when called once per frame.
-            frames = load_video_frames(self.media_path,
-                                        self.num_video_frames,
-                                        self.resize_to_fixed_pixels)
+            frames = load_video_frames(self.media_path, self.num_video_frames,
+                                       self.resize_to_fixed_pixels)
             return self.processor(text=[text],
                                   videos=[frames],
                                   video_backend="frames",
@@ -294,38 +233,38 @@ class Mage_VL():
             return None
         print("\nAnswer:")
 
-        # 1) text embeddings -> dev_buffer
+        # text embeddings
         first_start = time.time()
         self.model.forward_embed(inputs.input_ids.numpy().reshape(-1))
-        # 2) vision: inject image/video embeddings into dev_buffer. Video
-        # injects T frame embeddings (one forward_vit call per frame) at the
-        # T successive <|vision_start|> positions the processor emitted.
+        # vision embeddings
         vit_start = vit_end = 0.0
         if media_type in ("image", "video"):
             vit_start = time.time()
             self.vit_process_image(inputs)
             vit_end = time.time()
-        # 3) prefill (1D position_ids = range(token_len))
+        # prefill
         position_ids = np.arange(token_len, dtype=np.int32)
         token = self.model.forward_first(position_ids)
         first_end = time.time()
 
-        # 4) decode loop (forward_next computes 1D position_id internally)
+        # decode loop
         tok_num = 0
         full_word_tokens = []
         text = ""
         gen_tokens = [int(token)]
-        while token not in [self.ID_IM_END, self.ID_END
-                           ] and self.model.history_length < self.model.SEQLEN:
+        while token not in [
+                self.ID_IM_END, self.ID_END
+        ] and tok_num < self.max_new_tokens \
+                and self.model.history_length < self.model.SEQLEN:
             full_word_tokens.append(token)
             word = self.tokenizer.decode(full_word_tokens,
                                          skip_special_tokens=True)
             if "�" not in word:
                 if len(full_word_tokens) == 1:
                     pre_word = word
-                    word = self.tokenizer.decode([token, token],
-                                                 skip_special_tokens=True
-                                                 )[len(pre_word):]
+                    word = self.tokenizer.decode(
+                        [token, token],
+                        skip_special_tokens=True)[len(pre_word):]
                 text += word
                 print(word, flush=True, end="")
                 full_word_tokens = []
@@ -360,7 +299,7 @@ class Mage_VL():
         speak = np.mean([logits[2 * i + 1] for i in range(n)])
         return (speak - silent) > threshold, speak - silent
 
-    def run_streaming(self, input_str, media_path, threshold=0.0):
+    def run_streaming(self, input_str, media_path, threshold=0.0, fps=None):
         """Process a video in streaming fashion with gate decisions.
 
         Reads frames lazily from the video (via PyAV), buffering only
@@ -371,6 +310,9 @@ class Mage_VL():
             input_str: the text prompt used for every generation event.
             media_path: path to the video file.
             threshold: speak margin (default 0 = argmax).
+            fps: target sampling rate. ``None`` keeps every frame; set to
+                e.g. 1.0 to sample at 1 fps when the pipeline cannot keep
+                up with the source frame rate.
         """
         import av
 
@@ -383,6 +325,10 @@ class Mage_VL():
             print(f"Can't find media: {media_path}")
             return
 
+        frame_interval = 1.0 / fps if fps and fps > 0 else 0.0
+        if frame_interval:
+            print(
+                f"Sampling at {fps} fps (1 frame every {frame_interval:.2f}s)")
         print(f"Opening video: {media_path}")
         container = av.open(media_path)
 
@@ -390,9 +336,18 @@ class Mage_VL():
         seg_idx = 0
         frame_buf = []
         frame_count = 0
+        skipped = 0
+        last_sampled_time = -1e9
 
         try:
             for av_frame in container.decode(video=0):
+                if frame_interval:
+                    ft = av_frame.time
+                    if ft is not None and ft - last_sampled_time < frame_interval:
+                        skipped += 1
+                        continue
+                    last_sampled_time = ft if ft is not None else 0
+
                 img = av_frame.to_image().convert("RGB")
                 img = self.resize_to_fixed_pixels(img)
                 frame_buf.append(img)
@@ -420,8 +375,7 @@ class Mage_VL():
 
                 # --- ViT + read embeddings ---
                 vit_t0 = time.time()
-                self.model.forward_embed(
-                    inputs.input_ids.numpy().reshape(-1))
+                self.model.forward_embed(inputs.input_ids.numpy().reshape(-1))
                 self.vit_process_image(inputs)
                 vit_t1 = time.time()
 
@@ -433,9 +387,10 @@ class Mage_VL():
                     grid_thw = inputs.image_grid_thw[idx]
                     num_patches = int(grid_thw[0]) * int(grid_thw[1]) * int(
                         grid_thw[2])
-                    num_merged = num_patches // (self.merge_size * self.merge_size)
-                    embs = self.model.read_vit_embeddings(vit_offset + 1,
-                                                          num_merged)
+                    num_merged = num_patches // (self.merge_size *
+                                                 self.merge_size)
+                    embs = self.model.read_vit_embeddings(
+                        vit_offset + 1, num_merged)
                     frame_embs.append(np.array(embs).mean(axis=0))
 
                 averaged = np.array(frame_embs, dtype=np.float32)  # [T, 2560]
@@ -455,12 +410,10 @@ class Mage_VL():
                 if not speak:
                     continue
 
-                # --- LLM generation (forward_embed → forward_first → decode) ---
+                # --- LLM generation ---
+                # Reuse embeddings from the gate path; only clear KV cache.
                 speak_count += 1
                 self.model.clear_history()
-                self.model.forward_embed(
-                    inputs.input_ids.numpy().reshape(-1))
-                self.vit_process_image(inputs)
 
                 token_len = inputs.input_ids.numel()
                 position_ids = np.arange(token_len, dtype=np.int32)
@@ -470,8 +423,10 @@ class Mage_VL():
                 full_word_tokens = []
                 text_out = ""
                 gen_t0 = time.time()
-                while token not in [self.ID_IM_END, self.ID_END
-                                    ] and self.model.history_length < self.model.SEQLEN:
+                while token not in [
+                        self.ID_IM_END, self.ID_END
+                ] and tok_num < self.max_new_tokens \
+                        and self.model.history_length < self.model.SEQLEN:
                     full_word_tokens.append(token)
                     word = self.tokenizer.decode(full_word_tokens,
                                                  skip_special_tokens=True)
@@ -488,25 +443,31 @@ class Mage_VL():
                     tok_num += 1
                 gen_t1 = time.time()
 
-                tps = tok_num / (gen_t1 - gen_t0) if (gen_t1 - gen_t0) > 0 else 0
+                tps = tok_num / (gen_t1 - gen_t0) if (gen_t1 -
+                                                      gen_t0) > 0 else 0
                 print(f"\n  [{speak_count}] {tok_num} tokens, "
                       f"{tps:.1f} tok/s")
 
         finally:
             container.close()
 
-        print(f"\nDone. {frame_count} frames, {seg_idx} segments, "
-              f"{speak_count} spoke.")
+        print(f"\nDone. {frame_count} frames sampled, {seg_idx} segments, "
+              f"{speak_count} spoke" +
+              (f", {skipped} frames skipped (target {fps} fps)."
+               if frame_interval else "."))
 
     def chat(self):
         streaming = False
         gate_threshold = 0.0
-        print("""\n=================================================================
+        streaming_fps = None
+        print(
+            """\n=================================================================
 1. If you want to quit, please enter one of [/q, /quit, /exit]
 2. To create a new chat session, please enter one of [/clear, /new]
 3. To ask about an image, include @<path> in your question
 4. /stream          — toggle streaming mode for video input
 5. /threshold <val> — set gate speak-margin threshold (default 0.0)
+6. /fps <val>       — set streaming frame sampling rate (0 = all frames)
 =================================================================""")
         while True:
             input_str = input("\nQuestion: ")
@@ -534,6 +495,19 @@ class Mage_VL():
                 else:
                     print("Usage: /threshold <float>")
                 continue
+            if input_str.strip().startswith("/fps"):
+                parts = input_str.strip().split()
+                if len(parts) == 2:
+                    try:
+                        v = float(parts[1])
+                        streaming_fps = v if v > 0 else None
+                        print(
+                            f"Streaming fps: {streaming_fps or 'all frames'}")
+                    except ValueError:
+                        print("Usage: /fps <float>  (0 = all frames)")
+                else:
+                    print("Usage: /fps <float>  (0 = all frames)")
+                continue
             input_str, media_path = extract_media(input_str)
             if streaming and media_path and os.path.exists(media_path):
                 try:
@@ -541,7 +515,8 @@ class Mage_VL():
                 except RuntimeError:
                     media_type = None
                 if media_type == "video":
-                    self.run_streaming(input_str, media_path, gate_threshold)
+                    self.run_streaming(input_str, media_path, gate_threshold,
+                                       streaming_fps)
                     continue
             self.run_once(input_str, media_path)
 
@@ -559,8 +534,8 @@ def extract_media(input_str):
     """Split @<path> media attachments out of the input text."""
     tokens = input_str.split()
     media_paths = [t[1:] for t in tokens if t.startswith("@") and len(t) > 1]
-    input_str = " ".join(
-        t for t in tokens if not (t.startswith("@") and len(t) > 1))
+    input_str = " ".join(t for t in tokens
+                         if not (t.startswith("@") and len(t) > 1))
     if len(media_paths) > 1:
         print("Only one media file is supported, using: {}".format(
             media_paths[0]))
@@ -576,7 +551,8 @@ def main(args):
             if not model.has_gate:
                 print("Error: --stream requires a bmodel with gate/cls_net.")
                 return
-            model.run_streaming(prompt, media_path, args.gate_threshold)
+            model.run_streaming(prompt, media_path, args.gate_threshold,
+                                getattr(args, "streaming_fps", None))
         else:
             model.run_once(prompt, media_path)
     else:
@@ -611,6 +587,15 @@ if __name__ == "__main__":
                         help='Speak-margin threshold for streaming gate '
                              'decision (default 0.0 = argmax). Higher values '
                              'require more confidence to speak.')
+    parser.add_argument('--streaming_fps', type=float, default=None,
+                        help='Target frame sampling rate for streaming mode '
+                             '(default: keep all frames). Set to e.g. 1.0 '
+                             'when the pipeline cannot keep up with the '
+                             'source frame rate.')
+    parser.add_argument('--max_new_tokens', type=int, default=128,
+                        help='Maximum number of new tokens to generate per '
+                             'turn (default 128). Prevents infinite repetition '
+                             'in greedy decoding.')
     # yapf: enable
     args = parser.parse_args()
     main(args)

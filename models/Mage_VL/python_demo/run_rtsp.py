@@ -13,22 +13,39 @@ sys.path.insert(0, ".")
 from pipeline import Mage_VL, torch_where, extract_media
 
 
-def run_rtsp_stream(model: Mage_VL, rtsp_url: str, prompt: str,
-                    threshold: float, max_segments: int):
+def run_rtsp_stream(model: Mage_VL,
+                    rtsp_url: str,
+                    prompt: str,
+                    threshold: float,
+                    max_segments: int,
+                    fps=None):
     import av
     from PIL import Image
 
     T = model.model.GATE_FRAMES
+    frame_interval = 1.0 / fps if fps and fps > 0 else 0.0
+
     print(f"Opening RTSP: {rtsp_url}")
+    if frame_interval:
+        print(f"Sampling at {fps} fps (1 frame every {frame_interval:.2f}s)")
     container = av.open(rtsp_url, "r", format="rtsp")
 
     speak_count = 0
     seg_idx = 0
     frame_buf = []
     frame_count = 0
+    skipped = 0
+    last_sampled_time = -1e9
 
     try:
         for frame in container.decode(video=0):
+            if frame_interval:
+                ft = frame.time
+                if ft is not None and ft - last_sampled_time < frame_interval:
+                    skipped += 1
+                    continue
+                last_sampled_time = ft if ft is not None else 0
+
             img = frame.to_image().convert("RGB")
             img = model.resize_to_fixed_pixels(img)
             frame_buf.append(img)
@@ -58,8 +75,7 @@ def run_rtsp_stream(model: Mage_VL, rtsp_url: str, prompt: str,
 
             # ViT + read embeddings
             vit_t0 = time.time()
-            model.model.forward_embed(
-                inputs.input_ids.numpy().reshape(-1))
+            model.model.forward_embed(inputs.input_ids.numpy().reshape(-1))
             model.vit_process_image(inputs)
             vit_t1 = time.time()
 
@@ -70,7 +86,7 @@ def run_rtsp_stream(model: Mage_VL, rtsp_url: str, prompt: str,
                 grid_thw = inputs.image_grid_thw[idx]
                 num_patches = (int(grid_thw[0]) * int(grid_thw[1]) *
                                int(grid_thw[2]))
-                num_merged = num_patches // (model.merge_size ** 2)
+                num_merged = num_patches // (model.merge_size**2)
                 embs = model.model.read_vit_embeddings(vit_offset + 1,
                                                        num_merged)
                 frame_embs.append(np.array(embs).mean(axis=0))
@@ -92,12 +108,9 @@ def run_rtsp_stream(model: Mage_VL, rtsp_url: str, prompt: str,
             if not speak:
                 continue
 
-            # LLM generation
+            # LLM generation — reuse gate path embeddings.
             speak_count += 1
             model.model.clear_history()
-            model.model.forward_embed(
-                inputs.input_ids.numpy().reshape(-1))
-            model.vit_process_image(inputs)
 
             token_len = inputs.input_ids.numel()
             position_ids = np.arange(token_len, dtype=np.int32)
@@ -107,8 +120,8 @@ def run_rtsp_stream(model: Mage_VL, rtsp_url: str, prompt: str,
             full_word_tokens = []
             text_out = ""
             gen_t0 = time.time()
-            while (token not in [model.ID_IM_END, model.ID_END] and
-                   model.model.history_length < model.model.SEQLEN):
+            while (token not in [model.ID_IM_END, model.ID_END]
+                   and model.model.history_length < model.model.SEQLEN):
                 full_word_tokens.append(token)
                 word = model.tokenizer.decode(full_word_tokens,
                                               skip_special_tokens=True)
@@ -135,32 +148,49 @@ def run_rtsp_stream(model: Mage_VL, rtsp_url: str, prompt: str,
     finally:
         container.close()
 
-    print(f"\nDone. Processed {seg_idx} segments, {frame_count} frames, "
-          f"{speak_count} spoke.")
+    print(f"\nDone. {frame_count} frames sampled, {seg_idx} segments, "
+          f"{speak_count} spoke" + (f", {skipped} skipped (target {fps} fps)."
+                                    if frame_interval else "."))
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rtsp", type=str, required=True,
+    parser.add_argument("--rtsp",
+                        type=str,
+                        required=True,
                         help="RTSP stream URL")
     parser.add_argument("-m", "--model_path", type=str, required=True)
     parser.add_argument("-c", "--config_path", type=str, default="../config")
     parser.add_argument("-d", "--devid", type=int, default=0)
-    parser.add_argument("-p", "--prompt", type=str,
+    parser.add_argument("-p",
+                        "--prompt",
+                        type=str,
                         default="Describe what you see in the video.")
     parser.add_argument("--threshold", type=float, default=0.0)
-    parser.add_argument("--max_segments", type=int, default=0,
+    parser.add_argument(
+        "--fps",
+        type=float,
+        default=None,
+        help="Target frame sampling rate (e.g. 1.0 for 1 fps). "
+        "Default: keep all frames.")
+    parser.add_argument("--max_segments",
+                        type=int,
+                        default=0,
                         help="0 = run until Ctrl-C")
     args = parser.parse_args()
 
     model_args = argparse.Namespace(
-        devid=args.devid, model_path=args.model_path,
-        config_path=args.config_path, num_video_frames=4,
-        stream=False, gate_threshold=0.0, prompt=None,
+        devid=args.devid,
+        model_path=args.model_path,
+        config_path=args.config_path,
+        num_video_frames=4,
+        stream=False,
+        gate_threshold=0.0,
+        prompt=None,
     )
     model = Mage_VL(model_args)
-    run_rtsp_stream(model, args.rtsp, args.prompt,
-                    args.threshold, args.max_segments)
+    run_rtsp_stream(model, args.rtsp, args.prompt, args.threshold,
+                    args.max_segments, args.fps)
 
 
 if __name__ == "__main__":

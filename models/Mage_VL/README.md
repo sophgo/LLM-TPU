@@ -6,19 +6,19 @@ Mage-VL is a multimodal model composed of three stages:
 
 | Stage | Component | Notes |
 | :--- | :--- | :--- |
-| Vision encoder | **Mage-ViT** | 24-layer ViT, embed_dim 1024, 16 heads (head_dim 64), GELU (erf), **3D RoPE** (t:h:w = 4:6:6, interleaved `rotate_half`), 2×2 spatial merge → 2560-dim visual tokens. |
-| Language model | **Qwen3-4B** | Plain Qwen3 backbone (hidden 2560, 36 layers, head_dim 128, 32 q-heads / 8 kv-heads, **1D RoPE**, θ=5e6). The vision tokens are injected into the LM context at the `<|image_pad|>` / `<|video_pad|>` span. |
-| Streaming Gate | **StreamMind Gate** | PreNet + VideoMamba (1-layer, T=4 static) + PostNet → ClsNet (4-layer Qwen3 binary classifier). Compiled into the combined bmodel for real-time streaming video decisions. |
+| Vision encoder | **Mage-ViT** | 24-layer ViT with 3D RoPE and 2×2 spatial merge → 2560-dim visual tokens. |
+| Language model | **Qwen3-4B** | Qwen3 backbone (hidden 2560, 36 layers). Vision tokens are injected into the LM context at the `<|image_pad|>` / `<|video_pad|>` span. |
+| Streaming Gate | **StreamMind Gate** | Temporal modeling + binary classifier that decides when the LLM should generate during video streaming. |
 
-This demo covers both **offline (non-streaming)** and **streaming** text / image / video modalities. The vision tower (Mage-ViT) is a static 392-patch bmodel net; an image is pre-resized to a 392-patch grid, and a video is sampled into `N` frames each processed as an independent single-frame ViT pass (no cross-frame attention inside the ViT — temporal reasoning happens in the LM). In streaming mode, the video is divided into consecutive segments of `T=4` frames; each segment gets a Gate decision ("speak" or "silent"), and the LLM generates only when "speak" is triggered.
+This demo covers both **offline (non-streaming)** and **streaming** text / image / video modalities. An image is pre-resized to a fixed patch grid, and a video is sampled into `N` frames each processed as an independent ViT pass. In streaming mode, the video is divided into consecutive segments of `T=4` frames; each segment gets a Gate decision ("speak" or "silent"), and the LLM generates only when "speak" is triggered.
 
 ## Download pre-compiled bmodel
 
 ```shell
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/mage-vl-awq_w4bf16_seq2048_bm1684x_1dev_static_20260901_122401.bmodel
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/mage-vl-awq_w4bf16_seq1024_bm1684x_1dev_static_20260904_150814.bmodel
 ```
 
-This bmodel (4.8GB) includes the full pipeline: Mage-ViT + Qwen3-4B LLM + StreamMind Gate + ClsNet, supporting offline (text/image/video) and streaming modalities on BM1684X.
+This bmodel (4.87GB) includes the full pipeline: Mage-ViT + Qwen3-4B LLM + StreamMind Gate + ClsNet, supporting offline (text/image/video) and streaming modalities on BM1684X.
 
 ## Compile the bmodel
 
@@ -46,14 +46,14 @@ cd tpu-mlir && source ./envsetup.sh
 #### 3. Compile the bmodel
 
 ```shell
-llm_convert.py -m /workspace/Mage-VL-AWQ -s 2048 --max_input_length 1024 \
+llm_convert.py -m /workspace/Mage-VL-AWQ -s 1024 --max_input_length 1024 \
   -c bm1684x --max_pixels 224,448 -o out
 ```
 
 | Flag | Value | Meaning |
 | :--- | :--- | :--- |
 | `-m` | weights dir | HuggingFace source model. |
-| `-s` | `2048` | Total sequence length (prefill + generated tokens). |
+| `-s` | `1024` | Total sequence length (prefill + generated tokens). |
 | `--max_input_length` | `1024` | Max prefill length. |
 | `-c` | `bm1684x` | Target chip (`bm1684x` / `bm1688` / `cv186x`). |
 | `--max_pixels` | `224,448` | Vision grid cap → 224×448 = 100352 px = **392 patches** (the ViT net's static size). Keep this exact value; the demo's resize logic assumes 392 patches. |
@@ -90,7 +90,7 @@ cp *cpython* ..
 cmake -DPython_EXECUTABLE=$(which python3.10) ..
 ```
 
-> **Note**: If using a virtual environment (e.g. `/data2/xin/py310`), activate it before running cmake so the correct Python and pybind11 are found automatically.
+> **Note**: If using a virtual environment, activate it before running cmake so the correct Python and pybind11 are found automatically.
 
 #### 3. Run
 
@@ -116,7 +116,7 @@ python3 pipeline.py -m <path/to_streaming.bmodel> -c ../config --devid 0
 # RTSP real-time streaming (separate script)
 python3 run_rtsp.py --rtsp rtsp://<host>:<port>/<stream> \
   -m <path/to_streaming.bmodel> -c ../config \
-  -p "Describe what you see." --threshold -0.5
+  -p "Describe what you see." --threshold -0.5 --fps 1.0
 ```
 
 The `@<path>` syntax auto-detects the media type by extension (`.jpg/.png/...` → image; `.mp4/.avi/.mov/.mkv/.webm/...` → video) and inserts the right placeholder token for the chat template.
@@ -129,15 +129,15 @@ The `@<path>` syntax auto-detects the media type by extension (`.jpg/.png/...` �
 | `-c, --config_path` | `../config` | Processor config directory (must match the bmodel). |
 | `-d, --devid` | `0` | TPU device id. |
 | `-p, --prompt` | `None` | Non-interactive single-shot mode. Use `@<path>` to attach an image/video. Omit for the interactive REPL. |
-| `--num_video_frames` | `4` | Number of evenly-spaced frames sampled per video. Each frame is one ViT call; `N` frames add `N × 392` vision tokens to the LM context (keep total within `MAX_INPUT_LENGTH`). |
+| `--num_video_frames` | `4` | Number of evenly-spaced frames sampled per video (offline mode). |
 | `--stream` | `false` | Enable streaming mode for video input. The video is divided into consecutive segments of `GATE_FRAMES` (4) frames; each segment gets a Gate decision, and the LLM generates only on "speak". Requires a bmodel compiled with Gate + ClsNet. |
 | `--gate_threshold` | `0.0` | Speak-margin threshold for streaming gate decisions. Default 0 = argmax (mean speak score > mean silent score). Higher values require more confidence to speak; negative values lower the bar. |
+| `--streaming_fps` | *(all frames)* | Target frame sampling rate for streaming mode. Set to e.g. `1.0` to sample at 1 fps when the pipeline cannot keep up with the source frame rate. |
+| `--max_new_tokens` | `128` | Maximum number of new tokens to generate per turn. Prevents infinite repetition in greedy decoding. |
 
 ### How video works
 
-The HF processor's `frames` backend samples `N` evenly-spaced frames, resizes each to the 392-patch grid, and emits `N` per-frame `<|vision_start|>…<|vision_end|>` blocks. Because each frame's temporal grid is `t=1` (≤ `frame_window_size`), the ViT runs each frame as an independent bidirectional-attention chunk — so the existing static 392-patch ViT bmodel is simply called **once per frame** with that frame's pixel values and per-frame `(t, h, w)` patch positions. No bmodel recompilation is needed for video.
-
-Frame decoding (PyAV) is shared between this demo and the HF reference via `magevl_video.py`, so the two sides decode identical frames.
+The processor samples `N` evenly-spaced frames from the video, resizes each to the fixed patch grid, and processes each frame through the ViT independently. Each frame adds 392 vision tokens to the LM context; keep `N` small enough that the total stays within `MAX_INPUT_LENGTH`.
 
 ### How streaming works
 
@@ -154,28 +154,19 @@ Video → [frame 1..4] → ViT(×4) → mean pool → Gate → ClsNet → logits
 
 For each segment:
 
-1. **ViT**: 4 frames are processed individually (same as offline video — 4 × `forward_vit` calls).
-2. **Mean pool**: Per-frame merged embeddings `[98, 2560]` are averaged into `[2560]` vectors.
-3. **Gate** (bmodel net): `[1, 4, 2560]` bf16 → PreNet + VideoMamba (1-layer, T=4 static selective scan) + PostNet → `[1, 4, 2560]` bf16.
-4. **ClsNet** (bmodel net): `[1, 4, 2560]` bf16 → 4-layer Qwen3 binary classifier (vocab=2: silent/speak) → `[1, 4, 2]` bf16 logits.
-5. **Decision**: Mean logits across frames → argmax (or threshold comparison via `--gate_threshold`).
-6. **Generation**: On "speak", KV cache is cleared and the LLM generates independently from the same segment's video context.
+1. **ViT**: 4 frames are processed individually (4 × ViT calls).
+2. **Mean pool**: Per-frame embeddings are averaged into a single vector per frame.
+3. **Gate**: Temporal modeling over the 4 frame vectors.
+4. **ClsNet**: Binary classifier outputs silent/speak scores per frame.
+5. **Decision**: Mean scores across frames → argmax (or threshold comparison via `--gate_threshold`).
+6. **Generation**: On "speak", the LLM generates a description from the segment's video context.
 
 Frames are read lazily from the video (via PyAV), so only `T=4` frames are held in memory at any time — this keeps system RAM usage low even for long videos on memory-constrained SoC devices.
 
 ## <a id="limitations"></a>Limitations & roadmap
 
 - **Streaming bmodel required for `--stream`**: Streaming mode requires a bmodel compiled with Gate + ClsNet nets included. The standard offline bmodel (without gate) works for text/image/video but not streaming. To compile a streaming-enabled bmodel, use the same `llm_convert.py` command — the converter automatically includes Gate + ClsNet when the source model has `streammind_gate.safetensors`.
-- **Codec (info-density) video backend**: *not supported out-of-the-box on this SoC.* The source model's codec backend (`video_backend="codec"`) samples patches by per-frame bit-cost. It improves long-video accuracy / token efficiency but is **not** faster.
-
-  The SoC *does* have a video toolchain (VPU/VPP hardware acceleration, sophon-ffmpeg, sophon-opencv) — the blocker is a **generation mismatch**, not a missing toolchain. Verified on the target SoC (aarch64, glibc 2.31, Python 3.10):
-
-  | Codec engine | Blocker |
-  | :--- | :--- |
-  | `hevc` | `codec-video-prep` (PyPI) ships a self-contained aarch64 cp310 wheel, but its bundled **ffmpeg 5.x** libs (`libavformat.so.59` / `libavcodec.so.59`) require **GLIBC_2.34/2.35**; the SoC has glibc 2.31 → `ImportError: version 'GLIBC_2.35' not found`. The SoC's own sophon-ffmpeg is **4.1.3** (`libavcodec.so.58`, different ABI major) so it cannot substitute. There is also **no Python-3 `cv2`** on the SoC (sophon-opencv ships a `cv2.so` for Python 2 only; `opencv-python` has no aarch64 cp310 wheel), and the codec import chain needs it. |
-  | `dcvc-rt` | requires CUDA, which the SoC does not have. |
-
-  Feasible remediation (none is a demo-side tweak; all are future-phase work): (a) run `cv-preinfer` info-density sampling on a companion **x86 host** and feed the selected frames/positions to the SoC — cleanest, and matches the codec backend's design as a preprocessing step; (b) rebuild `codec-video-prep` from source against sophon-ffmpeg 4.1.3 / glibc 2.31 and provide a Python-3 `cv2` binding; (c) upgrade the SoC OS to glibc ≥ 2.35 (risky on embedded hardware). The static 392-patch ViT also caps per-frame resolution, so the codec backend's resolution-flexibility advantage is limited here anyway.
+- **Codec (info-density) video backend**: not supported. Only the `frames` backend is available.
 - **No multi-chip / history-KV variants** in this demo.
 
 ## FAQ
@@ -184,7 +175,7 @@ Frames are read lazily from the video (via PyAV), so only `T=4` frames are held 
 Check that `--config_path` points at the `config/` shipped with the bmodel. A mismatched tokenizer/chat-template produces valid-looking but wrong tokens.
 
 **Q: Video answer is wrong / first frame looks "black".**
-Confirm the target machine has `av` (PyAV) installed and it can open the file. The first sampled frame of a black-start video legitimately encodes near-zero content (low merger cosine vs. a differently-decoded reference) — this is a decoder YUV→RGB difference, not a bmodel bug; generated tokens still match the HF reference exactly on identical inputs.
+Confirm the target machine has `av` (PyAV) installed and it can open the file. A black-start video's first frame legitimately contains near-zero content — this is expected behavior, not a bug.
 
 **Q: `input length N exceeds MAX_INPUT_LENGTH`.**
-Either shorten the prompt or recompile with a larger `--max_input_length`. Long videos add `N × 392` vision tokens; lower `--num_video_frames` if needed.
+Either shorten the prompt, lower `--num_video_frames`, or recompile with a larger `--max_input_length`.
