@@ -523,7 +523,7 @@ int Qwen::forward_first(std::vector<int> &tokens) {
       bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id.data());
       if (prefill_mask) {
         bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-      } 
+      }
     }
     if (is_dynamic) {
       net_launch_dyn(net_blocks[idx], token_length);

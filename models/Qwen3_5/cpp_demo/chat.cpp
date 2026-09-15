@@ -180,16 +180,22 @@ void Qwen3_5::init_by_names() {
     }
     return false;
   };
-  net_embed = bmrt_get_network_info(p_bmrt, "embedding");
-  net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
-  net_vit = bmrt_get_network_info(p_bmrt, "vit");
-  net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
   const char **net_names = nullptr;
   auto num_nets = bmrt_get_network_number(p_bmrt);
   bmrt_get_network_names(p_bmrt, &net_names);
+  net_embed = bmrt_get_network_info(p_bmrt, "embedding");
+  net_embed_cache = bmrt_get_network_info(p_bmrt, "embedding_cache");
+  net_lm = bmrt_get_network_info(p_bmrt, "lm_head");
+  has_vit = is_exist("vit", net_names, num_nets);
+  if (has_vit) {
+    net_vit = bmrt_get_network_info(p_bmrt, "vit");
+  } else {
+    net_vit = nullptr;
+  }
   net_greedy_head = nullptr;
-  // 4 nets are embed, lm_head, embedding_cache, vit
-  auto num_blocks = num_nets - 4;
+  // embed, lm_head, embedding_cache, and optionally vit
+  auto num_extra_nets = has_vit ? 4 : 3;
+  auto num_blocks = num_nets - num_extra_nets;
   if (is_exist("greedy_head", net_names, num_nets)) {
     net_greedy_head = bmrt_get_network_info(p_bmrt, "greedy_head");
     num_blocks--; // greedy_head is not a block
@@ -270,14 +276,24 @@ void Qwen3_5::init_by_names() {
   MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
   HIDDEN_SIZE = net_lm->stages[0].input_shapes[0].dims[1];
   SEQLEN = net_blocks_cache[FA_INTERVAL - 1]->stages[0].input_shapes[3].dims[1];
-  MAX_PATCHES = net_vit->stages[0].input_shapes[0].dims[0];
-  MAX_PIXELS = MAX_PATCHES * 16 * 16;
-  VIT_DIMS = net_vit->stages[0].input_shapes[0].dims[1];
+  if (has_vit) {
+    MAX_PATCHES = net_vit->stages[0].input_shapes[0].dims[0];
+    MAX_PIXELS = MAX_PATCHES * 16 * 16;
+    VIT_DIMS = net_vit->stages[0].input_shapes[0].dims[1];
+  } else {
+    MAX_PATCHES = 0;
+    MAX_PIXELS = 0;
+    VIT_DIMS = 0;
+  }
   KV_BYTES = bm_mem_get_device_size(
       net_blocks_cache[FA_INTERVAL - 1]->stages[0].output_mems[1]);
 
   printf("Num Layers:%d\n", NUM_LAYERS);
-  printf("Max Pixels: %d*%d*%d\n", MAX_PATCHES / 4, 32, 32);
+  if (has_vit) {
+    printf("Max Pixels: %d*%d*%d\n", MAX_PATCHES / 4, 32, 32);
+  } else {
+    printf("ViT: disabled (LLM-only bmodel)\n");
+  }
   PREFILL_KV_LENGTH = 0;
   if (support_history) {
     PREFILL_KV_LENGTH =
@@ -422,6 +438,10 @@ void Qwen3_5::forward_vit(const float *pixel_values,
                           ArrayInt const &position_ids, ArrayInt const &pos_idx,
                           ArrayFloat const &pos_weight,
                           ArrayInt const &grid_thw, int vit_offset) {
+  if (!has_vit) {
+    throw std::runtime_error(
+        "forward_vit: bmodel has no vit network (LLM-only mode)");
+  }
   const int *p_thw = grid_thw.data();
   int t = p_thw[0];
   int h = p_thw[1];

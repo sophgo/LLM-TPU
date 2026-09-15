@@ -171,6 +171,11 @@ ChatPipe::ChatPipe(int devid, float video_ratio, float video_fps,
   tokens_per_second = 2;
   num_grid_per_side = 48;
   support_history = model.support_history;
+  if (!model.has_vit) {
+    std::cout << "LLM-only bmodel loaded (no vit). Image/video input is not "
+                 "supported."
+              << std::endl;
+  }
 
   std::cout << "Processor [" << config_path.c_str() << "] loading .... ";
   auto blob = LoadBytesFromFile((config_path + "/tokenizer.json").c_str());
@@ -589,6 +594,13 @@ void ChatPipe::run_once(const std::string &input_str_in,
         << std::endl;
     return;
   }
+  if (media_type != ChatPipe::TEXT && !model.has_vit) {
+    std::cout << "Warning: This model is LLM-only (no vit); image/video input "
+                 "is not supported. Falling back to plain-text inference."
+              << std::endl;
+    media_type = ChatPipe::TEXT;
+    medias.clear();
+  }
   if (media_type != ChatPipe::TEXT) {
     // check file exists
     for (auto &m : medias) {
@@ -877,12 +889,16 @@ void ChatPipe::print_chat_instructions() {
       << "\n================================================================="
          "\n"
       << "1. If you want to quit, please enter one of [/q, /quit, /exit]\n"
-      << "2. To create a new chat session, please enter one of [/clear, /new]\n"
-      << "3. To ask about an image or video, include @<path> in your question\n"
-      << "4. To use the contents of a .txt or .md file as your question, "
-         "include @<path>\n"
-      << "================================================================="
-         "\n";
+      << "2. To create a new chat session, please enter one of [/clear, /new]\n";
+  if (model.has_vit) {
+    std::cout << "3. To ask about an image or video, include @<path> in your question\n";
+  } else {
+    std::cout << "3. Vision is disabled (LLM-only bmodel); image/video @<path> is not supported\n";
+  }
+  std::cout << "4. To use the contents of a .txt or .md file as your question, "
+               "include @<path>\n"
+            << "================================================================="
+               "\n";
 }
 
 void Usage() {

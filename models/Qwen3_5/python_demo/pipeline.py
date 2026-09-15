@@ -38,6 +38,8 @@ class Qwen3_5():
         self.spatial_merge_unit = self.spatial_merge_size**2
         self.tokens_per_second = 2
         self.support_history = self.model.support_history
+        if not self.model.has_vit:
+            print("LLM-only bmodel loaded (no vit). Image/video input is not supported.")
         self.num_grid_per_side = 48
         self.max_posid = 0
         self.history_max_posid = 0
@@ -175,6 +177,8 @@ class Qwen3_5():
         return idx_tensor, weight_tensor
 
     def vit_process_image(self, inputs):
+        if not self.model.has_vit:
+            raise RuntimeError("vit_process_image called but bmodel has no vit network")
         vit_token_list = torch.where(inputs.input_ids == self.ID_VISION_START)[1].tolist()
         pre_patches = 0
         for idx, vit_offset in enumerate(vit_token_list):
@@ -188,6 +192,8 @@ class Qwen3_5():
             pre_patches += num_patches
 
     def vit_process_video(self, inputs):
+        if not self.model.has_vit:
+            raise RuntimeError("vit_process_video called but bmodel has no vit network")
         vit_token_list = torch.where(inputs.input_ids == self.ID_VISION_START)[1].tolist()
         t, h, w = inputs.video_grid_thw.flatten().tolist()
         assert (t == len(vit_token_list))
@@ -313,7 +319,13 @@ class Qwen3_5():
             return None
         else:
             media_type = self.get_media_type(media_path)
-            if media_type == "image":
+            if media_type in ("image", "video") and not self.model.has_vit:
+                print("Warning: This model is LLM-only (no vit); image/video "
+                      "input is not supported. Falling back to plain-text "
+                      "inference.")
+                messages = self.text_message()
+                media_type = "text"
+            elif media_type == "image":
                 messages = self.image_message(media_path)
             elif media_type == "video":
                 messages = self.video_message(media_path)
@@ -406,12 +418,15 @@ class Qwen3_5():
         Start an interactive chat session.
         """
         # Instruct
+        if self.model.has_vit:
+            vision_hint = ("3. To ask about an image or video, include @<path> in your question\n")
+        else:
+            vision_hint = ("3. Vision is disabled (LLM-only bmodel); image/video @<path> is not supported\n")
         print("""\n=================================================================
 1. If you want to quit, please enter one of [/q, /quit, /exit]
 2. To create a new chat session, please enter one of [/clear, /new]
-3. To ask about an image or video, include @<path> in your question
-4. To use the contents of a .txt or .md file as your question, include @<path>
-=================================================================""")
+{vision_hint}4. To use the contents of a .txt or .md file as your question, include @<path>
+=================================================================""".format(vision_hint=vision_hint))
         # Stop Chatting with "/exit" input
         while True:
             input_str = input("\nQuestion: ")

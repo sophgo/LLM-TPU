@@ -126,6 +126,24 @@ As follows:
 A `@<path>` token ending in `.txt` or `.md` is replaced inline with the file's
 contents; any other `@<path>` attaches an image or video.
 
+### 2. LLM-only mode (skip the vision tower)
+
+For text-only workloads you can compile the bmodel without the vision tower
+(ViT) to save device memory and reduce the bmodel size. Add `--llm_only` to
+the compile command (note: `--max_pixels` is no longer required in this mode):
+
+``` shell
+llm_convert.py -m /workspace/Qwen3.5/Qwen3.5-2B-int4-AutoRound -s 2048 \
+  -c bm1684x --out_dir qwen3.5_llm_only --llm_only
+```
+
+The resulting bmodel contains no `vit` network. Both demos detect this at load
+time and print `LLM-only bmodel loaded (no vit)`; image/video input is disabled.
+If a prompt still contains an `@<path>` image/video attachment, the demo prints
+a warning ("This model is LLM-only (no vit); image/video input is not supported.
+Falling back to plain-text inference.") and runs the text portion of the prompt
+as usual, instead of aborting.
+
 
 ## OvisOCR2 (GGUF)
 

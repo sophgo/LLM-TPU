@@ -80,6 +80,7 @@ public:
   int MAX_PIXELS;
   int max_pos;
   bool lmhead_with_topk;
+  bool has_vit = false;
   bool support_history = false;
   bool prefill_mask = false;
   uint16_t mask_value;
