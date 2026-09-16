@@ -1,0 +1,6 @@
+{
+  "padding_side": "left",
+  "padding_value": 0.0,
+  "processor_class": "Qwen3TTSProcessor",
+  "return_attention_mask": true
+}

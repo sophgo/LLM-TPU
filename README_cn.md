@@ -33,6 +33,7 @@
 
 | 日期 | 更新内容 |
 | :--- | :--- |
+| 🔥 **2026.09.16** | **Qwen3-TTS** 已支持 BM1684X / BM1688，Python Demo，支持 10 语言的文本转语音与 3 秒声音克隆（ECAPA 说话人编码器 + 28 层 Talker LM + CodePredictor + Mimi 编解码） → [查看](./models/Qwen3_TTS/) |
 | 🔥 **2026.09.01** | **Mage-VL** 已支持 BM1684X，Python Demo，支持图片、视频与流式推理（Mage-ViT + Qwen3-4B + StreamMind Gate） → [查看](./models/Mage_VL/) |
 | **2026.08.03** | **Step3_VL** 已支持 BM1684X，Python Demo，图片理解 → [查看](./models/Step3_VL/) |
 | **2026.07.16** | **Falcon-Perception** 已支持 BM1684X，Python Demo，referring segmentation（box + mask） → [查看](./models/Falcon-Perception/) |
@@ -100,6 +101,7 @@ cd LLM-TPU
 | 模型 | 支持芯片 | 一键编译 | 备注 |
 | :--- | :---: | :---: | :--- |
 | [Mage-VL](https://huggingface.co/microsoft/Mage-VL-AWQ) | BM1684X | ✅ | Python，图片 / 视频 / 流式推理（Mage-ViT + Qwen3-4B + Gate） |
+| [Qwen3-TTS](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-Base) | BM1684X / 1688 | ✅ | Python，文本转语音 + 声音克隆（10 语言） |
 | [Step3_VL](https://huggingface.co/stepfun/Step3-VL-10B-AWQ) | BM1684X | — | Python，图片理解 |
 | [Falcon-Perception](https://huggingface.co/tiiuae/falcon-perception) | BM1684X | — | Python，指代分割（框 + 掩码） |
 | [LocateAnything-3B](https://huggingface.co/NVIDIA/LocateAnything-3B) | BM1684X / 1688 | — | Python，视觉定位（框 / 点） |
@@ -154,6 +156,7 @@ cd LLM-TPU
 [Qwen2_VL](./models/Qwen2_VL) ·
 [Qwen3_5](./models/Qwen3_5) ·
 [Qwen3_ASR](./models/Qwen3_ASR) ·
+[Qwen3_TTS](./models/Qwen3_TTS) ·
 [Qwen3_VL](./models/Qwen3_VL) ·
 [Step3_VL](./models/Step3_VL)
 

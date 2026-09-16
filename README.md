@@ -33,7 +33,8 @@
 
 | Date | Updates |
 | :--- | :--- |
-| 🔥 **2026.09.01** | **Mage-VL** now supports BM1684X — Python demo with image, video & streaming support (Mage-ViT + Qwen3-4B + StreamMind Gate) → [Details](./models/Mage_VL/) |
+| 🔥 **2026.09.16** | **Qwen3-TTS** now supports BM1684X / BM1688 — Python demo for text-to-speech with 3-second voice cloning across 10 languages (ECAPA speaker encoder + 28-layer Talker LM + CodePredictor + Mimi codec) → [Details](./models/Qwen3_TTS/) |
+| **2026.09.01** | **Mage-VL** now supports BM1684X — Python demo with image, video & streaming support (Mage-ViT + Qwen3-4B + StreamMind Gate) → [Details](./models/Mage_VL/) |
 | **2026.08.03** | **Step3_VL** now supports BM1684X — Python demo for image understanding → [Details](./models/Step3_VL/) |
 | **2026.07.16** | **Falcon-Perception** now supports BM1684X — Python demo for referring segmentation (box + mask) → [Details](./models/Falcon-Perception/) |
 | **2026.07.09** | **LocateAnything-3B** now supports BM1684X / BM1688 — Python demo for visual grounding (box / point) → [Details](./models/LocateAnything/) |
@@ -100,6 +101,7 @@ cd LLM-TPU
 | Model | Supported Chips | One-click Compile | Notes |
 | :--- | :---: | :---: | :--- |
 | [Mage-VL](https://huggingface.co/microsoft/Mage-VL-AWQ) | BM1684X | ✅ | Python, image / video / streaming (Mage-ViT + Qwen3-4B + Gate) |
+| [Qwen3-TTS](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-Base) | BM1684X / 1688 | ✅ | Python, text-to-speech + voice cloning (10 languages) |
 | [Step3_VL](https://huggingface.co/stepfun/Step3-VL-10B-AWQ) | BM1684X | — | Python, image understanding |
 | [Falcon-Perception](https://huggingface.co/tiiuae/falcon-perception) | BM1684X | — | Python, referring segmentation box + mask |
 | [LocateAnything-3B](https://huggingface.co/NVIDIA/LocateAnything-3B) | BM1684X / 1688 | — | Python, visual grounding box / point |
@@ -154,6 +156,7 @@ The [`models/`](./models) directory currently contains the following model imple
 [Qwen2_VL](./models/Qwen2_VL) ·
 [Qwen3_5](./models/Qwen3_5) ·
 [Qwen3_ASR](./models/Qwen3_ASR) ·
+[Qwen3_TTS](./models/Qwen3_TTS) ·
 [Qwen3_VL](./models/Qwen3_VL) ·
 [Step3_VL](./models/Step3_VL)
 
