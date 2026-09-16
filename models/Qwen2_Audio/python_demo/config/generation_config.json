@@ -1,0 +1,11 @@
+{
+  "chat_format": "chatml",
+  "eos_token_id": [151643,151645],
+  "pad_token_id": 151643,
+  "do_sample": true,
+  "top_k": 20,
+  "top_p": 0.5,
+  "temperature": 0.7,
+  "repetition_penalty": 1.1,
+  "transformers_version": "4.38.1"
+}
