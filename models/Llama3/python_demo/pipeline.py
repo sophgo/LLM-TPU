@@ -52,9 +52,11 @@ class Llama3():
 
     def encode_tokens(self):
         self.history.append({"role": "user", "content": self.input_str})
-        return self.tokenizer.apply_chat_template(self.history,
-                                                  tokenize=True,
+        text = self.tokenizer.apply_chat_template(self.history,
+                                                  tokenize=False,
                                                   add_generation_prompt=True)
+        tokens = self.tokenizer(text).input_ids
+        return tokens
 
     def chat(self):
         """
