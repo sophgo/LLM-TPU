@@ -33,8 +33,9 @@
 
 | 日期 | 更新内容 |
 | :--- | :--- |
-| 🔥 **2026.09.16** | **Qwen3-TTS** 已支持 BM1684X / BM1688，Python Demo，支持 10 语言的文本转语音与 3 秒声音克隆（ECAPA 说话人编码器 + 28 层 Talker LM + CodePredictor + Mimi 编解码） → [查看](./models/Qwen3_TTS/) |
-| 🔥 **2026.09.01** | **Mage-VL** 已支持 BM1684X，Python Demo，支持图片、视频与流式推理（Mage-ViT + Qwen3-4B + StreamMind Gate） → [查看](./models/Mage_VL/) |
+| 🔥 **2026.09.17** | **Qwen3-Embedding-0.6B** 已支持 BM1684X，Python Demo，非生成式文本嵌入（last-token pooling + L2 归一化，MRL 截断，检索） → [查看](./models/Qwen3_Embedding/) |
+| **2026.09.16** | **Qwen3-TTS** 已支持 BM1684X / BM1688，Python Demo，支持 10 语言的文本转语音与 3 秒声音克隆（ECAPA 说话人编码器 + 28 层 Talker LM + CodePredictor + Mimi 编解码） → [查看](./models/Qwen3_TTS/) |
+| **2026.09.01** | **Mage-VL** 已支持 BM1684X，Python Demo，支持图片、视频与流式推理（Mage-ViT + Qwen3-4B + StreamMind Gate） → [查看](./models/Mage_VL/) |
 | **2026.08.03** | **Step3_VL** 已支持 BM1684X，Python Demo，图片理解 → [查看](./models/Step3_VL/) |
 | **2026.07.16** | **Falcon-Perception** 已支持 BM1684X，Python Demo，referring segmentation（box + mask） → [查看](./models/Falcon-Perception/) |
 | **2026.07.09** | **LocateAnything-3B** 已支持 BM1684X / BM1688，Python Demo，视觉定位（box / point） → [查看](./models/LocateAnything/) |
@@ -118,7 +119,7 @@ cd LLM-TPU
 
 | 系列 | 代表模型 | 一键编译 |
 | :--- | :--- | :---: |
-| **Qwen** | Qwen1.5 / Qwen2 / Qwen2.5 / [Qwen3](https://huggingface.co/Qwen/Qwen3-4B-AWQ) / [QwQ-32B](https://huggingface.co/Qwen/QwQ-32B-AWQ) | ✅ |
+| **Qwen** | Qwen1.5 / Qwen2 / Qwen2.5 / [Qwen3](https://huggingface.co/Qwen/Qwen3-4B-AWQ) / [QwQ-32B](https://huggingface.co/Qwen/QwQ-32B-AWQ) / [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B)（文本嵌入） | ✅ |
 | **DeepSeek** | [DeepSeek-R1-Distill-Qwen](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B) (1.5B / 7B / 14B / 32B) | ✅ |
 | **Llama** | [Llama2](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf) / [Llama3](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct) | ✅ |
 | **MiniCPM** | [MiniCPM4](https://huggingface.co/openbmb/MiniCPM4-0.5B-QAT-Int4-GPTQ-format) | ✅ |
@@ -136,7 +137,8 @@ cd LLM-TPU
 [MiniCPM4](./models/MiniCPM4) ·
 [Phi-3](./models/Phi-3) ·
 [Qwen2_5](./models/Qwen2_5) ·
-[Qwen3](./models/Qwen3)
+[Qwen3](./models/Qwen3) ·
+[Qwen3_Embedding](./models/Qwen3_Embedding)
 
 **多模态 (Vision / Video / Audio)**：
 [Falcon-Perception](./models/Falcon-Perception) ·

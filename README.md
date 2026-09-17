@@ -33,7 +33,8 @@
 
 | Date | Updates |
 | :--- | :--- |
-| 🔥 **2026.09.16** | **Qwen3-TTS** now supports BM1684X / BM1688 — Python demo for text-to-speech with 3-second voice cloning across 10 languages (ECAPA speaker encoder + 28-layer Talker LM + CodePredictor + Mimi codec) → [Details](./models/Qwen3_TTS/) |
+| 🔥 **2026.09.17** | **Qwen3-Embedding-0.6B** now supports BM1684X — Python demo for non-generative text embedding (last-token pooling + L2 normalize, MRL truncation, retrieval) → [Details](./models/Qwen3_Embedding/) |
+| **2026.09.16** | **Qwen3-TTS** now supports BM1684X / BM1688 — Python demo for text-to-speech with 3-second voice cloning across 10 languages (ECAPA speaker encoder + 28-layer Talker LM + CodePredictor + Mimi codec) → [Details](./models/Qwen3_TTS/) |
 | **2026.09.01** | **Mage-VL** now supports BM1684X — Python demo with image, video & streaming support (Mage-ViT + Qwen3-4B + StreamMind Gate) → [Details](./models/Mage_VL/) |
 | **2026.08.03** | **Step3_VL** now supports BM1684X — Python demo for image understanding → [Details](./models/Step3_VL/) |
 | **2026.07.16** | **Falcon-Perception** now supports BM1684X — Python demo for referring segmentation (box + mask) → [Details](./models/Falcon-Perception/) |
@@ -118,7 +119,7 @@ cd LLM-TPU
 
 | Family | Representative Models | One-click Compile |
 | :--- | :--- | :---: |
-| **Qwen** | Qwen1.5 / Qwen2 / Qwen2.5 / [Qwen3](https://huggingface.co/Qwen/Qwen3-4B-AWQ) / [QwQ-32B](https://huggingface.co/Qwen/QwQ-32B-AWQ) | ✅ |
+| **Qwen** | Qwen1.5 / Qwen2 / Qwen2.5 / [Qwen3](https://huggingface.co/Qwen/Qwen3-4B-AWQ) / [QwQ-32B](https://huggingface.co/Qwen/QwQ-32B-AWQ) / [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) (text embedding) | ✅ |
 | **DeepSeek** | [DeepSeek-R1-Distill-Qwen](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B) (1.5B / 7B / 14B / 32B) | ✅ |
 | **Llama** | [Llama2](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf) / [Llama3](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct) | ✅ |
 | **MiniCPM** | [MiniCPM4](https://huggingface.co/openbmb/MiniCPM4-0.5B-QAT-Int4-GPTQ-format) | ✅ |
@@ -136,7 +137,8 @@ The [`models/`](./models) directory currently contains the following model imple
 [MiniCPM4](./models/MiniCPM4) ·
 [Phi-3](./models/Phi-3) ·
 [Qwen2_5](./models/Qwen2_5) ·
-[Qwen3](./models/Qwen3)
+[Qwen3](./models/Qwen3) ·
+[Qwen3_Embedding](./models/Qwen3_Embedding)
 
 **Multimodal (Vision / Video / Audio)**:
 [Falcon-Perception](./models/Falcon-Perception) ·
