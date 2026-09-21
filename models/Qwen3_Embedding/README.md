@@ -1,10 +1,10 @@
 # Qwen3-Embedding-0.6B
 
-This project deploys [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) on BM1684X / BM1688. The model is compiled to a bmodel with the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) toolchain and run with a Python demo on PCIE or SoC.
+This project deploys [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) on BM1684X / BM1688 / CV84X6. The model is compiled to a bmodel with the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) toolchain and run with a Python demo on PCIE or SoC.
 
 Qwen3-Embedding is a **non-generative text embedding model**. It takes a text (a query or a document) and outputs a 1024-dim vector via last-token pooling + L2 normalization. Use cases include semantic search, retrieval, and clustering. It is instruction-aware (queries get an instruction prefix, documents do not) and supports MRL (the output can be truncated to any dimension in 32–1024).
 
-Supported chips: BM1684X (PCIe + SoC) and BM1688 (SoC). BM1684X PCIe/SoC share one bmodel; BM1688 requires a separately compiled bmodel.
+Supported chips: BM1684X (PCIe + SoC), BM1688 (SoC), and CV84X6 (SoC). BM1684X PCIe/SoC share one bmodel; BM1688 and CV84X6 each require a separately compiled bmodel.
 
 ## Download pre-compiled bmodel
 
@@ -14,6 +14,9 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-e
 
 # BM1688
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-embedding-0.6b_bf16_seq8192_bm1688_2core_static_20260917_101539.bmodel
+
+# CV84X6
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-embedding-0.6b_bf16_seq8192_bm1684x2_4core_static_20260920_184312.bmodel
 ```
 
 ## Compile the bmodel
@@ -56,6 +59,10 @@ llm_convert.py -m /workspace/Qwen3-Embedding-0.6B \
 # BM1688, BF16, seq=8192
 llm_convert.py -m /workspace/Qwen3-Embedding-0.6B \
   -s 8192 -c bm1688 -q bf16 --out_dir qwen3_embedding_0.6b_1688
+
+# CV84X6, BF16, seq=8192
+llm_convert.py -m /workspace/Qwen3-Embedding-0.6B \
+  -s 8192 -c bm1684x2 -q bf16 --out_dir qwen3_embedding_0.6b_cv84x6
 ```
 
 For batch encoding of variable-length texts, compile with `--dynamic` so the per-encode latency scales with the actual input length instead of always running 8192:

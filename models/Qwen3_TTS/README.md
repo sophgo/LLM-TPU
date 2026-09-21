@@ -1,6 +1,6 @@
 # Qwen3-TTS
 
-This project deploys [Qwen3-TTS-12Hz-0.6B-Base](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-Base) (Qwen Team, ~0.6B params) on SOPHGO BM1684X TPU chips. The weights are converted to a BF16 bmodel with the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) toolchain and served by a Python demo backed by the TPU runtime. It supports 3-second voice cloning across 10 languages (zh / en / ja / ko / de / fr / ru / pt / es / it).
+This project deploys [Qwen3-TTS-12Hz-0.6B-Base](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-Base) (Qwen Team, ~0.6B params) on SOPHGO BM1684X / BM1688 / CV84X6 TPU chips. The weights are converted to a BF16 bmodel with the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) toolchain and served by a Python demo backed by the TPU runtime. It supports 3-second voice cloning across 10 languages (zh / en / ja / ko / de / fr / ru / pt / es / it).
 
 Qwen3-TTS is a **text-to-speech** model built on a discrete multi-codebook language-model architecture. Each audio frame produces 16 codec codes, and the whole pipeline — speaker encoder, multi-codebook LM, and neural codec decoder — runs on the TPU as a single bmodel:
 
@@ -19,6 +19,9 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-t
 
 # BM1688
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-tts-12hz-0.6b-base_bf16_seq2048_bm1688_2core_static_20260916_112020.bmodel
+
+# CV84X6
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-tts-12hz-0.6b-base_bf16_seq2048_bm1684x2_4core_static_20260920_202140.bmodel
 ```
 
 This bmodel (~2.0 GB, BF16) includes the full pipeline: speaker encoder + Talker + CodePredictor + Mimi decoder + sampling heads.
@@ -53,12 +56,14 @@ llm_convert.py -m /workspace/Qwen3-TTS-12Hz-0.6B-Base -s 2048 --max_input_length
   -c bm1684x -q bf16 --do_sample -o out
 ```
 
+For BM1688 or CV84X6, switch `-c` to `bm1688` or `bm1684x2` respectively.
+
 | Flag | Value | Meaning |
 | :--- | :--- | :--- |
 | `-m` | weights dir | HuggingFace source model. |
 | `-s` | `2048` | Total sequence length (prefill + generated codec frames). |
 | `--max_input_length` | `1024` | Max prefill length (text tokens). |
-| `-c` | `bm1684x` | Target chip (`bm1684x` / `bm1688` / `cv186x`). |
+| `-c` | `bm1684x` | Target chip (`bm1684x` / `bm1688` / `cv186x` / `bm1684x2`). |
 | `-q` | `bf16` | Quantization — the source is BF16, kept as-is. |
 | `--do_sample` | *(flag)* | Deploy `greedy_head` + `sample_head` nets so the Talker `code0` is sampled on-device with repetition penalty; the `lm_head` (codec_head) emits raw `[1,3072]` logits instead of an argmax. |
 
