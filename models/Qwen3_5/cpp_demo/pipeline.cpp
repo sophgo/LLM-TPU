@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -39,6 +40,18 @@ static inline std::string LoadBytesFromFile(const std::string &path) {
   data.resize(size);
   fs.read(data.data(), size);
   return data;
+}
+
+static std::string fnv1a_64(const void *data, size_t bytes) {
+  uint64_t hash = 0xcbf29ce484222325ULL;
+  const auto *p = static_cast<const uint8_t *>(data);
+  for (size_t i = 0; i < bytes; ++i) {
+    hash ^= p[i];
+    hash *= 0x100000001b3ULL;
+  }
+  std::ostringstream oss;
+  oss << std::hex << hash;
+  return oss.str();
 }
 
 class ChatPipe {
@@ -100,7 +113,8 @@ private:
   std::vector<int> get_position_ids(int token_len);
 
   // Process image
-  void vit_process_image(std::vector<float> &pixel_values, int vit_offset);
+  void vit_process_image(std::vector<float> &pixel_values,
+                         const std::vector<int> &grid_thw, int vit_offset);
 
   // Process video
   void vit_process_video(std::vector<float> &pixel_values,
@@ -555,7 +569,13 @@ void ChatPipe::chat() {
     if (input_str == "/clear" || input_str == "/c" || input_str == "/new") {
       model.clear_history();
       history_max_posid_state = 0;
-      std::cout << "Chat history cleared." << std::endl;
+      std::cout << "Chat history cleared (ViT image cache retained)."
+                << std::endl;
+      continue;
+    }
+    if (input_str == "/clear_vit") {
+      model.clear_vit_cache();
+      std::cout << "ViT image cache cleared." << std::endl;
       continue;
     }
 
@@ -644,7 +664,7 @@ void ChatPipe::run_once(const std::string &input_str_in,
     model.forward_embed(tokens);
     auto clock_vit_start = clock::now();
     for (int i = 0; i < num_medias; ++i) {
-      vit_process_image(pixel_values[i], vit_offset[i] + 1);
+      vit_process_image(pixel_values[i], grid_thws[i], vit_offset[i] + 1);
     }
     auto clock_vit_end = clock::now();
     duration_vit = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -849,14 +869,19 @@ std::vector<int> ChatPipe::find_token_offset(const std::vector<int> &input_ids,
 
 // Process image
 void ChatPipe::vit_process_image(std::vector<float> &pixel_values,
+                                 const std::vector<int> &grid_thw,
                                  int vit_offset) {
-  std::vector<int> position_ids = rot_pos({config.grid_thw});
+  std::vector<int> position_ids = rot_pos({grid_thw});
   std::vector<int> pos_ids;
   std::vector<float> pos_weight;
-  fast_pos_embed_interpolate(config.grid_thw, pos_ids, pos_weight);
+  fast_pos_embed_interpolate(grid_thw, pos_ids, pos_weight);
 
+  std::string cache_key =
+      fnv1a_64(pixel_values.data(), pixel_values.size() * sizeof(float)) +
+      "_" + std::to_string(grid_thw[0]) + "_" + std::to_string(grid_thw[1]) +
+      "_" + std::to_string(grid_thw[2]);
   model.forward_vit(pixel_values.data(), position_ids, pos_ids, pos_weight,
-                    config.grid_thw, vit_offset);
+                    grid_thw, vit_offset, cache_key);
 }
 
 void ChatPipe::vit_process_video(std::vector<float> &pixel_values,
@@ -872,11 +897,16 @@ void ChatPipe::vit_process_video(std::vector<float> &pixel_values,
   // Call rot_pos to generate position_ids (same block for every frame)
   std::vector<std::vector<int>> grid_thw = {{1, h, w}};
   std::vector<int> position_ids = rot_pos(grid_thw);
-  for (int i = 0; i < t; i++) {
-    model.forward_vit(pixel_values.data() + i * h * w * model.VIT_DIMS,
-                      position_ids, pos_ids, pos_weight, grid_thw[0],
-                      vit_offset[i] + 1);
+  std::string cache_key =
+      fnv1a_64(pixel_values.data(), pixel_values.size() * sizeof(float)) +
+      "_" + std::to_string(1) + "_" + std::to_string(h) + "_" +
+      std::to_string(w) + "_" + std::to_string(t);
+  std::vector<int> vit_offsets(vit_offset.size());
+  for (size_t i = 0; i < vit_offset.size(); ++i) {
+    vit_offsets[i] = vit_offset[i] + 1;
   }
+  model.forward_vit_video(pixel_values.data(), position_ids, pos_ids, pos_weight,
+                          grid_thw[0], vit_offsets, cache_key);
 }
 
 // Encode input
@@ -889,14 +919,19 @@ void ChatPipe::print_chat_instructions() {
       << "\n================================================================="
          "\n"
       << "1. If you want to quit, please enter one of [/q, /quit, /exit]\n"
-      << "2. To create a new chat session, please enter one of [/clear, /new]\n";
+      << "2. To create a new chat session, please enter one of [/clear, /new]\n"
+         "   (note: /clear clears chat history but keeps the ViT image cache)\n";
   if (model.has_vit) {
-    std::cout << "3. To ask about an image or video, include @<path> in your question\n";
+    std::cout << "3. To ask about images or a video, include @<path> in your "
+                 "question. Multiple @<path> images are supported for batched "
+                 "VQA (ViT output is cached, so re-asking about the same image "
+                 "group skips re-running the ViT).\n";
   } else {
     std::cout << "3. Vision is disabled (LLM-only bmodel); image/video @<path> is not supported\n";
   }
   std::cout << "4. To use the contents of a .txt or .md file as your question, "
                "include @<path>\n"
+            << "5. To clear the ViT image cache, enter /clear_vit\n"
             << "================================================================="
                "\n";
 }

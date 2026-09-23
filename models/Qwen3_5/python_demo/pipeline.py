@@ -8,6 +8,7 @@
 
 import time
 import argparse
+import hashlib
 from transformers import AutoProcessor
 from qwen_vl_utils import process_vision_info
 import chat
@@ -57,16 +58,17 @@ class Qwen3_5():
         # yapf: enable
         return messages
 
-    def image_message(self, path):
+    def image_message(self, paths):
         # yapf: disable
+        content = [
+            {"type": "image", "image": p,
+             "min_pixels": 4 * 32 * 32,
+             "max_pixels": self.model.MAX_PIXELS} for p in paths
+        ]
+        content.append({"type": "text", "text": self.input_str})
         messages = [{
             "role": "user",
-            "content": [
-                {"type": "image", "image": path,
-                 "min_pixels": 4 * 32 * 32,
-                 "max_pixels": self.model.MAX_PIXELS},
-                {"type": "text", "text": self.input_str},
-            ],
+            "content": content,
         }]
         # yapf: enable
         return messages
@@ -187,8 +189,12 @@ class Qwen3_5():
             hidden_states = inputs.pixel_values[pre_patches:pre_patches + num_patches, :]
             position_ids = self.rot_pos(grid_thw)
             pos_ids, pos_weights = self.fast_pos_embed_interpolate(grid_thw.tolist())
+            t, h, w = grid_thw.flatten().tolist()
+            cache_key = hashlib.sha256(
+                hidden_states.contiguous().numpy().tobytes()).hexdigest() + f"_{t}_{h}_{w}"
             self.model.forward_vit(hidden_states.numpy(), position_ids.numpy(), pos_ids.numpy(),
-                                   pos_weights.numpy(), grid_thw.numpy(), vit_offset + 1)
+                                   pos_weights.numpy(), grid_thw.numpy(), vit_offset + 1,
+                                   cache_key)
             pre_patches += num_patches
 
     def vit_process_video(self, inputs):
@@ -200,10 +206,13 @@ class Qwen3_5():
         grid_thw = torch.tensor([[1, h, w]], dtype=torch.int32)
         position_ids = self.rot_pos(grid_thw)
         pos_ids, pos_weights = self.fast_pos_embed_interpolate(grid_thw.tolist())
-        for idx, vit_offset in enumerate(vit_token_list):
-            hidden_states = inputs.pixel_values_videos[(idx * h * w):((idx + 1) * h * w), :]
-            self.model.forward_vit(hidden_states.numpy(), position_ids.numpy(), pos_ids.numpy(),
-                                   pos_weights.numpy(), grid_thw.numpy(), vit_offset + 1)
+        video_pixels = inputs.pixel_values_videos.contiguous().numpy()
+        cache_key = (hashlib.sha256(video_pixels.tobytes()).hexdigest()
+                     + f"_1_{h}_{w}_{t}")
+        vit_offsets = (torch.tensor(vit_token_list, dtype=torch.int32) + 1).numpy()
+        self.model.forward_vit_video(video_pixels, position_ids.numpy(),
+                                     pos_ids.numpy(), pos_weights.numpy(),
+                                     grid_thw.numpy(), vit_offsets, cache_key)
 
     def get_rope_index(self, input_ids: torch.LongTensor, grid_thw: torch.LongTensor,
                        pad_id: int) -> torch.Tensor:
@@ -302,35 +311,46 @@ class Qwen3_5():
                               return_tensors="pt",
                               **video_kwargs)
 
-    def run_once(self, input_str, media_path=""):
+    def run_once(self, input_str, media_paths=None):
         """
         Run a single inference turn programmatically.
 
-        Returns the generated text (stdout streaming is preserved), or
-        None if the input could not be processed.
+        media_paths is a list of image/video @<path> attachments. Multiple
+        images are supported (batched VQA): the ViT output for each image is
+        cached by content hash, so repeated VQA over the same image group skips
+        re-running the ViT. Returns the generated text, or None if the input
+        could not be processed.
         """
         self.input_str = input_str
-        media_path = (media_path or "").strip()
-        if media_path == "":
+        media_paths = media_paths or []
+        if len(media_paths) == 0:
             messages = self.text_message()
             media_type = "text"
-        elif not os.path.exists(media_path):
-            print("Can't find image or video: {}".format(media_path))
-            return None
         else:
-            media_type = self.get_media_type(media_path)
-            if media_type in ("image", "video") and not self.model.has_vit:
+            for p in media_paths:
+                if not os.path.exists(p):
+                    print("Can't find image or video: {}".format(p))
+                    return None
+            try:
+                types = [self.get_media_type(p) for p in media_paths]
+            except RuntimeError as e:
+                print("{}".format(e))
+                return None
+            if not self.model.has_vit:
                 print("Warning: This model is LLM-only (no vit); image/video "
                       "input is not supported. Falling back to plain-text "
                       "inference.")
                 messages = self.text_message()
                 media_type = "text"
-            elif media_type == "image":
-                messages = self.image_message(media_path)
-            elif media_type == "video":
-                messages = self.video_message(media_path)
+            elif all(t == "image" for t in types):
+                messages = self.image_message(media_paths)
+                media_type = "image"
+            elif len(media_paths) == 1 and types[0] == "video":
+                messages = self.video_message(media_paths[0])
+                media_type = "video"
             else:
-                print("Unsupported media type: {}".format(media_path))
+                print("Unsupported media combination (only all-image groups or "
+                      "a single video are supported): {}".format(media_paths))
                 return None
 
         inputs = self.process(messages, media_type)
@@ -419,13 +439,18 @@ class Qwen3_5():
         """
         # Instruct
         if self.model.has_vit:
-            vision_hint = ("3. To ask about an image or video, include @<path> in your question\n")
+            vision_hint = ("3. To ask about images or a video, include @<path> in your "
+                           "question. Multiple @<path> images are supported for batched "
+                           "VQA (ViT output is cached, so re-asking about the same image "
+                           "group skips re-running the ViT).\n")
         else:
             vision_hint = ("3. Vision is disabled (LLM-only bmodel); image/video @<path> is not supported\n")
         print("""\n=================================================================
 1. If you want to quit, please enter one of [/q, /quit, /exit]
 2. To create a new chat session, please enter one of [/clear, /new]
+   (note: /clear clears chat history but keeps the ViT image cache)
 {vision_hint}4. To use the contents of a .txt or .md file as your question, include @<path>
+5. To clear the ViT image cache, enter /clear_vit
 =================================================================""".format(vision_hint=vision_hint))
         # Stop Chatting with "/exit" input
         while True:
@@ -434,14 +459,18 @@ class Qwen3_5():
             if input_str in ["/exit", "/q", "/quit"]:
                 break
             if input_str in ["/clear", "/new", "/c"]:
-                print("New chat session created.")
+                print("New chat session created (ViT image cache retained).")
                 self.model.clear_history()
                 self.history_max_posid = 0
                 continue
+            if input_str == "/clear_vit":
+                self.model.clear_vit_cache()
+                print("ViT image cache cleared.")
+                continue
 
             # Media files are attached with @path in the question
-            input_str, media_path = extract_media(input_str)
-            self.run_once(input_str, media_path)
+            input_str, media_paths = extract_media(input_str)
+            self.run_once(input_str, media_paths)
 
 
 def read_prompt_file(path):
@@ -461,6 +490,7 @@ def extract_media(input_str):
 
     An @<path> ending in .txt or .md is read as prompt text and replaces the
     token inline; any other @<path> is treated as an image/video attachment.
+    Multiple image @<path> attachments are returned as a list (batched VQA).
     """
     media_paths = []
     text_tokens = []
@@ -474,18 +504,15 @@ def extract_media(input_str):
         else:
             text_tokens.append(t)
     input_str = " ".join(text_tokens)
-    if len(media_paths) > 1:
-        print("Only one media file is supported, using: {}".format(media_paths[0]))
-    media_path = media_paths[0] if media_paths else ""
-    return input_str, media_path
+    return input_str, media_paths
 
 
 def main(args):
     model = Qwen3_5(args)
     if args.prompt is not None:
         # Programmatic (non-interactive) mode: run once and exit.
-        prompt, media_path = extract_media(args.prompt)
-        model.run_once(prompt, media_path)
+        prompt, media_paths = extract_media(args.prompt)
+        model.run_once(prompt, media_paths)
     else:
         model.chat()
 

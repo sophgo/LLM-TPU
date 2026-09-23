@@ -16,9 +16,12 @@
 #include <getopt.h>
 #include <inttypes.h>
 #include <iostream>
+#include <list>
 #include <numeric>
 #include <random>
 #include <stdio.h>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 typedef std::vector<int> ArrayInt;
@@ -34,11 +37,17 @@ public:
   void forward_embed(ArrayInt const &tokens);
   void forward_vit(const float *pixel_values, ArrayInt const &position_ids,
                    ArrayInt const &pos_idx, ArrayFloat const &pos_weight,
-                   ArrayInt const &grid_thw, int vit_offset);
+                   ArrayInt const &grid_thw, int vit_offset,
+                   const std::string &cache_key = "");
+  void forward_vit_video(const float *pixel_values, ArrayInt const &position_ids,
+                         ArrayInt const &pos_idx, ArrayFloat const &pos_weight,
+                         ArrayInt const &grid_thw, ArrayInt const &vit_offsets,
+                         const std::string &cache_key = "");
   int forward_first(ArrayInt const &position_ids);
   int forward_next(ArrayInt const &position_ids);
   bool check_stop(const std::string &text);
   void clear_history();
+  void clear_vit_cache();
 
   std::mt19937 sgen;
   Qwen3_5() : sgen(std::random_device()()) {};
@@ -86,6 +95,18 @@ public:
   uint16_t mask_value;
   std::vector<int> visited_tokens;
   const int FA_INTERVAL = 4; // full attention interval
+  struct VitCacheEntry { bm_device_mem_t mem; int num_tokens; };
+  std::unordered_map<std::string, VitCacheEntry> vit_cache;
+  std::list<std::string> vit_cache_order; // FIFO eviction order
+  int vit_cache_cap = 64;
+  struct VideoCacheEntry {
+    bm_device_mem_t mem; // t * (hw/4) * HIDDEN_SIZE * 2 bytes
+    int num_frames;      // t temporal patches this entry holds
+    int frame_tokens;    // hw/4 tokens per frame
+  };
+  std::unordered_map<std::string, VideoCacheEntry> vit_video_cache;
+  std::list<std::string> vit_video_cache_order; // FIFO eviction order
+  int vit_video_cache_cap = 4;
   bool do_sample = false;
   // generation
   std::vector<std::string> stop_strings;

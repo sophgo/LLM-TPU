@@ -81,11 +81,11 @@ Compile the library files to generate the `chat.cpython*.so` file, then copy it 
 
 ``` shell
 cd python_demo
-mkdir build 
+mkdir build
 cd build && cmake .. && make && cp *cpython* .. && cd ..
 
 # run demo
-python3 pipeline.py -m xxxx.bmodel -c config 
+python3 pipeline.py -m xxxx.bmodel -c config
 ```
 model is the actual model storage path; config_path is the configuration file path.
 
@@ -97,7 +97,7 @@ The running result is as follows:
 
 ``` shell
 cd cpp_demo
-mkdir build 
+mkdir build
 cd build && cmake .. && make && cp pipeline .. && cd ..
 
 # run demo
@@ -143,6 +143,45 @@ If a prompt still contains an `@<path>` image/video attachment, the demo prints
 a warning ("This model is LLM-only (no vit); image/video input is not supported.
 Falling back to plain-text inference.") and runs the text portion of the prompt
 as usual, instead of aborting.
+
+### 3. Multi-image batched VQA with ViT output caching
+
+A common scenario is to run multiple VQA turns over the **same group of images**
+(or the same video) with different text questions. Re-running the vision tower
+(ViT) every turn is wasteful, since the ViT output for an image depends only on
+the image content and is byte-deterministic on the TPU.
+
+Both demos now accept **multiple image `@<path>` attachments** in a single prompt
+and **cache the ViT output embeddings per image**, keyed by a content hash of the
+image pixels plus its `grid_thw`. On a later turn that re-uses the same image(s),
+the ViT `net_launch` is skipped entirely and the cached embeddings are copied
+straight into the activation buffer — so the `Vision` timing on the second turn
+drops to near zero while the answers stay identical. A single video per turn is
+cached the same way, but as one whole-video entry.
+
+```
+# python demo
+Question: @a.jpg @b.jpg Describe these two images.
+# ... later, a different question over the same images:
+Question: @a.jpg @b.jpg What is the difference between them?
+# ... or the same video again:
+Question: @clip.mp4 Summarize this video.
+```
+
+Notes:
+- The cache is keyed by media **content**, not by file path, so it is safe across
+  `/clear` (which clears chat history but keeps the ViT cache). Use `/clear_vit`
+  to drop the cached ViT tensors and reclaim device memory.
+- At most one video is supported per turn; mixing images and videos (or attaching
+  more than one video) is rejected. Any number of images is supported.
+- A video is cached **as a whole**: one entry holds the concatenated ViT outputs
+  of all its temporal patches, so re-asking about the same video skips every
+  per-patch ViT launch. The video cache is separate from the image cache, so a
+  large video never evicts cached images. `python_demo` uses SHA-256 for the
+  key, `cpp_demo` a 64-bit FNV-1a hash; both are scoped to their own process.
+- The image cache holds up to 64 images and the video cache up to 4 videos
+  (FIFO eviction each). Set `model.vit_cache_cap = 0` /
+  `model.vit_video_cache_cap = 0` to disable either at runtime.
 
 
 ## OvisOCR2 (GGUF)

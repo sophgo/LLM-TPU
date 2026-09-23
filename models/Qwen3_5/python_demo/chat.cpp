@@ -16,6 +16,7 @@
 #include <getopt.h>
 #include <inttypes.h>
 #include <iostream>
+#include <list>
 #include <numeric>
 #include <pybind11/iostream.h>
 #include <pybind11/numpy.h>
@@ -23,6 +24,8 @@
 #include <pybind11/stl.h>
 #include <random>
 #include <stdio.h>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 static void print_devmem_info(bm_handle_t &bm_handle) {
@@ -67,10 +70,17 @@ public:
   void forward_embed(ArrayInt const &tokens);
   void forward_vit(ArrayFloat const &pixel_values, ArrayInt const &position_ids,
                    ArrayInt const &pos_idx, ArrayFloat const &pos_weight,
-                   ArrayInt const &grid_thw, int vit_offset);
+                   ArrayInt const &grid_thw, int vit_offset,
+                   const std::string &cache_key = "");
+  void forward_vit_video(ArrayFloat const &pixel_values,
+                         ArrayInt const &position_ids, ArrayInt const &pos_idx,
+                         ArrayFloat const &pos_weight, ArrayInt const &grid_thw,
+                         ArrayInt const &vit_offsets,
+                         const std::string &cache_key = "");
   int forward_first(ArrayInt const &position_ids);
   int forward_next(ArrayInt const &position_ids);
   void clear_history();
+  void clear_vit_cache();
 
   std::mt19937 sgen;
   Qwen3_5() : sgen(std::random_device()()) {};
@@ -118,6 +128,25 @@ public:
   uint16_t mask_value;
   std::vector<int> visited_tokens;
   const int FA_INTERVAL = 4; // full attention interval
+
+  // ===== ViT-output token cache =====
+  struct VitCacheEntry {
+    bm_device_mem_t mem;
+    int num_tokens; // hw/4 image tokens this entry holds
+  };
+  std::unordered_map<std::string, VitCacheEntry> vit_cache;
+  std::list<std::string> vit_cache_order; // FIFO eviction order
+  int vit_cache_cap = 64;
+
+  // ===== whole-video ViT cache (one entry per video) =====
+  struct VideoCacheEntry {
+    bm_device_mem_t mem; // t * (hw/4) * HIDDEN_SIZE * 2 bytes
+    int num_frames;      // t temporal patches this entry holds
+    int frame_tokens;    // hw/4 tokens per frame
+  };
+  std::unordered_map<std::string, VideoCacheEntry> vit_video_cache;
+  std::list<std::string> vit_video_cache_order; // FIFO eviction order
+  int vit_video_cache_cap = 4;
 
 private:
   bm_handle_t bm_handle;
@@ -394,7 +423,21 @@ void Qwen3_5::init(int dev_id, std::string model_path) {
   }
 }
 
+void Qwen3_5::clear_vit_cache() {
+  for (auto &kv : vit_cache) {
+    bm_free_device(bm_handle, kv.second.mem);
+  }
+  vit_cache.clear();
+  vit_cache_order.clear();
+  for (auto &kv : vit_video_cache) {
+    bm_free_device(bm_handle, kv.second.mem);
+  }
+  vit_video_cache.clear();
+  vit_video_cache_order.clear();
+}
+
 void Qwen3_5::deinit() {
+  clear_vit_cache();
   bm_free_device(bm_handle, dev_buffer);
   bmrt_destroy(p_bmrt);
   bm_dev_free(bm_handle);
@@ -443,7 +486,8 @@ void Qwen3_5::forward_embed(ArrayInt const &tokens) {
 void Qwen3_5::forward_vit(ArrayFloat const &pixel_values,
                           ArrayInt const &position_ids, ArrayInt const &pos_idx,
                           ArrayFloat const &pos_weight,
-                          ArrayInt const &grid_thw, int vit_offset) {
+                          ArrayInt const &grid_thw, int vit_offset,
+                          const std::string &cache_key) {
   if (!has_vit) {
     throw std::runtime_error(
         "forward_vit: bmodel has no vit network (LLM-only mode)");
@@ -464,6 +508,24 @@ void Qwen3_5::forward_vit(ArrayFloat const &pixel_values,
   auto p_pos_idx = pos_idx.request();
   auto p_pos_weight = pos_weight.request();
 
+  // concatenate text embedding and image embedding
+  int dst_offset = vit_offset * HIDDEN_SIZE * sizeof(uint16_t);
+  int vit_size = hw / 4 * HIDDEN_SIZE * sizeof(uint16_t);
+
+  // ===== cache HIT: skip ViT net_launch, just place cached embeddings =====
+  if (!cache_key.empty()) {
+    auto it = vit_cache.find(cache_key);
+    if (it != vit_cache.end()) {
+      assert(it->second.num_tokens == hw / 4);
+      bm_memcpy_d2d_byte(bm_handle, dev_buffer, dst_offset,
+                         it->second.mem, 0,
+                         it->second.num_tokens * HIDDEN_SIZE *
+                             sizeof(uint16_t));
+      return;
+    }
+  }
+
+  // ===== cache MISS: run the ViT net as usual =====
   empty_net(bm_handle, net_vit);
   std::vector<bm_tensor_t> in_tensors;
   std::vector<bm_tensor_t> out_tensors;
@@ -484,11 +546,150 @@ void Qwen3_5::forward_vit(ArrayFloat const &pixel_values,
   in_tensors[3].shape.dims[0] = hw;
   net_launch(net_vit, in_tensors, out_tensors);
 
-  // concatenante texting embedding and image embedding
-  int dst_offset = vit_offset * HIDDEN_SIZE * sizeof(uint16_t);
-  int vit_size = hw / 4 * HIDDEN_SIZE * sizeof(uint16_t);
+  // place the freshly computed image embeddings into dev_buffer (as before)
   bm_memcpy_d2d_byte(bm_handle, dev_buffer, dst_offset,
                      out_tensors[0].device_mem, 0, vit_size);
+
+  // ===== store the result into the ViT cache for future reuse =====
+  if (!cache_key.empty() && vit_cache_cap > 0) {
+    auto it = vit_cache.find(cache_key);
+    if (it != vit_cache.end()) {
+      bm_free_device(bm_handle, it->second.mem);
+      vit_cache_order.remove(cache_key);
+      vit_cache.erase(it);
+    } else if ((int)vit_cache.size() >= vit_cache_cap) {
+      // FIFO eviction of the oldest entry
+      std::string oldest = vit_cache_order.front();
+      bm_free_device(bm_handle, vit_cache[oldest].mem);
+      vit_cache.erase(oldest);
+      vit_cache_order.pop_front();
+    }
+    VitCacheEntry entry;
+    auto ret = bm_malloc_device_byte(bm_handle, &entry.mem, vit_size);
+    assert(BM_SUCCESS == ret);
+    bm_memcpy_d2d_byte(bm_handle, entry.mem, 0, out_tensors[0].device_mem, 0,
+                       vit_size);
+    entry.num_tokens = hw / 4;
+    vit_cache[cache_key] = entry;
+    vit_cache_order.push_back(cache_key);
+  }
+}
+
+void Qwen3_5::forward_vit_video(ArrayFloat const &pixel_values,
+                                ArrayInt const &position_ids,
+                                ArrayInt const &pos_idx,
+                                ArrayFloat const &pos_weight,
+                                ArrayInt const &grid_thw,
+                                ArrayInt const &vit_offsets,
+                                const std::string &cache_key) {
+  if (!has_vit) {
+    throw std::runtime_error(
+        "forward_vit_video: bmodel has no vit network (LLM-only mode)");
+  }
+  auto p_grid_thw = grid_thw.request();
+  auto p_thw = static_cast<int *>(p_grid_thw.ptr);
+  assert(p_thw[0] == 1); // each video segment is a single-frame {1,h,w} grid
+  int h = p_thw[1];
+  int w = p_thw[2];
+  int hw = h * w;
+  int num_frames = (int)vit_offsets.size();
+  int num_pixels = hw * VIT_DIMS;
+  assert((int)position_ids.size() == (hw * 2));
+  assert((int)pos_idx.size() == (hw * 4));
+  assert((int)pos_weight.size() == (hw * 4));
+  assert((int)pixel_values.size() == num_frames * num_pixels);
+  auto p_pixel_values = pixel_values.request();
+  auto p_position_ids = position_ids.request();
+  auto p_pos_idx = pos_idx.request();
+  auto p_pos_weight = pos_weight.request();
+  auto p_offsets = vit_offsets.request();
+  auto p_vit_offsets = static_cast<int *>(p_offsets.ptr);
+  auto pixels = static_cast<const float *>(p_pixel_values.ptr);
+
+  int frame_size = hw / 4 * HIDDEN_SIZE * sizeof(uint16_t);
+  size_t total_size = (size_t)frame_size * num_frames;
+
+  // ===== cache HIT: skip every per-patch net_launch, replay cached bytes =====
+  if (!cache_key.empty()) {
+    auto it = vit_video_cache.find(cache_key);
+    if (it != vit_video_cache.end()) {
+      // The key encodes {h, w, t}, so the entry must hold exactly this many
+      // frames/tokens; assert to catch any stale/corrupted entry loudly.
+      assert(it->second.num_frames == num_frames);
+      assert(it->second.frame_tokens == hw / 4);
+      for (int i = 0; i < num_frames; ++i) {
+        int dst_offset = p_vit_offsets[i] * HIDDEN_SIZE * sizeof(uint16_t);
+        bm_memcpy_d2d_byte(bm_handle, dev_buffer, dst_offset, it->second.mem,
+                           (size_t)i * frame_size, frame_size);
+      }
+      return;
+    }
+  }
+
+  // ===== cache MISS: run the ViT once per patch (as before). The entry is
+  // allocated up front so each patch's output can be snapshotted right after
+  // its launch — the net's output device mem is reused by the next patch.
+  // =====
+  bool store = !cache_key.empty() && vit_video_cache_cap > 0;
+  bm_device_mem_t entry_mem;
+  if (store) {
+    // defensive: if a stale entry under this key exists, free it first
+    auto it = vit_video_cache.find(cache_key);
+    if (it != vit_video_cache.end()) {
+      bm_free_device(bm_handle, it->second.mem);
+      vit_video_cache_order.remove(cache_key);
+      vit_video_cache.erase(it);
+    } else if ((int)vit_video_cache.size() >= vit_video_cache_cap) {
+      // FIFO eviction of the oldest entry
+      std::string oldest = vit_video_cache_order.front();
+      bm_free_device(bm_handle, vit_video_cache[oldest].mem);
+      vit_video_cache.erase(oldest);
+      vit_video_cache_order.pop_front();
+    }
+    auto ret = bm_malloc_device_byte(bm_handle, &entry_mem, total_size);
+    if (ret != BM_SUCCESS) {
+      store = false;
+    }
+  }
+  for (int i = 0; i < num_frames; ++i) {
+    empty_net(bm_handle, net_vit);
+    std::vector<bm_tensor_t> in_tensors;
+    std::vector<bm_tensor_t> out_tensors;
+    init_tensors(net_vit, in_tensors, out_tensors);
+    bm_memcpy_s2d_partial(bm_handle, in_tensors[0].device_mem,
+                          (void *)(pixels + (size_t)i * num_pixels),
+                          num_pixels * sizeof(float));
+    bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
+                          (void *)p_position_ids.ptr,
+                          position_ids.size() * sizeof(int));
+    bm_memcpy_s2d_partial(bm_handle, in_tensors[2].device_mem,
+                          (void *)p_pos_idx.ptr, pos_idx.size() * sizeof(int));
+    bm_memcpy_s2d_partial(bm_handle, in_tensors[3].device_mem,
+                          (void *)p_pos_weight.ptr,
+                          pos_weight.size() * sizeof(float));
+    in_tensors[0].shape.dims[0] = hw;
+    in_tensors[1].shape.dims[0] = hw;
+    in_tensors[2].shape.dims[0] = hw;
+    in_tensors[3].shape.dims[0] = hw;
+    net_launch(net_vit, in_tensors, out_tensors);
+
+    int dst_offset = p_vit_offsets[i] * HIDDEN_SIZE * sizeof(uint16_t);
+    // place the freshly computed patch embeddings into dev_buffer (as before)
+    bm_memcpy_d2d_byte(bm_handle, dev_buffer, dst_offset,
+                       out_tensors[0].device_mem, 0, frame_size);
+    if (store) {
+      bm_memcpy_d2d_byte(bm_handle, entry_mem, (size_t)i * frame_size,
+                         out_tensors[0].device_mem, 0, frame_size);
+    }
+  }
+  if (store) {
+    VideoCacheEntry entry;
+    entry.mem = entry_mem;
+    entry.num_frames = num_frames;
+    entry.frame_tokens = hw / 4;
+    vit_video_cache[cache_key] = entry;
+    vit_video_cache_order.push_back(cache_key);
+  }
 }
 
 int Qwen3_5::generate(bm_device_mem_t &logits_mem) {
@@ -757,11 +958,21 @@ PYBIND11_MODULE(chat, m) {
       .def(pybind11::init<>())
       .def("init", &Qwen3_5::init)
       .def("forward_embed", &Qwen3_5::forward_embed)
-      .def("forward_vit", &Qwen3_5::forward_vit)
+      .def("forward_vit", &Qwen3_5::forward_vit, py::arg("pixel_values"),
+           py::arg("position_ids"), py::arg("pos_idx"), py::arg("pos_weight"),
+           py::arg("grid_thw"), py::arg("vit_offset"),
+           py::arg("cache_key") = std::string(""))
+      .def("forward_vit_video", &Qwen3_5::forward_vit_video,
+           py::arg("pixel_values"), py::arg("position_ids"), py::arg("pos_idx"),
+           py::arg("pos_weight"), py::arg("grid_thw"), py::arg("vit_offsets"),
+           py::arg("cache_key") = std::string(""))
       .def("forward_first", &Qwen3_5::forward_first)
       .def("forward_next", &Qwen3_5::forward_next)
       .def("clear_history", &Qwen3_5::clear_history)
+      .def("clear_vit_cache", &Qwen3_5::clear_vit_cache)
       .def("deinit", &Qwen3_5::deinit)
+      .def_readwrite("vit_cache_cap", &Qwen3_5::vit_cache_cap)
+      .def_readwrite("vit_video_cache_cap", &Qwen3_5::vit_video_cache_cap)
       .def_readonly("SEQLEN", &Qwen3_5::SEQLEN) // read SEQLEN in pipeline.py
       .def_readonly("MAX_PIXELS", &Qwen3_5::MAX_PIXELS)
       .def_readonly("MAX_PATCHES", &Qwen3_5::MAX_PATCHES)
