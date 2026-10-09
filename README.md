@@ -33,7 +33,8 @@
 
 | Date | Updates |
 | :--- | :--- |
-| 🔥 **2026.09.17** | **Qwen3-Embedding-0.6B** now supports BM1684X — Python demo for non-generative text embedding (last-token pooling + L2 normalize, MRL truncation, retrieval) → [Details](./models/Qwen3_Embedding/) |
+| 🔥 **2026.10.08** | **bge-reranker-v2-m3** now supports BM1684X / BM1688 / CV84X6 — Python demo for cross-lingual reranking (XLM-RoBERTa encoder, query-document pair scoring) → [Details](./models/Bge_Reranker_V2_M3/) |
+| **2026.09.17** | **Qwen3-Embedding-0.6B** now supports BM1684X — Python demo for non-generative text embedding (last-token pooling + L2 normalize, MRL truncation, retrieval) → [Details](./models/Qwen3_Embedding/) |
 | **2026.09.16** | **Qwen3-TTS** now supports BM1684X / BM1688 — Python demo for text-to-speech with 3-second voice cloning across 10 languages (ECAPA speaker encoder + 28-layer Talker LM + CodePredictor + Mimi codec) → [Details](./models/Qwen3_TTS/) |
 | **2026.09.01** | **Mage-VL** now supports BM1684X — Python demo with image, video & streaming support (Mage-ViT + Qwen3-4B + StreamMind Gate) → [Details](./models/Mage_VL/) |
 | **2026.08.03** | **Step3_VL** now supports BM1684X — Python demo for image understanding → [Details](./models/Step3_VL/) |
@@ -125,13 +126,14 @@ cd LLM-TPU
 | **MiniCPM** | [MiniCPM4](https://huggingface.co/openbmb/MiniCPM4-0.5B-QAT-Int4-GPTQ-format) | ✅ |
 | **Phi** | [Phi-3](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct) / [Phi-4](https://huggingface.co/microsoft/Phi-4-mini-instruct) | ✅ |
 | **ChatGLM** | [ChatGLM3](https://huggingface.co/THUDM/chatglm3-6b) / ChatGLM4 | ✅ |
-| **Others** | Baichuan2 · CodeFuse · Falcon · Gemma / Gemma2 · Mistral · WizardCoder · Yi · Yi34B · LWM-Text-Chat · Megrez · MiniCPM3 · DeepSeek-V2 | — |
+| **Others** | Baichuan2 · CodeFuse · Falcon · Gemma / Gemma2 · Mistral · WizardCoder · Yi · Yi34B · LWM-Text-Chat · Megrez · MiniCPM3 · DeepSeek-V2 · [bge-reranker-v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3) (text reranking) | — |
 
 ### Full Directory Index
 
 The [`models/`](./models) directory currently contains the following model implementations:
 
 **LLM**:
+[Bge_Reranker_V2_M3](./models/Bge_Reranker_V2_M3) ·
 [ChatGLM3](./models/ChatGLM3) ·
 [Llama3](./models/Llama3) ·
 [MiniCPM4](./models/MiniCPM4) ·
