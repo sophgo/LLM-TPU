@@ -33,7 +33,8 @@
 
 | 日期 | 更新内容 |
 | :--- | :--- |
-| 🔥 **2026.09.17** | **Qwen3-Embedding-0.6B** 已支持 BM1684X，Python Demo，非生成式文本嵌入（last-token pooling + L2 归一化，MRL 截断，检索） → [查看](./models/Qwen3_Embedding/) |
+| 🔥 **2026.10.08** | **bge-reranker-v2-m3** 已支持 BM1684X / BM1688 / CV84X6，Python Demo，跨语言重排序（XLM-RoBERTa encoder，query-document 对相关度打分） → [查看](./models/Bge_Reranker_V2_M3/) |
+| **2026.09.17** | **Qwen3-Embedding-0.6B** 已支持 BM1684X，Python Demo，非生成式文本嵌入（last-token pooling + L2 归一化，MRL 截断，检索） → [查看](./models/Qwen3_Embedding/) |
 | **2026.09.16** | **Qwen3-TTS** 已支持 BM1684X / BM1688，Python Demo，支持 10 语言的文本转语音与 3 秒声音克隆（ECAPA 说话人编码器 + 28 层 Talker LM + CodePredictor + Mimi 编解码） → [查看](./models/Qwen3_TTS/) |
 | **2026.09.01** | **Mage-VL** 已支持 BM1684X，Python Demo，支持图片、视频与流式推理（Mage-ViT + Qwen3-4B + StreamMind Gate） → [查看](./models/Mage_VL/) |
 | **2026.08.03** | **Step3_VL** 已支持 BM1684X，Python Demo，图片理解 → [查看](./models/Step3_VL/) |
@@ -125,13 +126,14 @@ cd LLM-TPU
 | **MiniCPM** | [MiniCPM4](https://huggingface.co/openbmb/MiniCPM4-0.5B-QAT-Int4-GPTQ-format) | ✅ |
 | **Phi** | [Phi-3](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct) / [Phi-4](https://huggingface.co/microsoft/Phi-4-mini-instruct) | ✅ |
 | **ChatGLM** | [ChatGLM3](https://huggingface.co/THUDM/chatglm3-6b) / ChatGLM4 | ✅ |
-| **其他** | Baichuan2 · CodeFuse · Falcon · Gemma / Gemma2 · Mistral · WizardCoder · Yi · Yi34B · LWM-Text-Chat · Megrez · MiniCPM3 · DeepSeek-V2 | — |
+| **其他** | Baichuan2 · CodeFuse · Falcon · Gemma / Gemma2 · Mistral · WizardCoder · Yi · Yi34B · LWM-Text-Chat · Megrez · MiniCPM3 · DeepSeek-V2 · [bge-reranker-v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3)（文本重排序） | — |
 
 ### 完整目录索引
 
 仓库 [`models/`](./models) 下当前包含以下模型实现：
 
 **LLM**：
+[Bge_Reranker_V2_M3](./models/Bge_Reranker_V2_M3) ·
 [ChatGLM3](./models/ChatGLM3) ·
 [Llama3](./models/Llama3) ·
 [MiniCPM4](./models/MiniCPM4) ·
