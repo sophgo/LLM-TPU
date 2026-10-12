@@ -1,0 +1,220 @@
+# ==============================================================================
+# Copyright (C) 2025 Sophgo Technologies Inc.  All rights reserved.
+#
+# TPU-MLIR is licensed under the 2-Clause BSD License except for the
+# third-party components.
+#
+# ==============================================================================
+
+import argparse
+import os
+
+import chat
+import time
+from transformers import AutoTokenizer, GenerationConfig
+
+
+class MiniCPM5():
+
+    def __init__(self, args):
+        # devid
+        self.devices = [int(d) for d in args.devid.split(",")]
+
+        # load tokenizer
+        print("Load " + args.config_path + " ...")
+        self.tokenizer = AutoTokenizer.from_pretrained(args.config_path, trust_remote_code=True)
+
+        # warm up
+        self.tokenizer.decode([0])
+
+        # preprocess parameters, such as prompt & tokenizer
+        self.system_prompt = "You are a helpful assistant."
+        self.history = [{"role": "system", "content": self.system_prompt}]
+        # MiniCPM5 ends assistant turns with <|im_end|> (130073) instead of
+        # the base eos </s> (1); stop on both in every mode, otherwise greedy
+        # decoding never stops.
+        im_end_id = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
+        self.EOS = [self.tokenizer.eos_token_id, im_end_id]
+        self.enable_history = args.enable_history
+
+        self.model = chat.MiniCPM5()
+        self.init_params(args)
+        self.load_model(args.model_path)
+        if self.model.support_history:
+            print("Model supports prefill kv, using prefill mode.")
+            self.enable_history = True
+
+    def load_model(self, model_path):
+        load_start = time.time()
+        self.model.init(self.devices, model_path)
+        load_end = time.time()
+        print(f"\nLoad Time: {(load_end - load_start):.3f} s")
+
+    def init_params(self, args):
+        self.model.generation_mode = "greedy"
+        self.stop_strings = []
+        if args.do_sample:
+            gen_config_file = os.path.join(args.config_path, "generation_config.json")
+            if not os.path.exists(gen_config_file):
+                raise FileNotFoundError(
+                    f"'{gen_config_file}' not found. '--do_sample' requires "
+                    "generation_config.json to provide sampling parameters.")
+            gen_config = GenerationConfig.from_pretrained(args.config_path)
+            self.model.generation_mode = "sample"
+            self.model.temperature = gen_config.temperature
+            self.model.top_p = gen_config.top_p
+            # MiniCPM5's generation_config.json has no top_k and no
+            # repetition_penalty; penalty_sample in chat.cpp needs ints/floats,
+            # so fall back to sane defaults.
+            self.model.top_k = gen_config.top_k if gen_config.top_k is not None else 5
+            self.model.penalty = gen_config.repetition_penalty \
+                if gen_config.repetition_penalty is not None else 1.0
+            self.model.repetition_window = args.rep_window
+            if gen_config.eos_token_id is not None:
+                if isinstance(gen_config.eos_token_id, int):
+                    self.EOS.append(gen_config.eos_token_id)
+                if isinstance(gen_config.eos_token_id, list):
+                    self.EOS.extend(gen_config.eos_token_id)
+            if gen_config.stop_strings is not None:
+                self.stop_strings = gen_config.stop_strings
+
+    def clear(self):
+        if self.model.support_history:
+            self.model.clear_kv()
+        self.history = [{"role": "system", "content": self.system_prompt}]
+
+    def update_history(self):
+        if self.model.history_length >= self.model.SEQLEN:
+            print("... (reach the maximal length)", flush=True, end="")
+            self.clear()
+        elif self.model.support_history:
+            self.history.clear()
+        else:
+            self.history.append({"role": "assistant", "content": self.answer_cur})
+
+    def encode_tokens(self):
+        self.history.append({"role": "user", "content": self.input_str})
+        text = self.tokenizer.apply_chat_template(self.history,
+                                                  tokenize=False,
+                                                  add_generation_prompt=True)
+        # MiniCPM5's chat template already emits <s> and the tokenizer would
+        # add another bos by default; disable special tokens to avoid a
+        # duplicated bos token.
+        tokens = self.tokenizer(text, add_special_tokens=False).input_ids
+        return tokens
+
+    def __del__(self):
+        self.model.deinit()
+
+    def run_once(self, input_str):
+        """
+        Run a single inference turn programmatically.
+        """
+        self.input_str = input_str
+        tokens = self.encode_tokens()
+
+        # check tokens
+        if not tokens:
+            print("Sorry: your question is empty!!")
+            return
+        if len(tokens) > self.model.MAX_INPUT_LENGTH:
+            print(
+                "The maximum question length should be shorter than {} but we get {} instead."
+                .format(self.model.MAX_INPUT_LENGTH, len(tokens)))
+            return
+
+        print("\nAnswer: ", end="")
+        self.stream_answer(tokens)
+
+    def chat(self):
+        """
+        Start a chat session.
+        """
+        # Instruct
+        print("""\n=================================================================
+1. If you want to quit, please enter one of [/q, /quit, /exit]
+2. To create a new chat session, please enter one of [/clear, /new]
+=================================================================""")
+        # Stop Chatting with "/exit" input
+        while True:
+            self.input_str = input("\nQuestion: ")
+            # Quit
+            if self.input_str in ["/exit", "/q", "/quit"]:
+                break
+            # New Chat
+            elif self.input_str in ["/clear", "/new"]:
+                self.clear()
+            # Chat
+            else:
+                self.run_once(self.input_str)
+
+    def stream_answer(self, tokens):
+        """
+        Stream the answer for the given tokens.
+        """
+        tok_num = 0
+        self.answer_cur = ""
+        self.answer_token = []
+
+        # First token
+        first_start = time.time()
+        token = self.model.forward_first(tokens)
+        first_end = time.time()
+        # Following tokens
+        full_word_tokens = []
+        while token not in self.EOS and self.model.history_length < self.model.SEQLEN:
+            full_word_tokens.append(token)
+            word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
+            if "�" in word:
+                token = self.model.forward_next()
+                tok_num += 1
+                continue
+            self.answer_token += full_word_tokens
+            self.answer_cur += word
+            if any(self.answer_cur.endswith(stop) for stop in self.stop_strings):
+                break
+            print(word, flush=True, end="")
+            tok_num += 1
+            full_word_tokens = []
+            token = self.model.forward_next()
+
+        # counting time
+        next_end = time.time()
+        first_duration = first_end - first_start
+        next_duration = next_end - first_end
+        tps = tok_num / next_duration
+
+        if self.enable_history:
+            self.update_history()
+        else:
+            self.clear()
+
+        print()
+        print(f"FTL: {first_duration:.3f} s")
+        print(f"TPS: {tps:.3f} token/s")
+
+
+def main(args):
+    model = MiniCPM5(args)
+    if args.prompt is not None:
+        # Programmatic (non-interactive) mode: run once and exit.
+        model.run_once(args.prompt)
+    else:
+        model.chat()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    # yapf: disable
+    parser.add_argument('-m', '--model_path', type=str, required=True, help='path to the bmodel file')
+    parser.add_argument('-c', '--config_path', type=str, default="../config", help='path to the tokenizer file')
+    parser.add_argument('-d', '--devid', type=str, default='0', help='device ID to use')
+    parser.add_argument('--do_sample', action='store_true', help="if set, generate tokens by sample parameters")
+    parser.add_argument('--enable_history', action='store_true', help="if set, enables storing of history memory")
+    parser.add_argument('-w', '--rep_window', type=int, default=64,
+                        help="sliding window size for repetition penalty; only the last N tokens are penalized; 0 penalizes the full context; only used with --do_sample")
+    parser.add_argument('-p', '--prompt', type=str, default=None,
+                        help='If set, run programmatically (non-interactive): a single inference is performed using this prompt and then the program exits.')
+    # yapf: enable
+    args = parser.parse_args()
+    main(args)
