@@ -21,6 +21,9 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5
 
 # Supports 8K and historical context
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.5-2b-int4-autoround_w4bf16_seq8192_bm1688_2core_history_dynamic_20260728_111707.bmodel
+
+# =============== cv84x6 ======================
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3.6-35b-a3b-int4-autoround_w4bf16_seq2048_cv84x6_4core_dynamic_20261027_164817.bmodel
 ```
 
 
