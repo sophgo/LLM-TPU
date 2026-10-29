@@ -507,7 +507,17 @@ int Qwen3_ASR::forward_next(ArrayInt const &position_ids) {
 
   auto in_mem = net_embed_cache->stages[0].input_mems[0];
   auto out_mem = net_embed_cache->stages[0].output_mems[0];
-  d2d(in_mem, lm_out_mem);
+  // Feed the previous token id (not the raw logits) into the embedding lookup.
+  // When lmhead_with_topk is false (--do_sample bmodel), lm_head output is the
+  // full [1,151936] logits; d2d into the 4-byte token-id buffer corrupts the
+  // embedding and breaks every decode step (output degenerates to repeated
+  // tokens). Use the greedy_head token_id instead, matching Qwen2_VL.
+  if (lmhead_with_topk) {
+    d2d(in_mem, lm_out_mem);
+  } else {
+    auto &greedy_out_mem = net_greedy_head->stages[0].output_mems[0];
+    d2d(in_mem, greedy_out_mem);
+  }
   net_launch(net_embed_cache);
 
   // blocks
