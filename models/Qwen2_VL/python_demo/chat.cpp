@@ -76,6 +76,9 @@ public:
 
 private:
   void net_launch(const bm_net_info_t *net, int stage_idx = 0);
+  void net_launch_decode(int idx, int kv_offset, bm_device_mem_t &input_mem,
+                         const int *position_id,
+                         std::vector<uint16_t> &attention_mask);
   inline void d2d(bm_device_mem_t &dst, bm_device_mem_t &src);
   void head_launch(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
   int greedy_search(const bm_net_info_t *net, bm_device_mem_t &logits_mem);
@@ -93,6 +96,8 @@ public:
   const int spatial_merge_size = 2;
   bool lmhead_with_topk;
   uint16_t mask_value;
+  int kv_bytes;      // size (bytes) of one token's K/V slice
+  bool is_same_addr; // block input_mems[0] == output_mems[0] (in-place compute)
 
 private:
   bm_handle_t bm_handle;
@@ -128,6 +133,72 @@ void Qwen2VL::net_launch(const bm_net_info_t *net, int stage_idx) {
                                    net->output_num, true, false);
   assert(ret);
   // bm_thread_sync(bm_handle);
+}
+
+// Decode-path block launcher. Ports the proven Qwen3 HEAD chat.cpp pattern:
+// - in0 (hidden) is bound directly to the previous layer's output (no d2d).
+// - in1/in2 (position_ids/attention_mask) are filled once on layer 0 and then
+//   aliased from layer 0's buffers on later layers (no per-layer d2d).
+// - out1/out2 (new K/V) are bound straight into the KV-cache slot at
+//   kv_offset, so the net writes the new K/V in place — the post-launch
+//   bm_memcpy_d2d_byte K/V scatter is dropped.
+void Qwen2VL::net_launch_decode(int idx, int kv_offset,
+                                bm_device_mem_t &input_mem,
+                                const int *position_id,
+                                std::vector<uint16_t> &attention_mask) {
+  auto &net = net_blocks_cache[idx];
+  std::vector<bm_tensor_t> in_tensors(net->input_num);
+  std::vector<bm_tensor_t> out_tensors(net->output_num);
+
+  // in0: hidden state (caller-supplied, points at previous layer's output)
+  bmrt_tensor_with_device(&in_tensors[0], input_mem, net->input_dtypes[0],
+                          net->stages[0].input_shapes[0]);
+  // in1: position_ids, in2: attention_mask — only filled once on layer 0 and
+  // reused across layers by aliasing layer 0's buffers
+  auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
+  auto &in2_mem = net_blocks_cache[idx]->stages[0].input_mems[2];
+  if (idx == 0) {
+    bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_id);
+    bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
+    bmrt_tensor_with_device(&in_tensors[1], in1_mem, net->input_dtypes[1],
+                            net->stages[0].input_shapes[1]);
+    bmrt_tensor_with_device(&in_tensors[2], in2_mem, net->input_dtypes[2],
+                            net->stages[0].input_shapes[2]);
+  } else {
+    bmrt_tensor_with_device(
+        &in_tensors[1], net_blocks_cache[0]->stages[0].input_mems[1],
+        net->input_dtypes[1], net->stages[0].input_shapes[1]);
+    bmrt_tensor_with_device(
+        &in_tensors[2], net_blocks_cache[0]->stages[0].input_mems[2],
+        net->input_dtypes[2], net->stages[0].input_shapes[2]);
+  }
+  // in3: past_key, in4: past_value (the persistent KV cache)
+  auto &in3_mem = net_blocks_cache[idx]->stages[0].input_mems[3];
+  auto &in4_mem = net_blocks_cache[idx]->stages[0].input_mems[4];
+  bmrt_tensor_with_device(&in_tensors[3], in3_mem, net->input_dtypes[3],
+                          net->stages[0].input_shapes[3]);
+  bmrt_tensor_with_device(&in_tensors[4], in4_mem, net->input_dtypes[4],
+                          net->stages[0].input_shapes[4]);
+
+  // out0: hidden state (next layer's input)
+  auto &out0_mem = net_blocks_cache[idx]->stages[0].output_mems[0];
+  bmrt_tensor_with_device(&out_tensors[0], out0_mem, net->output_dtypes[0],
+                          net->stages[0].output_shapes[0]);
+  // out1/out2: new token's K/V — bind directly into the KV cache slot so the
+  // net writes the new K/V in place, avoiding a separate d2d scatter copy.
+  auto k_mem = bm_mem_from_device(
+      past_key[idx].u.device.device_addr + kv_offset, kv_bytes);
+  auto v_mem = bm_mem_from_device(
+      past_value[idx].u.device.device_addr + kv_offset, kv_bytes);
+  bmrt_tensor_with_device(&out_tensors[1], k_mem, net->output_dtypes[1],
+                          net->stages[0].output_shapes[1]);
+  bmrt_tensor_with_device(&out_tensors[2], v_mem, net->output_dtypes[2],
+                          net->stages[0].output_shapes[2]);
+
+  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
+                                   in_tensors.size(), out_tensors.data(),
+                                   out_tensors.size(), true, false);
+  assert(ret);
 }
 
 void Qwen2VL::d2d(bm_device_mem_t &dst, bm_device_mem_t &src) {
@@ -228,6 +299,14 @@ void Qwen2VL::init(int dev_id, std::string model_path) {
     past_value[i] = net_blocks_cache[i]->stages[0].input_mems[4];
     empty(bm_handle, past_key[i]);
     empty(bm_handle, past_value[i]);
+  }
+  // size of one token's K (== V) slice; used to bind decode outputs in place
+  kv_bytes = bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
+  // same addr
+  is_same_addr = false;
+  if (net_blocks[0]->stages[0].input_mems[0].u.device.device_addr ==
+      net_blocks[0]->stages[0].output_mems[0].u.device.device_addr) {
+    is_same_addr = true;
   }
   auto buffer_size =
       bm_mem_get_device_size(net_embed->stages[0].output_mems[0]);
@@ -363,7 +442,12 @@ int Qwen2VL::forward_first(ArrayInt const &position_ids) {
     auto &in1_mem = net_blocks[idx]->stages[0].input_mems[1];
     auto &in2_mem = net_blocks[idx]->stages[0].input_mems[2];
     // d2d(in0_mem, block_out_mem);
-    d2d(in0_mem, out_mem);
+    // In-place compute (input_mems[0] == output_mems[0]): once dev_buffer has
+    // been copied in at idx==0, every later layer reads/writes the same shared
+    // buffer, so the in0 copy is redundant. Mirrors Qwen3 HEAD chat.cpp.
+    if (!is_same_addr || idx == 0) {
+      d2d(in0_mem, out_mem);
+    }
     if (idx == 0) {
       // only first time need copy
       bm_memcpy_s2d(bm_handle, in1_mem, (void *)position_ids_pad.data());
@@ -415,31 +499,15 @@ int Qwen2VL::forward_next(ArrayInt const &position_ids) {
   net_launch(net_embed_cache);
 
   // blocks
-  int bytes =
-      bm_mem_get_device_size(net_blocks_cache[0]->stages[0].output_mems[1]);
-  int token_offset = (token_length - 1) * bytes;
+  int token_offset = (token_length - 1) * kv_bytes;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
-    auto &in0_mem = net_blocks_cache[idx]->stages[0].input_mems[0];
-    auto &in1_mem = net_blocks_cache[idx]->stages[0].input_mems[1];
-    auto &in2_mem = net_blocks_cache[idx]->stages[0].input_mems[2];
-    auto &out0_mem = net_blocks_cache[idx]->stages[0].output_mems[0];
-    auto &out1_mem = net_blocks_cache[idx]->stages[0].output_mems[1];
-    auto &out2_mem = net_blocks_cache[idx]->stages[0].output_mems[2];
-    d2d(in0_mem, out_mem);
-    if (idx == 0) {
-      bm_memcpy_s2d(bm_handle, in1_mem, (void *)p_ids);
-      bm_memcpy_s2d(bm_handle, in2_mem, (void *)attention_mask.data());
-    } else {
-      d2d(in1_mem, net_blocks_cache[0]->stages[0].input_mems[1]);
-      d2d(in2_mem, net_blocks_cache[0]->stages[0].input_mems[2]);
-    }
-
-    net_launch(net_blocks_cache[idx]);
-    out_mem = out0_mem;
-    bm_memcpy_d2d_byte(bm_handle, past_key[idx], token_offset, out1_mem, 0,
-                       bytes);
-    bm_memcpy_d2d_byte(bm_handle, past_value[idx], token_offset, out2_mem, 0,
-                       bytes);
+    // net_launch_decode feeds in0 (hidden) by aliasing the previous layer's
+    // output, reuses layer 0's position_id/attention_mask buffers, and binds
+    // out1/out2 (new K/V) directly into the KV cache slot — so the launch
+    // writes the new K/V in place. No in0 d2d, no in1/in2 d2d, and no
+    // post-launch K/V scatter copy are needed.
+    net_launch_decode(idx, token_offset, out_mem, p_ids, attention_mask);
+    out_mem = net_blocks_cache[idx]->stages[0].output_mems[0];
   }
 
   // forward lmhead
