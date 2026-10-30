@@ -47,6 +47,7 @@ using ArrayInt = py::array_t<int, py::array::c_style | py::array::forcecast>;
 void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
   int value = 0;
   auto ret = bm_memset_device_ext(bm_handle, &value, 1, mem);
+  (void)ret;
   assert(BM_SUCCESS == ret);
 }
 
@@ -160,6 +161,7 @@ void MiniCPMV4_6::net_launch(const bm_net_info_t *net,
   auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
+  (void)ret;
   assert(ret);
 }
 
@@ -339,6 +341,7 @@ void MiniCPMV4_6::init(int dev_id, std::string model_path) {
   // request bm_handle
   std::cout << "Device [ " << dev_id << " ] loading .....\n";
   bm_status_t status = bm_dev_request(&bm_handle, dev_id);
+  (void)status;
   assert(BM_SUCCESS == status);
 
   // create bmruntime
@@ -348,6 +351,7 @@ void MiniCPMV4_6::init(int dev_id, std::string model_path) {
   // load bmodel by file
   printf("Model[%s] loading ....\n", model_path.c_str());
   bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
+  (void)ret;
   assert(true == ret);
   bm_thread_sync(bm_handle);
   printf("Done!\n");
@@ -463,6 +467,19 @@ void MiniCPMV4_6::forward_vit(ArrayFloat const &pixel_values,
   int num_patches = pos_ids.size();
   int num_reorder = reorder_index.size();
   int num_pixels = pixel_values.size(); // total float values in NaViT tensor
+
+  // Guard against oversized inputs before touching the device. The ViT bmodel
+  // is compiled for at most MAX_PATCHES patches per forward; feeding more
+  // would overflow the pixel_values device buffer and surface later as an
+  // opaque "new device addr exceeds old device addr" memcpy error.
+  if (num_patches > MAX_PATCHES) {
+    std::cerr << "\nError: ViT input has " << num_patches
+              << " patches, exceeding the compiled MAX_PATCHES=" << MAX_PATCHES
+              << ".\nThe image/slice is too large for this bmodel; use a"
+              << " smaller --max_pixels at compile time or reduce the input"
+              << " resolution.\n";
+    throw std::runtime_error("ViT input exceeds MAX_PATCHES");
+  }
 
   empty_net(bm_handle, net);
   std::vector<bm_tensor_t> in_tensors;

@@ -5,41 +5,69 @@
 # third-party components.
 #
 # ==============================================================================
+#
+# MiniCPM-V-4.6 / MiniCPM-V-4.7 unified pipeline.
+#
+# Both models share the same text backbone (qwen3_5_text) and the same ViT
+# net I/O contract, so a single pipeline handles both.  The version is
+# auto-detected from the config directory:
+#
+#   * MiniCPM-V-4.6 (`mrope_mode` absent, plain 3-D M-RoPE)
+#   * MiniCPM-V-4.7 (`mrope_mode == "canvas"`, Canvas M-RoPE)
+#
+# The only functional difference is `get_rope_index()`: 4.7 anchors each
+# <image>/<slice> span on a shared canvas and needs `mm_token_type_ids`
+# (returning rope_deltas for decode), while 4.6 uses plain per-block 3-D
+# positions.  Token ids are read from the model config when present (4.7)
+# and fall back to the tokenizer (4.6); the values are identical.
+#
+# chat.cpp / CMakeLists.txt are shared (pybind class `MiniCPMV4_6`).
 
 import time
 import argparse
 import warnings
-from transformers import AutoProcessor
+from transformers import AutoProcessor, AutoConfig
 import chat
 import os
 import sys
 import torch
 import numpy as np
+import itertools
 
 warnings.filterwarnings("ignore", message=".*torchcodec.*")
 
 
-class MiniCPMV4_6():
+class MiniCPMV():
 
     def __init__(self, args):
         # devid
         self.device = args.devid
 
         # load model
-        self.model = chat.MiniCPMV4_6()
+        self.model = chat.MiniCPMV4_6()  # pybind class; net orchestration identical
         self.model.init(self.device, args.model_path)
         self.processor = AutoProcessor.from_pretrained(args.config_path, trust_remote_code=True)
         self.tokenizer = self.processor.tokenizer
 
-        # Special token IDs
-        self.ID_IMAGE_TOKEN = self.tokenizer.convert_tokens_to_ids('<image>')  # 248078
+        # Placeholder token IDs (ViT scatter + im_end detection)
         self.ID_IMAGE_PAD = self.tokenizer.convert_tokens_to_ids('<|image_pad|>')  # 248056
-        self.ID_IMAGE_END = self.tokenizer.convert_tokens_to_ids('</image>')  # 248079
-        self.ID_VIDEO_TOKEN = self.tokenizer.convert_tokens_to_ids('<video>')  # 248077
         self.ID_VIDEO_PAD = self.tokenizer.convert_tokens_to_ids('<|video_pad|>')  # 248057
-        self.ID_SLICE_START = self.tokenizer.convert_tokens_to_ids('<slice>')  # 248088
-        self.ID_SLICE_END = self.tokenizer.convert_tokens_to_ids('</slice>')  # 248089
         self.ID_IM_END = self.tokenizer.convert_tokens_to_ids('<|im_end|>')
+
+        # Vision marker ids.  4.7 stores them in config.json; 4.6 does not, so
+        # fall back to the tokenizer (the values are the same: <image>=248078,
+        # <slice>=248088, newline=198).
+        cfg = AutoConfig.from_pretrained(args.config_path)
+        self.is_canvas = getattr(cfg, "mrope_mode", None) == "canvas"
+        self.image_start_id = getattr(cfg, "image_start_id", None) \
+            or self.tokenizer.convert_tokens_to_ids('<image>')      # 248078
+        self.image_end_id = getattr(cfg, "image_end_id", None) \
+            or self.tokenizer.convert_tokens_to_ids('</image>')     # 248079
+        self.slice_start_id = getattr(cfg, "slice_start_id", None) \
+            or self.tokenizer.convert_tokens_to_ids('<slice>')      # 248088
+        self.slice_end_id = getattr(cfg, "slice_end_id", None) \
+            or self.tokenizer.convert_tokens_to_ids('</slice>')     # 248089
+        self.newline_id = getattr(cfg, "newline_id", None) or 198   # '\n'
 
         # ViT config
         self.downsample_mode = args.downsample_mode
@@ -53,7 +81,8 @@ class MiniCPMV4_6():
         self.history_max_posid = 0
 
     def __del__(self):
-        self.model.deinit()
+        if hasattr(self, 'model'):
+            self.model.deinit()
 
     def get_media_type(self, file_path):
         image_exts = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
@@ -99,10 +128,10 @@ class MiniCPMV4_6():
                     max_num_frames=self.max_num_frames,
                     stack_frames=1, use_image_id=False))
 
-    # ======================== Index computation ========================
+    # ======================== Index computation (ViT) ========================
 
     def compute_pos_ids(self, h_patches, w_patches):
-        """MiniCPM-V-4.6 bucketize position encoding."""
+        """MiniCPM-V bucketize position encoding."""
         boundaries = torch.arange(1 / self.num_grid_per_side, 1.0, 1 / self.num_grid_per_side)
         fractional_h = torch.arange(0, 1 - 1e-6, 1 / h_patches)
         fractional_w = torch.arange(0, 1 - 1e-6, 1 / w_patches)
@@ -129,7 +158,7 @@ class MiniCPMV4_6():
         """Find start positions of vision blocks (<image> or <slice>) in token list."""
         positions = []
         for i, tid in enumerate(ids):
-            if tid == self.ID_IMAGE_TOKEN or tid == self.ID_SLICE_START:
+            if tid == self.image_start_id or tid == self.slice_start_id:
                 positions.append(i)
         return positions
 
@@ -176,20 +205,32 @@ class MiniCPMV4_6():
     def vit_process_video(self, inputs):
         """Process video frames through ViT."""
         ids = inputs.input_ids[0].tolist()
-        block_positions = [i for i, tid in enumerate(ids) if tid == self.ID_IMAGE_TOKEN]
+        block_positions = [i for i, tid in enumerate(ids) if tid == self.image_start_id]
         self._vit_process(inputs.pixel_values_videos, inputs.target_sizes_videos,
                           block_positions)
 
-    # ======================== Position IDs for text model ========================
+    # ======================== M-RoPE ========================
 
-    def get_rope_index(self, input_ids: torch.LongTensor, target_sizes: torch.LongTensor,
-                       pad_id: int) -> torch.Tensor:
+    def get_rope_index(self, input_ids, pad_id=None, mm_token_type_ids=None,
+                       target_sizes=None, target_sizes_videos=None):
+        """Dispatch to Canvas M-RoPE (4.7) or plain 3-D M-RoPE (4.6).
+
+        Returns (position_ids, rope_deltas).  rope_deltas is 0 for 4.6.
+        """
+        if self.is_canvas:
+            return self._get_rope_index_canvas(
+                input_ids, mm_token_type_ids, target_sizes, target_sizes_videos)
+        return self._get_rope_index_legacy(input_ids, target_sizes, pad_id), 0
+
+    # ---------------- Plain 3-D M-RoPE (MiniCPM-V-4.6) ----------------
+
+    def _get_rope_index_legacy(self, input_ids, target_sizes, pad_id):
         """Compute 3D MRoPE position IDs for the text model.
 
         MiniCPM token structure per image:
             <image> pad×N </image>          ← main block → target_sizes[i]
             <slice> pad×M </slice>          ← slice 0    → target_sizes[i+1]
-            ... (may have \\n between slice rows)
+            ... (may have \n between slice rows)
         Each block's <|image_pad|> tokens get 3D MRoPE position IDs based on
         that block's grid dimensions.
         """
@@ -216,7 +257,8 @@ class MiniCPMV4_6():
         pad_block_idx = 0
 
         for i, input_ids in enumerate(total_input_ids):
-            vision_start_indices = torch.argwhere(input_ids == self.ID_IMAGE_TOKEN).squeeze(1)
+            vision_start_indices = torch.argwhere(
+                input_ids == self.image_start_id).squeeze(1)
             image_nums = len(vision_start_indices)
             input_tokens = input_ids.tolist()
             llm_pos_ids_list: list = []
@@ -229,7 +271,7 @@ class MiniCPMV4_6():
                 search_end = vision_start_indices[img_idx + 1].item() \
                     if img_idx + 1 < image_nums else len(input_tokens)
                 for k in range(search_start, search_end):
-                    if input_tokens[k] == self.ID_SLICE_START:
+                    if input_tokens[k] == self.slice_start_id:
                         n_slices += 1
                 n_blocks = 1 + n_slices
 
@@ -281,6 +323,185 @@ class MiniCPMV4_6():
             llm_positions = torch.cat(llm_pos_ids_list, dim=1).reshape(3, -1)
             position_ids[..., i, :] = llm_positions
         return position_ids.to(torch.int32)
+
+    # ---------------- Canvas M-RoPE (MiniCPM-V-4.7) ----------------
+    # Direct port of modelling_minicpmv4_7.py host-side Python.
+
+    @staticmethod
+    def _frame_end_idx(last_crop_end_idx, input_ids, markers, limit):
+        end_idx = last_crop_end_idx
+        while end_idx < limit and input_ids[end_idx] in markers:
+            end_idx += 1
+        return end_idx
+
+    def _group_visual_frames(self, input_ids, mm_token_type_ids):
+        """Split one sequence into visual groups of (thumbnail + slices) frames.
+
+        Returns a list of (group_start_idx, group_end_idx, frames); each frame is
+        (modality, thumb_start, thumb_end, frame_end, slices) with slices a list
+        of (start, end) crop spans.
+        """
+        markers = (self.slice_start_id, self.slice_end_id,
+                   self.image_start_id, self.image_end_id, self.newline_id)
+        slice_start_id = markers[0]
+        seq_len = len(input_ids)
+        groups = []
+        open_slices = None
+        previous_end_idx = 0
+        for modality, run in itertools.groupby(enumerate(mm_token_type_ids), lambda it: it[1]):
+            if modality == 0:
+                continue
+            run = list(run)
+            crop = (run[0][0], run[-1][0] + 1)
+            if open_slices is not None and input_ids[crop[0] - 1] == slice_start_id:
+                open_slices.append(crop)
+            else:
+                open_slices = []
+                frame = (modality, crop[0], crop[1], open_slices)
+                gap = input_ids[previous_end_idx: crop[0] - 1]
+                adjacent = bool(groups) and all(t in markers for t in gap)
+                if adjacent:
+                    groups[-1][1].append(frame)
+                else:
+                    groups.append((crop[0] - 1, [frame]))
+            previous_end_idx = crop[1]
+
+        visual_groups = []
+        for group_start_idx, frames in groups:
+            frames = [
+                (modality, ts, te,
+                 self._frame_end_idx(slices[-1][1] if slices else te, input_ids, markers, seq_len),
+                 slices)
+                for modality, ts, te, slices in frames
+            ]
+            group_end_idx = frames[-1][3]
+            visual_groups.append((group_start_idx, group_end_idx, frames))
+        return visual_groups
+
+    def get_vision_position_ids(self, start_position, grid_thw,
+                                canvas_height=0, canvas_width=0,
+                                h_offset=0, w_offset=0, spatial_merge_size=1):
+        """3D (t,h,w) position ids for one grid of patches placed on a canvas."""
+        llm_grid_h = int(grid_thw[0]) // spatial_merge_size
+        llm_grid_w = int(grid_thw[1]) // spatial_merge_size
+        canvas_height = canvas_height or llm_grid_h
+        canvas_width = canvas_width or llm_grid_w
+        h_coords = torch.linspace(0, canvas_height - 1, llm_grid_h).round().long() + h_offset
+        w_coords = torch.linspace(0, canvas_width - 1, llm_grid_w).round().long() + w_offset
+        H_grid, W_grid = torch.meshgrid(h_coords, w_coords, indexing="ij")
+        T_grid = torch.zeros_like(H_grid)
+        pos = torch.stack([T_grid, H_grid, W_grid], dim=0).reshape(3, -1)
+        pos += start_position
+        return pos
+
+    def _get_rope_index_canvas(self, input_ids, mm_token_type_ids,
+                               target_sizes, target_sizes_videos):
+        """Canvas M-RoPE indices (3, B, S) plus rope_deltas (scalar)."""
+        merge_factor = 2 if self.downsample_mode == "4x" else 4
+        position_ids = torch.zeros(3, *input_ids.size(), dtype=torch.long)
+        grid_iters = {
+            1: iter(target_sizes.tolist()) if target_sizes is not None else None,
+            2: iter(target_sizes_videos.tolist()) if target_sizes_videos is not None else None,
+        }
+        rope_deltas = 0
+        for batch_idx in range(input_ids.shape[0]):
+            cur_ids = input_ids[batch_idx].tolist()
+            cur_mm = mm_token_type_ids[batch_idx].tolist()
+            seq_len = len(cur_ids)
+            curr_pos_ids = torch.arange(seq_len).expand(3, -1).clone()
+            current_pos = 0
+            current_idx = 0
+            for group_start_idx, group_end_idx, frames in self._group_visual_frames(cur_ids, cur_mm):
+                if group_start_idx > current_idx:
+                    text_len = group_start_idx - current_idx
+                    curr_pos_ids[:, current_idx:group_start_idx] = \
+                        torch.arange(text_len) + current_pos
+                    current_pos += text_len
+                frame_cursor_idx = group_start_idx
+                for modality, thumb_start_idx, thumb_end_idx, frame_end_idx, slices in frames:
+                    target_sizes_thumb = next(grid_iters[modality])
+                    frame_start_idx = thumb_start_idx - 1
+                    if frame_start_idx > frame_cursor_idx:
+                        gap_len = frame_start_idx - frame_cursor_idx
+                        curr_pos_ids[:, frame_cursor_idx:frame_start_idx] = \
+                            torch.arange(gap_len) + current_pos
+                        current_pos += gap_len + 1
+                    frame_end_idx = min(frame_end_idx, group_end_idx)
+                    canvas_origin = current_pos
+                    halo_before_canvas = max(canvas_origin - 1, 0)
+                    llm_slice_h = llm_slice_w = 0
+                    num_rows = num_cols = 0
+                    canvas_height = target_sizes_thumb[0] // merge_factor
+                    canvas_width = target_sizes_thumb[1] // merge_factor
+                    target_sizes_first_slice = None
+                    if slices:
+                        num_cols = len(slices)
+                        for k in range(len(slices) - 1):
+                            if slices[k + 1][0] - slices[k][1] > 2:
+                                num_cols = k + 1
+                                break
+                        num_rows = len(slices) // num_cols if num_cols > 0 else 1
+                        if num_rows * num_cols != len(slices):
+                            num_rows, num_cols = 1, len(slices)
+                        target_sizes_first_slice = next(grid_iters[modality])
+                        llm_slice_h = target_sizes_first_slice[0] // merge_factor
+                        llm_slice_w = target_sizes_first_slice[1] // merge_factor
+                        canvas_height = num_rows * llm_slice_h
+                        canvas_width = num_cols * llm_slice_w
+                    # base coat for whole frame, <image> -> halo just outside canvas
+                    curr_pos_ids[:, frame_start_idx:frame_end_idx] = canvas_origin
+                    curr_pos_ids[1:, frame_start_idx] = halo_before_canvas
+                    # </image> closes the thumbnail on the far corner
+                    if thumb_end_idx < frame_end_idx:
+                        curr_pos_ids[1, thumb_end_idx] = canvas_origin + canvas_height
+                        curr_pos_ids[2, thumb_end_idx] = canvas_origin + canvas_width
+                    # thumbnail tokens (linspace-stretched over the full canvas)
+                    curr_pos_ids[:, thumb_start_idx:thumb_end_idx] = \
+                        self.get_vision_position_ids(canvas_origin, target_sizes_thumb,
+                                                     canvas_height, canvas_width, 0, 0, merge_factor)
+                    # slice tokens + <slice>/</slice> corner markers
+                    for k, (slice_start_idx, slice_end_idx) in enumerate(slices):
+                        h_off = (k // num_cols) * llm_slice_h
+                        w_off = (k % num_cols) * llm_slice_w
+                        target_sizes_slice = target_sizes_first_slice if k == 0 else next(grid_iters[modality])
+                        slice_h = target_sizes_slice[0] // merge_factor
+                        slice_w = target_sizes_slice[1] // merge_factor
+                        ssm = slice_start_idx - 1
+                        if ssm >= frame_start_idx:
+                            curr_pos_ids[1, ssm] = canvas_origin + h_off
+                            curr_pos_ids[2, ssm] = canvas_origin + w_off
+                        if slice_end_idx < frame_end_idx:
+                            curr_pos_ids[1, slice_end_idx] = canvas_origin + h_off + slice_h - 1
+                            curr_pos_ids[2, slice_end_idx] = canvas_origin + w_off + slice_w - 1
+                        curr_pos_ids[:, slice_start_idx:slice_end_idx] = \
+                            self.get_vision_position_ids(canvas_origin, target_sizes_slice,
+                                                         0, 0, h_off, w_off, merge_factor)
+                    # "\n" ending a slice row sits just past the right edge of that row
+                    for k in range(len(slices) - 1):
+                        gap_start_idx, gap_end_idx = slices[k][1], slices[k + 1][0]
+                        if gap_end_idx - gap_start_idx <= 2:
+                            continue
+                        boundary_h = (k // num_cols + 1) * llm_slice_h - 1
+                        right_edge_w = num_cols * llm_slice_w
+                        for newline_idx in range(gap_start_idx + 1, gap_end_idx - 1):
+                            curr_pos_ids[1, newline_idx] = canvas_origin + boundary_h
+                            curr_pos_ids[2, newline_idx] = canvas_origin + right_edge_w
+                    current_pos = canvas_origin + max(canvas_height, canvas_width) + 1
+                    frame_cursor_idx = frame_end_idx
+                if frame_cursor_idx < group_end_idx:
+                    trail_len = group_end_idx - frame_cursor_idx
+                    curr_pos_ids[:, frame_cursor_idx:group_end_idx] = \
+                        torch.arange(trail_len) + current_pos
+                    current_pos += trail_len
+                current_idx = group_end_idx
+            if current_idx < seq_len:
+                curr_pos_ids[:, current_idx:seq_len] = \
+                    torch.arange(seq_len - current_idx) + current_pos
+            position_ids[:, batch_idx, :] = curr_pos_ids
+        # rope_deltas = max position + 1 - seq_len  (matches HF: amax over all
+        # channels/batches, not just the per-batch current_pos)
+        rope_deltas = int(position_ids.amax(dim=(0, 2)).max().item()) + 1 - input_ids.shape[1]
+        return position_ids, rope_deltas
 
     # ======================== Forward ========================
 
@@ -335,18 +556,29 @@ class MiniCPMV4_6():
         self.model.forward_embed(inputs.input_ids.numpy())
         vit_start = vit_end = 0
         vision_target_sizes = None
+        rope_deltas = 0
         if media_type in ("image", "video"):
             vit_start = time.time()
             if media_type == "image":
                 self.vit_process_image(inputs)
                 pad_id = self.ID_IMAGE_PAD
+                target_sizes = inputs.target_sizes
+                target_sizes_videos = None
                 vision_target_sizes = inputs.target_sizes
             else:
                 self.vit_process_video(inputs)
                 pad_id = self.ID_VIDEO_PAD
+                target_sizes = None
+                target_sizes_videos = inputs.target_sizes_videos
                 vision_target_sizes = inputs.target_sizes_videos
             vit_end = time.time()
-            position_ids = self.get_rope_index(inputs.input_ids, vision_target_sizes, pad_id)
+            if self.is_canvas:
+                position_ids, rope_deltas = self.get_rope_index(
+                    inputs.input_ids, mm_token_type_ids=inputs.mm_token_type_ids,
+                    target_sizes=target_sizes, target_sizes_videos=target_sizes_videos)
+            else:
+                position_ids, rope_deltas = self.get_rope_index(
+                    inputs.input_ids, pad_id=pad_id, target_sizes=target_sizes)
             self.max_posid = int(position_ids.max())
             token = self.forward_prefill(position_ids.numpy())
         else:
@@ -361,7 +593,7 @@ class MiniCPMV4_6():
         while token not in [self.ID_IM_END] and self.model.history_length < self.model.SEQLEN:
             full_word_tokens.append(token)
             word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
-            if "\ufffd" not in word:
+            if "�" not in word:
                 if len(full_word_tokens) == 1:
                     pre_word = word
                     word = self.tokenizer.decode([token, token],
@@ -370,8 +602,9 @@ class MiniCPMV4_6():
                 print(word, flush=True, end="")
                 full_word_tokens = []
             self.max_posid += 1
-            position_ids = np.array([self.max_posid, self.max_posid, self.max_posid],
-                                    dtype=np.int32)
+            # decode: 3-channel position = text_pos + rope_deltas
+            position_ids = np.array(
+                [self.max_posid + rope_deltas] * 3, dtype=np.int32)
             token = self.model.forward_next(position_ids)
             tok_num += 1
         self.history_max_posid = self.max_posid + 2
@@ -452,7 +685,7 @@ def extract_media(input_str):
 
 
 def main(args):
-    model = MiniCPMV4_6(args)
+    model = MiniCPMV(args)
     if args.prompt is not None:
         # Programmatic (non-interactive) mode: run once and exit.
         prompt, media_path = extract_media(args.prompt)
