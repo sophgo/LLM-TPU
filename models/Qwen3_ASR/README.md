@@ -1,13 +1,19 @@
 # Qwen3-ASR
 
-This project deploys the speech recognition model [Qwen3-ASR](https://modelscope.cn/models/Qwen/Qwen3-ASR-1.7B) on BM1684X/BM1688. The model is converted into a bmodel using the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) compiler, and deployed to a PCIE or SoC environment.
+This project deploys the speech recognition model [Qwen3-ASR](https://modelscope.cn/models/Qwen/Qwen3-ASR-1.7B) on BM1684X/BM1688/CV84X6. The model is converted into a bmodel using the [TPU-MLIR](https://github.com/sophgo/tpu-mlir) compiler, and deployed to a PCIE or SoC environment.
+
+Supported chips: BM1684X (PCIe + SoC), BM1688 (SoC), and CV84X6 (SoC). Each chip requires a separately compiled bmodel.
 
 Model download links:
 ```bash
-# BM1684X 1.7B 
+# BM1684X 1.7B
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-asr-1.7b_bf16_seq512_bm1684x_1dev_static_20260408_094600.bmodel
 # BM1688 0.6B
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-asr-0.6b_bf16_seq256_bm1688_2core_static_20260415_173617.bmodel
+# CV84X6 0.6B
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-asr-0.6b_bf16_seq512_cv84x6_1core_static_20261029_124835.bmodel
+# CV84X6 1.7B
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-asr-1.7b_bf16_seq512_cv84x6_1core_static_20261030_095454.bmodel
 ```
 
 ## Compile the model
@@ -55,6 +61,15 @@ source ./envsetup.sh  # activate environment variables
 llm_convert.py -m /workspace/Qwen3-ASR-1.7B  -s 512 --max_input_length 256  --quantize bf16  -c bm1684x --out_dir qwen3_asr --qwen_asr
 ```
 After compilation completes, `qwen3-asr-xxx.bmodel` and `config` are generated in the specified directory `qwen3_asr`
+
+To compile the CV84X6 bmodel (SoC), use `-c cv84x6` (the 0.6B model is used here as the example):
+
+``` shell
+# CV84X6 0.6B
+llm_convert.py -m /workspace/Qwen3-ASR-0.6B -c cv84x6 --num_core 1 -s 512 --max_input_length 256 --quantize bf16 --do_sample --out_dir qwen3_asr_cv84x6
+# CV84X6 1.7B
+llm_convert.py -m /workspace/Qwen3-ASR-1.7B -c cv84x6 --num_core 1 -s 512 --max_input_length 256 --quantize bf16 --do_sample --out_dir qwen3_asr_1.7b_cv84x6
+```
 
 
 ## Compiling and running the program (python)
