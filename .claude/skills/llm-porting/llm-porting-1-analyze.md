@@ -192,6 +192,15 @@ pixel_multiple = patch_size × (所有 2×2 merge 的乘积)
 | self.rms_norm() | RMSNormOp | 注意 ZeroCentered 变体（weight_type 参数） |
 | self.layer_norm() | LayerNormOp | ViT 常用（带 bias），区别于文本 RMSNorm |
 | self.activate() | SiLU/GELU/Swish/Relu/Sigmoid Op | 按 ActType 分派 |
+| self.repeat_kv() | Unsqueeze+Tile+Reshape | GQA 时把 kv_head 扩成 q_head |
+| self.apply_rotary_pos() | GatherOp ×2 + RopeOp ×2 | RoPE 查表 + 旋转一体，传入 pos_ids/q/k |
+| self.l2norm() | Mul+Reduce+AddConst+Rsqrt+Mul | L2 归一化（如某些视觉模态） |
+| self.moe() | Softmax+TopK+Mul+ReduceSum+MlpOp | MoE 路由 + expert MLP（含 shared expert） |
+| self.set_linear_weight() | 权重导出：linear 层 | 调 `self.loader.set_linear_weight`，处理量化/普通/lora |
+| self.set_common_weight() | 权重导出：norm/bias 等 | 调 `self.loader.set_common_weight`，按 WeightType 导出 |
+| self.get_fattention_mask_op() | 返回 mask_op + mask_size | dynamic 用静态小 mask weight，static 用动态 mask input |
+| self.save_small_attn_mask_weight() | 导出 attention_mask.weight | 仅 dynamic 模式写入 weight_dict |
+| self.create_decode_mask_placeholder() | 导出 placeholder weight | decode block 必须引用同一 mask weight，保持 weight file 一致 |
 
 Top dialect 算子映射表（按功能分组，`top.<OpName>Op` 形式调用）：
 
@@ -271,11 +280,11 @@ Top dialect 算子映射表（按功能分组，`top.<OpName>Op` 形式调用）
 3. 替换但性能有损（workaround）
    → 功能正确但效率不如原生算子
    → 先跑通全流程，记录到适配计划的「待优化」章节
-   → 后续优化替换
+   → 后续开发新算子替换
 
-4. 开发自定义算子（最后手段）
+4. 开发新算子（最后手段）
    → 无等价替换方案，且对性能影响大
-   → 需要先开发自定义算子，再继续适配
+   → 需要先按 new_op skill 开发算子，再继续适配
 ```
 
 ### 9. 识别模型特异性（⚠️ 重点关注）
@@ -291,7 +300,7 @@ Top dialect 算子映射表（按功能分组，`top.<OpName>Op` 形式调用）
 | 精度敏感 | 某些算子在量化后精度大幅下降 | 是否混合精度，哪些层保持 float |
 | 特殊 token 结构 | token 序列中有非标准的特殊 token 组合 | pipeline 中如何处理 |
 | 新文本架构 | 文本模型无法继承已有 Converter | 评估工作量，确认分阶段策略 |
-| 缺失算子 | 模型需要 MLIR 中没有的算子 | 等价替换 / workaround |
+| 缺失算子 | 模型需要 MLIR 中没有的算子 | 等价替换 / workaround / 开发新算子 |
 | 后处理流程 | 模型有结构化输出（检测框、分割掩码、分类标签等），HF 有完整后处理（crop → resize → sigmoid → NMS → RLE 等） | 分析 HF 源码的后处理流程，在 pipeline 中实现对齐。步骤 4 精度验证依赖正确的后处理——如果只跑通"不崩"的 summary 而不补全后处理，端到端精度验证无法进行 |
 
 **多模态适配顺序**：
@@ -350,7 +359,7 @@ pipeline 阶段从 LLM-TPU 仓库对应模型复制代码，精度验证阶段�
 [标注哪些可继承跳过、哪些需要新写]
 
 ## 9. 待优化（workaround 记录）
-[当前用等价替换但性能有损的算子，后续可优化]
+[当前用等价替换但性能有损的算子，后续需开发新算子优化]
 
 ## 10. 调试记录（后续步骤补充）
 [步骤 2-4 中遇到的问题和解决方案，持续追加]

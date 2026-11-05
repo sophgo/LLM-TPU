@@ -146,6 +146,15 @@ hidden = linear(hidden)               # D_ff → D
 hidden = residual + hidden
 ```
 
+**⚠️ 用封装好的方法，别自己现写权重导出逻辑——`set_linear_weight` / `set_common_weight` 已处理好量化/普通/lora/格式转换，自己写容易出精度问题**：
+
+| 已有方法 | 适用层 | 自己现写的问题 |
+|---------|--------|--------------|
+| `self.set_linear_weight(path, weight_dict)` | Linear / QKV / O / gate/up/down | 量化权重格式、transpose、dtype 转换已封装，手写易错 |
+| `self.set_common_weight(path, weight_dict, type=...)` | RMSNorm / LayerNorm / 特殊常量 | WeightType 分派、shape 对齐已封装，手写易错 |
+
+> 图侧用 `self.linear()` / `self.rms_norm()` / `self.layer_norm()`，权重侧就用对应的 `self.set_linear_weight()` / `self.set_common_weight()`。**不要自己写 `np.savez` 或手动处理权重格式**——已封装的方法做过精度验证，自己写容易在 transpose/量化格式/dtype 上踩坑导致精度不对。
+
 **Merger — 空间降采样**：
 
 ```python
@@ -203,8 +212,9 @@ reshape_op(op, [1, 4624, n_heads, d_head]) # ✗ 硬编码
 实现过程中高频踩到的坑（来自实际适配记录）：
 
 - **`init_vconfig()` 拿不到 `args`**：`init_vconfig()` 被父类 `__init__` 调用，但 `args` 不是它的参数。需要在 `__init__` 里先把要用到的存到 `self`（如 `self.max_pixels = args.max_pixels`），`init_vconfig()` 再读 `self.*`。
-- **`save_weights()` 必须在 `save_mlir_module()` 之前**：debug 模式下 `save_mlir_module()` 会立即做 shape-infer，需要权重文件已存在，否则 crash 报 `*.npz doesn't exist`。
-- **Linear 权重尽量用 `set_linear_weight` 存，不要 `self.model.read` 后手动塞 `weights_dict`**：`set_linear_weight(path, weights_dict)` 会自动把 HF 的 `(out, in)` 权重转置成 `(in, out)`，这是 `self.linear()` / `MatMulOp` 期望的布局。手动 `self.model.read` 后直接存入 `weights_dict` 会漏掉转置。
+- **`save_weights()` 必须在 `save_mlir_module()` 之前**：debug 模式下 `save_mlir_module()` 会立即做 shape-infer，需要权重文件已存在，否则 crash 报 `*.npz doesn't exist`。对应到子类：在 `gen_*_mlir()` 里先写 `weight_dict`，再生成算子，最后 `save_mlir_module()`。
+- **有图就要有权重——`self.linear` / `self.mlp` 不存权重，只生成图**。最容易忘的是调用 `set_linear_weight` 和 `set_common_weight`，反而自己现写权重导出逻辑——**千万别**。自己写容易在量化格式、transpose、dtype 上踩坑导致精度不对，用封装好的方法才是正确做法。
+- **Vision / Audio 模态也要调用封装方法导出权重**：`gen_vit_mlir()` / `gen_audio_mlir()` 里的每个 `self.linear` / `self.rms_norm` / `self.layer_norm` 调用，都要在开头调用对应的 `self.set_linear_weight` / `self.set_common_weight` 写入 `weight_dict`，不要自己手写权重导出逻辑。
 - **只有 `ReshapeOp` 的 `shape` 参数支持 `-1`**：`SliceOp`/`MatMulOp` 等的 output shape 必须是确定数值。动态维度下的切片（如 RoPE 的 rotate_half）不要用 `SliceOp` + 静态 ends——runtime 实际 seq 比编译期小会越界，改用原生 `top.RopeOp`（动态安全）或 `GatherOp`。
 - **不要为模型特异需求改共享基类**：如需让某个子网络（如 ViT）强制动态而文本保持默认，在子类 Converter 覆盖 `compile_vit()` 附加 `--dynamic`，**不要改 `LlmConverter.submit_deploy_task` 的门控条件**（会污染所有 LLM 模型，且与 `use_small_mask()` 等其他 `self.dynamic` 分支状态不一致）。
 - **BF16 模型量化 dtype 推导**：模型 `torch_dtype=bfloat16` + 4bit 时，框架推导出 `w4bf16` 并强制覆盖用户指定的 `w4f16`（打印 warning）。编译时直接用 `-q w4bf16`。
@@ -231,7 +241,7 @@ llm_convert.py -m /workspace/<weights> -s <seq_len> \
 - Python 接口签名：编译后的 `top.<Op>Op(...)` 参数列表
 - 已有用法：`grep -rn "<OpName>" python/llm/`
 
-**看懂算子契约后，再回头看 Converter 里这处调用怎么改**——不要在不懂算子定义的情况下盲改参数。若查完发现是算子本身缺失（不是用法错），记录到 `<model>_plan.md` 的待优化章节，先用 workaround 方案绕过。
+**看懂算子契约后，再回头看 Converter 里这处调用怎么改**——不要在不懂算子定义的情况下盲改参数。若查完发现是算子本身缺失（不是用法错），转 `new-op` skill 开发新算子。
 
 ⚠️ **修改 tpu-mlir 的 cpp / ppl 源码后**：必须先回到 tpu-mlir 根目录执行 `./build.sh` 重新编译后端，改动才会生效。只改 Python 层（Converter）不需要 build.sh。
 
