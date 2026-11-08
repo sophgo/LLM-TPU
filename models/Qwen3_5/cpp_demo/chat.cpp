@@ -271,6 +271,7 @@ void Qwen3_5::init_by_names() {
   }
   prefill_mask =
       net_blocks[FA_INTERVAL - 1]->input_num == (support_history ? 5 : 3);
+  is_dynamic = net_blocks[0]->is_dynamic;
   history_length = 0;
   lmhead_with_topk = net_lm->stages[0].output_shapes[0].dims[1] == 1;
   MAX_INPUT_LENGTH = net_embed->stages[0].input_shapes[0].dims[1];
@@ -443,8 +444,17 @@ void Qwen3_5::forward_embed(ArrayInt const &tokens) {
                           real_len * sizeof(int));
     net_launch(net_embed, in_tensors, out_tensors);
     int offset = i * HIDDEN_SIZE * sizeof(uint16_t);
-    d2d(dev_buffer, out_tensors[0].device_mem, offset,
-        real_len * HIDDEN_SIZE * sizeof(uint16_t));
+    if (is_dynamic) {
+      // dynamic net only computes real_len rows; copy what was produced
+      d2d(dev_buffer, out_tensors[0].device_mem, offset,
+          real_len * HIDDEN_SIZE * sizeof(uint16_t));
+    } else {
+      // static net computes the full padded length; copy the whole output so
+      // the padding rows (embedding of token 0) flow into the blocks like the
+      // compiler's static reference
+      d2d(dev_buffer, out_tensors[0].device_mem, offset,
+          bm_mem_get_device_size(out_tensors[0].device_mem));
+    }
   }
 }
 
@@ -715,14 +725,32 @@ int Qwen3_5::forward_first(ArrayInt const &position_ids) {
   }
   std::vector<uint16_t> attention_mask;
   if (prefill_mask) {
-    attention_mask.resize(token_length * token_length, mask_value);
-    for (int i = 0; i < token_length; i++) {
-      for (int j = 0; j <= i; j++) {
-        attention_mask[i * token_length + j] = 0;
+    if (is_dynamic) {
+      attention_mask.resize(token_length * token_length, mask_value);
+      for (int i = 0; i < token_length; i++) {
+        for (int j = 0; j <= i; j++) {
+          attention_mask[i * token_length + j] = 0;
+        }
+      }
+    } else {
+      // static net always runs at MAX_INPUT_LENGTH; pad rows/cols stay masked
+      attention_mask.resize(MAX_INPUT_LENGTH * MAX_INPUT_LENGTH, mask_value);
+      for (int i = 0; i < token_length; i++) {
+        for (int j = 0; j <= i; j++) {
+          attention_mask[i * MAX_INPUT_LENGTH + j] = 0;
+        }
       }
     }
   }
   assert((int)position_ids.size() == token_length * 3);
+  // pad position ids up to MAX_INPUT_LENGTH (3 mrope rows for FA layers);
+  // padding rows keep value 0
+  ArrayInt pos_ids(MAX_INPUT_LENGTH * 3, 0);
+  for (int i = 0; i < 3; i++) {
+    std::copy(position_ids.data() + i * token_length,
+              position_ids.data() + i * token_length + token_length,
+              pos_ids.data() + i * MAX_INPUT_LENGTH);
+  }
 
   auto out_mem = dev_buffer;
   empty_net(bm_handle, net_blocks[0]);
@@ -732,22 +760,32 @@ int Qwen3_5::forward_first(ArrayInt const &position_ids) {
     init_tensors(net_blocks[idx], in_tensors, out_tensors);
     out_tensors[0].device_mem = out_mem;
     d2d(in_tensors[0].device_mem, out_mem, 0,
-        token_length * HIDDEN_SIZE * sizeof(uint16_t));
+        is_dynamic ? token_length * HIDDEN_SIZE * sizeof(uint16_t)
+                   : bm_mem_get_device_size(in_tensors[0].device_mem));
     if (is_FA(idx)) {
-      bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
-                            (void *)position_ids.data(),
-                            token_length * 3 * sizeof(int));
+      bm_memcpy_s2d(bm_handle, in_tensors[1].device_mem, (void *)pos_ids.data());
       if (prefill_mask) {
-        bm_memcpy_s2d_partial(bm_handle, in_tensors[2].device_mem,
-                              (void *)attention_mask.data(),
-                              token_length * token_length * sizeof(uint16_t));
-        in_tensors[2].shape.dims[2] = token_length;
-        in_tensors[2].shape.dims[3] = token_length;
+        if (is_dynamic) {
+          bm_memcpy_s2d_partial(bm_handle, in_tensors[2].device_mem,
+                                (void *)attention_mask.data(),
+                                token_length * token_length * sizeof(uint16_t));
+        } else {
+          bm_memcpy_s2d(bm_handle, in_tensors[2].device_mem,
+                        (void *)attention_mask.data());
+        }
       }
-      in_tensors[0].shape.dims[1] = token_length;
-      in_tensors[1].shape.dims[1] = token_length;
+      if (is_dynamic) {
+        in_tensors[0].shape.dims[1] = token_length;
+        in_tensors[1].shape.dims[1] = token_length;
+        if (prefill_mask) {
+          in_tensors[2].shape.dims[2] = token_length;
+          in_tensors[2].shape.dims[3] = token_length;
+        }
+      }
     } else {
-      in_tensors[0].shape.dims[1] = token_length;
+      if (is_dynamic) {
+        in_tensors[0].shape.dims[1] = token_length;
+      }
       empty(bm_handle, in_tensors[1].device_mem); // recurrent state
     }
 

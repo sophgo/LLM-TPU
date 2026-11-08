@@ -92,6 +92,7 @@ public:
   bool has_vit = false;
   bool support_history = false;
   bool prefill_mask = false;
+  bool is_dynamic = false;
   uint16_t mask_value;
   std::vector<int> visited_tokens;
   const int FA_INTERVAL = 4; // full attention interval
