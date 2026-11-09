@@ -79,6 +79,7 @@ public:
                          const std::string &cache_key = "");
   int forward_first(ArrayInt const &position_ids);
   int forward_next(ArrayInt const &position_ids);
+  std::vector<int> forward_next_mtp(ArrayInt const &position_ids);
   void clear_history();
   void clear_vit_cache();
 
@@ -99,6 +100,13 @@ private:
   int select_decode_stage();
   int forward_first_with_kv(ArrayInt const &position_ids);
   int generate(bm_device_mem_t &logits_mem);
+  void lm_head_rows(bm_device_mem_t hidden_mem, int rows, int *out_tokens);
+  int lm_head_single(bm_device_mem_t hidden_mem, size_t offset_bytes,
+                     bool use_mtp_head);
+  void mtp_prefill(const int *pos_ids, int max_pos, int n);
+  int mtp_step(bm_device_mem_t hidden_mem, size_t hidden_offset, int token,
+               int pos, int slot, int visible);
+  void mtp_make_drafts(int first_draft, int base_pos, int base_slot);
   int greedy_search(bm_device_mem_t &logits_mem);
   int penalty_sample(bm_device_mem_t &logits_mem);
   void init_tensors(const bm_net_info_t *net,
@@ -128,6 +136,32 @@ public:
   uint16_t mask_value;
   std::vector<int> visited_tokens;
   const int FA_INTERVAL = 4; // full attention interval
+
+  // MTP (llm_convert.py --mtp); greedy only, no history KV
+  bool support_mtp = false;
+  int MTP_K = 1;          // verify length (= draft_len + 1)
+  int MTP_DRAFT_LEN = 0;  // drafts per step
+  int LM_ROWS = 1;        // lm_head input rows
+  int MTP_KV_BYTES = 0;   // bytes per MTP kv token
+  int CONV_BYTES = 0;     // linear-attn conv state bytes
+  int REC_BYTES = 0;      // linear-attn recurrent state bytes
+  int mtp_length = 0;     // valid MTP kv len (slot i <-> pos i+1)
+  std::vector<int> draft_tokens;
+  long long mtp_steps = 0;
+  long long mtp_draft_total = 0;
+  long long mtp_accept_total = 0;
+
+  // reused host scratch (avoid per-step alloc)
+  std::vector<uint16_t> mask_scratch;
+  std::vector<int> pos_scratch;
+  std::vector<int> tokens_scratch;
+  std::vector<int> cand_scratch;
+  std::vector<bm_tensor_t> in_scratch;
+  std::vector<bm_tensor_t> out_scratch;
+  // linear-attn ping-pong: verify writes K slots, commit slot m
+  std::vector<bm_device_mem_t> lin_conv_buf[2];
+  std::vector<bm_device_mem_t> lin_rec_buf[2];
+  int lin_parity = 0;
 
   // ===== ViT-output token cache =====
   struct VitCacheEntry {
@@ -164,6 +198,15 @@ private:
   bm_device_mem_t dev_buffer;
   std::vector<bm_device_mem_t> past_key;   // conv state or past key
   std::vector<bm_device_mem_t> past_value; // recurrent state or past value
+  // MTP nets / buffers
+  const bm_net_info_t *net_mtp_block = nullptr;
+  const bm_net_info_t *net_mtp_cache = nullptr;
+  const bm_net_info_t *net_mtp_lm = nullptr;
+  std::vector<const bm_net_info_t *> net_blocks_verify;
+  bm_device_mem_t mtp_past_key, mtp_past_value;
+  bm_device_mem_t lm_in_buf;      // [LM_ROWS, HIDDEN]
+  bm_device_mem_t mtp_hidden_buf; // last MTP hidden for chaining
+  bm_device_mem_t mtp_embed_buf;  // MTP token embed / prefill staging
 };
 
 void Qwen3_5::init_tensors(const bm_net_info_t *net,
@@ -225,6 +268,9 @@ void Qwen3_5::d2d(bm_device_mem_t &dst, bm_device_mem_t &src, int offset,
 }
 
 void Qwen3_5::clear_history() {
+  mtp_length = 0;
+  draft_tokens.clear();
+  lin_parity = 0;
   if (!support_history) {
     return;
   }
@@ -269,14 +315,31 @@ void Qwen3_5::init_by_names() {
     net_sample_head = bmrt_get_network_info(p_bmrt, "sample_head");
     num_blocks--; // sample_head is not a block
   }
+  // detect MTP nets
+  support_mtp = is_exist("mtp_block", net_names, num_nets) &&
+                is_exist("mtp_block_cache", net_names, num_nets);
+  if (support_mtp) {
+    net_mtp_block = bmrt_get_network_info(p_bmrt, "mtp_block");
+    net_mtp_cache = bmrt_get_network_info(p_bmrt, "mtp_block_cache");
+    num_blocks -= 2;
+    if (is_exist("mtp_lm_head", net_names, num_nets)) {
+      net_mtp_lm = bmrt_get_network_info(p_bmrt, "mtp_lm_head");
+      num_blocks--;
+    }
+  }
   std::string kv_name = "block_kv_" + std::to_string(FA_INTERVAL - 1);
   if (is_exist(kv_name.c_str(), net_names, num_nets)) {
     support_history = true;
   } else {
     support_history = false;
   }
-  // 2 nets for each block, one for cache
-  if (support_history) {
+  if (support_mtp && support_history) {
+    throw std::runtime_error("MTP bmodel with history KV is not supported");
+  }
+  // block + cache (+ verify if MTP)
+  if (support_mtp) {
+    NUM_LAYERS = num_blocks / 3;
+  } else if (support_history) {
     NUM_LAYERS = num_blocks / (2 + 1.0 / FA_INTERVAL);
   } else {
     NUM_LAYERS = num_blocks / 2;
@@ -322,6 +385,14 @@ void Qwen3_5::init_by_names() {
         net_blocks_kv.emplace_back(nullptr);
       }
     }
+    if (support_mtp) {
+      auto verify_name = "block_verify_" + std::to_string(i);
+      if (!is_exist(verify_name.c_str(), net_names, num_nets)) {
+        throw std::runtime_error("MTP bmodel misses " + verify_name);
+      }
+      net_blocks_verify.emplace_back(
+          bmrt_get_network_info(p_bmrt, verify_name.c_str()));
+    }
   }
   free(net_names);
   if (net_embed_cache->output_dtypes[0] == BM_FLOAT16) {
@@ -351,6 +422,36 @@ void Qwen3_5::init_by_names() {
   }
   KV_BYTES = bm_mem_get_device_size(
       net_blocks_cache[FA_INTERVAL - 1]->stages[0].output_mems[1]);
+  LM_ROWS = net_lm->stages[0].input_shapes[0].dims[0];
+  if (support_mtp) {
+    if (!lmhead_with_topk) {
+      throw std::runtime_error("MTP requires lm_head with built-in TopK "
+                               "(compile without --do_sample)");
+    }
+    MTP_K = net_blocks_verify[0]->stages[0].input_shapes[0].dims[1];
+    MTP_DRAFT_LEN = MTP_K - 1;
+    if (LM_ROWS != MTP_K) {
+      throw std::runtime_error("MTP: lm_head rows != verify length");
+    }
+    MTP_KV_BYTES =
+        bm_mem_get_device_size(net_mtp_cache->stages[0].output_mems[1]);
+    for (int i = 0; i < NUM_LAYERS; i++) {
+      if (!is_FA(i)) {
+        CONV_BYTES = bm_mem_get_device_size(
+            net_blocks_cache[i]->stages[0].input_mems[1]);
+        REC_BYTES = bm_mem_get_device_size(
+            net_blocks_cache[i]->stages[0].input_mems[2]);
+        break;
+      }
+    }
+    if (!decode_stage_len.empty() && decode_stage_len.size() > 1) {
+      throw std::runtime_error("MTP does not support chunked decode stages");
+    }
+    mask_scratch.reserve((size_t)SEQLEN + MTP_K + 1);
+    pos_scratch.reserve(3 * (size_t)std::max(MTP_K, 1));
+    tokens_scratch.reserve(std::max(MTP_K, 1));
+    cand_scratch.reserve(std::max(MTP_K, 1));
+  }
 
   printf("Num Layers:%d\n", NUM_LAYERS);
   if (has_vit) {
@@ -365,6 +466,12 @@ void Qwen3_5::init_by_names() {
     printf("History Support: True\n");
   } else {
     printf("History Support: False\n");
+  }
+  if (support_mtp) {
+    printf("MTP Support: True (draft_len=%d, verify_len=%d, mtp_lm_head=%s)\n",
+           MTP_DRAFT_LEN, MTP_K, net_mtp_lm ? "yes" : "no");
+  } else {
+    printf("MTP Support: False\n");
   }
 }
 
@@ -389,7 +496,7 @@ void Qwen3_5::init(int dev_id, std::string model_path) {
 
   init_by_names();
 
-  visited_tokens.resize(SEQLEN);
+  visited_tokens.resize(SEQLEN + MTP_K);
 
   // kv cache
   past_key.resize(NUM_LAYERS);
@@ -421,6 +528,43 @@ void Qwen3_5::init(int dev_id, std::string model_path) {
     status = bm_malloc_device_byte(bm_handle, &dev_buffer, buffer_size);
     assert(BM_SUCCESS == status);
   }
+  // stage single-row hidden into multi-row lm_head
+  size_t row_bytes = HIDDEN_SIZE * sizeof(uint16_t);
+  status = bm_malloc_device_byte(bm_handle, &lm_in_buf, LM_ROWS * row_bytes);
+  assert(BM_SUCCESS == status);
+  empty(bm_handle, lm_in_buf);
+  if (support_mtp) {
+    mtp_past_key = net_mtp_cache->stages[0].input_mems[4];
+    mtp_past_value = net_mtp_cache->stages[0].input_mems[5];
+    empty(bm_handle, mtp_past_key);
+    empty(bm_handle, mtp_past_value);
+    status = bm_malloc_device_byte(bm_handle, &mtp_hidden_buf, row_bytes);
+    assert(BM_SUCCESS == status);
+    status = bm_malloc_device_byte(bm_handle, &mtp_embed_buf,
+                                   (size_t)MAX_INPUT_LENGTH * row_bytes);
+    assert(BM_SUCCESS == status);
+    if (CONV_BYTES > 0 && REC_BYTES > 0 && MTP_K > 0) {
+      for (int p = 0; p < 2; p++) {
+        lin_conv_buf[p].assign(NUM_LAYERS, bm_device_mem_t());
+        lin_rec_buf[p].assign(NUM_LAYERS, bm_device_mem_t());
+        for (int i = 0; i < NUM_LAYERS; i++) {
+          if (is_FA(i)) {
+            continue;
+          }
+          status = bm_malloc_device_byte(bm_handle, &lin_conv_buf[p][i],
+                                         (size_t)MTP_K * CONV_BYTES);
+          assert(BM_SUCCESS == status);
+          status = bm_malloc_device_byte(bm_handle, &lin_rec_buf[p][i],
+                                         (size_t)MTP_K * REC_BYTES);
+          assert(BM_SUCCESS == status);
+          empty(bm_handle, lin_conv_buf[p][i]);
+          empty(bm_handle, lin_rec_buf[p][i]);
+        }
+      }
+      lin_parity = 0;
+    }
+  }
+  mtp_length = 0;
 }
 
 void Qwen3_5::clear_vit_cache() {
@@ -439,6 +583,25 @@ void Qwen3_5::clear_vit_cache() {
 void Qwen3_5::deinit() {
   clear_vit_cache();
   bm_free_device(bm_handle, dev_buffer);
+  bm_free_device(bm_handle, lm_in_buf);
+  if (support_mtp) {
+    bm_free_device(bm_handle, mtp_hidden_buf);
+    bm_free_device(bm_handle, mtp_embed_buf);
+    for (int p = 0; p < 2; p++) {
+      for (auto &mem : lin_conv_buf[p]) {
+        if (bm_mem_get_device_size(mem) > 0) {
+          bm_free_device(bm_handle, mem);
+        }
+      }
+      for (auto &mem : lin_rec_buf[p]) {
+        if (bm_mem_get_device_size(mem) > 0) {
+          bm_free_device(bm_handle, mem);
+        }
+      }
+      lin_conv_buf[p].clear();
+      lin_rec_buf[p].clear();
+    }
+  }
   bmrt_destroy(p_bmrt);
   bm_dev_free(bm_handle);
 }
@@ -702,6 +865,159 @@ int Qwen3_5::generate(bm_device_mem_t &logits_mem) {
   return token;
 }
 
+//===------------------------------------------------------------===//
+// MTP helpers
+//===------------------------------------------------------------===//
+// Score `rows` hidden rows with trunk lm_head (built-in TopK).
+void Qwen3_5::lm_head_rows(bm_device_mem_t hidden_mem, int rows,
+                           int *out_tokens) {
+  std::vector<bm_tensor_t> in_tensors;
+  std::vector<bm_tensor_t> out_tensors;
+  init_tensors(net_lm, in_tensors, out_tensors);
+  in_tensors[0].device_mem = hidden_mem;
+  net_launch(net_lm, in_tensors, out_tensors);
+  std::vector<int> buf(LM_ROWS, 0);
+  bm_memcpy_d2s_partial(bm_handle, (void *)buf.data(),
+                        out_tensors[0].device_mem, LM_ROWS * sizeof(int));
+  std::copy(buf.begin(), buf.begin() + rows, out_tokens);
+}
+
+// Greedy token for one hidden row; optional truncated mtp_lm_head.
+int Qwen3_5::lm_head_single(bm_device_mem_t hidden_mem, size_t offset_bytes,
+                            bool use_mtp_head) {
+  size_t row_bytes = HIDDEN_SIZE * sizeof(uint16_t);
+  if (use_mtp_head && net_mtp_lm != nullptr) {
+    std::vector<bm_tensor_t> in_tensors;
+    std::vector<bm_tensor_t> out_tensors;
+    init_tensors(net_mtp_lm, in_tensors, out_tensors);
+    in_tensors[0].device_mem = bm_mem_from_device(
+        hidden_mem.u.device.device_addr + offset_bytes, row_bytes);
+    net_launch(net_mtp_lm, in_tensors, out_tensors);
+    int token = 0;
+    bm_memcpy_d2s_partial(bm_handle, (void *)&token,
+                          out_tensors[0].device_mem, sizeof(int));
+    return token;
+  }
+  bm_memcpy_d2d_byte(bm_handle, lm_in_buf, 0, hidden_mem, offset_bytes,
+                     row_bytes);
+  int token = 0;
+  lm_head_rows(lm_in_buf, 1, &token);
+  return token;
+}
+
+// One MTP step: hidden@pos-1 + token@pos -> draft@pos+1; write kv to `slot`.
+int Qwen3_5::mtp_step(bm_device_mem_t hidden_mem, size_t hidden_offset,
+                      int token, int pos, int slot, int visible) {
+  size_t row_bytes = HIDDEN_SIZE * sizeof(uint16_t);
+  in_scratch.clear();
+  out_scratch.clear();
+  init_tensors(net_embed_cache, in_scratch, out_scratch);
+  bm_memcpy_s2d(bm_handle, in_scratch[0].device_mem, (void *)&token);
+  net_launch(net_embed_cache, in_scratch, out_scratch);
+  d2d(mtp_embed_buf, out_scratch[0].device_mem, 0, row_bytes);
+  in_scratch.clear();
+  out_scratch.clear();
+  init_tensors(net_mtp_cache, in_scratch, out_scratch);
+  in_scratch[0].device_mem = bm_mem_from_device(
+      hidden_mem.u.device.device_addr + hidden_offset, row_bytes);
+  in_scratch[1].device_mem = mtp_embed_buf;
+  int pos3[3] = {pos, pos, pos};
+  bm_memcpy_s2d(bm_handle, in_scratch[2].device_mem, (void *)pos3);
+  mask_scratch.assign(SEQLEN + 1, mask_value);
+  for (int i = 0; i < visible && i < SEQLEN; i++) {
+    mask_scratch[i] = 0;
+  }
+  mask_scratch[SEQLEN] = 0;
+  bm_memcpy_s2d(bm_handle, in_scratch[3].device_mem,
+                (void *)mask_scratch.data());
+  in_scratch[4].device_mem = mtp_past_key;
+  in_scratch[5].device_mem = mtp_past_value;
+  out_scratch[1].device_mem = bm_mem_from_device(
+      mtp_past_key.u.device.device_addr + (size_t)slot * MTP_KV_BYTES,
+      MTP_KV_BYTES);
+  out_scratch[2].device_mem = bm_mem_from_device(
+      mtp_past_value.u.device.device_addr + (size_t)slot * MTP_KV_BYTES,
+      MTP_KV_BYTES);
+  net_launch(net_mtp_cache, in_scratch, out_scratch);
+  return lm_head_single(out_scratch[0].device_mem, 0, true);
+}
+
+// Chain-generate MTP_DRAFT_LEN drafts from first_draft + mtp_hidden_buf.
+void Qwen3_5::mtp_make_drafts(int first_draft, int base_pos, int base_slot) {
+  size_t row_bytes = HIDDEN_SIZE * sizeof(uint16_t);
+  draft_tokens.assign(1, first_draft);
+  for (int i = 1; i < MTP_DRAFT_LEN; i++) {
+    int slot = base_slot + i - 1;
+    if (slot >= SEQLEN) {
+      draft_tokens.push_back(draft_tokens.back());
+      continue;
+    }
+    int draft = mtp_step(mtp_hidden_buf, 0, draft_tokens.back(), base_pos + i,
+                         slot, slot);
+    bm_memcpy_d2d_byte(bm_handle, mtp_hidden_buf, 0,
+                       net_mtp_cache->stages[0].output_mems[0], 0, row_bytes);
+    draft_tokens.push_back(draft);
+  }
+}
+
+// After trunk prefill: fill MTP kv with trunk hidden[0,n) + embed[1,n].
+void Qwen3_5::mtp_prefill(const int *pos_ids, int max_pos, int n) {
+  size_t row_bytes = HIDDEN_SIZE * sizeof(uint16_t);
+  std::vector<bm_tensor_t> in_tensors;
+  std::vector<bm_tensor_t> out_tensors;
+  init_tensors(net_embed, in_tensors, out_tensors);
+  empty(bm_handle, in_tensors[0].device_mem);
+  bm_memcpy_s2d_partial(bm_handle, in_tensors[0].device_mem,
+                        (void *)(visited_tokens.data() + 1), n * sizeof(int));
+  net_launch(net_embed, in_tensors, out_tensors);
+  auto embed_mem = out_tensors[0].device_mem;
+  // token n sits at max_pos + 1
+  std::vector<int> mpos(3 * n, 0);
+  for (int r = 0; r < 3; r++) {
+    for (int i = 0; i + 1 < n; i++) {
+      mpos[r * n + i] = pos_ids[r * n + i + 1];
+    }
+    mpos[r * n + n - 1] = max_pos + 1;
+  }
+  // stage embed out of shared neuron pool before launching mtp_block
+  d2d(mtp_embed_buf, embed_mem, 0, n * row_bytes);
+  init_tensors(net_mtp_block, in_tensors, out_tensors);
+  d2d(in_tensors[0].device_mem, dev_buffer, 0, n * row_bytes);
+  d2d(in_tensors[1].device_mem, mtp_embed_buf, 0, n * row_bytes);
+  bm_memcpy_s2d_partial(bm_handle, in_tensors[2].device_mem,
+                        (void *)mpos.data(), 3 * n * sizeof(int));
+  in_tensors[0].shape.dims[1] = n;
+  in_tensors[1].shape.dims[1] = n;
+  in_tensors[2].shape.dims[1] = n;
+  if (net_mtp_block->input_num > 3) {
+    std::vector<uint16_t> attention_mask(n * n, mask_value);
+    for (int i = 0; i < n; i++) {
+      for (int j = 0; j <= i; j++) {
+        attention_mask[i * n + j] = 0;
+      }
+    }
+    bm_memcpy_s2d_partial(bm_handle, in_tensors[3].device_mem,
+                          (void *)attention_mask.data(),
+                          n * n * sizeof(uint16_t));
+    in_tensors[3].shape.dims[2] = n;
+    in_tensors[3].shape.dims[3] = n;
+  }
+  net_launch(net_mtp_block, in_tensors, out_tensors);
+  bm_memcpy_d2d_byte(bm_handle, mtp_past_key, 0,
+                     net_mtp_block->stages[0].output_mems[1], 0,
+                     (size_t)MTP_KV_BYTES * n);
+  bm_memcpy_d2d_byte(bm_handle, mtp_past_value, 0,
+                     net_mtp_block->stages[0].output_mems[2], 0,
+                     (size_t)MTP_KV_BYTES * n);
+  mtp_length = n;
+  // copy last MTP hidden before lm_head may overwrite shared mem
+  auto mtp_out = net_mtp_block->stages[0].output_mems[0];
+  bm_memcpy_d2d_byte(bm_handle, mtp_hidden_buf, 0, mtp_out,
+                     (size_t)(n - 1) * row_bytes, row_bytes);
+  int draft = lm_head_single(mtp_hidden_buf, 0, true);
+  mtp_make_drafts(draft, max_pos + 1, n);
+}
+
 int Qwen3_5::forward_first(ArrayInt const &position_ids) {
   if (support_history) {
     return forward_first_with_kv(position_ids);
@@ -767,13 +1083,26 @@ int Qwen3_5::forward_first(ArrayInt const &position_ids) {
 
   // forward lmhead
   int bytes = HIDDEN_SIZE * sizeof(uint16_t);
-  init_tensors(net_lm, in_tensors, out_tensors);
-  in_tensors[0].device_mem = bm_mem_from_device(
-      out_mem.u.device.device_addr + (token_length - 1) * bytes, bytes);
-  out_tensors[0].device_mem = dev_buffer;
-  net_launch(net_lm, in_tensors, out_tensors);
-  auto token = generate(dev_buffer);
+  int token = 0;
+  if (LM_ROWS > 1 || support_mtp) {
+    // keep trunk hidden in dev_buffer for mtp_prefill
+    token = lm_head_single(out_mem, (size_t)(token_length - 1) * bytes, false);
+  } else {
+    init_tensors(net_lm, in_tensors, out_tensors);
+    in_tensors[0].device_mem = bm_mem_from_device(
+        out_mem.u.device.device_addr + (token_length - 1) * bytes, bytes);
+    out_tensors[0].device_mem = dev_buffer;
+    net_launch(net_lm, in_tensors, out_tensors);
+    token = generate(dev_buffer);
+  }
   visited_tokens[token_length] = token;
+  if (support_mtp) {
+    int max_pos = 0;
+    for (int i = 0; i < 3 * token_length; i++) {
+      max_pos = std::max(max_pos, position_ids_pad[i]);
+    }
+    mtp_prefill(position_ids_pad.data(), max_pos, token_length);
+  }
   token_length++;
   history_length = token_length;
   return token;
@@ -907,9 +1236,9 @@ int Qwen3_5::forward_next(ArrayInt const &position_ids) {
   int stage = select_decode_stage();
   int real_len = decode_stage_len.empty() ? SEQLEN : decode_stage_len[stage];
 
-  std::vector<uint16_t> attention_mask(real_len + 1, 0);
+  mask_scratch.assign(real_len + 1, 0);
   for (int i = history_length - 1; i < real_len; i++) {
-    attention_mask[i] = mask_value;
+    mask_scratch[i] = mask_value;
   }
   assert(position_ids.size() == 3);
   auto p_position_ids = position_ids.request();
@@ -929,7 +1258,7 @@ int Qwen3_5::forward_next(ArrayInt const &position_ids) {
   int token_offset = (history_length - 1) * fa_bytes;
   for (int idx = 0; idx < NUM_LAYERS; idx++) {
     if (is_FA(idx)) {
-      net_launch_decode(idx, token_offset, out_mem, p_ids, attention_mask,
+      net_launch_decode(idx, token_offset, out_mem, p_ids, mask_scratch,
                         stage);
       out_mem = net_blocks_cache[idx]->stages[stage].output_mems[0];
     } else {
@@ -941,16 +1270,165 @@ int Qwen3_5::forward_next(ArrayInt const &position_ids) {
   }
 
   // forward lmhead
-  init_tensors(net_lm, in_tensors, out_tensors);
-  in_tensors[0].device_mem = out_mem;
-  out_tensors[0].device_mem = dev_buffer;
-  net_launch(net_lm, in_tensors, out_tensors);
-
-  token = generate(dev_buffer);
+  if (LM_ROWS > 1) {
+    token = lm_head_single(out_mem, 0, false);
+  } else {
+    init_tensors(net_lm, in_tensors, out_tensors);
+    in_tensors[0].device_mem = out_mem;
+    out_tensors[0].device_mem = dev_buffer;
+    net_launch(net_lm, in_tensors, out_tensors);
+    token = generate(dev_buffer);
+  }
   visited_tokens[token_length] = token;
+  if (support_mtp) {
+    // sync MTP kv after single-token decode
+    int n = history_length - 1;
+    if (mtp_length == n && n < SEQLEN) {
+      int draft = mtp_step(out_mem, 0, token, p_ids[0] + 1, n, n);
+      bm_memcpy_d2d_byte(bm_handle, mtp_hidden_buf, 0,
+                         net_mtp_cache->stages[0].output_mems[0], 0,
+                         HIDDEN_SIZE * sizeof(uint16_t));
+      mtp_length = n + 1;
+      mtp_make_drafts(draft, p_ids[0] + 1, n + 1);
+    } else {
+      mtp_length = -1;
+      draft_tokens.clear();
+    }
+  }
   token_length++;
   history_length++;
   return token;
+}
+
+// Verify [t_n, drafts...] once; accept longest matching prefix (1..MTP_K).
+std::vector<int> Qwen3_5::forward_next_mtp(ArrayInt const &position_ids) {
+  assert(position_ids.size() == 3);
+  int n = token_length - 1;
+  if (!support_mtp || mtp_length != n ||
+      (int)draft_tokens.size() != MTP_DRAFT_LEN || n + MTP_K > SEQLEN) {
+    return {forward_next(position_ids)};
+  }
+  auto p_position_ids = position_ids.request();
+  auto p_ids = static_cast<int *>(p_position_ids.ptr);
+  size_t row_bytes = HIDDEN_SIZE * sizeof(uint16_t);
+  std::vector<bm_tensor_t> in_tensors;
+  std::vector<bm_tensor_t> out_tensors;
+
+  // 1. embed [t_n, drafts...]
+  tokens_scratch.resize(MTP_K);
+  tokens_scratch[0] = visited_tokens[n];
+  std::copy(draft_tokens.begin(), draft_tokens.end(), tokens_scratch.begin() + 1);
+  init_tensors(net_embed, in_tensors, out_tensors);
+  empty(bm_handle, in_tensors[0].device_mem);
+  bm_memcpy_s2d_partial(bm_handle, in_tensors[0].device_mem,
+                        (void *)tokens_scratch.data(), MTP_K * sizeof(int));
+  net_launch(net_embed, in_tensors, out_tensors);
+  d2d(dev_buffer, out_tensors[0].device_mem, 0, MTP_K * row_bytes);
+  auto out_mem = dev_buffer;
+
+  // 2. positions + causal mask over history and the K-token batch
+  pos_scratch.resize(3 * MTP_K);
+  for (int r = 0; r < 3; r++) {
+    for (int j = 0; j < MTP_K; j++) {
+      pos_scratch[r * MTP_K + j] = p_ids[r] + j;
+    }
+  }
+  int mask_w = SEQLEN + MTP_K;
+  mask_scratch.resize((size_t)MTP_K * mask_w);
+  std::fill(mask_scratch.begin(), mask_scratch.end(), mask_value);
+  for (int j = 0; j < MTP_K; j++) {
+    for (int i = 0; i < n; i++) {
+      mask_scratch[(size_t)j * mask_w + i] = 0;
+    }
+    for (int c = 0; c <= j; c++) {
+      mask_scratch[(size_t)j * mask_w + SEQLEN + c] = 0;
+    }
+  }
+
+  // 3. trunk verify
+  for (int idx = 0; idx < NUM_LAYERS; idx++) {
+    auto &net = net_blocks_verify[idx];
+    init_tensors(net, in_tensors, out_tensors);
+    in_tensors[0].device_mem = out_mem;
+    if (is_FA(idx)) {
+      bm_memcpy_s2d(bm_handle, in_tensors[1].device_mem,
+                    (void *)pos_scratch.data());
+      bm_memcpy_s2d(bm_handle, in_tensors[2].device_mem,
+                    (void *)mask_scratch.data());
+      in_tensors[3].device_mem = past_key[idx];
+      in_tensors[4].device_mem = past_value[idx];
+      // write new kv at [n, n+K); rejected tail is overwritten next step
+      out_tensors[1].device_mem = bm_mem_from_device(
+          past_key[idx].u.device.device_addr + (size_t)n * KV_BYTES,
+          (size_t)KV_BYTES * MTP_K);
+      out_tensors[2].device_mem = bm_mem_from_device(
+          past_value[idx].u.device.device_addr + (size_t)n * KV_BYTES,
+          (size_t)KV_BYTES * MTP_K);
+    } else {
+      // write K candidate states to idle ping-pong buffer
+      if (lin_conv_buf[0].empty() ||
+          bm_mem_get_device_size(lin_conv_buf[lin_parity][idx]) == 0) {
+        throw std::runtime_error(
+            "MTP linear-attn ping-pong buffers are not allocated");
+      }
+      in_tensors[1].device_mem = past_key[idx];
+      in_tensors[2].device_mem = past_value[idx];
+      out_tensors[1].device_mem = lin_conv_buf[lin_parity][idx];
+      out_tensors[2].device_mem = lin_rec_buf[lin_parity][idx];
+    }
+    net_launch(net, in_tensors, out_tensors);
+    out_mem = net->stages[0].output_mems[0];
+  }
+
+  // 4. accept longest draft prefix that matches trunk greedy tokens
+  cand_scratch.resize(MTP_K);
+  lm_head_rows(out_mem, MTP_K, cand_scratch.data());
+  int m = 0;
+  while (m < MTP_DRAFT_LEN && cand_scratch[m] == draft_tokens[m]) {
+    m++;
+  }
+
+  // 5. commit linear-attn state at slot m; flip ping-pong
+  for (int idx = 0; idx < NUM_LAYERS; idx++) {
+    if (is_FA(idx)) {
+      continue;
+    }
+    past_key[idx] = bm_mem_from_device(
+        lin_conv_buf[lin_parity][idx].u.device.device_addr +
+            (size_t)m * CONV_BYTES,
+        CONV_BYTES);
+    past_value[idx] = bm_mem_from_device(
+        lin_rec_buf[lin_parity][idx].u.device.device_addr +
+            (size_t)m * REC_BYTES,
+        REC_BYTES);
+  }
+  if (!lin_conv_buf[0].empty()) {
+    lin_parity ^= 1;
+  }
+
+  // 6. bookkeeping
+  std::vector<int> accepted(cand_scratch.begin(), cand_scratch.begin() + m + 1);
+  for (int j = 0; j <= m; j++) {
+    visited_tokens[token_length + j] = cand_scratch[j];
+  }
+  token_length += m + 1;
+  history_length = token_length;
+  int n2 = n + m + 1;
+  mtp_steps++;
+  mtp_draft_total += MTP_DRAFT_LEN;
+  mtp_accept_total += m;
+
+  // 7. refresh MTP with true trunk hiddens, then draft next step
+  int draft = 0;
+  for (int j = 0; j <= m; j++) {
+    draft = mtp_step(out_mem, (size_t)j * row_bytes, cand_scratch[j], p_ids[0] + j + 1,
+                     n + j, n + j);
+  }
+  bm_memcpy_d2d_byte(bm_handle, mtp_hidden_buf, 0,
+                     net_mtp_cache->stages[0].output_mems[0], 0, row_bytes);
+  mtp_length = n2;
+  mtp_make_drafts(draft, p_ids[0] + m + 1, n2);
+  return accepted;
 }
 
 PYBIND11_MODULE(chat, m) {
@@ -968,6 +1446,7 @@ PYBIND11_MODULE(chat, m) {
            py::arg("cache_key") = std::string(""))
       .def("forward_first", &Qwen3_5::forward_first)
       .def("forward_next", &Qwen3_5::forward_next)
+      .def("forward_next_mtp", &Qwen3_5::forward_next_mtp)
       .def("clear_history", &Qwen3_5::clear_history)
       .def("clear_vit_cache", &Qwen3_5::clear_vit_cache)
       .def("deinit", &Qwen3_5::deinit)
@@ -980,5 +1459,11 @@ PYBIND11_MODULE(chat, m) {
       .def_readonly("PREFILL_KV_LENGTH", &Qwen3_5::PREFILL_KV_LENGTH)
       .def_readonly("support_history", &Qwen3_5::support_history)
       .def_readonly("history_length", &Qwen3_5::history_length)
-      .def_readonly("has_vit", &Qwen3_5::has_vit);
+      .def_readonly("has_vit", &Qwen3_5::has_vit)
+      .def_readonly("support_mtp", &Qwen3_5::support_mtp)
+      .def_readonly("MTP_K", &Qwen3_5::MTP_K)
+      .def_readonly("MTP_DRAFT_LEN", &Qwen3_5::MTP_DRAFT_LEN)
+      .def_readonly("mtp_steps", &Qwen3_5::mtp_steps)
+      .def_readonly("mtp_draft_total", &Qwen3_5::mtp_draft_total)
+      .def_readonly("mtp_accept_total", &Qwen3_5::mtp_accept_total);
 }

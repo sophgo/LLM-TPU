@@ -39,6 +39,10 @@ class Qwen3_5():
         self.spatial_merge_unit = self.spatial_merge_size**2
         self.tokens_per_second = 2
         self.support_history = self.model.support_history
+        self.support_mtp = self.model.support_mtp
+        if self.support_mtp:
+            print("MTP speculative decoding enabled (draft_len={}, verify_len={})".format(
+                self.model.MTP_DRAFT_LEN, self.model.MTP_K))
         if not self.model.has_vit:
             print("LLM-only bmodel loaded (no vit). Image/video input is not supported.")
         self.num_grid_per_side = 48
@@ -402,7 +406,14 @@ class Qwen3_5():
         # Following tokens
         full_word_tokens = []
         text = ""
-        while token not in [self.ID_IM_END] and self.model.history_length < self.model.SEQLEN:
+        pending = [token]
+        mtp_steps0 = self.model.mtp_steps if self.support_mtp else 0
+        mtp_draft0 = self.model.mtp_draft_total if self.support_mtp else 0
+        mtp_accept0 = self.model.mtp_accept_total if self.support_mtp else 0
+        while True:
+            token = pending.pop(0)
+            if token in [self.ID_IM_END] or self.model.history_length >= self.model.SEQLEN:
+                break
             full_word_tokens.append(token)
             word = self.tokenizer.decode(full_word_tokens, skip_special_tokens=True)
             if "�" not in word:
@@ -413,11 +424,17 @@ class Qwen3_5():
                 text += word
                 print(word, flush=True, end="")
                 full_word_tokens = []
+            if len(pending) > 0:
+                continue
             self.max_posid += 1
             position_ids = np.array([self.max_posid, self.max_posid, self.max_posid],
                                     dtype=np.int32)
-            token = self.model.forward_next(position_ids)
-            tok_num += 1
+            if self.support_mtp:
+                pending = list(self.model.forward_next_mtp(position_ids))
+                self.max_posid += len(pending) - 1
+            else:
+                pending = [self.model.forward_next(position_ids)]
+            tok_num += len(pending)
         self.history_max_posid = self.max_posid + 2
         next_end = time.time()
         first_duration = first_end - first_start
@@ -425,6 +442,14 @@ class Qwen3_5():
         tps = tok_num / next_duration if next_duration > 0 else 0.0
         print(f"\nFTL: {first_duration:.3f} s")
         print(f"TPS: {tps:.3f} tokens/s")
+        if self.support_mtp:
+            steps = self.model.mtp_steps - mtp_steps0
+            drafts = self.model.mtp_draft_total - mtp_draft0
+            accepts = self.model.mtp_accept_total - mtp_accept0
+            rate = accepts / drafts if drafts > 0 else 0.0
+            per_step = (steps + accepts) / steps if steps > 0 else 0.0
+            print(f"MTP: {steps} steps, accept rate {rate:.3f} ({accepts}/{drafts}), "
+                  f"{per_step:.2f} tokens/step")
         if media_type == "image":
             print(f"Vision({inputs.image_grid_thw.tolist()}): {vit_end - vit_start:.3f} s")
         elif media_type == "video":

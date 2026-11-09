@@ -186,6 +186,31 @@ Notes:
   (FIFO eviction each). Set `model.vit_cache_cap = 0` /
   `model.vit_video_cache_cap = 0` to disable either at runtime.
 
+### 4. MTP speculative decoding (Qwen3.5 MTP checkpoints)
+
+Qwen3.5 checkpoints that ship the MTP (multi-token prediction / NextN) draft
+head — e.g. the `Qwen3.5-4B-MTP-GGUF` release, or any HF checkpoint with
+`mtp_num_hidden_layers >= 1` and `mtp.*` weights — can be compiled with
+`--mtp`.
+
+```shell
+# GGUF (Q4_0) with the MTP head; -q selects the activation/weight mode
+llm_convert.py -m /workspace/Qwen3.5-4B-MTP-GGUF/Qwen3.5-4B-Q4_0.gguf \
+    --mmproj /workspace/Qwen3.5-4B-MTP-GGUF/mmproj-F16.gguf \
+    -q w4bf16 -s 2048 --max_input_length 1024 -c bm1684x \
+    --mtp --mtp_draft_len 1 --mtp_vocab_size 32768 --out_dir qwen3.5_mtp
+```
+
+- `--mtp_draft_len N` proposes N draft tokens per step (default 1, i.e. two
+  tokens verified per launch). Larger N raises the per-step cost of the verify
+  nets; keep it at 1–2 unless the acceptance rate is very high.
+- `--mtp_vocab_size V` truncates the draft head's vocabulary to the first V
+  token ids (Qwen vocabularies put the common tokens first); 0 reuses the full
+  `lm_head`. Drafts outside the truncated vocab are simply rejected, so output
+  quality is unaffected — only the acceptance rate changes.
+- limitations: greedy decoding only (`--do_sample` is rejected), no
+  `--use_history_kv`, no LoRA, batch 1, single device.
+
 
 ## OvisOCR2 (GGUF)
 
