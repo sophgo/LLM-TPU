@@ -14,6 +14,16 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-v
 # 1684x 4B, 8k, supports history
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-4b-instruct-awq-4bit_w4bf16_seq8192_bm1684x_1dev_history_dynamic_20260729_164238.bmodel
 
+# =============== cv84x6 =====================
+# cv84x6 (BM1684X2) 4B W4A16, seq1024, 4core static
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-4b-instruct-awq-4bit_w4bf16_seq1024_bm1684x2_4core_static_20261117_152550.bmodel
+
+# cv84x6 (BM1684X2) 4B W8A16, seq1024, 4core static
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3vl-4b-instruct-q8_0.gguf_w8bf16_seq1024_bm1684x2_4core_static_20261117_153126.bmodel
+
+# cv84x6 (BM1684X2) 4B BF16, seq1024, 4core static
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-4b-instruct_bf16_seq1024_bm1684x2_4core_static_20261117_165950.bmodel
+
 # =============== 1688 ======================
 # 1688 2B, max 1K input, max_pixel 768x768, supports videos up to 12s (1 frame per second)
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/qwen3-vl-2b-instruct-w4a16_w4bf16_seq2048_bm1688_2core_dynamic_20260318_170649.bmodel
