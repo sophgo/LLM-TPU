@@ -12,8 +12,8 @@ python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpm
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpm-v-4.7-1b-gptq_w4bf16_seq2048_bm1688_2core_dynamic_20261030_113652.bmodel
 python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpm-v-4.7-1b-gptq_w4bf16_seq2048_cv84x6_4core_dynamic_20261030_113824.bmodel
 
-# =============== MiniCPM-V-4.7-35B-A3B-GPTQ (w4bf16) ================
-python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpm-v-4.7-35b-a3b-gptq_w4bf16_seq2048_cv84x6_4core_dynamic_20261103_112343.bmodel
+# =============== MiniCPM-V-4.7-35B-A3B-GGUF-q4_0 (w4bf16) ===========
+python3 -m dfss --url=open@sophgo.com:/ext_model_information/LLM/LLM-TPU/minicpm-v-4.7-35b-a3b-gguf-q4_0_w4bf16_seq2048_cv84x6_4core_dynamic_20261112_125302.bmodel
 ```
 
 ## Compile the LLM Model
@@ -109,11 +109,13 @@ MiniCPM-V-4.7-1B-GPTQ (w4bf16, seq 2048, max_pixels 448×448) measured on the `t
 | BM1688 (SoC) | 2 | 29.0 | 1.83 | 29.0 | 3.22 | 29.0 |
 | CV84X6 (SoC) | 4 | 80.4 | 1.23 | 80.3 | 2.05 | 80.4 |
 
-MiniCPM-V-4.7-35B-A3B-GPTQ (w4bf16, seq 2048, max_pixels 448×448) measured on the `test.jpg` sample.
+MiniCPM-V-4.7-35B-A3B (q4_0 GGUF, w4bf16, seq 2048, max_pixels 448×448) on CV84X6 (SoC, 4 cores).
 
 | Platform | Cores | Text TPS (tokens/s) | Image 16x FTL (s) | Image 16x TPS | Image 4x FTL (s) | Image 4x TPS |
 |----------|-------|--------------------:|------------------:|--------------:|-----------------:|-------------:|
-| CV84X6 (SoC) | 4 | 12.6 | 5.04 | 12.6 | 11.22 | 12.5 |
+| CV84X6 (SoC) | 4 | 23.5 | — | — | — | — |
+
+Text-only first-token latency: 1.06 s. Image-mode FTL/TPS for the 35B model has not been benchmarked yet.
 
 Notes:
 - **FTL** = first-token latency (prompt processing + first decode); **TPS** = steady-state decode tokens/sec.
