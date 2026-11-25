@@ -23,6 +23,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <random>
+#include <climits>
 #include <stdio.h>
 #include <string>
 #include <unordered_map>
@@ -30,7 +31,7 @@
 
 static void print_devmem_info(bm_handle_t &bm_handle) {
   bm_dev_stat_t stat;
-  auto ret = bm_get_stat(bm_handle, &stat);
+  [[maybe_unused]] auto ret = bm_get_stat(bm_handle, &stat);
   if (ret != BM_SUCCESS) {
     std::cerr << "Failed to get device status" << std::endl;
     return;
@@ -49,7 +50,7 @@ using ArrayInt = py::array_t<int, py::array::c_style | py::array::forcecast>;
 //===------------------------------------------------------------===//
 void empty(bm_handle_t &bm_handle, bm_device_mem_t &mem) {
   int value = 0;
-  auto ret = bm_memset_device_ext(bm_handle, &value, 1, mem);
+  [[maybe_unused]] auto ret = bm_memset_device_ext(bm_handle, &value, 1, mem);
   assert(BM_SUCCESS == ret);
 }
 
@@ -67,6 +68,11 @@ class Qwen3_5 {
 public:
   void init(int devid, std::string model_path);
   void deinit();
+  // Write the current sampling params (temperature/top_k/top_p/
+  // repeat_penalty) into sample_head's persistent device memory. Must be
+  // called once before penalty_sample, and again whenever params change.
+  // No-op when net_sample_head is absent.
+  void set_sampling_params();
   void forward_embed(ArrayInt const &tokens);
   void forward_vit(ArrayFloat const &pixel_values, ArrayInt const &position_ids,
                    ArrayInt const &pos_idx, ArrayFloat const &pos_weight,
@@ -133,6 +139,20 @@ public:
   bool has_vit = false;
   bool support_history = false;
   bool prefill_mask = false;
+  // Sampling parameters; used only when the bmodel ships a sample_head net
+  // (compiled with llm_convert.py --do_sample). repeat_penalty < 1 or 1.0
+  // disables repetition suppression; a repetition_window > 0 confines the
+  // penalty to the most recent tokens so long contexts are not over-penalized.
+  float temperature = 1.0f;
+  float top_p = 0.8f;
+  int top_k = 20;
+  float repeat_penalty = 1.05f;
+  int repetition_window = 0; // <= 0: penalize the full visited context
+  bool enable_sampling = false;
+  // One-past-the-last valid token id; sample candidates >= this are
+  // vocab-padding rows from the converter and are filtered out before
+  // sampling. Set from Python after loading the tokenizer.
+  int max_vocab_id = INT_MAX;
   uint16_t mask_value;
   std::vector<int> visited_tokens;
   const int FA_INTERVAL = 4; // full attention interval
@@ -230,7 +250,7 @@ void Qwen3_5::init_tensors(const bm_net_info_t *net,
 void Qwen3_5::net_launch(const bm_net_info_t *net,
                          const std::vector<bm_tensor_t> &in_tensors,
                          std::vector<bm_tensor_t> &out_tensors) {
-  auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
+  [[maybe_unused]] auto ret = bmrt_launch_tensor_ex(p_bmrt, net->name, in_tensors.data(),
                                    net->input_num, out_tensors.data(),
                                    net->output_num, true, false);
   assert(ret);
@@ -479,7 +499,7 @@ void Qwen3_5::init(int dev_id, std::string model_path) {
 
   // request bm_handle
   std::cout << "Device [ " << dev_id << " ] loading .....\n";
-  bm_status_t status = bm_dev_request(&bm_handle, dev_id);
+  [[maybe_unused]] bm_status_t status = bm_dev_request(&bm_handle, dev_id);
   assert(BM_SUCCESS == status);
 
   // create bmruntime
@@ -488,7 +508,7 @@ void Qwen3_5::init(int dev_id, std::string model_path) {
   bmrt_set_flags(p_bmrt, BM_RUNTIME_SHARE_MEM);
   // load bmodel by file
   printf("Model[%s] loading ....\n", model_path.c_str());
-  bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
+  [[maybe_unused]] bool ret = bmrt_load_bmodel(p_bmrt, model_path.c_str());
   assert(true == ret);
   bm_thread_sync(bm_handle);
   printf("Done!\n");
@@ -617,6 +637,81 @@ int Qwen3_5::greedy_search(bm_device_mem_t &logits_mem) {
   return token;
 }
 
+int Qwen3_5::penalty_sample(bm_device_mem_t &logits_mem) {
+  std::vector<bm_tensor_t> in_tensors;
+  std::vector<bm_tensor_t> out_tensors;
+  init_tensors(net_sample_head, in_tensors, out_tensors);
+  // point the logits input directly at the lm_head output; avoids a
+  // device-to-device copy that the single-arg net_launch variant used.
+  in_tensors[0].device_mem = logits_mem;
+
+  // repeat_penalty + top_p + top_k + temperature
+  // Only the most recent `repetition_window` tokens are fed to the sample
+  // head so that repetition penalty is applied within a sliding window,
+  // avoiding over-penalization on long contexts. A non-positive window
+  // keeps the original behavior of penalizing the full context.
+  int penalty_len = token_length;
+  const int *penalty_ptr = visited_tokens.data();
+  if (repetition_window > 0 && token_length > repetition_window) {
+    penalty_len = repetition_window;
+    penalty_ptr = visited_tokens.data() + (token_length - repetition_window);
+  }
+  bm_memcpy_s2d_partial(bm_handle, in_tensors[1].device_mem,
+                        (void *)penalty_ptr, penalty_len * sizeof(int));
+  in_tensors[1].shape.dims[1] = penalty_len;
+
+  // inference
+  net_launch(net_sample_head, in_tensors, out_tensors);
+
+  // get logit & token; clamp top_k to the head's max output candidates
+  int candidate_num = std::min(top_k, 50);
+  std::vector<float> probs(candidate_num);
+  bm_memcpy_d2s_partial_offset(bm_handle, probs.data(),
+                               out_tensors[0].device_mem,
+                               candidate_num * sizeof(float), 0);
+  std::vector<int> tokens(candidate_num);
+  bm_memcpy_d2s_partial_offset(bm_handle, tokens.data(),
+                               out_tensors[1].device_mem,
+                               candidate_num * sizeof(int), 0);
+
+  // Filter out vocab-padding candidates: the converter pads lm_head to
+  // config.vocab_size (e.g. 248320) while the real tokenizer covers fewer
+  // ids (e.g. 248077); the padded rows hold constant/random logits that
+  // must never be sampled. Drop them and renormalize the distribution.
+  int valid_num = 0;
+  for (int i = 0; i < candidate_num; ++i) {
+    if (tokens[i] <= max_vocab_id) {
+      probs[valid_num] = probs[i];
+      tokens[valid_num] = tokens[i];
+      valid_num++;
+    }
+  }
+  if (valid_num == 0) {
+    return greedy_search(logits_mem); // all candidates were padding: bail out
+  }
+  candidate_num = valid_num;
+  probs.resize(candidate_num);
+  tokens.resize(candidate_num);
+
+  // sample
+  std::discrete_distribution<> dist(probs.begin(), probs.end());
+  return tokens[dist(sgen)];
+}
+
+void Qwen3_5::set_sampling_params() {
+  if (!net_sample_head) {
+    return;
+  }
+  bm_memcpy_s2d(bm_handle, net_sample_head->stages[0].input_mems[2],
+                (void *)&repeat_penalty);
+  bm_memcpy_s2d(bm_handle, net_sample_head->stages[0].input_mems[3],
+                (void *)&temperature);
+  bm_memcpy_s2d(bm_handle, net_sample_head->stages[0].input_mems[4],
+                (void *)&top_k);
+  bm_memcpy_s2d(bm_handle, net_sample_head->stages[0].input_mems[5],
+                (void *)&top_p);
+}
+
 void Qwen3_5::forward_embed(ArrayInt const &tokens) {
   token_length = tokens.size();
   assert(token_length <= SEQLEN);
@@ -728,7 +823,7 @@ void Qwen3_5::forward_vit(ArrayFloat const &pixel_values,
       vit_cache_order.pop_front();
     }
     VitCacheEntry entry;
-    auto ret = bm_malloc_device_byte(bm_handle, &entry.mem, vit_size);
+    [[maybe_unused]] auto ret = bm_malloc_device_byte(bm_handle, &entry.mem, vit_size);
     assert(BM_SUCCESS == ret);
     bm_memcpy_d2d_byte(bm_handle, entry.mem, 0, out_tensors[0].device_mem, 0,
                        vit_size);
@@ -809,7 +904,7 @@ void Qwen3_5::forward_vit_video(ArrayFloat const &pixel_values,
       vit_video_cache.erase(oldest);
       vit_video_cache_order.pop_front();
     }
-    auto ret = bm_malloc_device_byte(bm_handle, &entry_mem, total_size);
+    [[maybe_unused]] auto ret = bm_malloc_device_byte(bm_handle, &entry_mem, total_size);
     if (ret != BM_SUCCESS) {
       store = false;
     }
@@ -857,7 +952,9 @@ void Qwen3_5::forward_vit_video(ArrayFloat const &pixel_values,
 
 int Qwen3_5::generate(bm_device_mem_t &logits_mem) {
   int token = 0;
-  if (lmhead_with_topk) {
+  if (net_sample_head && enable_sampling) {
+    token = penalty_sample(logits_mem);
+  } else if (lmhead_with_topk) {
     bm_memcpy_d2s_partial(bm_handle, (void *)&token, logits_mem, sizeof(int));
   } else {
     token = greedy_search(logits_mem);
@@ -1124,7 +1221,7 @@ int Qwen3_5::forward_first_with_kv(ArrayInt const &position_ids) {
   int old_kvlen = (history_length > 0) ? (history_length - 1) : 0;
   int last_cur_len = 0; // cur_len of the last chunk, for lmhead offset
   for (int t = 0; t < token_length; t += MAX_INPUT_LENGTH) {
-    auto old_length = history_length;
+    [[maybe_unused]] auto old_length = history_length;
     int cur_len = std::min(MAX_INPUT_LENGTH, token_length - t);
     last_cur_len = cur_len;
     history_length += cur_len;
@@ -1446,6 +1543,14 @@ PYBIND11_MODULE(chat, m) {
            py::arg("cache_key") = std::string(""))
       .def("forward_first", &Qwen3_5::forward_first)
       .def("forward_next", &Qwen3_5::forward_next)
+      .def_readwrite("temperature", &Qwen3_5::temperature)
+      .def_readwrite("top_p", &Qwen3_5::top_p)
+      .def_readwrite("top_k", &Qwen3_5::top_k)
+      .def_readwrite("repeat_penalty", &Qwen3_5::repeat_penalty)
+      .def_readwrite("repetition_window", &Qwen3_5::repetition_window)
+      .def_readwrite("enable_sampling", &Qwen3_5::enable_sampling)
+      .def_readwrite("max_vocab_id", &Qwen3_5::max_vocab_id)
+      .def("set_sampling_params", &Qwen3_5::set_sampling_params)
       .def("forward_next_mtp", &Qwen3_5::forward_next_mtp)
       .def("clear_history", &Qwen3_5::clear_history)
       .def("clear_vit_cache", &Qwen3_5::clear_vit_cache)

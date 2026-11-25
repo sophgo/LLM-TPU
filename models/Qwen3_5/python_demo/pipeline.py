@@ -45,6 +45,27 @@ class Qwen3_5():
                 self.model.MTP_DRAFT_LEN, self.model.MTP_K))
         if not self.model.has_vit:
             print("LLM-only bmodel loaded (no vit). Image/video input is not supported.")
+        # sampling defaults for penalty-sample decoding; only effective when
+        # the bmodel ships a sample_head net (--do_sample compile)
+        self.model.temperature = getattr(args, "temperature", 1.0)
+        self.model.top_p = getattr(args, "top_p", 0.8)
+        self.model.top_k = getattr(args, "top_k", 20)
+        self.model.repeat_penalty = getattr(args, "repeat_penalty", 1.05)
+        self.model.repetition_window = getattr(args, "repetition_window", 0)
+        self.model.enable_sampling = getattr(args, "enable_sampling", False)
+        # Filter out vocab-padding candidates: the converter pads lm_head
+        # to config.vocab_size (e.g. 248320) while the real tokenizer covers
+        # fewer ids (e.g. 248077); the padded rows hold constant/random
+        # logits that must never be sampled.
+        self.model.max_vocab_id = len(self.tokenizer) - 1
+        # Write the sampling params into sample_head's persistent device
+        # memory once; penalty_sample reads them from there on each call.
+        if self.model.enable_sampling:
+            self.model.set_sampling_params()
+        print(f"sampling: enable={self.model.enable_sampling} "
+              f"T={self.model.temperature} top_p={self.model.top_p} "
+              f"top_k={self.model.top_k} rep={self.model.repeat_penalty} "
+              f"max_vocab_id={self.model.max_vocab_id}")
         self.num_grid_per_side = 48
         self.max_posid = 0
         self.history_max_posid = 0
@@ -458,6 +479,132 @@ class Qwen3_5():
             print(f"Total Tokens: {self.model.history_length}")
         return text
 
+    def stream_once(self, input_str, media_paths=None):
+        """
+        Generator variant of run_once. Yields events as dicts:
+          {"type": "token", "text": <accumulated assistant text so far>}
+          {"type": "notice", "text": <user-facing notice, e.g. auto-clear>}
+          {"type": "stats", "ftl": s, "tps": tok/s, "vision": s|None,
+           "total_tokens": n, "seqlen": n, "text": <final full text>}
+        """
+        self.input_str = input_str
+        media_paths = media_paths or []
+        if len(media_paths) == 0:
+            messages = self.text_message()
+            media_type = "text"
+        else:
+            for p in media_paths:
+                if not os.path.exists(p):
+                    yield {"type": "notice",
+                           "text": f"Can't find image or video: {p}"}
+                    return
+            try:
+                types = [self.get_media_type(p) for p in media_paths]
+            except RuntimeError as e:
+                yield {"type": "notice", "text": f"{e}"}
+                return
+            if not self.model.has_vit:
+                yield {"type": "notice",
+                       "text": ("This model is LLM-only (no vit); "
+                                "falling back to plain-text inference.")}
+                messages = self.text_message()
+                media_type = "text"
+            elif all(t == "image" for t in types):
+                messages = self.image_message(media_paths)
+                media_type = "image"
+            elif len(media_paths) == 1 and types[0] == "video":
+                messages = self.video_message(media_paths[0])
+                media_type = "video"
+            else:
+                yield {"type": "notice",
+                       "text": ("Unsupported media combination (only "
+                                "all-image groups or a single video).")}
+                return
+
+        inputs = self.process(messages, media_type)
+        token_len = inputs.input_ids.numel()
+        max_input_tokens = self.model.SEQLEN if self.model.support_history \
+            else self.model.MAX_INPUT_LENGTH
+        if token_len > max_input_tokens:
+            yield {"type": "notice",
+                   "text": (f"Input too long: {token_len} tokens > "
+                            f"{max_input_tokens}.")}
+            return
+
+        if self.support_history:
+            if (token_len + self.model.history_length > self.model.SEQLEN - 128) or \
+               (self.model.history_length > self.model.PREFILL_KV_LENGTH):
+                self.model.clear_history()
+                self.history_max_posid = 0
+                yield {"type": "notice",
+                       "text": ("⚠️ History reached the SEQLEN limit and "
+                                "was cleared automatically. Starting a "
+                                "fresh turn.")}
+
+        first_start = time.time()
+        self.model.forward_embed(inputs.input_ids.numpy())
+        vit_duration = 0.0
+        if media_type == "image":
+            vit_start = time.time()
+            self.vit_process_image(inputs)
+            vit_duration = time.time() - vit_start
+            position_ids = self.get_rope_index(inputs.input_ids,
+                                               inputs.image_grid_thw,
+                                               self.ID_IMAGE_PAD)
+            self.max_posid = int(position_ids.max())
+            token = self.forward_prefill(position_ids.numpy())
+        elif media_type == "video":
+            vit_start = time.time()
+            self.vit_process_video(inputs)
+            vit_duration = time.time() - vit_start
+            position_ids = self.get_rope_index(inputs.input_ids,
+                                               inputs.video_grid_thw,
+                                               self.ID_VIDEO_PAD)
+            self.max_posid = int(position_ids.max())
+            token = self.forward_prefill(position_ids.numpy())
+        else:
+            position_ids = 3 * [i for i in range(token_len)]
+            self.max_posid = token_len - 1
+            token = self.forward_prefill(np.array(position_ids,
+                                                  dtype=np.int32))
+        first_end = time.time()
+
+        tok_num = 0
+        full_word_tokens = []
+        text = ""
+        while token not in [self.ID_IM_END] and \
+                self.model.history_length < self.model.SEQLEN:
+            full_word_tokens.append(token)
+            word = self.tokenizer.decode(full_word_tokens,
+                                         skip_special_tokens=True)
+            if "�" not in word:
+                if len(full_word_tokens) == 1:
+                    pre_word = word
+                    word = self.tokenizer.decode(
+                        [token, token],
+                        skip_special_tokens=True)[len(pre_word):]
+                text += word
+                yield {"type": "token", "text": text}
+                full_word_tokens = []
+            self.max_posid += 1
+            position_ids = np.array(
+                [self.max_posid, self.max_posid, self.max_posid],
+                dtype=np.int32)
+            token = self.model.forward_next(position_ids)
+            tok_num += 1
+        self.history_max_posid = self.max_posid + 2
+        next_end = time.time()
+
+        ftl = first_end - first_start
+        next_duration = next_end - first_end
+        tps = tok_num / next_duration if next_duration > 0 else 0.0
+        yield {"type": "stats", "ftl": ftl, "tps": tps,
+               "vision": vit_duration if media_type in ("image", "video")
+               else None,
+               "total_tokens": self.model.history_length,
+               "seqlen": self.model.SEQLEN,
+               "text": text}
+
     def chat(self):
         """
         Start an interactive chat session.
@@ -553,6 +700,18 @@ if __name__ == "__main__":
     parser.add_argument('-d', '--devid', type=int, default=0, help='device ID to use')
     parser.add_argument('-p', '--prompt', type=str, default=None,
                         help='If set, run programmatically (non-interactive): a single inference is performed using this prompt and then the program exits. Include @<path> to attach an image or video, or to read prompt text from a .txt/.md file.')
+    parser.add_argument('--enable_sampling', action='store_true',
+                        help='Enable penalty sampling (requires bmodel compiled with --do_sample)')
+    parser.add_argument('--temperature', type=float, default=1.0,
+                        help='Sampling temperature, default 1.0')
+    parser.add_argument('--top_p', type=float, default=0.8,
+                        help='Sampling top_p, default 0.8')
+    parser.add_argument('--top_k', type=int, default=20,
+                        help='Sampling top_k, default 20')
+    parser.add_argument('--repeat_penalty', type=float, default=1.05,
+                        help='Repetition penalty, default 1.05 (1.0 disables)')
+    parser.add_argument('--repetition_window', type=int, default=0,
+                        help='Sliding window (in tokens) for repetition penalty; <= 0 penalizes the full context')
     # yapf: enable
     args = parser.parse_args()
     main(args)
